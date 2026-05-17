@@ -1892,7 +1892,7 @@ function AddPlanDialog({
         )}
 
         {/* Step 2: Configure — Generic branch */}
-        {step === "configure" && tpl && tpl.id !== "shas" && tpl.id !== "masechta_review" && tpl.id !== "deck_review" && (
+        {step === "configure" && tpl && tpl.id !== "shas" && tpl.id !== "masechta_review" && tpl.id !== "deck_review" && tpl.id !== "mishnayot" && (
           <div className="space-y-4 mt-2 text-right">
             {/* Title */}
             <div className="space-y-1">
