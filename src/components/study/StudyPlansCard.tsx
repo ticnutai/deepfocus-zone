@@ -1125,6 +1125,31 @@ function AddPlanDialog({
       handleClose();
       return;
     }
+    if (tpl.id === "mishnayot") {
+      if (mishnaSelectedMasechtos.length === 0) return;
+      const orderedMas = MISHNAYOT_DATA.flatMap((s) => s.masechtot.map((m) => m.name))
+        .filter((n) => mishnaSelectedMasechtos.includes(n));
+      const flatUnits = generateMishnayotUnitsFlat(orderedMas, mishnaUnit);
+      if (flatUnits.length === 0) return;
+      const paceNum = parseInt(mishnaPerDay, 10) || 1;
+      const unitLabel = mishnaUnit === "perek" ? "פרקים" : "משניות";
+      const planTitle = `משניות — ${orderedMas.slice(0, 2).join(", ")}${orderedMas.length > 2 ? ` +${orderedMas.length - 2}` : ""} · ${paceNum} ${unitLabel}/יום`;
+      onAdd(
+        "mishnayot",
+        planTitle,
+        flatUnits,
+        paceNum,
+        skipWeekdays.length ? skipWeekdays : undefined,
+        skipDates.length ? skipDates : undefined,
+        undefined,
+        undefined,
+        undefined,
+        reviewPolicy,
+        mishnaUnit,
+      );
+      handleClose();
+      return;
+    }
     if (tpl.id === "masechta_review") {
       if (mrItems.length === 0 || !title.trim()) return;
       onAddMasecthaReview(
