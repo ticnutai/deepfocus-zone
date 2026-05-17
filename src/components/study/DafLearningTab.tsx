@@ -316,3 +316,53 @@ function DafLearningTabInner() {
     </div>
   );
 }
+import { BookText, Scroll, Layers } from "lucide-react";
+import { MishnaLearningTab } from "./MishnaLearningTab";
+import { ChumashLearningTab } from "./ChumashLearningTab";
+
+type LearnMode = "daf" | "mishna" | "chumash";
+const MODE_STORAGE_KEY = "daf-learning-mode";
+
+export function DafLearningTab() {
+  const [mode, setMode] = useState<LearnMode>(() => {
+    try { return (localStorage.getItem(MODE_STORAGE_KEY) as LearnMode) || "daf"; }
+    catch { return "daf"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch { /* ignore */ }
+  }, [mode]);
+
+  const tabs: { id: LearnMode; label: string; icon: typeof BookText }[] = [
+    { id: "daf",     label: "דף (ש\"ס)", icon: Layers },
+    { id: "mishna",  label: "משנה",      icon: BookText },
+    { id: "chumash", label: "חומש",      icon: Scroll },
+  ];
+
+  return (
+    <div className="space-y-3" dir="rtl">
+      <ToggleGroup
+        type="single"
+        value={mode}
+        onValueChange={(v) => v && setMode(v as LearnMode)}
+        className="w-full flex justify-center gap-1 rounded-xl border-2 border-gold/40 bg-card p-1"
+      >
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          return (
+            <ToggleGroupItem
+              key={t.id}
+              value={t.id}
+              className="flex-1 max-w-[200px] gap-2 data-[state=on]:bg-gradient-navy data-[state=on]:text-primary-foreground"
+            >
+              <Icon className="h-4 w-4" /> {t.label}
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+
+      {mode === "daf"     && <DafLearningTabInner />}
+      {mode === "mishna"  && <MishnaLearningTab />}
+      {mode === "chumash" && <ChumashLearningTab />}
+    </div>
+  );
+}
