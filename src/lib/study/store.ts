@@ -2272,19 +2272,9 @@ export function useStudy() {
       const key = makeKey(pid, node.name);
       let cat = existingByKey.get(key);
       if (!cat) {
-        // Also check by normalized name across all levels — prevents duplicate categories
-        // when the same name exists at a different structural location (e.g. root vs child).
-        const byName = existingByName.get(normName(node.name));
-        if (byName) {
-          cat = byName;
-          existingByKey.set(key, cat); // register under new key so children resolve correctly
-        }
-      }
-      if (!cat) {
         cat = { id: uid(), name: node.name, parentId: pid, createdAt: Date.now() };
         created.push(cat);
         existingByKey.set(key, cat);
-        existingByName.set(normName(node.name), cat);
       }
 
       if (node.children?.length) {
