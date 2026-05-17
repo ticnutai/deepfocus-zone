@@ -199,7 +199,6 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
       {editMode && !collapsed && (
         <div className="absolute top-12 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
           <button
-
             onClick={onMovePrev}
             disabled={!canMovePrev}
             className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-30"
