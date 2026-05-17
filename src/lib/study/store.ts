@@ -2256,15 +2256,11 @@ export function useStudy() {
     if (!nodes.length) return 0;
 
     const makeKey = (pid: string | null, name: string) => `${pid ?? "__root__"}\u0000${name}`;
-    const normName = (name: string) => name.trim().toLowerCase();
     const created: Category[] = [];
     const existingByKey = new Map<string, Category>();
-    // Secondary index: detect same-name categories at any level (prevents cross-parent duplicates).
-    const existingByName = new Map<string, Category>();
 
     for (const c of memState.categories ?? []) {
       existingByKey.set(makeKey(c.parentId, c.name), c);
-      if (!existingByName.has(normName(c.name))) existingByName.set(normName(c.name), c);
     }
 
     // Iterative walk avoids deep recursion and repeated scans over existing categories.
@@ -2276,19 +2272,9 @@ export function useStudy() {
       const key = makeKey(pid, node.name);
       let cat = existingByKey.get(key);
       if (!cat) {
-        // Also check by normalized name across all levels — prevents duplicate categories
-        // when the same name exists at a different structural location (e.g. root vs child).
-        const byName = existingByName.get(normName(node.name));
-        if (byName) {
-          cat = byName;
-          existingByKey.set(key, cat); // register under new key so children resolve correctly
-        }
-      }
-      if (!cat) {
         cat = { id: uid(), name: node.name, parentId: pid, createdAt: Date.now() };
         created.push(cat);
         existingByKey.set(key, cat);
-        existingByName.set(normName(node.name), cat);
       }
 
       if (node.children?.length) {

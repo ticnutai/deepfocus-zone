@@ -4,6 +4,7 @@
 import { SHAS_BAVLI, SEDARIM } from "./shasData";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf } from "./shasGen";
 import { MISHNAYOT_DATA } from "./mishnayotData";
+import { TORAH_VERSES } from "./torahVerses";
 
 // === המרת מספר לגמטריה ===
 const ONES = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
@@ -667,6 +668,24 @@ export const CATEGORY_TEMPLATES: CategoryTemplate[] = [
       children: CHUMASH.map((c) => ({
         name: c.name,
         children: c.parshiot.map((p) => ({ name: p })),
+      })),
+    }],
+  },
+  {
+    id: "chumash_pesukim",
+    title: "חמשת חומשי תורה — פרקים ופסוקים",
+    description: "5 חומשים → פרק → פסוק — כל 5,845 הפסוקים נוצרים אוטומטית",
+    emoji: "📖",
+    roots: [{
+      name: "חמשת חומשי תורה (פרקים)",
+      children: TORAH_VERSES.map((b) => ({
+        name: b.name,
+        children: b.chapters.map((versesCount, perekIdx) => ({
+          name: `פרק ${toGematria(perekIdx + 1)}`,
+          children: Array.from({ length: versesCount }, (_, vi) => ({
+            name: `פסוק ${toGematria(vi + 1)}`,
+          })),
+        })),
       })),
     }],
   },
