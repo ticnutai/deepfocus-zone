@@ -38,7 +38,7 @@ function saveState(s: SavedState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 
-export function DafLearningTab() {
+function DafLearningTabInner() {
   const { state } = useStudy();
   const saved = useMemo(() => loadSaved(), []);
 
