@@ -987,6 +987,14 @@ function AddPlanDialog({
       return;
     }
 
+    if (resolved.id === "mishnayot") {
+      setMishnaSelectedMasechtos([]);
+      setMishnaUnit("mishna");
+      setMishnaPerDay("1");
+      setStep("configure");
+      return;
+    }
+
     const allUnits = groups.flatMap((g) => g.units);
     const initialVisible = Object.fromEntries(
       groups.map((g) => [g.name, Math.min(INITIAL_VISIBLE_UNITS, g.units.length)]),
