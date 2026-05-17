@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn } from "lucide-react";
+import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers } from "lucide-react";
+import { MishnaLearningTab } from "./MishnaLearningTab";
+import { ChumashLearningTab } from "./ChumashLearningTab";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
