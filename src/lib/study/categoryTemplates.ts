@@ -690,6 +690,27 @@ export const CATEGORY_TEMPLATES: CategoryTemplate[] = [
     }],
   },
   {
+    id: "mishnayot",
+    title: "ששה סדרי משנה / משניות",
+    description: "ששה סדרים → מסכת → פרק → משנה — כל 4,192 המשניות נוצרות אוטומטית",
+    emoji: "📕",
+    roots: [{
+      name: "ששה סדרי משנה",
+      children: MISHNAYOT_DATA.map((s) => ({
+        name: s.name,
+        children: s.masechtot.map((m) => ({
+          name: m.name,
+          children: m.chapters.map((mishnayotCount, perekIdx) => ({
+            name: `פרק ${toGematria(perekIdx + 1)}`,
+            children: Array.from({ length: mishnayotCount }, (_, mi) => ({
+              name: `משנה ${toGematria(mi + 1)}`,
+            })),
+          })),
+        })),
+      })),
+    }],
+  },
+  {
     id: "nach",
     title: 'תנ"ך מלא',
     description: "תורה, נביאים, כתובים — עם כל הספרים",
