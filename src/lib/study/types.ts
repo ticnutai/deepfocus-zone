@@ -295,7 +295,9 @@ export interface StudyState {
 export type StudyMode = "practice" | "srs";
 
 // === General Study Plans ===
-export type GeneralPlanType = "chumash" | "rambam" | "shulchan_aruch" | "tehillim" | "nach" | "custom" | "masechta_review" | "shas" | "deck_review";
+export type GeneralPlanType = "chumash" | "rambam" | "shulchan_aruch" | "tehillim" | "nach" | "custom" | "masechta_review" | "shas" | "deck_review" | "mishnayot";
+
+export type MishnaUnit = "perek" | "mishna";
 
 export type ReviewScopeType = "masechta" | "perek" | "daf_range" | "custom";
 export type ReviewScheduleType = "srs" | "fixed_interval" | "manual";
