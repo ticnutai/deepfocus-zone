@@ -147,13 +147,27 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
     transition,
     opacity: isDragging ? 0.3 : 1,
     gridColumn: cfg.size === "full" ? "1 / -1" : undefined,
-    minHeight: collapsed ? undefined : (cfg.height ? `${cfg.height}px` : undefined),
+    minHeight: collapsed ? undefined : (cfg.height ? `${cfg.height}px` : (editMode ? "auto" : undefined)),
   };
   if (!cfg.visible) return null;
 
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      {editMode && !collapsed && <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-gold/60 pointer-events-none" />}
+    <div ref={setNodeRef} style={style} className={cn("relative group", editMode && !collapsed && "pt-10")}>
+      {editMode && !collapsed && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="absolute top-0 right-0 left-0 z-20 flex items-center justify-between gap-2 px-3 py-1.5 rounded-t-xl bg-gradient-to-l from-gold/80 to-gold/60 text-navy cursor-grab active:cursor-grabbing touch-none shadow-md border-b-2 border-gold animate-pulse-slow"
+          title="גרור כדי לסדר מחדש את הווידג'ט"
+        >
+          <span className="text-[11px] font-bold opacity-80">גרור לסידור</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-display text-xs font-semibold truncate">{label}</span>
+            <GripVertical className="h-4 w-4" />
+          </div>
+        </div>
+      )}
+      {editMode && !collapsed && <div className="absolute inset-0 top-10 z-10 rounded-b-xl border-2 border-t-0 border-dashed border-gold/60 pointer-events-none" />}
       {editMode && !collapsed && (
         <>
           <ResizeHandleRight size={cfg.size} onSetSize={onSetSize} />
@@ -183,15 +197,7 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
       </TooltipProvider>
 
       {editMode && !collapsed && (
-        <div className="absolute top-2 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
-          <button
-            {...(editMode ? attributes : {})}
-            {...(editMode ? listeners : {})}
-            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none"
-            aria-label="גרור"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+        <div className="absolute top-12 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
           <button
             onClick={onMovePrev}
             disabled={!canMovePrev}
