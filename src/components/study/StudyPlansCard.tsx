@@ -839,7 +839,7 @@ function AddPlanDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onAdd: (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy) => void;
+  onAdd: (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy, mishnaUnit?: MishnaUnit) => void;
   onAddShas: (selectedMasechtos: string[], pagesPerDay: number, unit: ShasUnit, skipWeekdays?: number[], skipDates?: string[], anchorDate?: string, anchorPosition?: { masechta: string; daf: number; amud: 1 | 2 }) => void;
   onEnsureShasCategories: (selectedMasechtos: string[]) => void;
   onEnsureTemplateCategories: (units: string[]) => void;
