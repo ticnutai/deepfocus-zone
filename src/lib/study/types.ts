@@ -239,6 +239,8 @@ export interface UiPrefs {
   categoryViewMode?: "browse" | "explorer" | "list" | "cards" | "mindmap";
   // CategoriesPage: per-category sort mode for the cards list
   categorySortOrders?: Record<string, "name" | "createdNew" | "createdOld" | "favorites" | "manual">;
+  // Mishnayot tracker: { [sederName]: { [masechetName]: { [perekIndex]: number[] of learned mishna indices (1-based) } } }
+  mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)
   syncEnabled?: boolean;
   // Bookkeeping for last-write-wins between local cache and cloud

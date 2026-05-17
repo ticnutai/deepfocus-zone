@@ -32,6 +32,7 @@ import { TaskCard } from "@/components/study/TaskCard";
 import { HeatmapPanel } from "@/components/study/HeatmapPanel";
 import { ReviewCalendar } from "@/components/study/ReviewCalendar";
 import { AdminPanel } from "@/components/admin/AdminPanel";
+import { MishnayotTracker } from "@/components/study/MishnayotTracker";
 import { SupabaseInspectorPage } from "@/components/dev/SupabaseInspectorPage";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -74,6 +75,7 @@ const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
   { id: "achievements", label: "הישגים", icon: Trophy },
   { id: "archive", label: "ארכיון", icon: Archive },
   { id: "backup-restore", label: "גיבוי ושחזור", icon: HardDrive },
+  { id: "mishnayot", label: "מעקב משניות", icon: BookOpen },
   { id: "db-inspector", label: "מסד נתונים", icon: DatabaseZap },
   { id: "admin", label: "ניהול משתמשים", icon: Shield },
   { id: "settings", label: "הגדרות", icon: Settings },
@@ -837,6 +839,8 @@ const Index = () => {
         );
       case "backup-restore":
         return <BackupRestorePage />;
+      case "mishnayot":
+        return <MishnayotTracker />;
       case "db-inspector":
         return <SupabaseInspectorPage />;
       default:
