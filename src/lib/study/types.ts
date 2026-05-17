@@ -322,6 +322,9 @@ export interface GeneralStudyPlan {
   // ── שדות ייחודיים לתוכנית ש"ס (shas) ──
   shasUnit?: ShasUnit;             // daf / amud / half (מאפיין של shas plans)
 
+  // ── שדות ייחודיים לתוכנית משניות (mishnayot) ──
+  mishnaUnit?: MishnaUnit;         // perek / mishna
+
   // ── שדות ייחודיים לתוכנית חזרות מסכתות (masechta_review) ──
   reviewScopeType?: ReviewScopeType;     // מסכת שלמה / פרק / טווח דפים / חופשי
   reviewScopeDetail?: string;            // פירוט: "פרק א'", "דפים ב'-כ"", טקסט חופשי
