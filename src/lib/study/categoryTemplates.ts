@@ -672,6 +672,24 @@ export const CATEGORY_TEMPLATES: CategoryTemplate[] = [
     }],
   },
   {
+    id: "chumash_pesukim",
+    title: "חמשת חומשי תורה — פרקים ופסוקים",
+    description: "5 חומשים → פרק → פסוק — כל 5,845 הפסוקים נוצרים אוטומטית",
+    emoji: "📖",
+    roots: [{
+      name: "חמשת חומשי תורה (פרקים)",
+      children: TORAH_VERSES.map((b) => ({
+        name: b.name,
+        children: b.chapters.map((versesCount, perekIdx) => ({
+          name: `פרק ${toGematria(perekIdx + 1)}`,
+          children: Array.from({ length: versesCount }, (_, vi) => ({
+            name: `פסוק ${toGematria(vi + 1)}`,
+          })),
+        })),
+      })),
+    }],
+  },
+  {
     id: "shas",
     title: 'ששה סדרי משנה / ש"ס',
     description: 'ש"ס → סדר → מסכת → דף → ע"א/ע"ב — נוצר הכל אוטומטית',
