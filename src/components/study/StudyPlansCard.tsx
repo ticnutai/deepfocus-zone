@@ -190,6 +190,13 @@ function formatPace(upd: number, plan?: GeneralStudyPlan): string {
       if (upd === 1) return `${singular} ליום`;
       return `${upd} ${plural} ליום`;
     }
+    if (plan?.planType === "mishnayot") {
+      const u = plan.mishnaUnit ?? "mishna";
+      const singular = u === "perek" ? "פרק" : "משנה";
+      const plural = u === "perek" ? "פרקים" : "משניות";
+      if (upd === 1) return `${singular} ליום`;
+      return `${upd} ${plural} ליום`;
+    }
     return `${upd} ביום`;
   }
   if (Math.abs(upd - 2 / 7) < 0.01) return "2 לשבוע";
