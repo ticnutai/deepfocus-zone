@@ -22,11 +22,13 @@ import { ReviewScheduleDialog } from "@/components/settings/ReviewScheduleSettin
 import { PlanScheduleView } from "@/components/study/PlanScheduleView";
 import { useStudy } from "@/lib/study/store";
 import { cn, toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, calcEtaDate } from "@/lib/utils";
-import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit } from "@/lib/study/types";
+import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit, MishnaUnit } from "@/lib/study/types";
 import { getPlanUnitsForDate } from "@/lib/study/planSchedule";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { unitsPerDaf, totalUnitsInMasechta, unitRhythmHint, toHebrewNum, generateShasUnitsFlat } from "@/lib/study/shasFormat";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf, PATH_SEP } from "@/lib/study/shasGen";
+import { MISHNAYOT_DATA } from "@/lib/study/mishnayotData";
+import { generateMishnayotUnitsFlat, countUnitsForMasechet } from "@/lib/study/mishnaPlanUnits";
 import { CATEGORY_TEMPLATES } from "@/lib/study/categoryTemplates";
 import type { CategoryTemplateNode } from "@/lib/study/categoryTemplates";
 import { QualityButtons } from "./QualityButtons";
@@ -153,6 +155,7 @@ function ShasBookIcon({ size = "md" }: { size?: "sm" | "md" }) {
 
 const TEMPLATES: TemplateDefinition[] = [
   { id: "shas",             label: 'ש"ס בבלי',       description: "39 מסכתות עם מעקב דף/עמוד", icon: <ShasBookIcon size="md" />, defaultPace: 1, groups: [] },
+  { id: "mishnayot",        label: "ששה סדרי משנה",   description: "63 מסכתות — לפי פרקים או משניות", icon: <BookMarked className="h-8 w-8 text-navy" />, defaultPace: 1, groups: [] },
   { id: "chumash",          label: "חומש",            description: "54 פרשות השבוע",   icon: <BookOpen className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groups: CHUMASH_GROUPS },
   { id: "rambam",           label: 'רמב"ם',            description: "מבנה מפורט: ספר > הלכה > פרק", icon: <Scroll className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groupsLoader: () => getDetailedGroups("rambam") },
   { id: "shulchan_aruch",   label: 'שולחן ערוך',       description: "מבנה מפורט: חלק > הלכה > סימן > סעיף", icon: <Scale className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groupsLoader: () => getDetailedGroups("shulchan_aruch") },
@@ -184,6 +187,13 @@ function formatPace(upd: number, plan?: GeneralStudyPlan): string {
       const unit = inferShasUnit(plan);
       const singular = unit === "daf" ? "דף" : unit === "amud" ? "עמוד" : "חצי עמוד";
       const plural = unit === "daf" ? "דפים" : unit === "amud" ? "עמודים" : "חצאי עמוד";
+      if (upd === 1) return `${singular} ליום`;
+      return `${upd} ${plural} ליום`;
+    }
+    if (plan?.planType === "mishnayot") {
+      const u = plan.mishnaUnit ?? "mishna";
+      const singular = u === "perek" ? "פרק" : "משנה";
+      const plural = u === "perek" ? "פרקים" : "משניות";
       if (upd === 1) return `${singular} ליום`;
       return `${upd} ${plural} ליום`;
     }
@@ -829,7 +839,7 @@ function AddPlanDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onAdd: (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy) => void;
+  onAdd: (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy, mishnaUnit?: MishnaUnit) => void;
   onAddShas: (selectedMasechtos: string[], pagesPerDay: number, unit: ShasUnit, skipWeekdays?: number[], skipDates?: string[], anchorDate?: string, anchorPosition?: { masechta: string; daf: number; amud: 1 | 2 }) => void;
   onEnsureShasCategories: (selectedMasechtos: string[]) => void;
   onEnsureTemplateCategories: (units: string[]) => void;
@@ -863,6 +873,11 @@ function AddPlanDialog({
   const [shasUnit, setShasUnit] = useState<ShasUnit>("daf");
   const [shasPagesPerDay, setShasPagesPerDay] = useState("1");
   const [shasSelectedMasechtos, setShasSelectedMasechtos] = useState<string[]>([]);
+
+  // Mishnayot-specific state
+  const [mishnaUnit, setMishnaUnit] = useState<MishnaUnit>("mishna");
+  const [mishnaPerDay, setMishnaPerDay] = useState("1");
+  const [mishnaSelectedMasechtos, setMishnaSelectedMasechtos] = useState<string[]>([]);
 
   // Anchor state
   const [anchorEnabled, setAnchorEnabled] = useState(false);
@@ -968,6 +983,14 @@ function AddPlanDialog({
     if (resolved.id === "deck_review") {
       setDrSelectedDeckIds([]);
       setTitle("חזרה על מערכות");
+      setStep("configure");
+      return;
+    }
+
+    if (resolved.id === "mishnayot") {
+      setMishnaSelectedMasechtos([]);
+      setMishnaUnit("mishna");
+      setMishnaPerDay("1");
       setStep("configure");
       return;
     }
@@ -1106,6 +1129,31 @@ function AddPlanDialog({
         resolvedAnchorDate,
         resolvedAnchorPosition,
         reviewPolicy,
+      );
+      handleClose();
+      return;
+    }
+    if (tpl.id === "mishnayot") {
+      if (mishnaSelectedMasechtos.length === 0) return;
+      const orderedMas = MISHNAYOT_DATA.flatMap((s) => s.masechtot.map((m) => m.name))
+        .filter((n) => mishnaSelectedMasechtos.includes(n));
+      const flatUnits = generateMishnayotUnitsFlat(orderedMas, mishnaUnit);
+      if (flatUnits.length === 0) return;
+      const paceNum = parseInt(mishnaPerDay, 10) || 1;
+      const unitLabel = mishnaUnit === "perek" ? "פרקים" : "משניות";
+      const planTitle = `משניות — ${orderedMas.slice(0, 2).join(", ")}${orderedMas.length > 2 ? ` +${orderedMas.length - 2}` : ""} · ${paceNum} ${unitLabel}/יום`;
+      onAdd(
+        "mishnayot",
+        planTitle,
+        flatUnits,
+        paceNum,
+        skipWeekdays.length ? skipWeekdays : undefined,
+        skipDates.length ? skipDates : undefined,
+        undefined,
+        undefined,
+        undefined,
+        reviewPolicy,
+        mishnaUnit,
       );
       handleClose();
       return;
@@ -1466,7 +1514,120 @@ function AddPlanDialog({
           </div>
         )}
 
-        {/* Step 2: Configure — Masechta Review branch */}
+        {/* Step 2: Configure — Mishnayot branch */}
+        {step === "configure" && tpl?.id === "mishnayot" && (
+          <div className="space-y-4 mt-2 text-right">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground">יחידת לימוד</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([
+                  { value: "mishna", title: "משנה", sub: "משנה בכל יום (יחידה בודדת)" },
+                  { value: "perek",  title: "פרק",  sub: "פרק שלם בכל יום" },
+                ] as { value: MishnaUnit; title: string; sub: string }[]).map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    onClick={() => setMishnaUnit(opt.value)}
+                    className={cn(
+                      "rounded-xl border-2 p-3 text-right transition-colors",
+                      mishnaUnit === opt.value ? "border-gold bg-gold/10" : "border-gold/30 bg-card hover:border-gold/60",
+                    )}
+                  >
+                    <div className="font-display font-semibold">{opt.title}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">
+                {mishnaUnit === "perek" ? "פרקים ביום" : "משניות ביום"}
+              </label>
+              <Input
+                type="number" min={1} value={mishnaPerDay}
+                onChange={(e) => setMishnaPerDay(e.target.value)}
+                className="border-2 border-gold/40 text-right w-32" dir="rtl"
+              />
+            </div>
+
+            <div className="space-y-3 max-h-[340px] overflow-y-auto pl-1">
+              {MISHNAYOT_DATA.map((seder) => {
+                const names = seder.masechtot.map((m) => m.name);
+                const selCount = names.filter((n) => mishnaSelectedMasechtos.includes(n)).length;
+                const allSelected = selCount === names.length;
+                return (
+                  <div key={seder.name} className="border-2 border-gold/30 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => {
+                          if (allSelected) setMishnaSelectedMasechtos((s) => s.filter((n) => !names.includes(n)));
+                          else setMishnaSelectedMasechtos((s) => Array.from(new Set([...s, ...names])));
+                        }}
+                        className="text-xs h-7"
+                      >
+                        {allSelected ? "בטל הכל" : "בחר הכל"}
+                      </Button>
+                      <h4 className="font-display font-semibold text-foreground">
+                        סדר {seder.name} <span className="text-xs text-muted-foreground">({selCount}/{names.length})</span>
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {seder.masechtot.map((m) => {
+                        const checked = mishnaSelectedMasechtos.includes(m.name);
+                        const count = countUnitsForMasechet(m.name, mishnaUnit);
+                        return (
+                          <label
+                            key={m.name}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg border-2 px-2 py-1.5 cursor-pointer text-sm",
+                              checked ? "border-gold bg-secondary" : "border-gold/30 bg-card",
+                            )}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(c) => {
+                                if (c) setMishnaSelectedMasechtos((s) => [...s, m.name]);
+                                else setMishnaSelectedMasechtos((s) => s.filter((n) => n !== m.name));
+                              }}
+                            />
+                            <span className="flex-1 text-right">{m.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {count} {mishnaUnit === "perek" ? "פר׳" : "מש׳"}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <SkipDaysPicker
+              skipWeekdays={skipWeekdays} setSkipWeekdays={setSkipWeekdays}
+              skipDates={skipDates} setSkipDates={setSkipDates}
+            />
+
+            <PlanReviewPolicyEditor value={reviewPolicy} onChange={setReviewPolicy} />
+
+            <div className="flex items-center justify-between pt-2 border-t border-gold/20">
+              <span className="text-sm text-muted-foreground">
+                {mishnaSelectedMasechtos.length} מסכתות · {generateMishnayotUnitsFlat(mishnaSelectedMasechtos, mishnaUnit).length} {mishnaUnit === "perek" ? "פרקים" : "משניות"}
+              </span>
+              <Button
+                onClick={handleStart}
+                disabled={mishnaSelectedMasechtos.length === 0}
+                className="bg-gradient-navy text-primary-foreground rounded-xl"
+              >
+                <Check className="h-4 w-4" /> התחל תוכנית
+              </Button>
+            </div>
+          </div>
+        )}
+
+
         {step === "configure" && tpl?.id === "masechta_review" && (
           <div className="space-y-4 mt-2 text-right">
             {/* Plan title */}
@@ -1739,7 +1900,7 @@ function AddPlanDialog({
         )}
 
         {/* Step 2: Configure — Generic branch */}
-        {step === "configure" && tpl && tpl.id !== "shas" && tpl.id !== "masechta_review" && tpl.id !== "deck_review" && (
+        {step === "configure" && tpl && tpl.id !== "shas" && tpl.id !== "masechta_review" && tpl.id !== "deck_review" && tpl.id !== "mishnayot" && (
           <div className="space-y-4 mt-2 text-right">
             {/* Title */}
             <div className="space-y-1">
@@ -2188,12 +2349,13 @@ export function StudyPlansCard() {
       return next;
     });
 
-  const handleAdd = (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy) => {
+  const handleAdd = (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy, mishnaUnit?: MishnaUnit) => {
     addGeneralPlan({
       planType, title, units, unitsPerDay,
       ...(skipWeekdays?.length ? { skipWeekdays } : {}),
       ...(skipDates?.length ? { skipDates } : {}),
       ...(planType === "shas" && shasUnit ? { shasUnit } : {}),
+      ...(planType === "mishnayot" && mishnaUnit ? { mishnaUnit } : {}),
       ...(anchorDate ? { anchorDate } : {}),
       ...(anchorPosition != null ? { anchorPosition } : {}),
       ...(reviewPolicy ? {

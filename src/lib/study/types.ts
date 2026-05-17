@@ -295,7 +295,9 @@ export interface StudyState {
 export type StudyMode = "practice" | "srs";
 
 // === General Study Plans ===
-export type GeneralPlanType = "chumash" | "rambam" | "shulchan_aruch" | "tehillim" | "nach" | "custom" | "masechta_review" | "shas" | "deck_review";
+export type GeneralPlanType = "chumash" | "rambam" | "shulchan_aruch" | "tehillim" | "nach" | "custom" | "masechta_review" | "shas" | "deck_review" | "mishnayot";
+
+export type MishnaUnit = "perek" | "mishna";
 
 export type ReviewScopeType = "masechta" | "perek" | "daf_range" | "custom";
 export type ReviewScheduleType = "srs" | "fixed_interval" | "manual";
@@ -319,6 +321,9 @@ export interface GeneralStudyPlan {
 
   // ── שדות ייחודיים לתוכנית ש"ס (shas) ──
   shasUnit?: ShasUnit;             // daf / amud / half (מאפיין של shas plans)
+
+  // ── שדות ייחודיים לתוכנית משניות (mishnayot) ──
+  mishnaUnit?: MishnaUnit;         // perek / mishna
 
   // ── שדות ייחודיים לתוכנית חזרות מסכתות (masechta_review) ──
   reviewScopeType?: ReviewScopeType;     // מסכת שלמה / פרק / טווח דפים / חופשי
