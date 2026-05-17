@@ -874,6 +874,11 @@ function AddPlanDialog({
   const [shasPagesPerDay, setShasPagesPerDay] = useState("1");
   const [shasSelectedMasechtos, setShasSelectedMasechtos] = useState<string[]>([]);
 
+  // Mishnayot-specific state
+  const [mishnaUnit, setMishnaUnit] = useState<MishnaUnit>("mishna");
+  const [mishnaPerDay, setMishnaPerDay] = useState("1");
+  const [mishnaSelectedMasechtos, setMishnaSelectedMasechtos] = useState<string[]>([]);
+
   // Anchor state
   const [anchorEnabled, setAnchorEnabled] = useState(false);
   const [anchorDate, setAnchorDate] = useState(""); // YYYY-MM-DD
