@@ -2349,12 +2349,13 @@ export function StudyPlansCard() {
       return next;
     });
 
-  const handleAdd = (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy) => {
+  const handleAdd = (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy, mishnaUnit?: MishnaUnit) => {
     addGeneralPlan({
       planType, title, units, unitsPerDay,
       ...(skipWeekdays?.length ? { skipWeekdays } : {}),
       ...(skipDates?.length ? { skipDates } : {}),
       ...(planType === "shas" && shasUnit ? { shasUnit } : {}),
+      ...(planType === "mishnayot" && mishnaUnit ? { mishnaUnit } : {}),
       ...(anchorDate ? { anchorDate } : {}),
       ...(anchorPosition != null ? { anchorPosition } : {}),
       ...(reviewPolicy ? {
