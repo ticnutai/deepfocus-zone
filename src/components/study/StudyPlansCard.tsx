@@ -2672,7 +2672,7 @@ export function StudyPlansCard() {
               <div
                 key={plan.id}
                 className={cn(
-                  "rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
+                  "group rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
                   isDarkCard
                     ? "border-gold/80 bg-gradient-to-br from-[hsl(var(--navy))] to-[hsl(var(--navy-soft))] text-primary-foreground hover:border-gold [&_.text-muted-foreground]:!text-primary-foreground/85 [&_.text-foreground]:!text-primary-foreground [&_.text-navy]:!text-primary-foreground [&_.hover\\:text-navy:hover]:!text-gold [&_.border-gold\\/15]:!border-white/25 [&_.border-gold\\/10]:!border-white/20"
                     : "border-gold/40 bg-card hover:border-gold/70",
