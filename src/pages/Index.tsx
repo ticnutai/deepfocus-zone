@@ -463,7 +463,18 @@ function SortableConfigItem({
 }
 
 const Index = () => {
-  const [active, setActive] = useState("home");
+  const initialSection = typeof window !== "undefined"
+    ? (new URLSearchParams(window.location.search).get("section") ?? "home")
+    : "home";
+  const [active, setActive] = useState(initialSection);
+  useEffect(() => {
+    const onPop = () => {
+      const s = new URLSearchParams(window.location.search).get("section");
+      if (s) setActive(s);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const { user, signOut, isGuest } = useAuth();
   const displayEmail = isGuest ? "אורח" : user?.email;
