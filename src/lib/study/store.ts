@@ -3995,7 +3995,34 @@ export function useStudy() {
     getDeleteAuditHistory,
     deleteAllUserData, deleteCategoriesWithData,
     // === Stub methods (no-op shims for not-yet-implemented features) ===
-    uncompleteSpecificUnit: (_planId: string, _unit: string): void => { /* TODO */ },
+    uncompleteSpecificUnit: (planId: string, unit: string): void => {
+      const userId = requireUser();
+      const updated = (memState.generalPlans ?? []).map((p) =>
+        p.id !== planId ? p :
+        { ...p, completedUnits: p.completedUnits.filter((u) => u !== unit) }
+      );
+      setState((s) => ({ ...s, generalPlans: updated }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plans: updated as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plans.uncomplete");
+    },
+    setPlanUnitNote: (planId: string, unit: string, note: string): void => {
+      const userId = requireUser();
+      const updated = (memState.generalPlans ?? []).map((p) => {
+        if (p.id !== planId) return p;
+        const next = { ...(p.unitNotes ?? {}) };
+        const trimmed = note.trim();
+        if (trimmed) next[unit] = trimmed;
+        else delete next[unit];
+        return { ...p, unitNotes: next };
+      });
+      setState((s) => ({ ...s, generalPlans: updated }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plans: updated as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plans.unitNote");
+    },
     reschedulePlanReviews: (_planId: string): void => { /* TODO */ },
     archiveGeneralPlan: (planId: string): void => {
       const userId = requireUser();
