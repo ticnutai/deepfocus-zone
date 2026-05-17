@@ -17,6 +17,7 @@ const Auth = lazy(() => import("./pages/Auth.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const PlanDetail = lazy(() => import("./pages/PlanDetail.tsx"));
 const SyncDiagnostics = lazy(() => import("./pages/SyncDiagnostics.tsx"));
+const AppLayout = lazy(() => import("./components/layout/AppLayout.tsx"));
 const PerfMonitor = lazy(() => import("@/components/dev/PerfMonitor").then((m) => ({ default: m.PerfMonitor })));
 
 const queryClient = new QueryClient();
