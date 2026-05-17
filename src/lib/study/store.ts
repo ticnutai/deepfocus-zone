@@ -1,0 +1,4038 @@
+import { useEffect, useState, useCallback, startTransition } from "react";
+import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
+import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
+import { timeOp, perf } from "@/lib/debug/perf";
+import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./srs";
+import { SHAS_BAVLI } from "./shasData";
+import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
+import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, removePendingDelete, removeSyncJob, saveStudyStateCache } from "./indexedStateCache";
+import { applyCloudSyncPref, isSyncEnabled } from "./syncControl";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
+import type { Json, Database } from "@/integrations/supabase/types";
+
+const emptyState = (): StudyState => ({
+  decks: [], cards: [], logs: [], categories: [], goals: [],
+  shasPlan: null, notificationsEnabled: false, reminderTime: "20:00", dayNotes: [],
+  shasPlans: [], activeShasPlanId: null,
+  cardDecks: [], shasReviews: [], reviewIntervals: [1, 3, 7, 14, 30],
+  learningSessions: [], tabConfig: [], sidebarConfig: [], widgetLayout: undefined, uiPrefs: {}, generalPlans: [], planReviews: [],
+  customCategoryTemplates: [],
+  quizPlans: [], quizAttempts: [],
+});
+
+let memState: StudyState = emptyState();
+let currentUserId: string | null = null;
+let loadedFor: string | null = null;
+const listeners = new Set<() => void>();
+let cachePersistTimer: number | null = null;
+let cloudSyncInFlight = false;
+let cloudSyncPendingJobs = 0;
+let isHydrated = false;
+// Shared IDB read promise — prevents StrictMode double-mount from opening IDB twice.
+let idbHydratePromise: Promise<[import('./indexedStateCache').SyncJob[], import('./types').StudyState | null]> | null = null;
+let idbHydrateForUser: string | null = null;
+// Phase 2 card backfill: bootstrap only loads reviewed cards. The rest load silently here.
+let phase2BackfillNeeded = false;
+let phase2BackfillUserId: string | null = null;
+let phase2BackfillInFlight = false;
+let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if already loaded
+
+const GUEST_ID = "guest";
+const GUEST_STATE_KEY = "guest-study-state";
+const BROWSER_CACHE_RESET_VERSION = 2;
+const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
+const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — ensures cross-device changes appear promptly
+const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // keep first paint fast, then reconcile IDB against cloud shortly after
+
+function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
+  const ric = (window as typeof window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+  }).requestIdleCallback;
+  if (typeof ric === "function") {
+    ric(() => fn(), { timeout });
+    return;
+  }
+  window.setTimeout(fn, 0);
+}
+// Beyond this age, run a FULL reload instead of a delta sync (catches deletions
+// that delta sync can't observe — delta only sees updated_at >= lastSync).
+const DEFAULT_FULL_REFRESH_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+export const CACHE_TTL_STORAGE_KEY = "cache:full-refresh-ttl-ms";
+export function getFullRefreshTtlMs(): number {
+  try {
+    const raw = localStorage.getItem(CACHE_TTL_STORAGE_KEY);
+    if (!raw) return DEFAULT_FULL_REFRESH_TTL_MS;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v <= 0) return DEFAULT_FULL_REFRESH_TTL_MS;
+    return v;
+  } catch { return DEFAULT_FULL_REFRESH_TTL_MS; }
+}
+export function setFullRefreshTtlMs(ms: number) {
+  try { localStorage.setItem(CACHE_TTL_STORAGE_KEY, String(Math.max(60_000, Math.floor(ms)))); } catch { /* ignore */ }
+}
+const LAST_CLOUD_BOOTSTRAP_AT_KEY = (userId: string) => `last-cloud-bootstrap-at:${userId}`;
+const LAST_FULL_SYNC_AT_KEY = (userId: string) => `last-cloud-full-sync-at:${userId}`;
+const LAST_CLOUD_CARDS_COUNT_KEY = (userId: string) => `last-cloud-cards-count:${userId}`;
+
+function rememberCloudCardsTotalCount(userId: string, count: number): void {
+  try { localStorage.setItem(LAST_CLOUD_CARDS_COUNT_KEY(userId), String(Math.max(0, Math.floor(count)))); } catch { /* ignore */ }
+}
+
+/** Last time IDB was refreshed from cloud (delta or full). 0 if never. */
+export function getLastCloudSyncAt(userId: string): number {
+  try { return Number(localStorage.getItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
+}
+/** Last full reload from cloud (loadAll). 0 if never. */
+export function getLastFullSyncAt(userId: string): number {
+  try { return Number(localStorage.getItem(LAST_FULL_SYNC_AT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
+}
+/** Last exact cloud cards count observed by the sync reconciler. 0 if unknown. */
+export function getLastKnownCloudCardsCount(userId: string): number {
+  try { return Number(localStorage.getItem(LAST_CLOUD_CARDS_COUNT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
+}
+export function getCurrentStudyCardsCount(): number {
+  return memState.cards.length;
+}
+const WIDGET_LAYOUT_CACHE_KEY = (userId: string) => `widget-layout-cache:${userId}`;
+const UI_PREFS_CACHE_KEY = (userId: string) => `ui-prefs-cache:${userId}`;
+const DECK_CATEGORIES_KEY = (userId: string) => `deck-categories:${userId}`;
+
+type WidgetLayoutCache = {
+  updatedAt: number;
+  layout: WidgetLayout;
+};
+
+const readWidgetLayoutCache = (userId: string): WidgetLayoutCache | null => {
+  try {
+    const raw = localStorage.getItem(WIDGET_LAYOUT_CACHE_KEY(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as WidgetLayoutCache;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.updatedAt !== "number") return null;
+    if (!parsed.layout || typeof parsed.layout !== "object" || Array.isArray(parsed.layout)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeWidgetLayoutCache = (userId: string, layout: WidgetLayout, updatedAt = Date.now()) => {
+  try {
+    localStorage.setItem(WIDGET_LAYOUT_CACHE_KEY(userId), JSON.stringify({ updatedAt, layout }));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+const readUiPrefsCache = (userId: string): UiPrefs | null => {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_CACHE_KEY(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UiPrefs;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeUiPrefsCache = (userId: string, prefs: UiPrefs) => {
+  try {
+    localStorage.setItem(UI_PREFS_CACHE_KEY(userId), JSON.stringify(prefs));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+const readDeckCategoriesCache = (userId: string): Record<string, string[]> => {
+  try {
+    const raw = localStorage.getItem(DECK_CATEGORIES_KEY(userId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as Record<string, string[]>;
+  } catch { return {}; }
+};
+
+const writeDeckCategoriesCache = (userId: string, map: Record<string, string[]>) => {
+  try { localStorage.setItem(DECK_CATEGORIES_KEY(userId), JSON.stringify(map)); } catch { /* ignore */ }
+};
+
+const notify = () => {
+  if (currentUserId === GUEST_ID) {
+    try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+  }
+  listeners.forEach((l) => l());
+};
+
+const markCloudSyncJobs = (count: number) => {
+  const next = Math.max(0, count);
+  if (next === cloudSyncPendingJobs) return; // nothing changed, skip render
+  cloudSyncPendingJobs = next;
+  notify();
+};
+
+const clearLegacyBrowserCachesForUser = async (userId: string) => {
+  try {
+    localStorage.removeItem(WIDGET_LAYOUT_CACHE_KEY(userId));
+    localStorage.removeItem(UI_PREFS_CACHE_KEY(userId));
+    localStorage.removeItem(DECK_CATEGORIES_KEY(userId));
+    localStorage.removeItem(`category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`);
+    localStorage.removeItem(`category-prefetch-score:${userId}:v${CATEGORY_CACHE_VERSION}`);
+    localStorage.removeItem(GUEST_STATE_KEY);
+    await clearStudyStateCache(userId);
+  } catch {
+    // ignore reset errors
+  }
+};
+
+const scheduleStateCachePersist = () => {
+  const uid = currentUserId;
+  if (!uid || uid === GUEST_ID) return;
+  if (cachePersistTimer !== null) window.clearTimeout(cachePersistTimer);
+  cachePersistTimer = window.setTimeout(() => {
+    cachePersistTimer = null;
+    const snapshotUser = currentUserId;
+    if (!snapshotUser || snapshotUser === GUEST_ID) return;
+    // Yield to browser first so the save doesn't block the main thread.
+    void Promise.resolve().then(() => saveStudyStateCache(snapshotUser, memState));
+  }, 2000);
+};
+
+const getRecordTs = (item: unknown): number => {
+  if (!item || typeof item !== "object") return 0;
+  const rec = item as Record<string, unknown>;
+  const updatedAt = rec.updatedAt;
+  if (typeof updatedAt === "number" && Number.isFinite(updatedAt)) return updatedAt;
+  const createdAt = rec.createdAt;
+  if (typeof createdAt === "number" && Number.isFinite(createdAt)) return createdAt;
+  return 0;
+};
+
+const mergeByKeyLww = <T>(
+  localItems: T[] | undefined,
+  cloudItems: T[] | undefined,
+  keyOf: (item: T) => string,
+): T[] => {
+  const merged = new Map<string, T>();
+  for (const item of cloudItems ?? []) merged.set(keyOf(item), item);
+  for (const item of localItems ?? []) {
+    const key = keyOf(item);
+    const existing = merged.get(key);
+    if (!existing || getRecordTs(item) >= getRecordTs(existing)) {
+      merged.set(key, item);
+    }
+  }
+  return [...merged.values()];
+};
+
+const normalizeName = (v: string | null | undefined): string => (v ?? "").trim().toLowerCase();
+
+function dedupeBySemanticKeyLww<T>(
+  rows: T[] | undefined,
+  keyOf: (row: T) => string,
+): T[] {
+  const map = new Map<string, T>();
+  for (const row of rows ?? []) {
+    const key = keyOf(row);
+    const prev = map.get(key);
+    if (!prev || getRecordTs(row) >= getRecordTs(prev)) {
+      map.set(key, row);
+    }
+  }
+  return [...map.values()];
+}
+
+function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
+  const categories = dedupeBySemanticKeyLww(state.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
+  const decks = dedupeBySemanticKeyLww(state.decks, (d) => normalizeName(d.name));
+  const cards = dedupeBySemanticKeyLww(state.cards, (c) => `${c.deckId ?? "none"}::${normalizeName(c.question)}`);
+
+  const categoryIds = new Set(categories.map((c) => c.id));
+  const deckIds = new Set(decks.map((d) => d.id));
+  const cardIds = new Set(cards.map((c) => c.id));
+
+  return {
+    ...state,
+    categories,
+    decks,
+    cards,
+    cardDecks: (state.cardDecks ?? []).filter((l) => cardIds.has(l.cardId) && deckIds.has(l.deckId)),
+    deckCategories: Object.fromEntries(
+      Object.entries(state.deckCategories ?? {}).filter(([deckId]) => deckIds.has(deckId)),
+    ),
+    goals: state.goals ?? [],
+  };
+}
+
+// Tombstones: ids of cloud rows that were soft-deleted (deleted_at != null).
+// Populated by loadAll / loadDelta and consumed by merge functions to drop
+// the matching local rows. This is the multi-device delete-propagation path:
+// without it, device B (which still has X locally) would resurrect X on hydrate.
+let lastCloudCategoryTombstones: Set<string> = new Set();
+
+const mergeStudyStateLww = (local: StudyState, cloud: StudyState): StudyState => {
+  const localUiTs = typeof local.uiPrefs?.updatedAt === "number" ? local.uiPrefs.updatedAt : 0;
+  const cloudUiTs = typeof cloud.uiPrefs?.updatedAt === "number" ? cloud.uiPrefs.updatedAt : 0;
+
+  const tombstones = lastCloudCategoryTombstones;
+  const cloudCategoryIds = new Set((cloud.categories ?? []).map((c) => c.id));
+  const mergedCategories = [
+    ...(cloud.categories ?? []),
+    ...(local.categories ?? []).filter((c) => !cloudCategoryIds.has(c.id)),
+  ];
+  let filteredCategories: typeof mergedCategories;
+  if (tombstones.size) {
+    filteredCategories = mergedCategories.filter((c) => {
+      if (tombstones.has(c.id)) {
+        // Audit: category deleted locally due to cloud tombstone
+        if (currentUserId && currentUserId !== GUEST_ID) {
+          void appendCloudToIdbDeleteAuditEvent(currentUserId, "categories", c.id);
+        }
+        return false;
+      }
+      return true;
+    });
+  } else {
+    filteredCategories = mergedCategories;
+  }
+
+  return applyBidirectionalDedupeGuards({
+    ...cloud,
+    decks: mergeByKeyLww(local.decks, cloud.decks, (x) => x.id),
+    cards: mergeByKeyLww(local.cards, cloud.cards, (x) => x.id),
+    logs: mergeByKeyLww(local.logs, cloud.logs, (x) => x.id),
+    categories: filteredCategories,
+    goals: mergeByKeyLww(local.goals, cloud.goals, (x) => x.id),
+    dayNotes: mergeByKeyLww(local.dayNotes, cloud.dayNotes, (x) => x.date),
+    learningSessions: mergeByKeyLww(local.learningSessions, cloud.learningSessions, (x) => x.id),
+    shasReviews: mergeByKeyLww(local.shasReviews, cloud.shasReviews, (x) => x.id),
+    shasPlans: mergeByKeyLww(local.shasPlans, cloud.shasPlans, (x) => x.id),
+    cardDecks: mergeByKeyLww(local.cardDecks, cloud.cardDecks, (x) => `${x.cardId}::${x.deckId}`),
+    uiPrefs: localUiTs > cloudUiTs ? local.uiPrefs : cloud.uiPrefs,
+    // View settings are sourced from user_settings in cloud to avoid stale local flicker.
+    tabConfig: cloud.tabConfig ?? [],
+    sidebarConfig: cloud.sidebarConfig ?? [],
+    widgetLayout: cloud.widgetLayout,
+    generalPlans: mergeByKeyLww(local.generalPlans, cloud.generalPlans, (x) => x.id),
+    planReviews: mergeByKeyLww(local.planReviews, cloud.planReviews, (x) => x.id),
+    customCategoryTemplates: mergeByKeyLww(local.customCategoryTemplates, cloud.customCategoryTemplates, (x) => x.id),
+    quizPlans: mergeByKeyLww(local.quizPlans, cloud.quizPlans, (x) => x.id),
+    quizAttempts: mergeByKeyLww(local.quizAttempts, cloud.quizAttempts, (x) => x.id),
+    deckCategories: {
+      ...(cloud.deckCategories ?? {}),
+      ...(local.deckCategories ?? {}),
+    },
+  });
+};
+
+function setState(updater: (s: StudyState) => StudyState) {
+  memState = updater(memState);
+  notify();
+  scheduleStateCachePersist();
+}
+
+const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID
+  ? crypto.randomUUID()
+  : Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+// Local helper types
+type SrsData = { ease: number; interval: number; repetitions: number; dueAt: number; lastReviewedAt: number | null };
+type StatsData = { totalReviews: number; correct: number; incorrect: number };
+type AnyCard = Card & { answer?: string; options?: string[]; correctIndices?: number[]; correct?: boolean; explanation?: string };
+
+// Track in-flight category INSERT promises so that child rows can chain after their parent
+// (avoids "violates foreign key constraint categories_parent_id_fkey" race when creating
+// a nested path like חומש שמות / יתרו / פרק א in rapid succession).
+const categoryInsertPromises = new Map<string, Promise<unknown>>();
+
+const ROOT_PARENT_KEY = "__root__";
+const CATEGORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const CATEGORY_CACHE_VERSION = 1;
+const CATEGORY_PREFETCH_MIN_GAP_MS = 140;
+const CATEGORY_PREFETCH_MAX_IN_FLIGHT = 1;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+const parentCacheKey = (parentId: string | null) => parentId ?? ROOT_PARENT_KEY;
+let loadedCategoryParents = new Set<string>();
+let loadedCategoryParentsAt = new Map<string, number>();
+let loadingCategoryParents = new Set<string>();
+let categoryHasChildrenHint = new Map<string, boolean>();
+let categoryLoadDurationsMs: number[] = [];
+let categoryLastLoadMs: number | null = null;
+let categoryCacheHits = 0;
+let categoryCacheMisses = 0;
+let categoryPersistedHits = 0;
+let categoryStaleDropped = 0;
+let categoryPersistedCacheByParent = new Map<string, { ts: number; rows: CategoryChildRow[] }>();
+let categoryPrefetchScore = new Map<string, number>();
+let categoryRequestSeqByParent = new Map<string, number>();
+let categoryAbortControllersByParent = new Map<string, AbortController>();
+let categoryLocalStateUser: string | null = null;
+let categoryAbortedRequests = 0;
+let categoryPrefetchInFlight = 0;
+let categoryPrefetchLastStartMs = 0;
+let categoryPrefetchThrottled = 0;
+
+type CategoryChildRow = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  color: string | null;
+  created_at: string;
+  sort_order: number | null;
+  has_children: boolean;
+};
+
+const rpcClient = supabase as unknown as {
+  rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+};
+
+const isAbortError = (error: unknown) => {
+  return error instanceof DOMException && error.name === "AbortError";
+};
+
+const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_category_children`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ p_parent_id: parentId }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `get_category_children failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return (data ?? []) as CategoryChildRow[];
+};
+
+const CATEGORY_CHILDREN_CACHE_KEY = (userId: string) =>
+  `category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`;
+const CATEGORY_PREFETCH_SCORE_KEY = (userId: string) =>
+  `category-prefetch-score:${userId}:v${CATEGORY_CACHE_VERSION}`;
+
+const saveCategoryPersistedCache = (userId: string) => {
+  try {
+    const obj: Record<string, { ts: number; rows: CategoryChildRow[] }> = {};
+    categoryPersistedCacheByParent.forEach((value, key) => { obj[key] = value; });
+    localStorage.setItem(CATEGORY_CHILDREN_CACHE_KEY(userId), JSON.stringify(obj));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+const saveCategoryPrefetchScores = (userId: string) => {
+  try {
+    const obj: Record<string, number> = {};
+    categoryPrefetchScore.forEach((value, key) => { obj[key] = value; });
+    localStorage.setItem(CATEGORY_PREFETCH_SCORE_KEY(userId), JSON.stringify(obj));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+const ensureCategoryLocalState = (userId: string) => {
+  if (categoryLocalStateUser === userId) return;
+  categoryPersistedCacheByParent = new Map<string, { ts: number; rows: CategoryChildRow[] }>();
+  categoryPrefetchScore = new Map<string, number>();
+  categoryRequestSeqByParent = new Map<string, number>();
+  categoryAbortControllersByParent = new Map<string, AbortController>();
+  categoryLocalStateUser = userId;
+
+  try {
+    const rawCache = localStorage.getItem(CATEGORY_CHILDREN_CACHE_KEY(userId));
+    if (rawCache) {
+      const parsed = JSON.parse(rawCache) as Record<string, { ts: number; rows: CategoryChildRow[] }>;
+      for (const [key, value] of Object.entries(parsed ?? {})) {
+        if (!value || typeof value.ts !== "number" || !Array.isArray(value.rows)) continue;
+        categoryPersistedCacheByParent.set(key, value);
+      }
+    }
+  } catch {
+    // ignore parse/storage errors
+  }
+
+  try {
+    const rawScores = localStorage.getItem(CATEGORY_PREFETCH_SCORE_KEY(userId));
+    if (rawScores) {
+      const parsed = JSON.parse(rawScores) as Record<string, number>;
+      for (const [key, value] of Object.entries(parsed ?? {})) {
+        if (!Number.isFinite(value)) continue;
+        categoryPrefetchScore.set(key, value);
+      }
+    }
+  } catch {
+    // ignore parse/storage errors
+  }
+};
+
+const resetCategoryLazyState = () => {
+  loadedCategoryParents = new Set<string>();
+  loadedCategoryParentsAt = new Map<string, number>();
+  loadingCategoryParents = new Set<string>();
+  categoryHasChildrenHint = new Map<string, boolean>();
+  categoryLoadDurationsMs = [];
+  categoryLastLoadMs = null;
+  categoryCacheHits = 0;
+  categoryCacheMisses = 0;
+  categoryPersistedHits = 0;
+  categoryStaleDropped = 0;
+  categoryAbortedRequests = 0;
+  categoryPrefetchInFlight = 0;
+  categoryPrefetchLastStartMs = 0;
+  categoryPrefetchThrottled = 0;
+  categoryRequestSeqByParent = new Map<string, number>();
+  categoryAbortControllersByParent.forEach((c) => c.abort());
+  categoryAbortControllersByParent = new Map<string, AbortController>();
+  categoryPersistedCacheByParent = new Map<string, { ts: number; rows: CategoryChildRow[] }>();
+  categoryPrefetchScore = new Map<string, number>();
+  categoryLocalStateUser = null;
+};
+
+const percentile = (arr: number[], p: number): number => {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.max(0, Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[idx];
+};
+
+const pushCategoryLoadDuration = (ms: number) => {
+  categoryLastLoadMs = ms;
+  categoryLoadDurationsMs.push(ms);
+  if (categoryLoadDurationsMs.length > 200) {
+    categoryLoadDurationsMs = categoryLoadDurationsMs.slice(-200);
+  }
+};
+
+const getCategoryPerfSnapshot = () => ({
+  samples: categoryLoadDurationsMs.length,
+  lastMs: categoryLastLoadMs,
+  p50Ms: percentile(categoryLoadDurationsMs, 50),
+  p95Ms: percentile(categoryLoadDurationsMs, 95),
+  cacheHits: categoryCacheHits,
+  cacheMisses: categoryCacheMisses,
+  persistedHits: categoryPersistedHits,
+  staleDropped: categoryStaleDropped,
+  aborted: categoryAbortedRequests,
+  prefetchThrottled: categoryPrefetchThrottled,
+  inFlight: loadingCategoryParents.size,
+});
+
+const invalidateCategoryParentCache = (parentId: string | null) => {
+  const key = parentCacheKey(parentId);
+  loadedCategoryParents.delete(key);
+  loadedCategoryParentsAt.delete(key);
+  categoryPersistedCacheByParent.delete(key);
+  if (currentUserId && currentUserId !== GUEST_ID) saveCategoryPersistedCache(currentUserId);
+};
+
+const markCategoryParentLoadedNow = (parentId: string | null) => {
+  const key = parentCacheKey(parentId);
+  loadedCategoryParents.add(key);
+  loadedCategoryParentsAt.set(key, Date.now());
+};
+
+const isCategoryParentCacheFresh = (parentId: string | null) => {
+  const key = parentCacheKey(parentId);
+  if (!loadedCategoryParents.has(key)) return false;
+  const ts = loadedCategoryParentsAt.get(key) ?? 0;
+  return Date.now() - ts < CATEGORY_CACHE_TTL_MS;
+};
+
+const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
+  if (currentUserId === GUEST_ID) return; // guest mode – no network sync
+  if (!isSyncEnabled()) return; // user disabled cloud sync — IndexedDB only
+  Promise.resolve(p).then((r) => {
+    if (r?.error) {
+      const err = r.error as { message?: string; code?: string };
+      console.error(`[${label}]`, err);
+      if (currentUserId && currentUserId !== GUEST_ID) {
+        void enqueueFullSyncJob(currentUserId, `${label}: ${err.message ?? err.code ?? "unknown"}`)
+          .then(async () => {
+            const jobs = await listSyncJobs(currentUserId);
+            markCloudSyncJobs(jobs.length);
+          });
+      }
+      toast({
+        title: "שגיאה בשמירה לשרת",
+        description: `${label}: ${err.message ?? err.code ?? "שגיאה לא ידועה"}`,
+        variant: "destructive",
+      });
+    }
+  });
+};
+
+/**
+ * Pending Delete Queue — durable per-row tombstone propagation.
+ *
+ * 1. softDeleteCategory(rowId) is called for every category we want gone
+ * 2. enqueues into IndexedDB so the deletion survives crashes / offline
+ * 3. tries to push immediately; on failure, the row stays in the queue
+ * 4. flushPendingDeletes(userId) retries the queue on every hydrate
+ */
+const flushPendingDeletes = async (userId: string): Promise<{ success: number; failed: number; empty: boolean }> => {
+  if (!userId || userId === GUEST_ID) return { success: 0, failed: 0, empty: true };
+  const pending = await listPendingDeletes(userId);
+  if (pending.length === 0) {
+    await appendDeleteAuditEvent(userId, "categories", null, "noop", "pending-delete queue is empty");
+    return { success: 0, failed: 0, empty: true };
+  }
+  const nowIso = new Date().toISOString();
+  let success = 0;
+  let failed = 0;
+  for (const job of pending) {
+    try {
+      const { error } = await supabase
+        .from(job.table)
+        .update({ deleted_at: nowIso } as never)
+        .eq("id", job.rowId);
+      if (error) {
+        await bumpPendingDeleteAttempt(job.id, error.message ?? "unknown");
+        await appendDeleteAuditEvent(userId, job.table, job.rowId, "failed", error.message ?? "unknown");
+        failed += 1;
+      } else {
+        await removePendingDelete(job.id);
+        await appendDeleteAuditEvent(userId, job.table, job.rowId, "success", "deleted_at propagated to cloud");
+        success += 1;
+      }
+    } catch (err) {
+      await bumpPendingDeleteAttempt(job.id, String(err));
+      await appendDeleteAuditEvent(userId, job.table, job.rowId, "failed", String(err));
+      failed += 1;
+    }
+  }
+  return { success, failed, empty: false };
+};
+
+/**
+ * Soft-delete one or more rows with durable queueing.
+ *  1. Each id is recorded in the IndexedDB pending-deletes store immediately
+ *     (so a crash, refresh, or offline window cannot lose the deletion).
+ *  2. We try to push a single batched UPDATE to the cloud right away.
+ *  3. On success the corresponding queue rows are removed.
+ *  4. On failure the queue keeps the rows; flushPendingDeletes(userId) retries
+ *     on next hydrate (or whenever called).
+ *
+ * Callers are still responsible for updating in-memory state.
+ */
+const softDeleteWithQueue = (table: "categories", rowIds: string[]) => {
+  if (!currentUserId || currentUserId === GUEST_ID) return;
+  if (rowIds.length === 0) return;
+  const userId = currentUserId;
+  void (async () => {
+    // 1) Enqueue every id (durable)
+    await Promise.all(rowIds.map((rid) => enqueuePendingDelete(userId, table, rid)));
+    await Promise.all(rowIds.map((rid) => appendDeleteAuditEvent(userId, table, rid, "queued", "queued for tombstone propagation")));
+    // 2) Try to push immediately
+    const nowIso = new Date().toISOString();
+    try {
+      let success = true;
+      for (let i = 0; i < rowIds.length; i += 200) {
+        const chunk = rowIds.slice(i, i + 200);
+        const { error } = await supabase
+          .from(table)
+          .update({ deleted_at: nowIso } as never)
+          .in("id", chunk);
+        if (error) {
+          success = false;
+          console.warn(`[softDelete:${table}]`, error);
+          break;
+        }
+      }
+      if (success) {
+        // 3) Remove the just-confirmed jobs from the queue
+        const all = await listPendingDeletes(userId);
+        const idSet = new Set(rowIds);
+        const toRemove = all.filter((j) => j.table === table && idSet.has(j.rowId));
+        await Promise.all(toRemove.map((j) => removePendingDelete(j.id)));
+      }
+    } catch (err) {
+      console.warn(`[softDelete:${table}]`, err);
+    }
+  })();
+};
+
+// helpers for ISO date keys (yyyy-mm-dd)
+const isoDate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const todayIso = () => isoDate(new Date());
+const addDaysIso = (base: Date, days: number) => {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  d.setDate(d.getDate() + days);
+  return isoDate(d);
+};
+
+// ---- Mappers ----
+interface CardRow {
+  id: string; deck_id: string; type: string; question: string;
+  tags: unknown; created_at: string; srs: unknown; stats: unknown;
+  updated_at?: string | null;
+  answer: string | null; options: unknown; correct_indices: unknown;
+  correct_boolean: boolean | null; explanation: string | null;
+  masechta?: string | null; daf?: number | null; amud?: number | null;
+}
+const cardFromRow = (r: CardRow): Card => {
+  const base = {
+    id: r.id, deckId: r.deck_id ?? null, type: r.type, question: r.question,
+    tags: (r.tags as string[] | null) ?? [], createdAt: new Date(r.created_at).getTime(),
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
+    srs: (r.srs as SrsData | null) ?? defaultSrs(),
+    stats: (r.stats as StatsData | null) ?? { totalReviews: 0, correct: 0, incorrect: 0 },
+    masechta: r.masechta ?? null,
+    daf: r.daf ?? null,
+    amud: (r.amud as 1 | 2 | null | undefined) ?? null,
+  };
+  if (r.type === "flashcard") return { ...base, type: "flashcard", answer: r.answer ?? "" };
+  if (r.type === "multiple") return { ...base, type: "multiple", options: (r.options as string[] | null) ?? [], correctIndices: (r.correct_indices as number[] | null) ?? [] };
+  if (r.type === "boolean") return { ...base, type: "boolean", correct: !!r.correct_boolean, explanation: r.explanation ?? undefined };
+  return { ...base, type: "combo", answer: r.answer ?? undefined, options: (r.options as string[] | undefined), correctIndices: (r.correct_indices as number[] | undefined), explanation: r.explanation ?? undefined };
+};
+
+const cardToRow = (c: Card, userId: string) => {
+  const ac = c as AnyCard;
+  return {
+    id: c.id, user_id: userId, deck_id: c.deckId, type: c.type, question: c.question,
+    updated_at: new Date((c.updatedAt ?? Date.now())).toISOString(),
+    answer: ac.answer ?? null,
+    options: ac.options ?? null,
+    correct_indices: ac.correctIndices ?? null,
+    correct_boolean: c.type === "boolean" ? ac.correct : null,
+    explanation: ac.explanation ?? null,
+    tags: c.tags, srs: c.srs, stats: c.stats,
+    masechta: c.masechta ?? null,
+    daf: c.daf ?? null,
+    amud: c.amud ?? null,
+  };
+};
+
+const chunk = <T,>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+const runAndThrow = async (label: string, promise: PromiseLike<{ error: unknown }>) => {
+  const r = await Promise.resolve(promise);
+  if (r?.error) {
+    const err = r.error as { message?: string; code?: string };
+    throw new Error(`${label}: ${err.message ?? err.code ?? "unknown"}`);
+  }
+};
+
+const syncRowsById = async (
+  userId: string,
+  table: string,
+  rows: Array<Record<string, unknown>>,
+  _appendOnly = false,
+  _softDelete = false,
+) => {
+  // SAFETY POLICY (per user request): NEVER delete cloud rows based on diff with
+  // local state. The local state can be incomplete (pagination, partial load,
+  // worker not finished) and a diff-based delete has caused mass data loss in
+  // the past. Cloud deletions now happen ONLY via explicit user actions in the
+  // UI (e.g. delete-card, delete-deck buttons, "clear all" flow). This sync
+  // function is upsert-only.
+  void userId;
+  if (rows.length > 0) {
+    for (const batch of chunk(rows, 500)) {
+      await runAndThrow(`${table}.upsert`, supabase.from(table as never).upsert(batch as never, { onConflict: "id" }));
+    }
+  }
+};
+
+/** Sync card_decks: upsert-only. Cloud rows are deleted only by explicit UI actions. */
+const syncCardDecks = async (
+  userId: string,
+  rows: Array<{ card_id: string; deck_id: string; sort_order: number; updated_at: string }>,
+) => {
+  const withUser = rows.map((r) => ({ ...r, user_id: userId }));
+  for (const batch of chunk(withUser, 500)) {
+    await runAndThrow(
+      "card_decks.upsert",
+      supabase.from("card_decks").upsert(batch as never, { onConflict: "card_id,deck_id" }),
+    );
+  }
+};
+
+/** Sync day_notes: upsert-only. Cloud rows are deleted only by explicit UI actions. */
+const syncDayNotes = async (
+  userId: string,
+  rows: Array<{ date: string; text: string; updated_at: string }>,
+) => {
+  const withUser = rows.map((r) => ({ ...r, user_id: userId }));
+  for (const batch of chunk(withUser, 500)) {
+    await runAndThrow(
+      "day_notes.upsert",
+      supabase.from("day_notes").upsert(batch as never, { onConflict: "user_id,date" }),
+    );
+  }
+};
+
+const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
+  const settingsPayload = {
+    user_id: userId,
+    notifications_enabled: state.notificationsEnabled ?? false,
+    reminder_time: state.reminderTime ?? "20:00",
+    tab_config: {
+      home: state.tabConfig ?? [],
+      sidebar: state.sidebarConfig ?? [],
+    } as unknown as Json,
+    widget_layout: (state.widgetLayout ?? null) as unknown as Json,
+    ui_prefs: (state.uiPrefs ?? {}) as unknown as Json,
+    review_intervals: (state.reviewIntervals ?? [1, 3, 7, 14, 30]) as unknown as Json,
+    plan_review_intervals: (state.planReviewIntervals ?? [...PLAN_REVIEW_INTERVALS_DAYS]) as unknown as Json,
+    shas_plans: (state.shasPlans ?? []) as unknown as Json,
+    active_shas_plan_id: state.activeShasPlanId ?? null,
+    general_plans: (state.generalPlans ?? []) as unknown as Json,
+    general_plan_reviews: (state.planReviews ?? []) as unknown as Json,
+    custom_category_templates: (state.customCategoryTemplates ?? []) as unknown as Json,
+    quiz_plans: (state.quizPlans ?? []) as unknown as Json,
+    quiz_attempts: (state.quizAttempts ?? []) as unknown as Json,
+  };
+
+  await runAndThrow("user_settings.upsert", supabase.from("user_settings").upsert(settingsPayload, { onConflict: "user_id" }));
+
+  const decksRows = (state.decks ?? []).map((d) => ({
+    id: d.id,
+    user_id: userId,
+    name: d.name,
+    description: d.description ?? null,
+    color: d.color,
+    created_at: new Date(d.createdAt).toISOString(),
+    updated_at: new Date((d.updatedAt ?? d.createdAt)).toISOString(),
+    category_ids: d.categoryIds ?? [],
+    include_sub_categories: d.includeSubCategories !== false,
+  }));
+
+  const categoriesRows = (state.categories ?? []).map((c) => ({
+    id: c.id,
+    user_id: userId,
+    name: c.name,
+    parent_id: c.parentId,
+    color: c.color ?? null,
+    created_at: new Date(c.createdAt).toISOString(),
+    updated_at: new Date((c.updatedAt ?? c.createdAt)).toISOString(),
+    sort_order: c.sortOrder ?? 0,
+  }));
+
+  const cardsRows = (state.cards ?? []).map((c) => cardToRow(c, userId));
+
+  const goalsRows = (state.goals ?? []).map((g) => ({
+    id: g.id,
+    user_id: userId,
+    type: g.type,
+    title: g.title,
+    target: g.target,
+    window_days: g.windowDays ?? null,
+    deck_id: g.deckId ?? null,
+    active: g.active,
+    manual_done_dates: g.manualDoneDates ?? [],
+    created_at: new Date(g.createdAt).toISOString(),
+    updated_at: new Date((g.updatedAt ?? g.createdAt)).toISOString(),
+  }));
+
+  const sessionsRows = (state.learningSessions ?? []).map((s) => ({
+    id: s.id,
+    user_id: userId,
+    date: s.date,
+    subject: s.subject,
+    session_type: s.sessionType,
+    quality: s.quality,
+    duration_minutes: s.durationMinutes ?? null,
+    note: s.note ?? null,
+    next_review_date: s.nextReviewDate ?? null,
+    review_number: s.reviewNumber,
+    created_at: new Date(s.createdAt).toISOString(),
+    updated_at: new Date((s.updatedAt ?? s.createdAt)).toISOString(),
+  }));
+
+  const logsRows = (state.logs ?? []).map((l) => ({
+    id: l.id,
+    user_id: userId,
+    card_id: l.cardId,
+    deck_id: l.deckId,
+    at: new Date(l.at).toISOString(),
+    quality: l.quality,
+    correct: l.correct,
+    duration_ms: l.durationMs,
+    updated_at: new Date((l.updatedAt ?? l.at)).toISOString(),
+  }));
+
+  const shasReviewsRows = (state.shasReviews ?? []).map((r) => ({
+    id: r.id,
+    user_id: userId,
+    masechta: r.masechta,
+    daf: r.daf,
+    amud: r.amud,
+    half: r.half ?? null,
+    unit: r.unit,
+    review_index: r.reviewIndex,
+    due_date: r.dueDate,
+    done_at: r.doneAt,
+    is_initial: r.isInitial,
+    note: r.note ?? null,
+    updated_at: new Date((r.updatedAt ?? Date.now())).toISOString(),
+  }));
+
+  const dayNotesRows = (state.dayNotes ?? []).map((n) => ({
+    user_id: userId,
+    date: n.date,
+    text: n.text,
+    updated_at: new Date(n.updatedAt).toISOString(),
+  }));
+
+  const cardDeckRows = (state.cardDecks ?? []).map((x) => ({
+    user_id: userId,
+    card_id: x.cardId,
+    deck_id: x.deckId,
+    sort_order: x.sortOrder ?? 0,
+    updated_at: new Date((x.updatedAt ?? Date.now())).toISOString(),
+  }));
+
+  await syncRowsById(userId, "decks", decksRows);
+  // categories: use soft-delete so tombstones are preserved for multi-device sync.
+  await syncRowsById(userId, "categories", categoriesRows, false, true);
+  await syncRowsById(userId, "cards", cardsRows as unknown as Array<Record<string, unknown>>);
+  await syncRowsById(userId, "goals", goalsRows);
+  await syncRowsById(userId, "learning_sessions", sessionsRows);
+  await syncRowsById(userId, "review_logs", logsRows, true); // appendOnly: never delete old logs not in local 2000-entry window
+  await syncRowsById(userId, "shas_reviews", shasReviewsRows);
+
+  await syncDayNotes(userId, dayNotesRows);
+  await syncCardDecks(userId, cardDeckRows);
+};
+
+const runPendingCloudSync = async (userId: string) => {
+  if (cloudSyncInFlight) return;
+  if (!isSyncEnabled()) return; // skip while sync disabled — jobs stay queued in IndexedDB
+  const traceId = perf.createTraceId("sync");
+  const restoreTrace = perf.pushTrace(traceId);
+  const stopSync = perf.startTimer("store:runPendingCloudSync(total)", "store", traceId);
+  cloudSyncInFlight = true;
+  try {
+    const jobs = await listSyncJobs(userId);
+    perf.log("store:runPendingCloudSync.jobs_loaded", `${jobs.length} jobs`, "store", traceId);
+    markCloudSyncJobs(jobs.length);
+    let processedCount = 0;
+    for (const job of jobs) {
+      try {
+        if (job.kind === "full-sync") {
+          const stopJob = perf.startTimer(`store:syncJob:${job.kind}`, "store", traceId);
+          await flushLocalStateToCloud(userId, memState);
+          stopJob(`attempts=${job.attempts}`);
+        }
+        await removeSyncJob(job.id);
+        processedCount++;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "sync failed";
+        perf.error("store:syncJob.failed", message, traceId);
+        await markSyncJobFailure(job.id, message);
+      }
+    }
+    // Only re-query remaining jobs if we actually processed some (avoids redundant IDB read).
+    if (processedCount > 0) {
+      const remaining = await listSyncJobs(userId);
+      perf.log("store:runPendingCloudSync.jobs_remaining", `${remaining.length} jobs`, "store", traceId);
+      markCloudSyncJobs(remaining.length);
+    } else {
+      perf.log("store:runPendingCloudSync.jobs_remaining", "0 jobs (skipped re-query)", "store", traceId);
+      markCloudSyncJobs(0);
+    }
+  } finally {
+    cloudSyncInFlight = false;
+    stopSync();
+    restoreTrace();
+  }
+};
+
+/** Fetch all rows from a table that may exceed PostgREST's 1000-row default limit. */
+async function fetchAllPages<T>(
+  query: () => ReturnType<typeof supabase.from>,
+  pageSize = 1000,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await (query() as unknown as { range: (f: number, t: number) => Promise<{ data: T[] | null; error: unknown }> })
+      .range(from, from + pageSize - 1) as { data: T[] | null; error: unknown };
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) break; // last page
+    from += pageSize;
+  }
+  return rows;
+}
+
+/**
+ * Phase 2: silently loads unreviewed cards in the background after bootstrap.
+ * Bootstrap (Phase 1) only returns cards with srs.repetitions > 0 to keep the first
+ * load fast (~1-2s instead of 16s). This function fetches the rest using parallel
+ * requests (CONCURRENCY=4, PAGE=2000) to cut total time from ~15s → ~3-4s.
+ *
+ * IDB is saved after EVERY batch so that a mid-load refresh always resumes from
+ * the last saved batch rather than restarting from scratch.
+ */
+async function runPhase2CardBackfill(userId: string, notifyFn: () => void) {
+  if (phase2BackfillInFlight) return;
+  if (!phase2BackfillNeeded) return;
+  // Already have all cards in memory — skip (common on second visit after IDB hydration).
+  if (phase2TotalCount > 0 && memState.cards.length >= phase2TotalCount) return;
+  phase2BackfillInFlight = true;
+  phase2BackfillUserId = userId;
+  const PAGE = 3000;
+  const CONCURRENCY = 8;
+  let offset = 0;
+  try {
+    while (true) {
+      // Fire CONCURRENCY pages in parallel.
+      const batchOffsets = Array.from({ length: CONCURRENCY }, (_, i) => offset + i * PAGE);
+      const batchResults = await Promise.all(
+        batchOffsets.map((o) =>
+          rpcClient.rpc("get_unreviewed_cards_page", { p_offset: o, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>
+        )
+      );
+
+      let batchHadRows = false;
+      // Build existingIds once from current memState to dedup across all batch results.
+      const existingIds = new Set(memState.cards.map((c) => c.id));
+      const newCards: ReturnType<typeof cardFromRow>[] = [];
+
+      for (const result of batchResults) {
+        if (result.error) {
+          console.error("[phase2] get_unreviewed_cards_page error:", result.error);
+          continue;
+        }
+        const rows = Array.isArray(result.data) ? result.data : [];
+        if (rows.length > 0) batchHadRows = true;
+        const mapped = (rows as unknown as Parameters<typeof cardFromRow>[0][])
+          .map(cardFromRow)
+          .filter((c) => !existingIds.has(c.id));
+        // Track newly added ids to prevent cross-page dupes within the same batch.
+        mapped.forEach((c) => existingIds.add(c.id));
+        newCards.push(...mapped);
+      }
+
+      if (newCards.length > 0) {
+        memState = { ...memState, cards: [...memState.cards, ...newCards] };
+        // Notify React so the category counts update visibly after each batch.
+        startTransition(notifyFn);
+        // Save IDB incrementally: if the user refreshes mid-backfill the next visit
+        // resumes from the cards we've already loaded, not from scratch.
+        if (phase2BackfillUserId === userId) {
+          void saveStudyStateCache(userId, memState).catch((e) =>
+            console.warn("[phase2] incremental IDB save failed:", e)
+          );
+        }
+      }
+
+      // Stop when no page in the batch returned any rows.
+      if (!batchHadRows) break;
+      offset += CONCURRENCY * PAGE;
+    }
+    // Final React notification and authoritative IDB write.
+    startTransition(notifyFn);
+    if (phase2BackfillUserId === userId) {
+      await saveStudyStateCache(userId, memState);
+    }
+    phase2BackfillNeeded = false;
+  } catch (e) {
+    console.error("[phase2] card backfill failed:", e);
+  } finally {
+    phase2BackfillInFlight = false;
+  }
+}
+
+/**
+ * Smart delta sync — fetches ONLY rows changed since `sinceMs` (per-table
+ * `updated_at >= since`). Returns a Partial<StudyState> meant to be merged
+ * into memState via `mergeByKeyLww`. Deletions are NOT detected here; rely on
+ * the periodic full reload (FULL_REFRESH_TTL_MS) to reconcile them.
+ *
+ * Skips small singleton tables (user_settings, shas_plans) — those are cheap
+ * to refetch and live behind the full path. Logs are also skipped (we only
+ * keep the latest 2000 server-side; delta would need its own ordering).
+ */
+async function loadDelta(userId: string, sinceMs: number): Promise<{
+  cloudCardsTotalCount: number;
+  decks: Deck[];
+  cards: Card[];
+  categories: Category[];
+  goals: Goal[];
+  dayNotes: { date: string; text: string; updatedAt: number }[];
+  cardDecks: { cardId: string; deckId: string; sortOrder: number; updatedAt: number }[];
+  shasReviews: ShasReview[];
+  learningSessions: LearningSession[];
+}> {
+  void userId; // RLS handles user scoping
+  const sinceIso = new Date(Math.max(0, sinceMs - 1000)).toISOString(); // -1s safety overlap
+  type R<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
+
+  const [cardsCountR, decksR, cardsR, catsR, goalsR, notesR, cardDecksR, reviewsR, sessionsR] = await Promise.all([
+    timeOp("db:delta:cards_count", "db", () => supabase.from("cards").select("id", { count: "exact", head: true })),
+    timeOp("db:delta:decks", "db", () => supabase.from("decks").select("*").gte("updated_at", sinceIso)),
+    (async () => {
+      // Keep the page at 1000: the backend API caps ranged table reads at 1000 rows.
+      // Larger ranges can return only 1000 and look like the final page, leaving IDB stale.
+      const PAGE = 1000;
+      let from = 0;
+      const all: R<'cards'>[] = [];
+      while (true) {
+        const { data, error } = await supabase.from("cards").select("*").gte("updated_at", sinceIso).range(from, from + PAGE - 1);
+        if (error) return { data: all, error };
+        all.push(...((data ?? []) as R<'cards'>[]));
+        if ((data ?? []).length < PAGE) break;
+        from += PAGE;
+      }
+      return { data: all };
+    })(),
+    // Categories delta: include rows with deleted_at >= since so tombstones propagate.
+    // We split the active rows from the tombstones below.
+    timeOp("db:delta:categories", "db", () => supabase.from("categories").select("*").gte("updated_at", sinceIso)),
+    timeOp("db:delta:goals", "db", () => supabase.from("goals").select("*").gte("updated_at", sinceIso)),
+    timeOp("db:delta:day_notes", "db", () => supabase.from("day_notes").select("*").gte("updated_at", sinceIso)),
+    timeOp("db:delta:card_decks", "db", () => supabase.from("card_decks").select("*").gte("updated_at", sinceIso)),
+    timeOp("db:delta:shas_reviews", "db", () => supabase.from("shas_reviews").select("*").gte("updated_at", sinceIso)),
+    timeOp("db:delta:learning_sessions", "db", () => supabase.from("learning_sessions").select("*").gte("updated_at", sinceIso)),
+  ]);
+
+  if (cardsCountR.error) throw cardsCountR.error;
+  const cloudCardsTotalCount = typeof cardsCountR.count === "number" ? cardsCountR.count : 0;
+  rememberCloudCardsTotalCount(userId, cloudCardsTotalCount);
+
+  const decks: Deck[] = ((decksR.data ?? []) as R<'decks'>[]).map((d) => ({
+    id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
+    createdAt: new Date(d.created_at).getTime(),
+    updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
+    categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
+    includeSubCategories: d.include_sub_categories !== false,
+  }));
+  const cards: Card[] = ((cardsR.data ?? []) as R<'cards'>[]).map(cardFromRow);
+  const allCatRows = ((catsR.data ?? []) as Array<R<'categories'> & { deleted_at?: string | null }>);
+  // Capture tombstones from this delta so the merge can drop them from local state.
+  const deltaTombstones = new Set<string>();
+  for (const row of allCatRows) if (row.deleted_at) deltaTombstones.add(row.id);
+  if (deltaTombstones.size) {
+    const next = new Set(lastCloudCategoryTombstones);
+    for (const id of deltaTombstones) next.add(id);
+    lastCloudCategoryTombstones = next;
+  }
+  const categories: Category[] = allCatRows
+    .filter((c) => !c.deleted_at)
+    .map((c) => ({
+      id: c.id, name: c.name, parentId: c.parent_id, color: c.color ?? undefined,
+      createdAt: new Date(c.created_at).getTime(), sortOrder: c.sort_order ?? 0,
+      updatedAt: c.updated_at ? new Date(c.updated_at).getTime() : new Date(c.created_at).getTime(),
+    }));
+  const goals: Goal[] = ((goalsR.data ?? []) as R<'goals'>[]).map((g) => ({
+    id: g.id, type: g.type as Goal['type'], title: g.title, target: Number(g.target),
+    windowDays: g.window_days ?? undefined, deckId: g.deck_id ?? null,
+    active: g.active, createdAt: new Date(g.created_at).getTime(),
+    updatedAt: g.updated_at ? new Date(g.updated_at).getTime() : new Date(g.created_at).getTime(),
+    manualDoneDates: (g.manual_done_dates as string[] | null) ?? [],
+  }));
+  const dayNotes = ((notesR.data ?? []) as R<'day_notes'>[]).map((n) => ({
+    date: n.date, text: n.text, updatedAt: new Date(n.updated_at).getTime(),
+  }));
+  const cardDecks = ((cardDecksR.data ?? []) as R<'card_decks'>[]).map((r) => ({
+    cardId: r.card_id, deckId: r.deck_id, sortOrder: r.sort_order ?? 0,
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : 0,
+  }));
+  const shasReviews: ShasReview[] = ((reviewsR.data ?? []) as R<'shas_reviews'>[]).map((r) => ({
+    id: r.id, masechta: r.masechta, daf: r.daf,
+    amud: (r.amud === 2 ? 2 : 1) as 1 | 2,
+    half: r.half == null ? null : ((r.half === 2 ? 2 : 1) as 1 | 2),
+    unit: (r.unit as ShasReview["unit"]) ?? "daf",
+    reviewIndex: r.review_index ?? 1,
+    dueDate: r.due_date,
+    doneAt: r.done_at ?? null,
+    isInitial: !!r.is_initial,
+    note: r.note ?? null,
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : 0,
+  }));
+  const learningSessions: LearningSession[] = ((sessionsR.data ?? []) as R<'learning_sessions'>[]).map((r) => ({
+    id: r.id, date: r.date, subject: r.subject,
+    sessionType: r.session_type as "initial" | "review",
+    quality: r.quality as 1 | 2 | 3 | 4 | 5,
+    durationMinutes: r.duration_minutes ?? undefined,
+    note: r.note ?? undefined,
+    nextReviewDate: r.next_review_date ?? null,
+    reviewNumber: r.review_number ?? 1,
+    createdAt: new Date(r.created_at).getTime(),
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
+  }));
+
+  return { cloudCardsTotalCount, decks, cards, categories, goals, dayNotes, cardDecks, shasReviews, learningSessions };
+}
+
+const applyDeltaToState = (base: StudyState, delta: Awaited<ReturnType<typeof loadDelta>>): StudyState => {
+  // No changes anywhere → return base reference unchanged so React skips render.
+  const totalChanged = delta.decks.length + delta.cards.length + delta.categories.length
+    + delta.goals.length + delta.dayNotes.length + delta.cardDecks.length
+    + delta.shasReviews.length + delta.learningSessions.length;
+  if (totalChanged === 0) return base;
+  const tombstones = lastCloudCategoryTombstones;
+  const mergedCats = mergeByKeyLww(base.categories, delta.categories, (x) => x.id);
+  let filteredCats: typeof mergedCats;
+  if (tombstones.size) {
+    filteredCats = mergedCats.filter((c) => {
+      if (tombstones.has(c.id)) {
+        // Audit: category deleted locally due to cloud tombstone (delta)
+        if (currentUserId && currentUserId !== GUEST_ID) {
+          void appendCloudToIdbDeleteAuditEvent(currentUserId, "categories", c.id);
+        }
+        return false;
+      }
+      return true;
+    });
+  } else {
+    filteredCats = mergedCats;
+  }
+  return applyBidirectionalDedupeGuards({
+    ...base,
+    decks: mergeByKeyLww(base.decks, delta.decks, (x) => x.id),
+    cards: mergeByKeyLww(base.cards, delta.cards, (x) => x.id),
+    categories: filteredCats,
+    goals: mergeByKeyLww(base.goals, delta.goals, (x) => x.id),
+    dayNotes: mergeByKeyLww(base.dayNotes, delta.dayNotes, (x) => x.date),
+    cardDecks: mergeByKeyLww(base.cardDecks, delta.cardDecks, (x) => `${x.cardId}::${x.deckId}`),
+    shasReviews: mergeByKeyLww(base.shasReviews, delta.shasReviews, (x) => x.id),
+    learningSessions: mergeByKeyLww(base.learningSessions, delta.learningSessions, (x) => x.id),
+  });
+};
+
+async function loadAll(userId: string): Promise<StudyState> {
+  const traceId = perf.createTraceId("load");
+  const restoreTrace = perf.pushTrace(traceId);
+  const stopTotal = perf.startTimer("store:loadAll (total)", "store", traceId);
+  try {
+  const rowCount = <T extends { data?: unknown[] | null }>(r: T): string | undefined =>
+    r.data != null ? `${r.data.length} rows` : "no data";
+
+  type R<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
+  let decksR: { data?: R<'decks'>[] | null };
+  let cardsR: { data?: R<'cards'>[] | null };
+  let logsR: { data?: R<'review_logs'>[] | null };
+  let goalsR: { data?: R<'goals'>[] | null };
+  let shasR: { data?: R<'shas_plans'> | null };
+  let notesR: { data?: R<'day_notes'>[] | null };
+  let settingsR: { data?: R<'user_settings'> | null };
+  let cardDecksR: { data?: R<'card_decks'>[] | null };
+  let reviewsR: { data?: R<'shas_reviews'>[] | null };
+  let sessionsR: { data?: R<'learning_sessions'>[] | null };
+  let catsData: { data?: R<'categories'>[] | null };
+
+  const bootstrap = await timeOp(
+    "db:bootstrap_snapshot", "db",
+    () => rpcClient.rpc("get_bootstrap_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+  );
+
+  if (!bootstrap.error && bootstrap.data && typeof bootstrap.data === "object") {
+    const payload = bootstrap.data as Record<string, unknown>;
+    decksR = { data: Array.isArray(payload.decks) ? (payload.decks as R<'decks'>[]) : [] };
+    cardsR = { data: Array.isArray(payload.cards) ? (payload.cards as R<'cards'>[]) : [] };
+    // Detect if Phase 2 backfill is needed (bootstrap only returned reviewed cards).
+    const cardsTotalCount = typeof payload.cards_total_count === 'number' ? payload.cards_total_count : 0;
+    const cardsLoadedCount = Array.isArray(payload.cards) ? payload.cards.length : 0;
+    if (cardsTotalCount > 0) phase2TotalCount = cardsTotalCount;
+    rememberCloudCardsTotalCount(userId, cardsTotalCount);
+    if (cardsTotalCount > cardsLoadedCount) {
+      phase2BackfillNeeded = true;
+    }
+    logsR = { data: Array.isArray(payload.review_logs) ? (payload.review_logs as R<'review_logs'>[]) : [] };
+    goalsR = { data: Array.isArray(payload.goals) ? (payload.goals as R<'goals'>[]) : [] };
+    shasR = { data: (payload.shas_legacy && typeof payload.shas_legacy === "object") ? (payload.shas_legacy as R<'shas_plans'>) : null };
+    notesR = { data: Array.isArray(payload.day_notes) ? (payload.day_notes as R<'day_notes'>[]) : [] };
+    settingsR = { data: (payload.user_settings && typeof payload.user_settings === "object") ? (payload.user_settings as R<'user_settings'>) : null };
+    cardDecksR = { data: Array.isArray(payload.card_decks) ? (payload.card_decks as R<'card_decks'>[]) : [] };
+    reviewsR = { data: Array.isArray(payload.shas_reviews) ? (payload.shas_reviews as R<'shas_reviews'>[]) : [] };
+    sessionsR = { data: Array.isArray(payload.learning_sessions) ? (payload.learning_sessions as R<'learning_sessions'>[]) : [] };
+    catsData = { data: Array.isArray(payload.categories_roots) ? (payload.categories_roots as R<'categories'>[]) : [] };
+    // Capture category tombstones returned by the RPC (deleted_at != null on the cloud).
+    // Used by mergeStudyStateLww to drop the matching local rows on next merge.
+    const tombArr = Array.isArray(payload.categories_tombstones) ? payload.categories_tombstones : [];
+    const tombSet = new Set<string>();
+    for (const t of tombArr) {
+      if (t && typeof t === "object" && typeof (t as { id?: unknown }).id === "string") {
+        tombSet.add((t as { id: string }).id);
+      }
+    }
+    lastCloudCategoryTombstones = tombSet;
+  } else {
+    [decksR, cardsR, logsR, goalsR, shasR, notesR, settingsR, cardDecksR, reviewsR, sessionsR, catsData] = await Promise.all([
+      timeOp("db:decks", "db", () => supabase.from("decks").select("*").order("created_at"), rowCount),
+      // Paginated card fetch — load ALL cards regardless of count
+      (async () => {
+        const PAGE = 1000;
+        let from = 0;
+        const allCards: R<'cards'>[] = [];
+        while (true) {
+          const { data, error } = await supabase.from("cards").select("*").order("created_at").range(from, from + PAGE - 1);
+          if (error) return { data: allCards, error };
+          allCards.push(...((data ?? []) as R<'cards'>[]));
+          if ((data ?? []).length < PAGE) break;
+          from += PAGE;
+        }
+        return { data: allCards };
+      })(),
+      timeOp("db:review_logs", "db", () => supabase.from("review_logs").select("*").order("at", { ascending: false }).limit(2000), rowCount),
+      timeOp("db:goals", "db", () => supabase.from("goals").select("*"), rowCount),
+      timeOp("db:shas_plans", "db", () => supabase.from("shas_plans").select("*").maybeSingle()),
+      timeOp("db:day_notes", "db", () => supabase.from("day_notes").select("*"), rowCount),
+      timeOp("db:user_settings", "db", () => supabase.from("user_settings").select("*").maybeSingle()),
+      timeOp("db:card_decks", "db", () => supabase.from("card_decks").select("*").order("sort_order"), rowCount),
+      timeOp("db:shas_reviews", "db", () => supabase.from("shas_reviews").select("*").order("due_date"), rowCount),
+      timeOp("db:learning_sessions", "db", () => supabase.from("learning_sessions").select("*").order("created_at", { ascending: false }), rowCount),
+      // Fetch ALL categories — tombstones (deleted_at != null) are captured separately
+      // and stripped from the active list below.
+      timeOp(
+        "db:categories (all)", "db",
+        () => supabase.from("categories").select("*").order("sort_order"),
+        rowCount,
+      ),
+    ]);
+    // Fallback path: split active rows from tombstones.
+    const allRows = (catsData.data ?? []) as Array<R<'categories'> & { deleted_at?: string | null }>;
+    const tombSet = new Set<string>();
+    for (const r of allRows) if (r.deleted_at) tombSet.add(r.id);
+    lastCloudCategoryTombstones = tombSet;
+    catsData = { data: allRows.filter((r) => !r.deleted_at) };
+    rememberCloudCardsTotalCount(userId, cardsR.data?.length ?? 0);
+  }
+  const decks: Deck[] = (decksR.data ?? []).map((d) => ({
+      id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
+      createdAt: new Date(d.created_at).getTime(),
+      updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
+      categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
+      includeSubCategories: d.include_sub_categories !== false,
+  }));
+  const cards: Card[] = (cardsR.data ?? []).map(cardFromRow);
+  const logs: ReviewLog[] = (logsR.data ?? []).map((l): ReviewLog => ({
+    id: l.id, cardId: l.card_id, deckId: l.deck_id, at: new Date(l.at).getTime(),
+    quality: l.quality as ReviewLog["quality"], correct: l.correct, durationMs: l.duration_ms,
+    updatedAt: l.updated_at ? new Date(l.updated_at).getTime() : new Date(l.at).getTime(),
+  }));
+  const categories: Category[] = (catsData.data ?? []).map((c) => ({
+    id: c.id, name: c.name, parentId: c.parent_id, color: c.color ?? undefined,
+    createdAt: new Date(c.created_at).getTime(), sortOrder: c.sort_order ?? 0,
+    updatedAt: c.updated_at ? new Date(c.updated_at).getTime() : new Date(c.created_at).getTime(),
+  }));
+
+  resetCategoryLazyState();
+  // Mark every parent level as loaded since bootstrap now returns all categories.
+  // This prevents redundant loadCategoryChildren network calls as the user navigates.
+  const allParentIds = new Set<string | null>([null]);
+  for (const cat of categories) allParentIds.add(cat.parentId ?? null);
+  for (const pid of allParentIds) markCategoryParentLoadedNow(pid);
+  const goals: Goal[] = (goalsR.data ?? []).map((g) => ({
+    id: g.id, type: g.type as Goal['type'], title: g.title, target: Number(g.target),
+    windowDays: g.window_days ?? undefined, deckId: g.deck_id ?? null,
+    active: g.active, createdAt: new Date(g.created_at).getTime(),
+    updatedAt: g.updated_at ? new Date(g.updated_at).getTime() : new Date(g.created_at).getTime(),
+    manualDoneDates: (g.manual_done_dates as string[] | null) ?? [],
+  }));
+  const sd = shasR.data;
+  const legacyShasPlan: ShasPlan | null = sd ? {
+    id: sd.id, selectedMasechtos: (sd.selected_masechtos as string[]) ?? [],
+    pagesPerDay: sd.pages_per_day, startDate: new Date(sd.start_date).getTime(),
+    unit: (sd.unit as ShasPlan["unit"]) ?? "daf",
+    currentMasechta: sd.current_masechta, currentDaf: sd.current_daf,
+    currentAmud: (sd.current_amud === 2 ? 2 : 1),
+    currentHalf: (sd.current_half === 2 ? 2 : 1),
+    completed: (sd.completed as ShasPlan["completed"]) ?? [],
+  } : null;
+  const settingsObj = settingsR.data as { shas_plans?: unknown; active_shas_plan_id?: unknown } | null;
+  const shasPlansFromSettings: ShasPlan[] = Array.isArray(settingsObj?.shas_plans)
+    ? (settingsObj?.shas_plans as ShasPlan[])
+    : [];
+  const shasPlans = shasPlansFromSettings.length
+    ? shasPlansFromSettings
+    : (legacyShasPlan ? [legacyShasPlan] : []);
+  const activeShasPlanIdFromSettings = typeof settingsObj?.active_shas_plan_id === "string"
+    ? settingsObj.active_shas_plan_id
+    : null;
+  const activeShasPlanId = (activeShasPlanIdFromSettings && shasPlans.some((p) => p.id === activeShasPlanIdFromSettings))
+    ? activeShasPlanIdFromSettings
+    : (shasPlans[0]?.id ?? null);
+  const shasPlan = activeShasPlanId
+    ? (shasPlans.find((p) => p.id === activeShasPlanId) ?? null)
+    : null;
+  const dayNotes = (notesR.data ?? []).map((n) => ({
+    date: n.date, text: n.text, updatedAt: new Date(n.updated_at).getTime(),
+  }));
+  const cardDecks = (cardDecksR.data ?? []).map((r) => ({
+    cardId: r.card_id, deckId: r.deck_id, sortOrder: r.sort_order ?? 0,
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : 0,
+  }));
+  const shasReviews: ShasReview[] = (reviewsR.data ?? []).map((r) => ({
+    id: r.id, masechta: r.masechta, daf: r.daf,
+    amud: (r.amud === 2 ? 2 : 1) as 1 | 2,
+    half: r.half == null ? null : ((r.half === 2 ? 2 : 1) as 1 | 2),
+    unit: (r.unit as ShasReview["unit"]) ?? "daf",
+    reviewIndex: r.review_index ?? 1,
+    dueDate: r.due_date,
+    doneAt: r.done_at ?? null,
+    isInitial: !!r.is_initial,
+    note: r.note ?? null,
+    updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : 0,
+  }));
+  const intervalsRaw = settingsR.data?.review_intervals;
+  const reviewIntervals: number[] = Array.isArray(intervalsRaw) && intervalsRaw.length
+    ? intervalsRaw.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+    : [1, 3, 7, 14, 30];
+
+  const planIntervalsRaw = (settingsR.data as { plan_review_intervals?: unknown })?.plan_review_intervals;
+  const planReviewIntervals: number[] = Array.isArray(planIntervalsRaw) && planIntervalsRaw.length
+    ? (planIntervalsRaw as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+    : [...PLAN_REVIEW_INTERVALS_DAYS];
+
+  const cloudWidgetLayout = (() => {
+    const raw = settingsR.data?.widget_layout;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as unknown as WidgetLayout;
+    return undefined;
+  })();
+  // Prefer the dedicated widget_layout_updated_at timestamp when present (it tracks
+  // ONLY widget layout changes). Fallback to the row's updated_at for old rows.
+  const cloudWidgetLayoutUpdatedAt = (() => {
+    const raw = (settingsR.data as { widget_layout_updated_at?: string | null } | null)?.widget_layout_updated_at;
+    if (raw) {
+      const t = new Date(raw).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    return settingsR.data?.updated_at ? new Date(settingsR.data.updated_at).getTime() : 0;
+  })();
+  const localWidgetLayoutCache = readWidgetLayoutCache(userId);
+  const effectiveWidgetLayout = (() => {
+    // If cloud has nothing saved, always trust the local cache (avoid wiping user prefs).
+    if (!cloudWidgetLayout) return localWidgetLayoutCache?.layout;
+    if (!localWidgetLayoutCache?.layout) return cloudWidgetLayout;
+    return localWidgetLayoutCache.updatedAt >= cloudWidgetLayoutUpdatedAt
+      ? localWidgetLayoutCache.layout
+      : cloudWidgetLayout;
+  })();
+
+  const tabConfigBundle = (() => {
+    const raw = settingsR.data?.tab_config;
+    if (Array.isArray(raw)) {
+      return { home: raw as unknown as TabConfig[], sidebar: [] as SidebarConfig[] };
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const obj = raw as { home?: unknown; sidebar?: unknown };
+      return {
+        home: Array.isArray(obj.home) ? (obj.home as unknown as TabConfig[]) : [],
+        sidebar: Array.isArray(obj.sidebar) ? (obj.sidebar as unknown as SidebarConfig[]) : [],
+      };
+    }
+    return { home: [] as TabConfig[], sidebar: [] as SidebarConfig[] };
+  })();
+
+  return {
+    decks, cards, logs, categories, goals, shasPlan, dayNotes, cardDecks,
+    shasPlans, activeShasPlanId,
+    shasReviews, reviewIntervals, planReviewIntervals,
+    notificationsEnabled: settingsR.data?.notifications_enabled ?? false,
+    reminderTime: settingsR.data?.reminder_time ?? "20:00",
+    learningSessions: (sessionsR.data ?? []).map((r): LearningSession => ({
+      id: r.id,
+      date: r.date,
+      subject: r.subject,
+      sessionType: r.session_type as "initial" | "review",
+      quality: r.quality as 1 | 2 | 3 | 4 | 5,
+      durationMinutes: r.duration_minutes ?? undefined,
+      note: r.note ?? undefined,
+      nextReviewDate: r.next_review_date ?? null,
+      reviewNumber: r.review_number ?? 1,
+      createdAt: new Date(r.created_at).getTime(),
+      updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
+    })),
+    tabConfig: tabConfigBundle.home,
+    sidebarConfig: tabConfigBundle.sidebar,
+    widgetLayout: effectiveWidgetLayout,
+    uiPrefs: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.ui_prefs;
+      const cloud: UiPrefs = (raw && typeof raw === "object" && !Array.isArray(raw)) ? (raw as UiPrefs) : {};
+      const local = readUiPrefsCache(userId);
+      if (!local) return cloud;
+      const cloudTs = typeof cloud.updatedAt === "number" ? cloud.updatedAt : 0;
+      const localTs = typeof local.updatedAt === "number" ? local.updatedAt : 0;
+      return localTs > cloudTs ? local : cloud;
+    })(),
+    generalPlans: (() => {
+      const raw = settingsR.data?.general_plans;
+      if (Array.isArray(raw)) return raw as unknown as GeneralStudyPlan[];
+      return [];
+    })(),
+    planReviews: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.general_plan_reviews;
+      if (Array.isArray(raw)) return raw as PlanReview[];
+      return [];
+    })(),
+    customCategoryTemplates: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.custom_category_templates;
+      if (Array.isArray(raw)) return raw as CustomCategoryTemplate[];
+      return [];
+    })(),
+    quizPlans: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.quiz_plans;
+      if (Array.isArray(raw)) return raw as QuizPlan[];
+      return [];
+    })(),
+    quizAttempts: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.quiz_attempts;
+      if (Array.isArray(raw)) return raw as QuizAttempt[];
+      return [];
+    })(),
+    deckCategories: readDeckCategoriesCache(userId),
+  };
+  } finally {
+    stopTotal();
+    restoreTrace();
+  }
+}
+
+export function useStudy() {
+  const { user } = useAuth();
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    const fn = () => force((n) => n + 1);
+    listeners.add(fn);
+    // If already hydrated when this component mounts, trigger an immediate render
+    if (isHydrated) force((n) => n + 1);
+    return () => { listeners.delete(fn); };
+  }, []);
+
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    let cancelled = false;
+    currentUserId = uid;
+    if (!uid) {
+      memState = emptyState();
+      isHydrated = true;
+      resetCategoryLazyState();
+      loadedFor = null;
+      notify();
+      return;
+    }
+    if (loadedFor === uid) return;
+    loadedFor = uid;
+    if (uid === GUEST_ID) {
+      const saved = localStorage.getItem(GUEST_STATE_KEY);
+      if (saved) {
+        try { memState = JSON.parse(saved) as StudyState; } catch { memState = emptyState(); }
+      } else {
+        memState = emptyState();
+      }
+      // Guest mode loads local state eagerly.
+      markCategoryParentLoadedNow(null);
+      for (const cat of memState.categories ?? []) {
+        if (!cat.parentId) continue;
+        categoryHasChildrenHint.set(cat.parentId, true);
+      }
+      isHydrated = true;
+      notify();
+      return;
+    }
+    ensureCategoryLocalState(uid);
+    isHydrated = false;
+    notify();
+    void (async () => {
+      const hydrateTraceId = perf.createTraceId("hydrate");
+      const restoreHydrateTrace = perf.pushTrace(hydrateTraceId);
+      const stopHydrateTotal = perf.startTimer("store:hydrate(total)", "store", hydrateTraceId);
+
+      try {
+        perf.log("store:hydrate.start", `user=${uid}`, "store", hydrateTraceId);
+
+        const needsHardReset = localStorage.getItem(BROWSER_CACHE_RESET_KEY) !== "1";
+        if (needsHardReset) {
+          const stopReset = perf.startTimer("store:hydrate.hard_reset", "store", hydrateTraceId);
+          await clearLegacyBrowserCachesForUser(uid);
+          stopReset();
+          localStorage.setItem(BROWSER_CACHE_RESET_KEY, "1");
+        }
+
+        // Run listSyncJobs and loadStudyStateCache in parallel to avoid double IDB open cost.
+        // Re-use an in-flight promise when StrictMode cancels & remounts to avoid double IDB reads.
+        const stopJobs = perf.startTimer("store:hydrate.list_sync_jobs", "store", hydrateTraceId);
+        const stopCacheLoad = perf.startTimer("store:hydrate.idb_load", "store", hydrateTraceId);
+        if (idbHydrateForUser !== uid) {
+          idbHydrateForUser = uid;
+          idbHydratePromise = Promise.all([
+            listSyncJobs(uid),
+            needsHardReset ? Promise.resolve(null) : loadStudyStateCache(uid),
+          ]);
+        }
+        const [existingJobs, cachedState] = await idbHydratePromise!;
+        stopJobs(`${existingJobs.length} jobs`);
+        stopCacheLoad(cachedState ? "hit" : "miss");
+        if (!cancelled) markCloudSyncJobs(existingJobs.length);
+        if (cancelled) return;
+
+        let hasCache = false;
+        if (!needsHardReset && cachedState) {
+          memState = cachedState;
+          // Overlay localStorage widgetLayout cache — it's written synchronously on every
+          // setWidgetLayout call, so it's always as fresh or fresher than IDB (which has a
+          // 2-second debounce). Without this, a refresh within 2 seconds of a layout change
+          // reverts the layout because the IDB debounce timer was cancelled by the reload.
+          const localWidgetCache = readWidgetLayoutCache(uid);
+          if (localWidgetCache?.layout) {
+            memState = { ...memState, widgetLayout: localWidgetCache.layout };
+          }
+          if (typeof cachedState.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(cachedState.uiPrefs.syncEnabled);
+          isHydrated = true;
+          hasCache = true;
+          performance.mark("pashash:notify:idb-cache-applied");
+          // Defer React re-render to a new task; wrap in startTransition so React
+          // can yield between component renders (concurrent mode).
+          setTimeout(() => {
+            startTransition(() => {
+              notify();
+            });
+            performance.measure("pashash:react-render:idb-cache", "pashash:notify:idb-cache-applied");
+          }, 0);
+          perf.log("store:hydrate.cache_applied", "indexeddb snapshot applied", "store", hydrateTraceId);
+        }
+
+        if (hasCache) {
+          const lastCloudAt = Number(localStorage.getItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid)) ?? "0");
+          const shouldRefreshCloud = !Number.isFinite(lastCloudAt)
+            || (Date.now() - lastCloudAt) > CLOUD_REFRESH_INTERVAL_MS;
+          const knownCloudCardsTotal = getLastKnownCloudCardsCount(uid);
+          const shouldCheckCardGap = knownCloudCardsTotal <= 0
+            || (cachedState.cards.length !== knownCloudCardsTotal);
+
+          // Skip bg cloud refresh when there are pending sync jobs — running both
+          // concurrently risks pulling back deleted items from cloud into memState
+          // before the sync job can push the deletion.
+          if ((shouldRefreshCloud || shouldCheckCardGap) && existingJobs.length === 0) {
+            window.setTimeout(() => {
+              if (cancelled) return;
+              if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+              runWhenBrowserIdle(() => {
+                void (async () => {
+              const bgTraceId = perf.createTraceId("hydrate-bg");
+              const restoreBgTrace = perf.pushTrace(bgTraceId);
+              const stopBg = perf.startTimer("store:hydrate.bg_cloud_refresh", "store", bgTraceId);
+              try {
+                // Smart cache strategy:
+                //   - cache age < FULL_REFRESH_TTL_MS  → DELTA sync (only changed rows)
+                //   - cache age ≥ FULL_REFRESH_TTL_MS  → FULL reload (catches deletions)
+                const lastFullSyncAt = Number(localStorage.getItem(LAST_FULL_SYNC_AT_KEY(uid)) ?? "0");
+                const lastDeltaAnchorAt = Number(localStorage.getItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid)) ?? "0");
+                const fullAge = Number.isFinite(lastFullSyncAt) && lastFullSyncAt > 0
+                  ? Date.now() - lastFullSyncAt
+                  : Number.POSITIVE_INFINITY;
+                const useDelta = fullAge < getFullRefreshTtlMs() && lastDeltaAnchorAt > 0;
+
+                if (useDelta) {
+                  const stopDelta = perf.startTimer("store:hydrate.delta_sync", "store", bgTraceId);
+                  const delta = await loadDelta(uid, lastDeltaAnchorAt);
+                  stopDelta();
+                  if (cancelled) return;
+                  const mergedDelta = applyDeltaToState(memState, delta);
+                  const cloudCardGap = delta.cloudCardsTotalCount > 0 && mergedDelta.cards.length !== delta.cloudCardsTotalCount;
+                  if (cloudCardGap) {
+                    phase2TotalCount = delta.cloudCardsTotalCount;
+                    phase2BackfillNeeded = mergedDelta.cards.length < delta.cloudCardsTotalCount;
+                    const cloudBg = await loadAll(uid);
+                    if (cancelled) return;
+                    const mergedFull = mergeStudyStateLww(mergedDelta, cloudBg);
+                    memState = mergedFull;
+                    if (typeof mergedFull.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedFull.uiPrefs.syncEnabled);
+                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                    performance.mark("pashash:notify:bg-gap-refresh");
+                    startTransition(notify);
+                    performance.measure("pashash:react-render:bg-gap-refresh", "pashash:notify:bg-gap-refresh");
+                    window.setTimeout(() => {
+                      void saveStudyStateCache(uid, mergedFull);
+                    }, 0);
+                    const now = Date.now();
+                    localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(now));
+                    localStorage.setItem(LAST_FULL_SYNC_AT_KEY(uid), String(now));
+                    void runPhase2CardBackfill(uid, notify);
+                    return;
+                  }
+                  const changed = mergedDelta !== memState;
+                  memState = mergedDelta;
+                  if (typeof mergedDelta.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedDelta.uiPrefs.syncEnabled);
+                  if (changed) {
+                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                    performance.mark("pashash:notify:bg-delta");
+                    startTransition(notify);
+                    performance.measure("pashash:react-render:bg-delta", "pashash:notify:bg-delta");
+                    // Persist in background; do not block interaction thread on IDB write.
+                    window.setTimeout(() => {
+                      void saveStudyStateCache(uid, mergedDelta);
+                    }, 0);
+                  }
+                  localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(Date.now()));
+                  // Phase 2 still runs only if it's still pending (rare on cached visits).
+                  void runPhase2CardBackfill(uid, notify);
+                } else {
+                  const cloudBg = await loadAll(uid);
+                  if (cancelled) return;
+                  const mergedBg = mergeStudyStateLww(memState, cloudBg);
+                  memState = mergedBg;
+                  if (typeof mergedBg.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedBg.uiPrefs.syncEnabled);
+                  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                  performance.mark("pashash:notify:bg-refresh");
+                  startTransition(notify);
+                  performance.measure("pashash:react-render:bg-refresh", "pashash:notify:bg-refresh");
+                  // Persist in background; avoid a long task right after refresh render.
+                  window.setTimeout(() => {
+                    void saveStudyStateCache(uid, mergedBg);
+                  }, 0);
+                  const now = Date.now();
+                  localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(now));
+                  localStorage.setItem(LAST_FULL_SYNC_AT_KEY(uid), String(now));
+                  void runPhase2CardBackfill(uid, notify);
+                }
+              } catch (e) {
+                console.error("[load:bg_refresh]", e);
+              } finally {
+                stopBg();
+                restoreBgTrace();
+              }
+                })();
+              });
+            }, BG_CLOUD_REFRESH_DELAY_MS);
+          }
+
+          // flush pending sync jobs in background — only if there are actually jobs to process
+          if (existingJobs.length > 0) {
+            void runPendingCloudSync(uid);
+          } else {
+            perf.log("store:hydrate.sync_skipped", "0 jobs, skipping runPendingCloudSync", "store", hydrateTraceId);
+          }
+          // Always retry pending soft-deletes — these are independent of full-sync jobs.
+          window.setTimeout(() => {
+            void flushPendingDeletes(uid);
+          }, 500);
+
+          perf.log("store:hydrate.done", "indexeddb-first completed", "store", hydrateTraceId);
+          return;
+        }
+
+        const stopCloud = perf.startTimer("store:hydrate.cloud_load", "store", hydrateTraceId);
+        const cloud = await loadAll(uid);
+        stopCloud();
+        if (cancelled) return;
+
+        const stopMerge = perf.startTimer("store:hydrate.merge_lww", "store", hydrateTraceId);
+        const merged = mergeStudyStateLww(memState, cloud);
+        stopMerge();
+
+        memState = merged;
+        if (typeof merged.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(merged.uiPrefs.syncEnabled);
+        isHydrated = true;
+
+        // Yield before notify so React render runs in its own macrotask (avoids 69ms block on LCP).
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        performance.mark("pashash:notify:cloud-merge");
+        notify();
+        performance.measure("pashash:react-render:cloud-merge", "pashash:notify:cloud-merge");
+
+        const coldNow = Date.now();
+        localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(coldNow));
+        localStorage.setItem(LAST_FULL_SYNC_AT_KEY(uid), String(coldNow));
+
+        // Skip the IDB write when Phase 2 will immediately overwrite it with all cards.
+        // Caching an empty/near-empty state here causes the "missing cards on refresh" bug:
+        // if the user reloads before Phase 2 finishes (~4s), IDB would have 0 cards
+        // and the problem would repeat on every visit until Phase 2 completes uninterrupted.
+        const willPhase2Run = phase2BackfillNeeded && phase2TotalCount > 0 && merged.cards.length < phase2TotalCount;
+        if (!willPhase2Run) {
+          // Yield again before expensive IDB write so it doesn't share a task with the render.
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          const stopCacheSave = perf.startTimer("store:hydrate.idb_save", "store", hydrateTraceId);
+          await saveStudyStateCache(uid, merged);
+          stopCacheSave();
+        }
+
+        // Phase 2: silently backfill unreviewed cards in the background.
+        void runPhase2CardBackfill(uid, notify);
+
+        perf.log("store:hydrate.done", "hydrate pipeline completed", "store", hydrateTraceId);
+      } finally {
+        stopHydrateTotal();
+        restoreHydrateTrace();
+      }
+    })().catch((e) => {
+      console.error("[load]", e);
+      perf.error("store:hydrate.failed", e instanceof Error ? e.message : String(e));
+      if (!cancelled) {
+        isHydrated = true;
+        notify();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      // If hydration was cancelled before completing (e.g. React StrictMode double-mount),
+      // reset loadedFor so the next mount will retry instead of skipping silently.
+      if (!isHydrated && loadedFor === uid) {
+        loadedFor = null;
+      }
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    if (!uid || uid === GUEST_ID) return;
+    const onOnline = () => {
+      void runPendingCloudSync(uid);
+      void flushPendingDeletes(uid);
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+    };
+  }, [user?.id]);
+
+  const state = memState;
+  const getHydrationSnapshot = useCallback(() => ({
+    isHydrated,
+    // Cards are "fully loaded" when no Phase 2 backfill is pending/in-flight.
+    // True initially (warm boot from IDB before bootstrap → assume loaded);
+    // becomes false once bootstrap detects unreviewed cards still needed;
+    // becomes true again after Phase 2 completes.
+    cardsFullyLoaded: !phase2BackfillNeeded && !phase2BackfillInFlight,
+  }), []);
+  const getCloudSyncSnapshot = useCallback(() => ({
+    pendingJobs: cloudSyncPendingJobs,
+    inFlight: cloudSyncInFlight,
+  }), []);
+  const getRecordSyncStatus = useCallback((_entity: string, _id: string) => {
+    if (cloudSyncInFlight) return "syncing" as const;
+    return cloudSyncPendingJobs > 0 ? "pending" as const : "synced" as const;
+  }, []);
+
+  const isCategoryChildrenLoaded = useCallback((parentId: string | null) => {
+    return isCategoryParentCacheFresh(parentId);
+  }, []);
+
+  const isCategoryChildrenLoading = useCallback((parentId: string | null) => {
+    return loadingCategoryParents.has(parentCacheKey(parentId));
+  }, []);
+
+  const getCategoryHasChildren = useCallback((categoryId: string) => {
+    return categoryHasChildrenHint.get(categoryId);
+  }, []);
+
+  const loadCategoryChildren = useCallback(async (
+    parentId: string | null,
+    options?: { force?: boolean; prefetch?: boolean; reason?: "initial" | "user" | "prefetch" },
+  ) => {
+    const force = options?.force ?? false;
+    const prefetch = options?.prefetch ?? true;
+    const reason = options?.reason ?? "user";
+    const userId = requireUser();
+    ensureCategoryLocalState(userId);
+    const key = parentCacheKey(parentId);
+
+    const applyRows = (loadedRows: CategoryChildRow[], silent = false) => {
+      const localChildrenCount = (memState.categories ?? []).filter((c) => c.parentId === parentId).length;
+      // Guard: during restore/sync lag, server may temporarily return empty while local state already has rows.
+      // Avoid wiping optimistic local categories in that case.
+      if (loadedRows.length === 0 && localChildrenCount > 0) {
+        markCategoryParentLoadedNow(parentId);
+        if (parentId !== null) categoryHasChildrenHint.set(parentId, true);
+        return localChildrenCount;
+      }
+
+      const loaded = loadedRows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        parentId: c.parent_id,
+        color: c.color ?? undefined,
+        createdAt: new Date(c.created_at).getTime(),
+        sortOrder: c.sort_order ?? 0,
+      })) as Category[];
+
+      if (silent) {
+        // Update memState directly — caller will fire a single deferred notify().
+        const byId = new Map<string, Category>();
+        for (const cat of memState.categories ?? []) {
+          if (cat.parentId === parentId) continue;
+          byId.set(cat.id, cat);
+        }
+        for (const cat of loaded) byId.set(cat.id, cat);
+        memState = { ...memState, categories: [...byId.values()] };
+        scheduleStateCachePersist();
+      } else {
+        setState((s) => {
+          const byId = new Map<string, Category>();
+          for (const cat of s.categories ?? []) {
+            if (cat.parentId === parentId) continue;
+            byId.set(cat.id, cat);
+          }
+          for (const cat of loaded) byId.set(cat.id, cat);
+          return { ...s, categories: [...byId.values()] };
+        });
+      }
+
+      markCategoryParentLoadedNow(parentId);
+      if (parentId !== null) categoryHasChildrenHint.set(parentId, loaded.length > 0);
+      for (const row of loadedRows) categoryHasChildrenHint.set(row.id, !!row.has_children);
+
+      return loaded.length;
+    };
+
+    if (!force && isCategoryParentCacheFresh(parentId)) {
+      categoryCacheHits += 1;
+      if (reason === "user" && parentId) {
+        categoryPrefetchScore.set(parentId, (categoryPrefetchScore.get(parentId) ?? 0) + 1);
+        saveCategoryPrefetchScores(userId);
+      }
+      return 0;
+    }
+
+    if (!force) {
+      const persisted = categoryPersistedCacheByParent.get(key);
+      if (persisted && Date.now() - persisted.ts < CATEGORY_CACHE_TTL_MS) {
+        categoryCacheHits += 1;
+        categoryPersistedHits += 1;
+        const count = applyRows(persisted.rows);
+        if (reason === "user" && parentId) {
+          categoryPrefetchScore.set(parentId, (categoryPrefetchScore.get(parentId) ?? 0) + 1);
+          saveCategoryPrefetchScores(userId);
+        }
+        return count;
+      }
+    }
+
+    if (reason === "prefetch") {
+      const now = Date.now();
+      const tooSoon = now - categoryPrefetchLastStartMs < CATEGORY_PREFETCH_MIN_GAP_MS;
+      const tooManyInFlight = categoryPrefetchInFlight >= CATEGORY_PREFETCH_MAX_IN_FLIGHT;
+      if (tooSoon || tooManyInFlight) {
+        categoryPrefetchThrottled += 1;
+        return 0;
+      }
+      categoryPrefetchLastStartMs = now;
+      categoryPrefetchInFlight += 1;
+    }
+
+    categoryCacheMisses += 1;
+
+    const seq = (categoryRequestSeqByParent.get(key) ?? 0) + 1;
+    categoryRequestSeqByParent.set(key, seq);
+
+    const previous = categoryAbortControllersByParent.get(key);
+    if (previous) {
+      previous.abort();
+      categoryAbortedRequests += 1;
+    }
+    const controller = new AbortController();
+    categoryAbortControllersByParent.set(key, controller);
+
+    loadingCategoryParents.add(key);
+    // Non-urgent: show loading indicator when React has a chance, don't block the click handler.
+    startTransition(notify);
+    try {
+      const startedAt = performance.now();
+      let loadedRows: CategoryChildRow[] = [];
+      try {
+        loadedRows = await fetchCategoryChildrenRpc(parentId, controller.signal);
+      } catch (error) {
+        if (isAbortError(error)) return 0;
+        console.error("[categories.loadChildren]", error);
+        return 0;
+      }
+
+      // Ignore stale response if a newer request for the same parent exists.
+      if ((categoryRequestSeqByParent.get(key) ?? 0) !== seq) {
+        categoryStaleDropped += 1;
+        return 0;
+      }
+
+      // silent=true: skip notify() inside applyRows; a single deferred notify fires in finally.
+      const loadedCount = applyRows(loadedRows, true);
+
+      categoryPersistedCacheByParent.set(key, { ts: Date.now(), rows: loadedRows });
+      saveCategoryPersistedCache(userId);
+
+      if (reason === "user" && parentId) {
+        categoryPrefetchScore.set(parentId, (categoryPrefetchScore.get(parentId) ?? 0) + 1);
+        saveCategoryPrefetchScores(userId);
+      }
+
+      if (prefetch) {
+        const warm = loadedRows
+          .filter((r) => r.has_children)
+          .sort((a, b) => (categoryPrefetchScore.get(b.id) ?? 0) - (categoryPrefetchScore.get(a.id) ?? 0))
+          .slice(0, 3);
+        for (const row of warm) {
+          if (isCategoryParentCacheFresh(row.id)) continue;
+          if (loadingCategoryParents.has(parentCacheKey(row.id))) continue;
+          void loadCategoryChildren(row.id, { prefetch: false, reason: "prefetch" });
+        }
+      }
+
+      const elapsed = Math.round(performance.now() - startedAt);
+      pushCategoryLoadDuration(elapsed);
+      perf.record("db:categories.children", "db", elapsed, `parent=${parentId ?? "root"} rows=${loadedRows.length}`);
+
+      return loadedCount;
+    } finally {
+      if (reason === "prefetch") {
+        categoryPrefetchInFlight = Math.max(0, categoryPrefetchInFlight - 1);
+      }
+      if (categoryAbortControllersByParent.get(key) === controller) {
+        categoryAbortControllersByParent.delete(key);
+        loadingCategoryParents.delete(key);
+        // Defer React render to a new macrotask; startTransition lets React yield mid-render.
+        setTimeout(() => startTransition(notify), 0);
+      }
+    }
+  }, []);
+
+  const requireUser = () => {
+    if (!currentUserId) throw new Error("נדרשת התחברות");
+    return currentUserId;
+  };
+
+  /** Ensure the singleton "ללא סיווג" root category exists. Returns its id. */
+  const ensureUncategorized = useCallback((): string => {
+    const existing = findUncategorized(memState.categories);
+    if (existing) return existing.id;
+    const userId = requireUser();
+    const cat: Category = { id: uid(), name: UNCATEGORIZED_NAME, parentId: null, createdAt: Date.now() };
+    setState((s) => ({ ...s, categories: [...(s.categories ?? []), cat] }));
+    const promise: Promise<{ error: unknown }> = Promise.resolve(
+      supabase.from("categories").insert({ id: cat.id, user_id: userId, name: cat.name, parent_id: null }),
+    ).then((r) => r as unknown as { error: unknown });
+    categoryInsertPromises.set(cat.id, promise);
+    bg(promise, "categories.insert.uncategorized");
+    return cat.id;
+  }, []);
+
+  const addDeck = useCallback((name: string, description?: string, categoryNames?: string[]) => {
+    const userId = requireUser();
+    // Enforce: every deck must have ≥1 category. If none provided → auto-include "ללא סיווג".
+    let cats = Array.isArray(categoryNames) ? categoryNames.slice() : [];
+    if (cats.length === 0) {
+      ensureUncategorized();
+      cats = [UNCATEGORIZED_NAME];
+    }
+    const deck: Deck = { id: uid(), name, description, color: "gold", createdAt: Date.now(), categoryIds: [], includeSubCategories: true };
+    setState((s) => {
+      const nextDC = { ...(s.deckCategories ?? {}), [deck.id]: cats };
+      writeDeckCategoriesCache(userId, nextDC);
+      return { ...s, decks: [...s.decks, deck], deckCategories: nextDC };
+    });
+    bg(supabase.from("decks").insert({ id: deck.id, user_id: userId, name, description: description ?? null, color: "gold", category_ids: [], include_sub_categories: true } as never), "decks.insert");
+    return deck;
+  }, [ensureUncategorized]);
+
+  const setDeckCategories = useCallback((deckId: string, categoryNames: string[]) => {
+    const userId = requireUser();
+    setState((s) => {
+      const nextDC = { ...(s.deckCategories ?? {}), [deckId]: categoryNames.slice() };
+      writeDeckCategoriesCache(userId, nextDC);
+      return { ...s, deckCategories: nextDC };
+    });
+  }, []);
+
+  /** Update which category IDs a deck collects cards from (new architecture) */
+  const updateDeckCategoryIds = useCallback((deckId: string, categoryIds: string[], includeSubCategories: boolean) => {
+    requireUser();
+    setState((s) => ({
+      ...s,
+      decks: s.decks.map((d) =>
+        d.id === deckId ? { ...d, categoryIds, includeSubCategories } : d,
+      ),
+    }));
+    bg(supabase.from("decks").update({ category_ids: categoryIds, include_sub_categories: includeSubCategories } as never).eq("id", deckId), "decks.updateCategoryIds");
+  }, []);
+
+  /** Rename a deck */
+  const renameDeck = useCallback((deckId: string, name: string) => {
+    requireUser();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setState((s) => ({
+      ...s,
+      decks: s.decks.map((d) => (d.id === deckId ? { ...d, name: trimmed } : d)),
+    }));
+    bg(supabase.from("decks").update({ name: trimmed }).eq("id", deckId), "decks.rename");
+  }, []);
+
+  const deleteDeck = useCallback((id: string) => {
+    const userId = currentUserId;
+    setState((s) => {
+      const nextDC = { ...(s.deckCategories ?? {}) };
+      delete nextDC[id];
+      if (userId) writeDeckCategoriesCache(userId, nextDC);
+      return {
+        ...s,
+        decks: s.decks.filter((d) => d.id !== id),
+        // Cards are NOT deleted — they remain as category-owned cards (deckId becomes null)
+        cards: s.cards.map((c) => c.deckId === id ? { ...c, deckId: null } as Card : c),
+        deckCategories: nextDC,
+      };
+    });
+    bg(supabase.from("decks").delete().eq("id", id));
+  }, []);
+
+  const addCard = useCallback((card: Omit<Card, "id" | "createdAt" | "srs" | "stats">) => {
+    const userId = requireUser();
+    // Enforce: every card must have ≥1 cat: tag. If none → auto-tag "ללא סיווג".
+    const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
+    if (!tags.some((t) => t.startsWith("cat:"))) {
+      ensureUncategorized();
+      tags.push(UNCATEGORIZED_TAG);
+    }
+    const full = {
+      ...card, tags, id: uid(), createdAt: Date.now(),
+      srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+    } as Card;
+    setState((s) => ({ ...s, cards: [...s.cards, full] }));
+    bg(supabase.from("cards").insert(cardToRow(full, userId)));
+    // Only mirror into card_decks if the card has a deck
+    if (full.deckId) {
+      bg(supabase.from("card_decks").insert({
+        card_id: full.id, deck_id: full.deckId, user_id: userId, sort_order: 0,
+      }), "card_decks.insert");
+      setState((s) => ({
+        ...s,
+        cardDecks: [...(s.cardDecks ?? []), { cardId: full.id, deckId: full.deckId!, sortOrder: 0 }],
+      }));
+    }
+    return full;
+  }, [ensureUncategorized]);
+
+  /**
+   * Bulk add many cards in one shot.
+   * - ONE setState (replaces N re-renders)
+   * - Chunked supabase inserts (500/chunk) for cards + card_decks
+   * Used by the interactive restore flow to be 50–100× faster than per-card adds.
+   */
+  const bulkAddCards = useCallback((
+    cards: Array<Omit<Card, "id" | "createdAt" | "srs" | "stats">>,
+  ): Card[] => {
+    const userId = requireUser();
+    if (!cards.length) return [];
+    ensureUncategorized();
+    const now = Date.now();
+    const full: Card[] = cards.map((card) => {
+      const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
+      if (!tags.some((t) => t.startsWith("cat:"))) tags.push(UNCATEGORIZED_TAG);
+      return {
+        ...card, tags, id: uid(), createdAt: now,
+        srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+      } as Card;
+    });
+    const links = full
+      .filter((c) => c.deckId)
+      .map((c) => ({ cardId: c.id, deckId: c.deckId!, sortOrder: 0 }));
+    setState((s) => ({
+      ...s,
+      cards: [...s.cards, ...full],
+      cardDecks: [...(s.cardDecks ?? []), ...links],
+    }));
+    for (const part of chunk(full, 500)) {
+      bg(supabase.from("cards").insert(part.map((c) => cardToRow(c, userId))), "cards.bulkInsert");
+    }
+    if (links.length) {
+      const cdRows = links.map((l) => ({
+        card_id: l.cardId, deck_id: l.deckId, user_id: userId, sort_order: 0,
+      }));
+      for (const part of chunk(cdRows, 500)) {
+        bg(supabase.from("card_decks").insert(part), "card_decks.bulkInsert");
+      }
+    }
+    return full;
+  }, [ensureUncategorized]);
+
+  /**
+   * Bulk add many decks in one shot. ONE setState + chunked cloud inserts.
+   */
+  const bulkAddDecks = useCallback((
+    decks: Array<{ name: string; description?: string }>,
+  ): Deck[] => {
+    const userId = requireUser();
+    if (!decks.length) return [];
+    ensureUncategorized();
+    const now = Date.now();
+    const created: Deck[] = decks.map((d) => ({
+      id: uid(), name: d.name, description: d.description, color: "gold",
+      createdAt: now, categoryIds: [], includeSubCategories: true,
+    }));
+    setState((s) => {
+      const nextDC = { ...(s.deckCategories ?? {}) };
+      for (const d of created) nextDC[d.id] = [UNCATEGORIZED_NAME];
+      writeDeckCategoriesCache(userId, nextDC);
+      return { ...s, decks: [...s.decks, ...created], deckCategories: nextDC };
+    });
+    const rows = created.map((d) => ({
+      id: d.id, user_id: userId, name: d.name, description: d.description ?? null,
+      color: "gold", category_ids: [], include_sub_categories: true,
+    }));
+    for (const part of chunk(rows, 500)) {
+      bg(supabase.from("decks").insert(part as never), "decks.bulkInsert");
+    }
+    return created;
+  }, [ensureUncategorized]);
+
+  const updateCard = useCallback((id: string, patch: Partial<Card>) => {
+    const userId = requireUser();
+    let updated: Card | undefined;
+    setState((s) => ({
+      ...s,
+      cards: s.cards.map((c) => {
+        if (c.id !== id) return c;
+        updated = { ...c, ...patch } as Card;
+        return updated;
+      }),
+    }));
+    if (updated) bg(supabase.from("cards").update(cardToRow(updated, userId)).eq("id", id));
+  }, []);
+
+  const duplicateCard = useCallback((id: string, targetDeckId?: string) => {
+    const userId = requireUser();
+    let copy: Card | undefined;
+    setState((s) => {
+      const orig = s.cards.find((c) => c.id === id);
+      if (!orig) return s;
+      copy = {
+        ...orig, id: uid(), deckId: targetDeckId ?? orig.deckId,
+        createdAt: Date.now(), srs: defaultSrs(),
+        stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+      } as Card;
+      return { ...s, cards: [...s.cards, copy!] };
+    });
+    if (copy) bg(supabase.from("cards").insert(cardToRow(copy, userId)));
+  }, []);
+
+  const deleteCard = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      cards: s.cards.filter((c) => c.id !== id),
+      cardDecks: (s.cardDecks ?? []).filter((l) => l.cardId !== id),
+    }));
+    bg(supabase.from("cards").delete().eq("id", id));
+    bg(supabase.from("card_decks").delete().eq("card_id", id));
+  }, []);
+
+  const addCategory = useCallback((name: string, parentId: string | null = null) => {
+    const userId = requireUser();
+    const cat: Category = { id: uid(), name, parentId, createdAt: Date.now() };
+    setState((s) => ({ ...s, categories: [...(s.categories ?? []), cat] }));
+    // Chain insert after parent's pending insert (if any) to avoid FK race in Supabase
+    const parentPending = parentId ? categoryInsertPromises.get(parentId) : null;
+    const doInsert = () =>
+      supabase.from("categories").insert({ id: cat.id, user_id: userId, name, parent_id: parentId });
+    const promise: Promise<{ error: unknown }> = parentPending
+      ? parentPending.then(doInsert)
+      : Promise.resolve(doInsert()).then((r) => r as unknown as { error: unknown });
+    categoryInsertPromises.set(cat.id, promise);
+    invalidateCategoryParentCache(parentId);
+    if (parentId !== null) categoryHasChildrenHint.set(parentId, true);
+    bg(promise, "categories.insert");
+    return cat;
+  }, []);
+
+  // === Bulk add categories from a hierarchical template ===
+  // Skips names that already exist at the same parent level.
+  type BulkCategoryNode = { name: string; children?: BulkCategoryNode[] };
+  const addCategoriesBulk = useCallback((nodes: BulkCategoryNode[], parentId: string | null = null) => {
+    const userId = requireUser();
+    if (!nodes.length) return 0;
+
+    const makeKey = (pid: string | null, name: string) => `${pid ?? "__root__"}\u0000${name}`;
+    const normName = (name: string) => name.trim().toLowerCase();
+    const created: Category[] = [];
+    const existingByKey = new Map<string, Category>();
+    // Secondary index: detect same-name categories at any level (prevents cross-parent duplicates).
+    const existingByName = new Map<string, Category>();
+
+    for (const c of memState.categories ?? []) {
+      existingByKey.set(makeKey(c.parentId, c.name), c);
+      if (!existingByName.has(normName(c.name))) existingByName.set(normName(c.name), c);
+    }
+
+    // Iterative walk avoids deep recursion and repeated scans over existing categories.
+    const queue: Array<{ node: BulkCategoryNode; pid: string | null }> =
+      nodes.map((node) => ({ node, pid: parentId }));
+
+    for (let i = 0; i < queue.length; i++) {
+      const { node, pid } = queue[i];
+      const key = makeKey(pid, node.name);
+      let cat = existingByKey.get(key);
+      if (!cat) {
+        // Also check by normalized name across all levels — prevents duplicate categories
+        // when the same name exists at a different structural location (e.g. root vs child).
+        const byName = existingByName.get(normName(node.name));
+        if (byName) {
+          cat = byName;
+          existingByKey.set(key, cat); // register under new key so children resolve correctly
+        }
+      }
+      if (!cat) {
+        cat = { id: uid(), name: node.name, parentId: pid, createdAt: Date.now() };
+        created.push(cat);
+        existingByKey.set(key, cat);
+        existingByName.set(normName(node.name), cat);
+      }
+
+      if (node.children?.length) {
+        for (const child of node.children) {
+          queue.push({ node: child, pid: cat.id });
+        }
+      }
+    }
+
+    if (created.length === 0) return 0;
+    const affectedParents = new Set<string | null>();
+    created.forEach((c) => {
+      affectedParents.add(c.parentId ?? null);
+      if (c.parentId !== null) categoryHasChildrenHint.set(c.parentId, true);
+    });
+    affectedParents.forEach((pid) => invalidateCategoryParentCache(pid));
+    setState((s) => ({ ...s, categories: [...(s.categories ?? []), ...created] }));
+
+    const rows = created.map((c) => ({ id: c.id, user_id: userId, name: c.name, parent_id: c.parentId }));
+    const chunkSize = 500;
+
+    // 23505 = unique_violation: category already exists in cloud under a different local ID — safe to ignore.
+    const ignoreUniqueViolation = (r: { error: unknown }) => {
+      const pgErr = r?.error as { code?: string } | null;
+      return pgErr?.code === '23505' ? { error: null } : r;
+    };
+
+    const uploadPromise: Promise<{ error: unknown }> = rows.length <= chunkSize
+      ? Promise.resolve(
+          supabase.from("categories").upsert(rows, { ignoreDuplicates: true }),
+        ).then((r) => ignoreUniqueViolation(r as unknown as { error: unknown }))
+      : (async () => {
+          for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunk = rows.slice(i, i + chunkSize);
+            const { error } = await supabase.from("categories").upsert(chunk, { ignoreDuplicates: true });
+            if (error && (error as { code?: string }).code !== '23505') return { error };
+            // Yield to keep UI responsive during very large uploads.
+            if (i + chunkSize < rows.length) {
+              await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            }
+          }
+          return { error: null };
+        })();
+
+    created.forEach((c) => categoryInsertPromises.set(c.id, uploadPromise));
+    bg(uploadPromise, "categories.bulk_insert");
+    return created.length;
+  }, []);
+
+  const deleteCategory = useCallback((id: string) => {
+    const userId = requireUser();
+    const target = (memState.categories ?? []).find((c) => c.id === id);
+    if (target && isUncategorized(target)) {
+      console.warn('[store] refusing to delete singleton "ללא סיווג" category');
+      return;
+    }
+    let removedTags: Set<string> | null = null;
+    const removedParents = new Set<string | null>();
+    const updatedCards: Card[] = [];
+    setState((s) => {
+      const cats = s.categories ?? [];
+      const toRemove = new Set<string>([id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        cats.forEach((c) => {
+          if (c.parentId && toRemove.has(c.parentId) && !toRemove.has(c.id)) {
+            toRemove.add(c.id); changed = true;
+          }
+        });
+      }
+      const removedNames = new Set(cats.filter((c) => toRemove.has(c.id)).map((c) => `cat:${c.name}`));
+      cats.forEach((c) => {
+        if (toRemove.has(c.id)) removedParents.add(c.parentId ?? null);
+      });
+      removedTags = removedNames;
+      const newCards = s.cards.map((card) => {
+        const filtered = card.tags.filter((t) => !removedNames.has(t));
+        if (filtered.length === card.tags.length) return card;
+        const u = { ...card, tags: filtered };
+        updatedCards.push(u);
+        return u;
+      });
+      return {
+        ...s,
+        categories: cats.filter((c) => !toRemove.has(c.id)),
+        cards: newCards,
+      };
+    });
+    // Soft-delete: mark deleted_at instead of removing the row.
+    // This produces a tombstone in the cloud so other devices don't resurrect it on hydrate.
+    softDeleteWithQueue("categories", [id]);
+    removedParents.forEach((pid) => {
+      invalidateCategoryParentCache(pid);
+      if (pid !== null) categoryHasChildrenHint.delete(pid);
+    });
+    // Best-effort subtree cleanup for lazy-loaded mode (descendants might not be loaded in memory yet).
+    void (async () => {
+      const pending = [id];
+      const allIds = new Set<string>([id]);
+      const allNames = new Set<string>();
+      const rootName = (memState.categories ?? []).find((c) => c.id === id)?.name;
+      if (rootName) allNames.add(`cat:${rootName}`);
+
+      while (pending.length) {
+        const chunk = pending.splice(0, 100);
+        const { data, error } = await supabase
+          .from("categories")
+          .select("id,name,parent_id")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .in("parent_id", chunk);
+        if (error) break;
+        for (const row of data ?? []) {
+          if (allIds.has(row.id)) continue;
+          allIds.add(row.id);
+          allNames.add(`cat:${row.name}`);
+          pending.push(row.id);
+        }
+      }
+
+      const extraIds = [...allIds].filter((x) => x !== id);
+      if (extraIds.length) softDeleteWithQueue("categories", extraIds);
+
+      if (allNames.size) {
+        setState((s) => ({
+          ...s,
+          categories: (s.categories ?? []).filter((c) => !allIds.has(c.id)),
+          cards: s.cards.map((card) => ({
+            ...card,
+            tags: card.tags.filter((t) => !allNames.has(t)),
+          })),
+        }));
+      }
+    })();
+    updatedCards.forEach((c) => bg(supabase.from("cards").update({ tags: c.tags }).eq("id", c.id)));
+  }, []);
+
+  // Rename a category (also re-tags all cards that referenced the old name)
+  const renameCategory = useCallback((id: string, newName: string) => {
+    const userId = requireUser();
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const target = (memState.categories ?? []).find((c) => c.id === id);
+    if (target && isUncategorized(target)) {
+      console.warn('[store] refusing to rename singleton "ללא סיווג" category');
+      return;
+    }
+    const updatedCards: Card[] = [];
+    let oldName = "";
+    setState((s) => {
+      const cats = s.categories ?? [];
+      const target = cats.find((c) => c.id === id);
+      if (!target || target.name === trimmed) return s;
+      oldName = target.name;
+      const newCats = cats.map((c) => (c.id === id ? { ...c, name: trimmed } : c));
+      const oldTag = `cat:${oldName}`;
+      const newTag = `cat:${trimmed}`;
+      const newCards = s.cards.map((card) => {
+        if (!card.tags.includes(oldTag)) return card;
+        const u = { ...card, tags: card.tags.map((t) => (t === oldTag ? newTag : t)) };
+        updatedCards.push(u);
+        return u;
+      });
+      return { ...s, categories: newCats, cards: newCards };
+    });
+    bg(supabase.from("categories").update({ name: trimmed }).eq("id", id));
+    updatedCards.forEach((c) => bg(supabase.from("cards").update({ tags: c.tags }).eq("id", c.id)));
+  }, []);
+
+  // Duplicate a category (and all of its descendants) under the same parent
+  const duplicateCategory = useCallback((id: string) => {
+    const userId = requireUser();
+    const cats = memState.categories ?? [];
+    const root = cats.find((c) => c.id === id);
+    if (!root) return;
+    const created: Category[] = [];
+    const walk = (origId: string, newParentId: string | null) => {
+      const orig = cats.find((c) => c.id === origId);
+      if (!orig) return;
+      const siblings = cats.filter((c) => c.parentId === newParentId).map((c) => c.name);
+      let name = orig.id === id ? `${orig.name} (עותק)` : orig.name;
+      let n = 2;
+      while (siblings.includes(name) || created.some((c) => c.parentId === newParentId && c.name === name)) {
+        name = `${orig.name} (עותק ${n++})`;
+      }
+      const copy: Category = { id: uid(), name, parentId: newParentId, createdAt: Date.now() };
+      created.push(copy);
+      cats.filter((c) => c.parentId === origId).forEach((child) => walk(child.id, copy.id));
+    };
+    walk(id, root.parentId);
+    if (!created.length) return;
+    const affectedParents = new Set<string | null>();
+    created.forEach((c) => {
+      affectedParents.add(c.parentId ?? null);
+      if (c.parentId !== null) categoryHasChildrenHint.set(c.parentId, true);
+    });
+    affectedParents.forEach((pid) => invalidateCategoryParentCache(pid));
+    setState((s) => ({ ...s, categories: [...(s.categories ?? []), ...created] }));
+    bg(supabase.from("categories").insert(
+      created.map((c) => ({ id: c.id, user_id: userId, name: c.name, parent_id: c.parentId })),
+    ), "categories.duplicate");
+  }, []);
+
+  // Duplicate a category (and all of its descendants) under a DIFFERENT parent (for Ctrl+drag copy)
+  const duplicateCategoryUnder = useCallback((id: string, targetParentId: string | null): string | null => {
+    const userId = requireUser();
+    const cats = memState.categories ?? [];
+    const root = cats.find((c) => c.id === id);
+    if (!root) return null;
+    const created: Category[] = [];
+    let newRootId: string | null = null;
+    const walk = (origId: string, newParentId: string | null) => {
+      const orig = cats.find((c) => c.id === origId);
+      if (!orig) return;
+      const siblings = cats.filter((c) => c.parentId === newParentId).map((c) => c.name);
+      let name = origId === id ? `${orig.name} (עותק)` : orig.name;
+      let n = 2;
+      while (siblings.includes(name) || created.some((c) => c.parentId === newParentId && c.name === name)) {
+        name = `${orig.name} (עותק ${n++})`;
+      }
+      const copy: Category = { id: uid(), name, parentId: newParentId, createdAt: Date.now() };
+      if (origId === id) newRootId = copy.id;
+      created.push(copy);
+      cats.filter((c) => c.parentId === origId).forEach((child) => walk(child.id, copy.id));
+    };
+    walk(id, targetParentId);
+    if (!created.length) return null;
+    const affectedParents = new Set<string | null>();
+    created.forEach((c) => {
+      affectedParents.add(c.parentId ?? null);
+      if (c.parentId !== null) categoryHasChildrenHint.set(c.parentId, true);
+    });
+    affectedParents.forEach((pid) => invalidateCategoryParentCache(pid));
+    setState((s) => ({ ...s, categories: [...(s.categories ?? []), ...created] }));
+    bg(supabase.from("categories").insert(
+      created.map((c) => ({ id: c.id, user_id: userId, name: c.name, parent_id: c.parentId })),
+    ), "categories.duplicateUnder");
+    return newRootId;
+  }, []);
+
+  const reviewCard = useCallback((cardId: string, quality: 0 | 1 | 2 | 3 | 4 | 5, durationMs: number, useSrs: boolean, customDueAt?: number) => {
+    const userId = requireUser();
+    const correct = quality >= 3;
+    const algo = getSrsAlgorithm(userId);
+    const retention = getRetentionTarget(userId);
+    let updatedCard: Card | undefined;
+    let prevSrs: Card["srs"] | undefined;
+    let prevStats: Card["stats"] | undefined;
+    let logEntry: ReviewLog | undefined;
+    setState((s) => {
+      const cards = s.cards.map((c) => {
+        if (c.id !== cardId) return c;
+        prevSrs = c.srs;
+        prevStats = c.stats;
+        const baseSrs = useSrs ? applyReview(c, quality, algo, retention) : c.srs;
+        const finalSrs = (customDueAt && useSrs)
+          ? { ...baseSrs, dueAt: customDueAt, lastReviewedAt: Date.now() }
+          : baseSrs;
+        const u = {
+          ...c,
+          srs: finalSrs,
+          stats: {
+            totalReviews: c.stats.totalReviews + 1,
+            correct: c.stats.correct + (correct ? 1 : 0),
+            incorrect: c.stats.incorrect + (correct ? 0 : 1),
+          },
+        } as Card;
+        updatedCard = u;
+        return u;
+      });
+      const card = s.cards.find((c) => c.id === cardId);
+      logEntry = {
+        id: uid(), cardId, deckId: card?.deckId ?? null, at: Date.now(),
+        quality, correct, durationMs,
+      };
+      return { ...s, cards, logs: [logEntry, ...s.logs].slice(0, 2000) };
+    });
+    if (updatedCard) {
+      bg(supabase.from("cards").update({ srs: updatedCard.srs, stats: updatedCard.stats }).eq("id", cardId));
+    }
+    if (logEntry) {
+      bg(supabase.from("review_logs").insert({
+        id: logEntry.id, user_id: userId, card_id: logEntry.cardId,
+        deck_id: logEntry.deckId ?? null,
+        at: new Date(logEntry.at).toISOString(), quality, correct, duration_ms: durationMs,
+      }));
+    }
+    return { logId: logEntry?.id, prevSrs, prevStats };
+  }, []);
+
+  const undoReview = useCallback((cardId: string, prevSrs: Card["srs"], prevStats: Card["stats"], logId?: string) => {
+    setState((s) => ({
+      ...s,
+      cards: s.cards.map((c) => c.id === cardId ? { ...c, srs: prevSrs, stats: prevStats } : c),
+      logs: logId ? s.logs.filter((l) => l.id !== logId) : s.logs,
+    }));
+    bg(supabase.from("cards").update({ srs: prevSrs, stats: prevStats }).eq("id", cardId), "cards.undo");
+    if (logId) bg(supabase.from("review_logs").delete().eq("id", logId), "review_logs.undo");
+  }, []);
+
+  // Delete a single review log (without restoring SRS state). Decrements card stats.
+  const deleteReviewLog = useCallback((logId: string) => {
+    setState((s) => {
+      const log = s.logs.find((l) => l.id === logId);
+      if (!log) return s;
+      const cards = s.cards.map((c) => {
+        if (c.id !== log.cardId) return c;
+        return {
+          ...c,
+          stats: {
+            totalReviews: Math.max(0, c.stats.totalReviews - 1),
+            correct: Math.max(0, c.stats.correct - (log.correct ? 1 : 0)),
+            incorrect: Math.max(0, c.stats.incorrect - (log.correct ? 0 : 1)),
+          },
+        };
+      });
+      return { ...s, cards, logs: s.logs.filter((l) => l.id !== logId) };
+    });
+    bg(supabase.from("review_logs").delete().eq("id", logId), "review_logs.delete");
+  }, []);
+
+  // === Goals ===
+  const addGoal = useCallback((goal: Omit<Goal, "id" | "createdAt" | "active">) => {
+    const userId = requireUser();
+    const full: Goal = { ...goal, id: uid(), createdAt: Date.now(), active: true };
+    setState((s) => ({ ...s, goals: [...(s.goals ?? []), full] }));
+    bg(supabase.from("goals").insert({
+      id: full.id, user_id: userId, type: full.type, title: full.title,
+      target: full.target, window_days: full.windowDays ?? null,
+      deck_id: full.deckId ?? null, active: true, manual_done_dates: full.manualDoneDates ?? [],
+    }));
+    return full;
+  }, []);
+
+  const updateGoal = useCallback((id: string, patch: Partial<Goal>) => {
+    setState((s) => ({
+      ...s,
+      goals: (s.goals ?? []).map((g) => (g.id === id ? { ...g, ...patch } : g)),
+    }));
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.title !== undefined) dbPatch.title = patch.title;
+    if (patch.target !== undefined) dbPatch.target = patch.target;
+    if (patch.windowDays !== undefined) dbPatch.window_days = patch.windowDays;
+    if (patch.deckId !== undefined) dbPatch.deck_id = patch.deckId;
+    if (patch.active !== undefined) dbPatch.active = patch.active;
+    if (patch.type !== undefined) dbPatch.type = patch.type;
+    if (patch.manualDoneDates !== undefined) dbPatch.manual_done_dates = patch.manualDoneDates;
+    if (Object.keys(dbPatch).length) bg(supabase.from("goals").update(dbPatch as never).eq("id", id));
+  }, []);
+
+  const deleteGoal = useCallback((id: string) => {
+    setState((s) => ({ ...s, goals: (s.goals ?? []).filter((g) => g.id !== id) }));
+    bg(supabase.from("goals").delete().eq("id", id));
+  }, []);
+
+  const toggleGoalDate = useCallback((id: string, dateKey: string) => {
+    let nextDates: string[] = [];
+    setState((s) => ({
+      ...s,
+      goals: (s.goals ?? []).map((g) => {
+        if (g.id !== id) return g;
+        const dates = new Set(g.manualDoneDates ?? []);
+        if (dates.has(dateKey)) dates.delete(dateKey); else dates.add(dateKey);
+        nextDates = Array.from(dates);
+        return { ...g, manualDoneDates: nextDates };
+      }),
+    }));
+    bg(supabase.from("goals").update({ manual_done_dates: nextDates }).eq("id", id));
+  }, []);
+
+  // === Shas plan ===
+  const persistShasPlans = useCallback((userId: string, plans: ShasPlan[], activePlanId: string | null) => {
+    bg(supabase.from("user_settings").upsert(
+      {
+        user_id: userId,
+        shas_plans: plans as unknown as Json,
+        active_shas_plan_id: activePlanId,
+      } as never,
+      { onConflict: "user_id" },
+    ), "user_settings.shas_plans");
+
+    const active = activePlanId ? (plans.find((p) => p.id === activePlanId) ?? null) : null;
+    if (!active) {
+      bg(supabase.from("shas_plans").delete().eq("user_id", userId), "shas_plans.clear_legacy");
+      return;
+    }
+
+    bg(supabase.from("shas_plans").upsert({
+      id: active.id,
+      user_id: userId,
+      selected_masechtos: active.selectedMasechtos,
+      pages_per_day: active.pagesPerDay,
+      start_date: new Date(active.startDate).toISOString(),
+      current_masechta: active.currentMasechta,
+      current_daf: active.currentDaf,
+      completed: active.completed,
+      unit: active.unit,
+      current_amud: active.currentAmud,
+      current_half: active.currentHalf,
+      anchor_date: active.anchorDate ?? null,
+      anchor_masechta: active.anchorPosition?.masechta ?? null,
+      anchor_daf: active.anchorPosition?.daf ?? null,
+      anchor_amud: active.anchorPosition?.amud ?? null,
+    }, { onConflict: "user_id" }), "shas_plans.upsert_legacy");
+  }, []);
+
+  const setShasPlan = useCallback((
+    selectedMasechtos: string[],
+    pagesPerDay: number,
+    unit: ShasPlan["unit"] = "daf",
+    startMasechta?: string,
+    startDaf?: number,
+    skipWeekdays?: number[],
+    skipDates?: string[],
+    anchorDate?: string,
+    anchorPosition?: ShasPlan["anchorPosition"],
+  ) => {
+    const userId = requireUser();
+    const first = startMasechta ?? selectedMasechtos[0];
+    const planName = selectedMasechtos.length > 1
+      ? `${selectedMasechtos[0]} +${selectedMasechtos.length - 1}`
+      : (selectedMasechtos[0] ?? 'ש"ס');
+    const plan: ShasPlan = {
+      id: uid(), selectedMasechtos, pagesPerDay, startDate: Date.now(),
+      name: planName,
+      unit,
+      currentMasechta: first, currentDaf: startDaf ?? 2,
+      currentAmud: 1, currentHalf: 1, completed: [],
+      ...(skipWeekdays?.length ? { skipWeekdays } : {}),
+      ...(skipDates?.length ? { skipDates } : {}),
+      ...(anchorDate ? { anchorDate } : {}),
+      ...(anchorPosition ? { anchorPosition } : {}),
+    };
+    const nextPlans = [...(memState.shasPlans ?? []), plan];
+    setState((s) => ({ ...s, shasPlan: plan, shasPlans: nextPlans, activeShasPlanId: plan.id }));
+    persistShasPlans(userId, nextPlans, plan.id);
+    return plan;
+  }, [persistShasPlans]);
+
+  const setActiveShasPlan = useCallback((planId: string) => {
+    const userId = requireUser();
+    const plans = memState.shasPlans ?? [];
+    const active = plans.find((p) => p.id === planId);
+    if (!active) return;
+    setState((s) => ({ ...s, shasPlan: active, activeShasPlanId: planId }));
+    persistShasPlans(userId, plans, planId);
+  }, [persistShasPlans]);
+
+  const clearShasPlan = useCallback(() => {
+    const userId = requireUser();
+    const plans = memState.shasPlans ?? [];
+    const activeId = memState.activeShasPlanId ?? memState.shasPlan?.id ?? null;
+    const nextPlans = activeId ? plans.filter((p) => p.id !== activeId) : plans;
+    const nextActive = nextPlans[0] ?? null;
+    setState((s) => ({
+      ...s,
+      shasPlans: nextPlans,
+      activeShasPlanId: nextActive?.id ?? null,
+      shasPlan: nextActive,
+    }));
+    persistShasPlans(userId, nextPlans, nextActive?.id ?? null);
+  }, [persistShasPlans]);
+
+  const deleteShasPlan = useCallback((planId: string) => {
+    const userId = requireUser();
+    const plans = memState.shasPlans ?? [];
+    const nextPlans = plans.filter((p) => p.id !== planId);
+    const wasActive = (memState.activeShasPlanId ?? memState.shasPlan?.id) === planId;
+    const nextActive = wasActive ? (nextPlans[0] ?? null) : (plans.find((p) => p.id === (memState.activeShasPlanId ?? memState.shasPlan?.id)) ?? nextPlans[0] ?? null);
+    setState((s) => ({
+      ...s,
+      shasPlans: nextPlans,
+      activeShasPlanId: nextActive?.id ?? null,
+      shasPlan: nextActive,
+    }));
+    persistShasPlans(userId, nextPlans, nextActive?.id ?? null);
+  }, [persistShasPlans]);
+
+  // השלמת היחידה הנוכחית (דף / עמוד / חצי-עמוד) וקידום למיקום הבא
+  // intervals: רשימת ימים לתזמון חזרות. ברירת מחדל = state.reviewIntervals.
+  // [] (ריק) = לא לתזמן כלל (הדיאלוג יטפל בזה אחרי).
+  const completeShasDaf = useCallback((opts?: { intervals?: number[] }) => {
+    const userId = requireUser();
+    let updated: ShasPlan | null = null;
+    let learnedSnapshot: { masechta: string; daf: number; amud: 1 | 2; half: 1 | 2 | null; unit: ShasPlan["unit"] } | null = null;
+    setState((s) => {
+      const p = s.shasPlan;
+      if (!p) return s;
+      const masechta = SHAS_BAVLI.find((m) => m.name === p.currentMasechta);
+      if (!masechta) return s;
+      const entry = {
+        masechta: p.currentMasechta,
+        daf: p.currentDaf,
+        amud: p.currentAmud,
+        half: p.unit === "half" ? p.currentHalf : undefined,
+        at: Date.now(),
+      };
+      const completed = [...p.completed, entry];
+      learnedSnapshot = {
+        masechta: p.currentMasechta,
+        daf: p.currentDaf,
+        amud: p.currentAmud,
+        half: p.unit === "half" ? p.currentHalf : null,
+        unit: p.unit,
+      };
+
+      // קידום מיקום לפי יחידה
+      let nextDaf = p.currentDaf;
+      let nextAmud: 1 | 2 = p.currentAmud;
+      let nextHalf: 1 | 2 = p.currentHalf;
+      let nextMasechta = p.currentMasechta;
+
+      if (p.unit === "daf") {
+        nextDaf = p.currentDaf + 1;
+        nextAmud = 1; nextHalf = 1;
+      } else if (p.unit === "amud") {
+        if (p.currentAmud === 1) {
+          nextAmud = 2;
+        } else {
+          nextAmud = 1;
+          nextDaf = p.currentDaf + 1;
+        }
+        nextHalf = 1;
+      } else {
+        // half
+        if (p.currentHalf === 1) {
+          nextHalf = 2;
+        } else {
+          nextHalf = 1;
+          if (p.currentAmud === 1) {
+            nextAmud = 2;
+          } else {
+            nextAmud = 1;
+            nextDaf = p.currentDaf + 1;
+          }
+        }
+      }
+
+      // מעבר למסכת הבאה אם סיימנו
+      if (nextDaf > masechta.pages) {
+        const idx = p.selectedMasechtos.indexOf(p.currentMasechta);
+        const next = p.selectedMasechtos[idx + 1];
+        if (next) { nextMasechta = next; nextDaf = 2; nextAmud = 1; nextHalf = 1; }
+        else { nextDaf = masechta.pages; nextAmud = 2; nextHalf = 2; }
+      }
+
+      updated = {
+        ...p, completed,
+        currentMasechta: nextMasechta, currentDaf: nextDaf,
+        currentAmud: nextAmud, currentHalf: nextHalf,
+      };
+      return {
+        ...s,
+        shasPlan: updated,
+        shasPlans: (s.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp),
+      };
+    });
+    if (updated) {
+      const plans = (memState.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp);
+      persistShasPlans(userId, plans, memState.activeShasPlanId ?? updated.id);
+    }
+    // === רישום ללוח חזרות: לימוד ראשוני (סומן כהושלם היום) + תזכורות חזרה עתידיות ===
+    if (learnedSnapshot) {
+      const today = new Date();
+      const intervals = opts?.intervals !== undefined
+        ? opts.intervals
+        : ((memState.reviewIntervals && memState.reviewIntervals.length)
+            ? memState.reviewIntervals : [1, 3, 7, 14, 30]);
+      const todayKey = isoDate(today);
+      const initial: ShasReview = {
+        id: uid(),
+        masechta: learnedSnapshot.masechta,
+        daf: learnedSnapshot.daf,
+        amud: learnedSnapshot.amud,
+        half: learnedSnapshot.half,
+        unit: learnedSnapshot.unit,
+        reviewIndex: 1,
+        dueDate: todayKey,
+        doneAt: todayKey,
+        isInitial: true,
+        note: null,
+      };
+      const followUps: ShasReview[] = intervals.map((days, i) => ({
+        id: uid(),
+        masechta: learnedSnapshot!.masechta,
+        daf: learnedSnapshot!.daf,
+        amud: learnedSnapshot!.amud,
+        half: learnedSnapshot!.half,
+        unit: learnedSnapshot!.unit,
+        reviewIndex: i + 2,
+        dueDate: addDaysIso(today, days),
+        doneAt: null,
+        isInitial: false,
+        note: null,
+      }));
+      const all = [initial, ...followUps];
+      setState((s) => ({ ...s, shasReviews: [...(s.shasReviews ?? []), ...all] }));
+      bg(supabase.from("shas_reviews").insert(all.map((r) => ({
+        id: r.id, user_id: userId,
+        masechta: r.masechta, daf: r.daf, amud: r.amud,
+        half: r.half ?? null, unit: r.unit,
+        review_index: r.reviewIndex, due_date: r.dueDate,
+        done_at: r.doneAt, is_initial: r.isInitial, note: r.note ?? null,
+      }))), "shas_reviews.insertBatch");
+    }
+  }, [persistShasPlans]);
+
+  const undoLastShasDaf = useCallback(() => {
+    const userId = requireUser();
+    let updated: ShasPlan | null = null;
+    let toRemove: string[] = [];
+    setState((s) => {
+      const p = s.shasPlan;
+      if (!p || p.completed.length === 0) return s;
+      const last = p.completed[p.completed.length - 1];
+      updated = {
+        ...p, completed: p.completed.slice(0, -1),
+        currentMasechta: last.masechta, currentDaf: last.daf,
+        currentAmud: (last.amud as 1 | 2) ?? 1,
+        currentHalf: (last.half as 1 | 2) ?? 1,
+      };
+      // הסר את קבוצת תזכורות החזרה האחרונה לאותו מיקום
+      const reviews = s.shasReviews ?? [];
+      const matches = reviews.filter((r) =>
+        r.masechta === last.masechta && r.daf === last.daf &&
+        r.amud === ((last.amud as 1 | 2) ?? 1) &&
+        ((r.half ?? null) === ((last.half as 1 | 2 | undefined) ?? null))
+      );
+      // קבוצה אחרונה: כל הרשומות מהקבוצה ש-isInitial האחרונה שלה
+      // נסיר את כל ההתאמות עבור המיקום הזה (פשוט ויעיל לאיזון undo)
+      toRemove = matches.map((r) => r.id);
+      return {
+        ...s,
+        shasPlan: updated,
+        shasPlans: (s.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp),
+        shasReviews: reviews.filter((r) => !toRemove.includes(r.id)),
+      };
+    });
+    if (updated) {
+      const plans = (memState.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp);
+      persistShasPlans(userId, plans, memState.activeShasPlanId ?? updated.id);
+    }
+    if (toRemove.length) {
+      bg(supabase.from("shas_reviews").delete().in("id", toRemove), "shas_reviews.undo");
+    }
+  }, [persistShasPlans]);
+
+  // שינוי יחידת לימוד באמצע תוכנית (מאפס מיקום בתוך-דף ל-עמוד א' חצי 1)
+  const setShasUnit = useCallback((unit: ShasPlan["unit"]) => {
+    const userId = requireUser();
+    let updated: ShasPlan | null = null;
+    setState((s) => {
+      if (!s.shasPlan) return s;
+      updated = { ...s.shasPlan, unit, currentAmud: 1, currentHalf: 1 };
+      return {
+        ...s,
+        shasPlan: updated,
+        shasPlans: (s.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp),
+      };
+    });
+    if (updated) {
+      const plans = (memState.shasPlans ?? []).map((sp) => sp.id === updated!.id ? updated! : sp);
+      persistShasPlans(userId, plans, memState.activeShasPlanId ?? updated.id);
+    }
+  }, [persistShasPlans]);
+
+  const setNotificationsEnabled = useCallback((enabled: boolean) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, notificationsEnabled: enabled }));
+    bg(supabase.from("user_settings").upsert({ user_id: userId, notifications_enabled: enabled }, { onConflict: "user_id" }));
+  }, []);
+
+  const setReminderTime = useCallback((time: string) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, reminderTime: time }));
+    bg(supabase.from("user_settings").upsert({ user_id: userId, reminder_time: time }, { onConflict: "user_id" }));
+  }, []);
+
+  const setDayNote = useCallback((date: string, text: string) => {
+    const userId = requireUser();
+    const trimmed = text.trim();
+    setState((s) => {
+      const notes = s.dayNotes ?? [];
+      if (!trimmed) return { ...s, dayNotes: notes.filter((n) => n.date !== date) };
+      const exists = notes.some((n) => n.date === date);
+      const updated = exists
+        ? notes.map((n) => (n.date === date ? { ...n, text: trimmed, updatedAt: Date.now() } : n))
+        : [...notes, { date, text: trimmed, updatedAt: Date.now() }];
+      return { ...s, dayNotes: updated };
+    });
+    if (!trimmed) {
+      bg(supabase.from("day_notes").delete().eq("user_id", userId).eq("date", date));
+    } else {
+      bg(supabase.from("day_notes").upsert({ user_id: userId, date, text: trimmed }, { onConflict: "user_id,date" }));
+    }
+  }, []);
+
+  // === Card <-> Deck linkage (many-to-many) ===
+  const addCardToDeck = useCallback((cardId: string, deckId: string) => {
+    const userId = requireUser();
+    setState((s) => {
+      const links = s.cardDecks ?? [];
+      if (links.some((l) => l.cardId === cardId && l.deckId === deckId)) return s;
+      return { ...s, cardDecks: [...links, { cardId, deckId, sortOrder: Date.now() }] };
+    });
+    bg(supabase.from("card_decks").upsert({
+      card_id: cardId, deck_id: deckId, user_id: userId, sort_order: Date.now(),
+    }, { onConflict: "card_id,deck_id" }), "card_decks.upsert");
+  }, []);
+
+  const removeCardFromDeck = useCallback((cardId: string, deckId: string) => {
+    setState((s) => ({
+      ...s,
+      cardDecks: (s.cardDecks ?? []).filter((l) => !(l.cardId === cardId && l.deckId === deckId)),
+    }));
+    bg(
+      supabase.from("card_decks").delete().eq("card_id", cardId).eq("deck_id", deckId),
+      "card_decks.delete",
+    );
+  }, []);
+
+  const setCardDecks = useCallback((cardId: string, deckIds: string[]) => {
+    const userId = requireUser();
+    setState((s) => {
+      const others = (s.cardDecks ?? []).filter((l) => l.cardId !== cardId);
+      const fresh = deckIds.map((deckId, i) => ({ cardId, deckId, sortOrder: i }));
+      return { ...s, cardDecks: [...others, ...fresh] };
+    });
+    bg(supabase.from("card_decks").delete().eq("card_id", cardId), "card_decks.replace.delete");
+    if (deckIds.length) {
+      bg(supabase.from("card_decks").insert(
+        deckIds.map((deckId, i) => ({
+          card_id: cardId, deck_id: deckId, user_id: userId, sort_order: i,
+        })),
+      ), "card_decks.replace.insert");
+    }
+  }, []);
+
+  // === Categories: drag/move within tree ===
+  const moveCategory = useCallback((id: string, newParentId: string | null) => {
+    // prevent moving under own descendant
+    let oldParentId: string | null = null;
+    setState((s) => {
+      const cats = s.categories ?? [];
+      oldParentId = cats.find((c) => c.id === id)?.parentId ?? null;
+      const descendants = new Set<string>([id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        cats.forEach((c) => {
+          if (c.parentId && descendants.has(c.parentId) && !descendants.has(c.id)) {
+            descendants.add(c.id); changed = true;
+          }
+        });
+      }
+      if (newParentId && descendants.has(newParentId)) return s;
+      return {
+        ...s,
+        categories: cats.map((c) => (c.id === id ? { ...c, parentId: newParentId } : c)),
+      };
+    });
+    invalidateCategoryParentCache(oldParentId);
+    invalidateCategoryParentCache(newParentId);
+    if (newParentId !== null) categoryHasChildrenHint.set(newParentId, true);
+    if (oldParentId !== null) categoryHasChildrenHint.delete(oldParentId);
+    bg(supabase.from("categories").update({ parent_id: newParentId }).eq("id", id), "categories.move");
+  }, []);
+
+  const reorderCategories = useCallback((orderedIds: string[]) => {
+    setState((s) => {
+      const cats = s.categories ?? [];
+      const orderMap = new Map(orderedIds.map((id, i) => [id, i]));
+      return {
+        ...s,
+        categories: cats.map((c) =>
+          orderMap.has(c.id) ? { ...c, sortOrder: orderMap.get(c.id)! } : c,
+        ),
+      };
+    });
+    bg(
+      rpcClient.rpc("reorder_user_categories", { p_ids: orderedIds }),
+      "categories.reorderBatch",
+    );
+  }, []);
+
+  // === Move card to a different primary deck ===
+  const moveCardToDeck = useCallback((cardId: string, newDeckId: string) => {
+    const userId = requireUser();
+    setState((s) => ({
+      ...s,
+      cards: s.cards.map((c) => (c.id === cardId ? ({ ...c, deckId: newDeckId } as Card) : c)),
+    }));
+    bg(supabase.from("cards").update({ deck_id: newDeckId }).eq("id", cardId), "cards.move");
+    // ensure the new deck is in the linkage table
+    bg(supabase.from("card_decks").upsert({
+      card_id: cardId, deck_id: newDeckId, user_id: userId, sort_order: 0,
+    }, { onConflict: "card_id,deck_id" }), "card_decks.upsert");
+    setState((s) => {
+      const links = s.cardDecks ?? [];
+      if (links.some((l) => l.cardId === cardId && l.deckId === newDeckId)) return s;
+      return { ...s, cardDecks: [...links, { cardId, deckId: newDeckId, sortOrder: 0 }] };
+    });
+  }, []);
+
+  // === Set categories for a card (replace all cat: tags) ===
+  const setCardCategories = useCallback((cardId: string, categoryNames: string[]) => {
+    const userId = requireUser();
+    let updated: Card | undefined;
+    setState((s) => ({
+      ...s,
+      cards: s.cards.map((c) => {
+        if (c.id !== cardId) return c;
+        const plain = c.tags.filter((t) => !t.startsWith("cat:"));
+        const cats = categoryNames.map((n) => `cat:${n}`);
+        updated = { ...c, tags: [...plain, ...cats] } as Card;
+        return updated;
+      }),
+    }));
+    if (updated) bg(supabase.from("cards").update({ tags: updated.tags }).eq("id", cardId), "cards.setCategories");
+  }, []);
+
+  // === Shas reviews ===
+  const markShasReviewDone = useCallback((id: string, dateKey?: string) => {
+    const day = dateKey ?? todayIso();
+    setState((s) => ({
+      ...s,
+      shasReviews: (s.shasReviews ?? []).map((r) => r.id === id ? { ...r, doneAt: day } : r),
+    }));
+    bg(supabase.from("shas_reviews").update({ done_at: day }).eq("id", id), "shas_reviews.markDone");
+  }, []);
+
+  const unmarkShasReviewDone = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      shasReviews: (s.shasReviews ?? []).map((r) => r.id === id ? { ...r, doneAt: null } : r),
+    }));
+    bg(supabase.from("shas_reviews").update({ done_at: null }).eq("id", id), "shas_reviews.unmark");
+  }, []);
+
+  const rescheduleShasReview = useCallback((id: string, newDueDate: string) => {
+    setState((s) => ({
+      ...s,
+      shasReviews: (s.shasReviews ?? []).map((r) => r.id === id ? { ...r, dueDate: newDueDate } : r),
+    }));
+    bg(supabase.from("shas_reviews").update({ due_date: newDueDate }).eq("id", id), "shas_reviews.reschedule");
+  }, []);
+
+  const setShasReviewNote = useCallback((id: string, note: string) => {
+    const v = note.trim() || null;
+    setState((s) => ({
+      ...s,
+      shasReviews: (s.shasReviews ?? []).map((r) => r.id === id ? { ...r, note: v } : r),
+    }));
+    bg(supabase.from("shas_reviews").update({ note: v }).eq("id", id), "shas_reviews.note");
+  }, []);
+
+  const deleteShasReview = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      shasReviews: (s.shasReviews ?? []).filter((r) => r.id !== id),
+    }));
+    bg(supabase.from("shas_reviews").delete().eq("id", id), "shas_reviews.delete");
+  }, []);
+
+  const addManualShasReview = useCallback((args: {
+    masechta: string; daf: number; amud: 1 | 2; half?: 1 | 2 | null;
+    unit: ShasReview["unit"]; dueDate: string; doneAt?: string | null;
+    isInitial?: boolean; reviewIndex?: number; note?: string;
+  }) => {
+    const userId = requireUser();
+    const r: ShasReview = {
+      id: uid(),
+      masechta: args.masechta, daf: args.daf, amud: args.amud,
+      half: args.half ?? null, unit: args.unit,
+      reviewIndex: args.reviewIndex ?? 1, dueDate: args.dueDate,
+      doneAt: args.doneAt ?? null,
+      isInitial: !!args.isInitial, note: args.note?.trim() || null,
+    };
+    setState((s) => ({ ...s, shasReviews: [...(s.shasReviews ?? []), r] }));
+    bg(supabase.from("shas_reviews").insert({
+      id: r.id, user_id: userId,
+      masechta: r.masechta, daf: r.daf, amud: r.amud,
+      half: r.half ?? null, unit: r.unit,
+      review_index: r.reviewIndex, due_date: r.dueDate,
+      done_at: r.doneAt, is_initial: r.isInitial, note: r.note ?? null,
+    }), "shas_reviews.insertManual");
+    return r;
+  }, []);
+
+  const setReviewIntervals = useCallback((intervals: number[]) => {
+    const userId = requireUser();
+    const cleaned = intervals.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+    setState((s) => ({ ...s, reviewIntervals: cleaned }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, review_intervals: cleaned as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.review_intervals");
+  }, []);
+
+  // === הוספת תזמוני חזרה למיקום ש"ס שכבר נלמד ===
+  // משמש את הדיאלוג שנפתח אחרי "סיימתי" כדי לתזמן חזרות בתאריכים שהמשתמש בחר.
+  const scheduleShasReviewsAt = useCallback((args: {
+    masechta: string; daf: number; amud: 1 | 2; half: 1 | 2 | null; unit: "daf" | "amud" | "half";
+    days: number[]; // ימים מהיום
+  }) => {
+    const userId = requireUser();
+    if (!args.days.length) return 0;
+    const today = new Date();
+    const existing = (memState.shasReviews ?? []).filter((r) =>
+      r.masechta === args.masechta && r.daf === args.daf &&
+      r.amud === args.amud && (r.half ?? null) === (args.half ?? null) &&
+      r.unit === args.unit
+    );
+    const startIdx = existing.length + 1;
+    const dueSet = new Set(existing.map((r) => r.dueDate));
+    const followUps: ShasReview[] = [];
+    let i = 0;
+    for (const days of args.days) {
+      const due = addDaysIso(today, days);
+      if (dueSet.has(due)) continue;
+      dueSet.add(due);
+      followUps.push({
+        id: uid(),
+        masechta: args.masechta, daf: args.daf, amud: args.amud,
+        half: args.half, unit: args.unit,
+        reviewIndex: startIdx + i,
+        dueDate: due,
+        doneAt: null,
+        isInitial: false,
+        note: null,
+      });
+      i++;
+    }
+    if (!followUps.length) return 0;
+    setState((s) => ({ ...s, shasReviews: [...(s.shasReviews ?? []), ...followUps] }));
+    bg(supabase.from("shas_reviews").insert(followUps.map((r) => ({
+      id: r.id, user_id: userId,
+      masechta: r.masechta, daf: r.daf, amud: r.amud,
+      half: r.half ?? null, unit: r.unit,
+      review_index: r.reviewIndex, due_date: r.dueDate,
+      done_at: r.doneAt, is_initial: r.isInitial, note: r.note ?? null,
+    }))), "shas_reviews.scheduleAt");
+    return followUps.length;
+  }, []);
+
+  const setPlanReviewIntervals = useCallback((intervals: number[]) => {
+    const userId = requireUser();
+    const cleaned = intervals.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+    if (cleaned.length === 0) return;
+    setState((s) => ({ ...s, planReviewIntervals: cleaned }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, plan_review_intervals: cleaned as unknown as Json } as never,
+      { onConflict: "user_id" },
+    ), "user_settings.plan_review_intervals");
+  }, []);
+
+  // === Learning Sessions ===
+  const addLearningSession = useCallback((args: {
+    date: string;
+    subject: string;
+    sessionType: "initial" | "review";
+    quality: 1 | 2 | 3 | 4 | 5;
+    durationMinutes?: number;
+    note?: string;
+    nextReviewDate?: string | null;
+    reviewNumber?: number;
+  }) => {
+    const userId = requireUser();
+    const session: LearningSession = {
+      id: uid(),
+      date: args.date,
+      subject: args.subject.trim(),
+      sessionType: args.sessionType,
+      quality: args.quality,
+      durationMinutes: args.durationMinutes,
+      note: args.note?.trim() || undefined,
+      nextReviewDate: args.nextReviewDate ?? null,
+      reviewNumber: args.reviewNumber ?? 1,
+      createdAt: Date.now(),
+    };
+    setState((s) => ({ ...s, learningSessions: [session, ...(s.learningSessions ?? [])] }));
+    bg(supabase.from("learning_sessions").insert({
+      id: session.id,
+      user_id: userId,
+      date: session.date,
+      subject: session.subject,
+      session_type: session.sessionType,
+      quality: session.quality,
+      duration_minutes: session.durationMinutes ?? null,
+      note: session.note ?? null,
+      next_review_date: session.nextReviewDate ?? null,
+      review_number: session.reviewNumber,
+    }), "learning_sessions.insert");
+    return session;
+  }, []);
+
+  const updateLearningSession = useCallback((id: string, patch: Partial<Pick<LearningSession,
+    "subject" | "sessionType" | "quality" | "durationMinutes" | "note" | "nextReviewDate" | "reviewNumber"
+  >>) => {
+    requireUser();
+    setState((s) => ({
+      ...s,
+      learningSessions: (s.learningSessions ?? []).map((r) =>
+        r.id === id ? { ...r, ...patch } : r
+      ),
+    }));
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.subject !== undefined) dbPatch.subject = patch.subject.trim();
+    if (patch.sessionType !== undefined) dbPatch.session_type = patch.sessionType;
+    if (patch.quality !== undefined) dbPatch.quality = patch.quality;
+    if (patch.durationMinutes !== undefined) dbPatch.duration_minutes = patch.durationMinutes ?? null;
+    if (patch.note !== undefined) dbPatch.note = patch.note?.trim() || null;
+    if (patch.nextReviewDate !== undefined) dbPatch.next_review_date = patch.nextReviewDate ?? null;
+    if (patch.reviewNumber !== undefined) dbPatch.review_number = patch.reviewNumber;
+    bg(supabase.from("learning_sessions").update(dbPatch as never).eq("id", id), "learning_sessions.update");
+  }, []);
+
+  const deleteLearningSession = useCallback((id: string) => {
+    requireUser();
+    setState((s) => ({
+      ...s,
+      learningSessions: (s.learningSessions ?? []).filter((r) => r.id !== id),
+    }));
+    bg(supabase.from("learning_sessions").delete().eq("id", id), "learning_sessions.delete");
+  }, []);
+
+  const setTabConfig = useCallback((tabs: TabConfig[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, tabConfig: tabs }));
+    const sidebar = memState.sidebarConfig ?? [];
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, tab_config: { home: tabs, sidebar } as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.tab_config");
+  }, []);
+
+  const setSidebarConfig = useCallback((sidebar: SidebarConfig[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, sidebarConfig: sidebar }));
+    const home = memState.tabConfig ?? [];
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, tab_config: { home, sidebar } as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.sidebar_config");
+  }, []);
+
+  const setWidgetLayout = useCallback((layout: WidgetLayout) => {
+    const userId = requireUser();
+    const now = Date.now();
+    setState((s) => ({ ...s, widgetLayout: layout }));
+    writeWidgetLayoutCache(userId, layout, now);
+    bg(supabase.from("user_settings").upsert(
+      {
+        user_id: userId,
+        widget_layout: layout as unknown as Json,
+        widget_layout_updated_at: new Date(now).toISOString(),
+      } as never,
+      { onConflict: "user_id" },
+    ), "user_settings.widget_layout");
+  }, []);
+
+  const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {
+    const userId = requireUser();
+    const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };
+    setState((s) => ({ ...s, uiPrefs: next }));
+    writeUiPrefsCache(userId, next);
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, ui_prefs: next as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.ui_prefs");
+  }, []);
+
+  // === Masechta Review Plans ===
+  const addMasecthaReviewPlan = useCallback((
+    title: string,
+    units: string[],
+    reviewScheduleType: "srs" | "fixed_interval" | "manual",
+    fixedIntervalDays?: number,
+    manualReviewDates?: string[],
+    linkedDeckId?: string,
+    reviewScopeType?: "masechta" | "perek" | "daf_range" | "custom",
+    reviewScopeDetail?: string,
+  ) => {
+    const userId = requireUser();
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    const newPlan: GeneralStudyPlan = {
+      id: uid(),
+      planType: "masechta_review",
+      title,
+      units,
+      unitsPerDay: 1,
+      startDate: Date.now(),
+      completedUnits: [],
+      reviewScheduleType,
+      fixedIntervalDays,
+      manualReviewDates,
+      linkedDeckId,
+      reviewScopeType,
+      reviewScopeDetail,
+    };
+
+    const updatedPlans = [...(memState.generalPlans ?? []), newPlan];
+    setState((s) => ({ ...s, generalPlans: updatedPlans }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updatedPlans as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans.masechta_review");
+
+    // Create initial PlanReview entries
+    const newReviews: PlanReview[] = [];
+    if (reviewScheduleType === "manual" && manualReviewDates?.length) {
+      units.forEach((unit) => {
+        manualReviewDates.forEach((dueDate, i) => {
+          newReviews.push({
+            id: uid(), planId: newPlan.id, planTitle: title, unit,
+            dueDate, doneAt: null, reviewIndex: i + 1, createdAt: Date.now(),
+          });
+        });
+      });
+    } else {
+      // First review due today
+      units.forEach((unit) => {
+        newReviews.push({
+          id: uid(), planId: newPlan.id, planTitle: title, unit,
+          dueDate: todayStr, doneAt: null, reviewIndex: 1, createdAt: Date.now(),
+        });
+      });
+    }
+
+    if (newReviews.length > 0) {
+      const updatedReviews = [...(memState.planReviews ?? []), ...newReviews];
+      setState((s) => ({ ...s, planReviews: updatedReviews }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plan_reviews: updatedReviews as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plan_reviews.masechta_review");
+    }
+  }, []);
+
+  // === Deck Review Plans ===
+  const addDeckReviewPlan = useCallback((title: string, deckIds: string[], _opts?: Partial<GeneralStudyPlan>) => {
+    const userId = requireUser();
+    // units = deck names (for display); deckIds stored for session lookup
+    const deckMap = Object.fromEntries((memState.decks ?? []).map((d) => [d.id, d.name]));
+    const units = deckIds.map((id) => deckMap[id] ?? id);
+    const newPlan: GeneralStudyPlan = {
+      id: uid(),
+      planType: "deck_review",
+      title,
+      units,
+      deckIds,
+      unitsPerDay: 1,
+      startDate: Date.now(),
+      completedUnits: [],
+    };
+    const updated = [...(memState.generalPlans ?? []), newPlan];
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans.deck_review");
+  }, []);
+
+  // === General Study Plans ===
+  const addGeneralPlan = useCallback((plan: Omit<GeneralStudyPlan, "id" | "startDate" | "completedUnits">) => {
+    const userId = requireUser();
+    const newPlan: GeneralStudyPlan = { ...plan, id: uid(), startDate: Date.now(), completedUnits: [] };
+    const updated = [...(memState.generalPlans ?? []), newPlan];
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans");
+    return newPlan;
+  }, []);
+
+  const deleteGeneralPlan = useCallback((planId: string, _opts?: { purgeHistory?: boolean }) => {
+    const userId = requireUser();
+    const updated = (memState.generalPlans ?? []).filter((p) => p.id !== planId);
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans");
+  }, []);
+
+  const updateGeneralPlan = useCallback((
+    planId: string,
+    patch: Partial<Omit<GeneralStudyPlan, "id" | "startDate" | "completedUnits">>,
+  ) => {
+    const userId = requireUser();
+    const updated = (memState.generalPlans ?? []).map((p) =>
+      p.id === planId ? { ...p, ...patch } : p,
+    );
+    const savedPlan = updated.find((p) => p.id === planId);
+    console.log('[store:updateGeneralPlan] patch:', JSON.stringify(patch));
+    console.log('[store:updateGeneralPlan] saved plan anchorDate:', savedPlan?.anchorDate, 'anchorPosition:', JSON.stringify(savedPlan?.anchorPosition));
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans");
+  }, []);
+
+  const completeGeneralPlanUnit = useCallback((planId: string, unit: string, _isoDate?: string) => {
+    const userId = requireUser();
+    const plan = (memState.generalPlans ?? []).find((p) => p.id === planId);
+    const alreadyDone = plan?.completedUnits.includes(unit) ?? false;
+    const updated = (memState.generalPlans ?? []).map((p) =>
+      p.id !== planId ? p :
+      { ...p, completedUnits: alreadyDone ? p.completedUnits : [...p.completedUnits, unit] }
+    );
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans");
+
+    // Auto-log a learning session so it appears on the calendar / weekly summary
+    if (!alreadyDone && plan) {
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const session: LearningSession = {
+        id: uid(),
+        date: dateStr,
+        subject: `${plan.title} — ${unit}`,
+        sessionType: "initial",
+        quality: 5,
+        durationMinutes: undefined,
+        note: undefined,
+        nextReviewDate: null,
+        reviewNumber: 1,
+        createdAt: Date.now(),
+      };
+      setState((s) => ({ ...s, learningSessions: [session, ...(s.learningSessions ?? [])] }));
+      bg(supabase.from("learning_sessions").insert({
+        id: session.id,
+        user_id: userId,
+        date: session.date,
+        subject: session.subject,
+        session_type: session.sessionType,
+        quality: session.quality,
+        duration_minutes: null,
+        note: null,
+        next_review_date: null,
+        review_number: session.reviewNumber,
+      }), "learning_sessions.insert.plan");
+
+      // Schedule future review reminders based on plan schedule type
+      const reviewScheduleType = plan.reviewScheduleType ?? "srs";
+
+      let newReviews: PlanReview[];
+
+      if (reviewScheduleType === "manual" && plan.manualReviewDates?.length) {
+        // Reviews were already created at plan-creation time — skip
+        newReviews = [];
+      } else {
+        let intervals: number[];
+        if (reviewScheduleType === "fixed_interval") {
+          const d = plan.fixedIntervalDays ?? 30;
+          // 5 repeating reviews at d, 2d, 3d, 4d, 5d intervals
+          intervals = [d, d * 2, d * 3, d * 4, d * 5];
+        } else {
+          // SRS default
+          intervals = (memState.planReviewIntervals && memState.planReviewIntervals.length)
+            ? memState.planReviewIntervals
+            : [...PLAN_REVIEW_INTERVALS_DAYS];
+        }
+        newReviews = intervals.map((days, i) => {
+          const due = new Date(today);
+          due.setDate(due.getDate() + days);
+          const dueDate = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`;
+          return {
+            id: uid(),
+            planId,
+            planTitle: plan.title,
+            unit,
+            dueDate,
+            doneAt: null,
+            reviewIndex: i + 1,
+            createdAt: Date.now(),
+          };
+        });
+      }
+      const updatedReviews = [...(memState.planReviews ?? []), ...newReviews];
+      setState((s) => ({ ...s, planReviews: updatedReviews }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plan_reviews: updatedReviews as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plan_reviews");
+    }
+  }, []);
+
+  const undoLastGeneralPlanUnit = useCallback((planId: string) => {
+    const userId = requireUser();
+    const plan = (memState.generalPlans ?? []).find((p) => p.id === planId);
+    const lastUnit = plan?.completedUnits[plan.completedUnits.length - 1];
+    const updated = (memState.generalPlans ?? []).map((p) => {
+      if (p.id !== planId) return p;
+      return { ...p, completedUnits: p.completedUnits.slice(0, -1) };
+    });
+    setState((s) => ({ ...s, generalPlans: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plans: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plans");
+
+    // Remove the most recent matching auto-logged learning session
+    if (plan && lastUnit) {
+      const targetSubject = `${plan.title} — ${lastUnit}`;
+      const sessions = memState.learningSessions ?? [];
+      const match = [...sessions]
+        .filter((s) => s.subject === targetSubject && s.sessionType === "initial")
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (match) {
+        setState((s) => ({
+          ...s,
+          learningSessions: (s.learningSessions ?? []).filter((r) => r.id !== match.id),
+        }));
+        bg(supabase.from("learning_sessions").delete().eq("id", match.id), "learning_sessions.delete.plan");
+      }
+
+      // Remove scheduled plan reviews for this unit
+      const updatedReviews = (memState.planReviews ?? []).filter(
+        (r) => !(r.planId === planId && r.unit === lastUnit)
+      );
+      setState((s) => ({ ...s, planReviews: updatedReviews }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plan_reviews: updatedReviews as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plan_reviews.undo");
+    }
+  }, []);
+
+  const markPlanReviewDone = useCallback((reviewId: string, quality: PlanReviewQuality = 3) => {
+    const userId = requireUser();
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    const allReviews = memState.planReviews ?? [];
+    const target = allReviews.find((r) => r.id === reviewId);
+    if (!target) return;
+
+    // Mark current review as done with grade
+    let updated = allReviews.map((r) =>
+      r.id === reviewId ? { ...r, doneAt: todayStr, quality } : r
+    );
+
+    // ─── SM-2 inspired: schedule the NEXT review based on quality ────────
+    // quality 1 (שכחתי) → repeat in 1 day, do NOT advance reviewIndex
+    // quality 2 (קשה)   → next interval × 0.7
+    // quality 3 (טוב)   → next interval × 1.0 (default)
+    // quality 4 (קל)    → next interval × 1.4
+    const plan = (memState.generalPlans ?? []).find((p) => p.id === target.planId);
+    const reviewScheduleType = plan?.reviewScheduleType ?? "srs";
+
+    // For manual plans: reviews were pre-created, don't auto-schedule next
+    if (reviewScheduleType === "manual") {
+      setState((s) => ({ ...s, planReviews: updated }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plan_reviews: updated as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plan_reviews.mark");
+      return;
+    }
+
+    const nextIndex = quality === 1 ? target.reviewIndex : target.reviewIndex + 1;
+    const intervalsList = (memState.planReviewIntervals && memState.planReviewIntervals.length)
+      ? memState.planReviewIntervals
+      : [...PLAN_REVIEW_INTERVALS_DAYS];
+
+    let intervalDays: number;
+    if (reviewScheduleType === "fixed_interval") {
+      const fixedDays = plan?.fixedIntervalDays ?? 30;
+      // Fixed: quality still shifts ±30% but base is always fixedDays
+      const qualityMult = quality === 1 ? 0.1 : quality === 2 ? 0.7 : quality === 4 ? 1.3 : 1.0;
+      intervalDays = Math.max(1, Math.round(fixedDays * qualityMult));
+    } else {
+      const baseDays = nextIndex <= intervalsList.length
+        ? intervalsList[nextIndex - 1]
+        : Math.round(intervalsList[intervalsList.length - 1] * 1.5);
+
+      const qualityMultiplier = quality === 1 ? 0.05 : quality === 2 ? 0.7 : quality === 4 ? 1.4 : 1.0;
+      intervalDays = Math.max(1, Math.round(baseDays * qualityMultiplier));
+    }
+
+    // Smart scheduling: if target day already has >5 reviews due, fuzz ±2 days
+    // to spread load. Only applied for intervals >= 3 days.
+    if (intervalDays >= 3) {
+      const candidate = new Date(today.getTime() + intervalDays * 86_400_000);
+      const candidateStr = `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, "0")}-${String(candidate.getDate()).padStart(2, "0")}`;
+      const dayLoad = updated.filter((r) => r.dueDate === candidateStr && !r.doneAt).length;
+      if (dayLoad > 5) {
+        // Find lightest day within ±2 day window
+        let bestDelta = 0;
+        let bestLoad = dayLoad;
+        for (const delta of [-2, -1, 1, 2]) {
+          const altDays = intervalDays + delta;
+          if (altDays < 1) continue;
+          const alt = new Date(today.getTime() + altDays * 86_400_000);
+          const altStr = `${alt.getFullYear()}-${String(alt.getMonth() + 1).padStart(2, "0")}-${String(alt.getDate()).padStart(2, "0")}`;
+          const load = updated.filter((r) => r.dueDate === altStr && !r.doneAt).length;
+          if (load < bestLoad) { bestLoad = load; bestDelta = delta; }
+        }
+        intervalDays += bestDelta;
+      }
+    }
+
+    // Skip creating next review only if SRS quality=4 AND past max intervals (mastered)
+    // Fixed-interval plans never "master" — they always continue
+    const isMastered = reviewScheduleType === "srs" && quality === 4 && target.reviewIndex >= intervalsList.length;
+    if (!isMastered) {
+      const nextDue = new Date(today.getTime() + intervalDays * 86_400_000);
+      const nextDueStr = `${nextDue.getFullYear()}-${String(nextDue.getMonth() + 1).padStart(2, "0")}-${String(nextDue.getDate()).padStart(2, "0")}`;
+      const nextReview: PlanReview = {
+        id: crypto.randomUUID(),
+        planId: target.planId,
+        planTitle: target.planTitle,
+        unit: target.unit,
+        dueDate: nextDueStr,
+        doneAt: null,
+        reviewIndex: nextIndex,
+        createdAt: Date.now(),
+      };
+      updated = [...updated, nextReview];
+    }
+
+    setState((s) => ({ ...s, planReviews: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plan_reviews: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plan_reviews.mark");
+  }, []);
+
+  const undoPlanReviewDone = useCallback((reviewId: string) => {
+    const userId = requireUser();
+    const target = (memState.planReviews ?? []).find((r) => r.id === reviewId);
+    // Remove any auto-scheduled NEXT review created at the same time (within 5s)
+    let updated = (memState.planReviews ?? []).map((r) =>
+      r.id === reviewId ? { ...r, doneAt: null, quality: undefined } : r
+    );
+    if (target?.doneAt) {
+      // Find the most recently created future review for the same unit (auto-scheduled)
+      const candidates = updated
+        .filter((r) =>
+          r.planId === target.planId &&
+          r.unit === target.unit &&
+          r.id !== reviewId &&
+          !r.doneAt &&
+          r.reviewIndex >= target.reviewIndex
+        )
+        .sort((a, b) => b.createdAt - a.createdAt);
+      if (candidates.length > 0) {
+        const removeId = candidates[0].id;
+        updated = updated.filter((r) => r.id !== removeId);
+      }
+    }
+    setState((s) => ({ ...s, planReviews: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plan_reviews: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plan_reviews.undo_done");
+  }, []);
+
+  const postponePlanReview = useCallback((reviewId: string, days: number = 1) => {
+    const userId = requireUser();
+    const safeDays = Math.max(1, Math.round(days));
+    const updated = (memState.planReviews ?? []).map((r) => {
+      if (r.id !== reviewId) return r;
+      const base = new Date(r.dueDate + "T00:00:00");
+      base.setDate(base.getDate() + safeDays);
+      const newDue = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`;
+      return { ...r, dueDate: newDue };
+    });
+    setState((s) => ({ ...s, planReviews: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plan_reviews: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plan_reviews.postpone");
+  }, []);
+
+  const setPlanReviewNote = useCallback((reviewId: string, note: string) => {
+    const userId = requireUser();
+    const trimmed = note.trim();
+    const updated = (memState.planReviews ?? []).map((r) =>
+      r.id === reviewId ? { ...r, note: trimmed || undefined } : r
+    );
+    setState((s) => ({ ...s, planReviews: updated }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, general_plan_reviews: updated as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.general_plan_reviews.note");
+  }, []);
+
+  // === Custom Category Templates (user-defined) ===
+  const saveCustomTemplates = useCallback((list: CustomCategoryTemplate[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, customCategoryTemplates: list }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, custom_category_templates: list as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.custom_category_templates");
+  }, []);
+  const addCustomTemplate = useCallback((tpl: Omit<CustomCategoryTemplate, "id" | "createdAt" | "updatedAt">) => {
+    const now = Date.now();
+    const full: CustomCategoryTemplate = { ...tpl, id: uid(), createdAt: now, updatedAt: now };
+    saveCustomTemplates([...(memState.customCategoryTemplates ?? []), full]);
+    return full;
+  }, [saveCustomTemplates]);
+  const updateCustomTemplate = useCallback((id: string, patch: Partial<Omit<CustomCategoryTemplate, "id" | "createdAt">>) => {
+    const list = (memState.customCategoryTemplates ?? []).map((t) =>
+      t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t,
+    );
+    saveCustomTemplates(list);
+  }, [saveCustomTemplates]);
+  const deleteCustomTemplate = useCallback((id: string) => {
+    saveCustomTemplates((memState.customCategoryTemplates ?? []).filter((t) => t.id !== id));
+  }, [saveCustomTemplates]);
+
+  // === Quiz Plans ===
+  const persistQuizPlans = useCallback((list: QuizPlan[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, quizPlans: list }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, quiz_plans: list as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.quiz_plans");
+  }, []);
+  const persistQuizAttempts = useCallback((list: QuizAttempt[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, quizAttempts: list }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, quiz_attempts: list as unknown as Json },
+      { onConflict: "user_id" },
+    ), "user_settings.quiz_attempts");
+  }, []);
+  const addQuizPlan = useCallback((plan: Omit<QuizPlan, "id" | "createdAt">) => {
+    const newPlan: QuizPlan = { ...plan, id: uid(), createdAt: Date.now() };
+    persistQuizPlans([...(memState.quizPlans ?? []), newPlan]);
+    return newPlan;
+  }, [persistQuizPlans]);
+  const updateQuizPlan = useCallback((id: string, patch: Partial<Omit<QuizPlan, "id" | "createdAt">>) => {
+    persistQuizPlans((memState.quizPlans ?? []).map((p) => p.id === id ? { ...p, ...patch } : p));
+  }, [persistQuizPlans]);
+  const deleteQuizPlan = useCallback((id: string) => {
+    persistQuizPlans((memState.quizPlans ?? []).filter((p) => p.id !== id));
+  }, [persistQuizPlans]);
+  const setActiveQuizPlan = useCallback((id: string, active: boolean) => {
+    persistQuizPlans((memState.quizPlans ?? []).map((p) => p.id === id ? { ...p, isActive: active } : p));
+  }, [persistQuizPlans]);
+  const addQuizAttempt = useCallback((attempt: Omit<QuizAttempt, "id">) => {
+    const newAttempt: QuizAttempt = { ...attempt, id: uid() };
+    persistQuizAttempts([...(memState.quizAttempts ?? []), newAttempt]);
+    return newAttempt;
+  }, [persistQuizAttempts]);
+  const updateQuizAttempt = useCallback((id: string, patch: Partial<Omit<QuizAttempt, "id">>) => {
+    persistQuizAttempts((memState.quizAttempts ?? []).map((a) => a.id === id ? { ...a, ...patch } : a));
+  }, [persistQuizAttempts]);
+  const deleteQuizAttempt = useCallback((id: string) => {
+    persistQuizAttempts((memState.quizAttempts ?? []).filter((a) => a.id !== id));
+  }, [persistQuizAttempts]);
+
+  // === Delete all data for the current user ===
+  const deleteAllUserData = useCallback(async () => {
+    const userId = requireUser();
+    // Clear local state immediately
+    setState(() => emptyState());
+    // Delete from all tables (by user_id FK)
+    await Promise.all([
+      supabase.from("cards").delete().eq("user_id", userId),
+      supabase.from("card_decks").delete().eq("user_id", userId),
+      supabase.from("decks").delete().eq("user_id", userId),
+      // Soft-delete categories (tombstones for multi-device sync)
+      supabase.from("categories").update({ deleted_at: new Date().toISOString() } as never).eq("user_id", userId).is("deleted_at", null),
+      supabase.from("goals").delete().eq("user_id", userId),
+      supabase.from("review_logs").delete().eq("user_id", userId),
+      supabase.from("learning_sessions").delete().eq("user_id", userId),
+      supabase.from("shas_reviews").delete().eq("user_id", userId),
+      supabase.from("user_settings").update({
+        shas_plans: null,
+        active_shas_plan_id: null,
+        general_plans: null,
+        general_plan_reviews: null,
+        custom_category_templates: null,
+        quiz_plans: null,
+        quiz_attempts: null,
+      }).eq("user_id", userId),
+    ]);
+  }, []);
+
+  // === Delete specific categories (and all their descendants + their cards + review logs) ===
+  const deleteCategoriesWithData = useCallback(async (rootIds: string[]) => {
+    requireUser();
+    const cats = memState.categories ?? [];
+    // Collect all descendant ids
+    const toRemove = new Set<string>(rootIds);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      cats.forEach((c) => {
+        if (c.parentId && toRemove.has(c.parentId) && !toRemove.has(c.id)) {
+          toRemove.add(c.id); changed = true;
+        }
+      });
+    }
+    const removedNames = new Set(
+      cats.filter((c) => toRemove.has(c.id)).map((c) => c.name),
+    );
+    // Find all cards in those categories
+    const cardIdsToDelete = new Set(
+      (memState.cards ?? [])
+        .filter((card) => card.tags.some((t) => t.startsWith("cat:") && removedNames.has(t.slice(4))))
+        .map((c) => c.id),
+    );
+    // Update state
+    setState((s) => ({
+      ...s,
+      categories: (s.categories ?? []).filter((c) => !toRemove.has(c.id)),
+      cards: (s.cards ?? []).filter((c) => !cardIdsToDelete.has(c.id)),
+      cardDecks: (s.cardDecks ?? []).filter((l) => !cardIdsToDelete.has(l.cardId)),
+      logs: (s.logs ?? []).filter((l) => !cardIdsToDelete.has(l.cardId)),
+    }));
+    // Persist deletions
+    const ops: PromiseLike<unknown>[] = [];
+    // Categories: soft-delete with durable queue (tombstones for multi-device sync)
+    softDeleteWithQueue("categories", [...toRemove]);
+    // Cards
+    const cardIdArr = [...cardIdsToDelete];
+    if (cardIdArr.length) {
+      // chunk in 100s to stay within URL limits
+      for (let i = 0; i < cardIdArr.length; i += 100) {
+        const chunk = cardIdArr.slice(i, i + 100);
+        ops.push(supabase.from("cards").delete().in("id", chunk));
+        ops.push(supabase.from("card_decks").delete().in("card_id", chunk));
+        ops.push(supabase.from("review_logs").delete().in("card_id", chunk));
+      }
+    }
+    await Promise.all(ops);
+  }, []);
+
+  const requestCloudSyncNow = useCallback(async (reason = "manual") => {
+    const userId = currentUserId;
+    if (!userId || userId === GUEST_ID) {
+      return { ok: false as const, reason: "guest-or-no-user", pendingAfter: 0 };
+    }
+
+    await enqueueFullSyncJob(userId, `force:${reason}`);
+    await runPendingCloudSync(userId);
+    const deleteFlush = await flushPendingDeletes(userId);
+    const remaining = await listSyncJobs(userId);
+    markCloudSyncJobs(remaining.length);
+    const audit = await listDeleteAuditEvents(userId, 50);
+
+    return {
+      ok: remaining.length === 0,
+      pendingAfter: remaining.length,
+      deleteFlush,
+      deleteAuditRecent: audit,
+    };
+  }, []);
+
+  const getDeleteAuditHistory = useCallback(async (limit = 100) => {
+    const userId = currentUserId;
+    if (!userId || userId === GUEST_ID) {
+      return {
+        events: [],
+        pendingCount: 0,
+      };
+    }
+
+    const [events, pending] = await Promise.all([
+      listDeleteAuditEvents(userId, limit),
+      listPendingDeletes(userId),
+    ]);
+
+    return {
+      events,
+      pendingCount: pending.length,
+    };
+  }, []);
+
+  return {
+    state, addDeck, deleteDeck, addCard, bulkAddCards, bulkAddDecks, updateCard, duplicateCard, deleteCard,
+    reviewCard, undoReview, deleteReviewLog, addCategory, addCategoriesBulk, deleteCategory,
+    ensureUncategorized,
+    renameCategory, duplicateCategory, duplicateCategoryUnder,
+    addGoal, updateGoal, deleteGoal, toggleGoalDate,
+    setShasPlan, setActiveShasPlan, clearShasPlan, deleteShasPlan, completeShasDaf, undoLastShasDaf, setShasUnit,
+    setNotificationsEnabled, setReminderTime, setDayNote,
+    addCardToDeck, removeCardFromDeck, setCardDecks, setDeckCategories, updateDeckCategoryIds,
+    renameDeck,
+    moveCategory, reorderCategories, moveCardToDeck, setCardCategories,
+    loadCategoryChildren, isCategoryChildrenLoaded, isCategoryChildrenLoading, getCategoryHasChildren,
+    getCategoryPerfSnapshot,
+    markShasReviewDone, unmarkShasReviewDone, rescheduleShasReview,
+    setShasReviewNote, deleteShasReview, addManualShasReview, setReviewIntervals,
+    scheduleShasReviewsAt,
+    setPlanReviewIntervals,
+    addLearningSession, updateLearningSession, deleteLearningSession,
+    setTabConfig,
+    setSidebarConfig,
+    setWidgetLayout,
+    setUiPref,
+    addGeneralPlan, deleteGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit,
+    addMasecthaReviewPlan,
+    addDeckReviewPlan,
+    markPlanReviewDone, undoPlanReviewDone, postponePlanReview, setPlanReviewNote,
+    addCustomTemplate, updateCustomTemplate, deleteCustomTemplate,
+    addQuizPlan, updateQuizPlan, deleteQuizPlan, setActiveQuizPlan,
+    addQuizAttempt, updateQuizAttempt, deleteQuizAttempt,
+    getHydrationSnapshot,
+    getCloudSyncSnapshot,
+    getRecordSyncStatus,
+    requestCloudSyncNow,
+    getDeleteAuditHistory,
+    deleteAllUserData, deleteCategoriesWithData,
+    // === Stub methods (no-op shims for not-yet-implemented features) ===
+    uncompleteSpecificUnit: (_planId: string, _unit: string): void => { /* TODO */ },
+    reschedulePlanReviews: (_planId: string): void => { /* TODO */ },
+    archiveGeneralPlan: (planId: string): void => {
+      const userId = requireUser();
+      const updated = (memState.generalPlans ?? []).map((p) =>
+        p.id === planId ? { ...p, archivedAt: Date.now() } : p,
+      );
+      setState((s) => ({ ...s, generalPlans: updated }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plans: updated as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plans.archive");
+    },
+    unarchiveGeneralPlan: (planId: string): void => {
+      const userId = requireUser();
+      const updated = (memState.generalPlans ?? []).map((p) =>
+        p.id === planId ? { ...p, archivedAt: undefined } : p,
+      );
+      setState((s) => ({ ...s, generalPlans: updated }));
+      bg(supabase.from("user_settings").upsert(
+        { user_id: userId, general_plans: updated as unknown as Json },
+        { onConflict: "user_id" },
+      ), "user_settings.general_plans.unarchive");
+    },
+  };
+}
+

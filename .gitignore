@@ -1,0 +1,38 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Electron desktop build artifacts
+release
+electron/build
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Local script output
+output/
+scripts/diagnose_output.txt
+
+# Local backup files (uploaded to cloud, not needed in repo)
+*.json.gz
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
