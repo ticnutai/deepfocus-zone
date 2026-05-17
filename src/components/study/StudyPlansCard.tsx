@@ -1506,7 +1506,120 @@ function AddPlanDialog({
           </div>
         )}
 
-        {/* Step 2: Configure — Masechta Review branch */}
+        {/* Step 2: Configure — Mishnayot branch */}
+        {step === "configure" && tpl?.id === "mishnayot" && (
+          <div className="space-y-4 mt-2 text-right">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground">יחידת לימוד</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {([
+                  { value: "mishna", title: "משנה", sub: "משנה בכל יום (יחידה בודדת)" },
+                  { value: "perek",  title: "פרק",  sub: "פרק שלם בכל יום" },
+                ] as { value: MishnaUnit; title: string; sub: string }[]).map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    onClick={() => setMishnaUnit(opt.value)}
+                    className={cn(
+                      "rounded-xl border-2 p-3 text-right transition-colors",
+                      mishnaUnit === opt.value ? "border-gold bg-gold/10" : "border-gold/30 bg-card hover:border-gold/60",
+                    )}
+                  >
+                    <div className="font-display font-semibold">{opt.title}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">
+                {mishnaUnit === "perek" ? "פרקים ביום" : "משניות ביום"}
+              </label>
+              <Input
+                type="number" min={1} value={mishnaPerDay}
+                onChange={(e) => setMishnaPerDay(e.target.value)}
+                className="border-2 border-gold/40 text-right w-32" dir="rtl"
+              />
+            </div>
+
+            <div className="space-y-3 max-h-[340px] overflow-y-auto pl-1">
+              {MISHNAYOT_DATA.map((seder) => {
+                const names = seder.masechtot.map((m) => m.name);
+                const selCount = names.filter((n) => mishnaSelectedMasechtos.includes(n)).length;
+                const allSelected = selCount === names.length;
+                return (
+                  <div key={seder.name} className="border-2 border-gold/30 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => {
+                          if (allSelected) setMishnaSelectedMasechtos((s) => s.filter((n) => !names.includes(n)));
+                          else setMishnaSelectedMasechtos((s) => Array.from(new Set([...s, ...names])));
+                        }}
+                        className="text-xs h-7"
+                      >
+                        {allSelected ? "בטל הכל" : "בחר הכל"}
+                      </Button>
+                      <h4 className="font-display font-semibold text-foreground">
+                        סדר {seder.name} <span className="text-xs text-muted-foreground">({selCount}/{names.length})</span>
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {seder.masechtot.map((m) => {
+                        const checked = mishnaSelectedMasechtos.includes(m.name);
+                        const count = countUnitsForMasechet(m.name, mishnaUnit);
+                        return (
+                          <label
+                            key={m.name}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg border-2 px-2 py-1.5 cursor-pointer text-sm",
+                              checked ? "border-gold bg-secondary" : "border-gold/30 bg-card",
+                            )}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(c) => {
+                                if (c) setMishnaSelectedMasechtos((s) => [...s, m.name]);
+                                else setMishnaSelectedMasechtos((s) => s.filter((n) => n !== m.name));
+                              }}
+                            />
+                            <span className="flex-1 text-right">{m.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {count} {mishnaUnit === "perek" ? "פר׳" : "מש׳"}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <SkipDaysPicker
+              skipWeekdays={skipWeekdays} setSkipWeekdays={setSkipWeekdays}
+              skipDates={skipDates} setSkipDates={setSkipDates}
+            />
+
+            <PlanReviewPolicyEditor value={reviewPolicy} onChange={setReviewPolicy} />
+
+            <div className="flex items-center justify-between pt-2 border-t border-gold/20">
+              <span className="text-sm text-muted-foreground">
+                {mishnaSelectedMasechtos.length} מסכתות · {generateMishnayotUnitsFlat(mishnaSelectedMasechtos, mishnaUnit).length} {mishnaUnit === "perek" ? "פרקים" : "משניות"}
+              </span>
+              <Button
+                onClick={handleStart}
+                disabled={mishnaSelectedMasechtos.length === 0}
+                className="bg-gradient-navy text-primary-foreground rounded-xl"
+              >
+                <Check className="h-4 w-4" /> התחל תוכנית
+              </Button>
+            </div>
+          </div>
+        )}
+
+
         {step === "configure" && tpl?.id === "masechta_review" && (
           <div className="space-y-4 mt-2 text-right">
             {/* Plan title */}
