@@ -56,11 +56,13 @@ const App = () => (
             <Suspense fallback={null}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
-              <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
-              <Route path="/plan/:planId" element={<PlanDetail />} />
-              <Route path="/sync-diagnostics" element={<RequireAuth><SyncDiagnostics /></RequireAuth>} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
+                <Route path="/plan/:planId" element={<PlanDetail />} />
+                <Route path="/sync-diagnostics" element={<RequireAuth><SyncDiagnostics /></RequireAuth>} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Route>
             </Routes>
             </Suspense>
             <Suspense fallback={null}>
