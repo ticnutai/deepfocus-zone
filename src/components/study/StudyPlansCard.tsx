@@ -155,6 +155,7 @@ function ShasBookIcon({ size = "md" }: { size?: "sm" | "md" }) {
 
 const TEMPLATES: TemplateDefinition[] = [
   { id: "shas",             label: 'ש"ס בבלי',       description: "39 מסכתות עם מעקב דף/עמוד", icon: <ShasBookIcon size="md" />, defaultPace: 1, groups: [] },
+  { id: "mishnayot",        label: "ששה סדרי משנה",   description: "63 מסכתות — לפי פרקים או משניות", icon: <BookMarked className="h-8 w-8 text-navy" />, defaultPace: 1, groups: [] },
   { id: "chumash",          label: "חומש",            description: "54 פרשות השבוע",   icon: <BookOpen className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groups: CHUMASH_GROUPS },
   { id: "rambam",           label: 'רמב"ם',            description: "מבנה מפורט: ספר > הלכה > פרק", icon: <Scroll className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groupsLoader: () => getDetailedGroups("rambam") },
   { id: "shulchan_aruch",   label: 'שולחן ערוך',       description: "מבנה מפורט: חלק > הלכה > סימן > סעיף", icon: <Scale className="h-8 w-8 text-navy" />, defaultPace: 1 / 7,  groupsLoader: () => getDetailedGroups("shulchan_aruch") },
