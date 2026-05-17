@@ -197,14 +197,8 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
       </TooltipProvider>
 
       {editMode && !collapsed && (
-        <div className="absolute top-2 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
-          <button
-            {...(editMode ? attributes : {})}
-            {...(editMode ? listeners : {})}
-            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none"
-            aria-label="גרור"
-          >
-            <GripVertical className="h-4 w-4" />
+        <div className="absolute top-12 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
+
           </button>
           <button
             onClick={onMovePrev}
