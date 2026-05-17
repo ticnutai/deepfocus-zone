@@ -4,6 +4,7 @@
 import { SHAS_BAVLI, SEDARIM } from "./shasData";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf } from "./shasGen";
 import { MISHNAYOT_DATA } from "./mishnayotData";
+import { TORAH_VERSES } from "./torahVerses";
 
 // === המרת מספר לגמטריה ===
 const ONES = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
