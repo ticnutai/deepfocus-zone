@@ -22,11 +22,13 @@ import { ReviewScheduleDialog } from "@/components/settings/ReviewScheduleSettin
 import { PlanScheduleView } from "@/components/study/PlanScheduleView";
 import { useStudy } from "@/lib/study/store";
 import { cn, toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, calcEtaDate } from "@/lib/utils";
-import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit } from "@/lib/study/types";
+import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit, MishnaUnit } from "@/lib/study/types";
 import { getPlanUnitsForDate } from "@/lib/study/planSchedule";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { unitsPerDaf, totalUnitsInMasechta, unitRhythmHint, toHebrewNum, generateShasUnitsFlat } from "@/lib/study/shasFormat";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf, PATH_SEP } from "@/lib/study/shasGen";
+import { MISHNAYOT_DATA } from "@/lib/study/mishnayotData";
+import { generateMishnayotUnitsFlat, countUnitsForMasechet } from "@/lib/study/mishnaPlanUnits";
 import { CATEGORY_TEMPLATES } from "@/lib/study/categoryTemplates";
 import type { CategoryTemplateNode } from "@/lib/study/categoryTemplates";
 import { QualityButtons } from "./QualityButtons";
