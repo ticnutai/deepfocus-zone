@@ -2697,12 +2697,12 @@ export function StudyPlansCard() {
                     ) : plan.planType === "deck_review" ? (
                       <Badge className={cn("text-[10px] px-1.5 py-0 h-4", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">מערכות</Badge>
                     ) : (
-                      <Badge className={cn("text-[10px] px-1.5 py-0 h-4", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">
+                      <Badge className={cn("text-[10px] px-1.5 py-0 h-4 whitespace-nowrap", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">
                         {formatPace(plan.unitsPerDay, plan)}
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       {dueReviewsCount > 0 && (
                         <button
                           onClick={() => setQuickReviewPlanId(plan.id)}
