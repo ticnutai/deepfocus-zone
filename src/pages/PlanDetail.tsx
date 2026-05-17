@@ -1098,6 +1098,50 @@ function PlanDetailInner() {
       </div>
 
       {showEdit && <EditPlanDialog plan={plan} onClose={() => setShowEdit(false)} />}
+
+      <Dialog open={noteUnit !== null} onOpenChange={(o) => { if (!o) setNoteUnit(null); }}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>הערה ליחידה</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">{noteUnit}</div>
+            <textarea
+              autoFocus
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="כתוב כאן הערה, תגית או סיבה לסימון…"
+              className="w-full min-h-[120px] rounded-md border border-input bg-background p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+            />
+            <div className="flex justify-between gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => {
+                  if (noteUnit) setPlanUnitNote(plan.id, noteUnit, "");
+                  setNoteUnit(null);
+                }}
+                disabled={!(plan.unitNotes?.[noteUnit ?? ""])}
+              >
+                מחק הערה
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setNoteUnit(null)}>ביטול</Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (noteUnit) setPlanUnitNote(plan.id, noteUnit, noteDraft);
+                    setNoteUnit(null);
+                  }}
+                >
+                  שמור
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
