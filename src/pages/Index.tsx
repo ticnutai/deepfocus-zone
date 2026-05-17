@@ -32,6 +32,7 @@ import { TaskCard } from "@/components/study/TaskCard";
 import { HeatmapPanel } from "@/components/study/HeatmapPanel";
 import { ReviewCalendar } from "@/components/study/ReviewCalendar";
 import { AdminPanel } from "@/components/admin/AdminPanel";
+import { MishnayotTracker } from "@/components/study/MishnayotTracker";
 import { SupabaseInspectorPage } from "@/components/dev/SupabaseInspectorPage";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { usePermissions } from "@/hooks/usePermissions";
