@@ -2256,15 +2256,11 @@ export function useStudy() {
     if (!nodes.length) return 0;
 
     const makeKey = (pid: string | null, name: string) => `${pid ?? "__root__"}\u0000${name}`;
-    const normName = (name: string) => name.trim().toLowerCase();
     const created: Category[] = [];
     const existingByKey = new Map<string, Category>();
-    // Secondary index: detect same-name categories at any level (prevents cross-parent duplicates).
-    const existingByName = new Map<string, Category>();
 
     for (const c of memState.categories ?? []) {
       existingByKey.set(makeKey(c.parentId, c.name), c);
-      if (!existingByName.has(normName(c.name))) existingByName.set(normName(c.name), c);
     }
 
     // Iterative walk avoids deep recursion and repeated scans over existing categories.
