@@ -822,11 +822,13 @@ function ReviewScheduleTab({ planId }: { planId: string }) {
 function PlanDetailInner() {
   const { planId } = useParams<{ planId: string }>();
   const navigate = useNavigate();
-  const { state, completeGeneralPlanUnit, undoLastGeneralPlanUnit, uncompleteSpecificUnit } = useStudy();
+  const { state, completeGeneralPlanUnit, undoLastGeneralPlanUnit, uncompleteSpecificUnit, setPlanUnitNote } = useStudy();
   const plans = state.generalPlans ?? [];
   const plan = plans.find((p) => p.id === planId);
 
   const [showEdit, setShowEdit] = useState(false);
+  const [noteUnit, setNoteUnit] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
 
   const todayScheduledUnit = useMemo(
     () => (plan ? getCalendarUnitForToday(plan) : null),
@@ -1022,40 +1024,64 @@ function PlanDetailInner() {
                 {plan.units.map((unit, idx) => {
                   const isDone = doneSet.has(unit);
                   const isNext = !isDone && idx === stats.done;
+                  const noteText = plan.unitNotes?.[unit] ?? "";
+                  const hasNote = noteText.length > 0;
+                  const toggle = () =>
+                    isDone
+                      ? uncompleteSpecificUnit(plan.id, unit)
+                      : completeGeneralPlanUnit(plan.id, unit);
                   return (
                     <div
                       key={idx}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() =>
-                        isDone
-                          ? uncompleteSpecificUnit(plan.id, unit)
-                          : completeGeneralPlanUnit(plan.id, unit)
-                      }
-                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (isDone ? uncompleteSpecificUnit(plan.id, unit) : completeGeneralPlanUnit(plan.id, unit))}
                       className={cn(
-                        "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors cursor-pointer select-none",
-                        "hover:bg-muted/50 active:bg-muted",
+                        "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors select-none",
+                        "hover:bg-muted/50",
                         isDone && "bg-emerald-500/5 hover:bg-emerald-500/10",
                         isNext && "bg-sky-400/8 font-semibold hover:bg-sky-400/15",
                       )}
                     >
-                      <span className={cn(
-                        "h-5 w-5 rounded-full flex items-center justify-center shrink-0 text-[10px] border transition-colors",
-                        isDone ? "bg-emerald-500 border-emerald-500 text-white hover:bg-destructive hover:border-destructive"
-                          : isNext ? "border-sky-400 text-sky-500"
-                            : "border-muted-foreground/30 text-muted-foreground/50",
-                      )}>
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        title={isDone ? "הסר סימון" : "סמן כהושלם"}
+                        className={cn(
+                          "h-5 w-5 rounded-full flex items-center justify-center shrink-0 text-[10px] border transition-colors cursor-pointer",
+                          isDone ? "bg-emerald-500 border-emerald-500 text-white hover:bg-destructive hover:border-destructive"
+                            : isNext ? "border-sky-400 text-sky-500 hover:bg-sky-400/10"
+                              : "border-muted-foreground/30 text-muted-foreground/50 hover:border-foreground/50",
+                        )}
+                      >
                         {isDone ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
-                      </span>
-                      <span className={cn("flex-1", isDone ? "line-through text-muted-foreground" : undefined)}>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        className={cn("flex-1 text-right cursor-pointer", isDone ? "line-through text-muted-foreground" : undefined)}
+                      >
                         {unit}
-                      </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNoteUnit(unit);
+                          setNoteDraft(noteText);
+                        }}
+                        title={hasNote ? `הערה: ${noteText}` : "הוסף הערה"}
+                        className={cn(
+                          "shrink-0 h-7 w-7 rounded-md flex items-center justify-center transition-colors",
+                          hasNote
+                            ? "text-amber-500 hover:bg-amber-500/10"
+                            : "text-muted-foreground/40 hover:text-foreground hover:bg-muted",
+                        )}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       {isDone
-                        ? <span className="text-[10px] text-muted-foreground/60 shrink-0">הסר סימון</span>
+                        ? <button type="button" onClick={toggle} className="text-[10px] text-muted-foreground/60 hover:text-destructive shrink-0">הסר סימון</button>
                         : isNext
                           ? <ArrowRight className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-                          : <span className="text-[10px] text-muted-foreground/40 shrink-0">סמן</span>
+                          : <button type="button" onClick={toggle} className="text-[10px] text-muted-foreground/40 hover:text-foreground shrink-0">סמן</button>
                       }
                     </div>
                   );
@@ -1072,6 +1098,50 @@ function PlanDetailInner() {
       </div>
 
       {showEdit && <EditPlanDialog plan={plan} onClose={() => setShowEdit(false)} />}
+
+      <Dialog open={noteUnit !== null} onOpenChange={(o) => { if (!o) setNoteUnit(null); }}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>הערה ליחידה</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">{noteUnit}</div>
+            <textarea
+              autoFocus
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="כתוב כאן הערה, תגית או סיבה לסימון…"
+              className="w-full min-h-[120px] rounded-md border border-input bg-background p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+            />
+            <div className="flex justify-between gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => {
+                  if (noteUnit) setPlanUnitNote(plan.id, noteUnit, "");
+                  setNoteUnit(null);
+                }}
+                disabled={!(plan.unitNotes?.[noteUnit ?? ""])}
+              >
+                מחק הערה
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setNoteUnit(null)}>ביטול</Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (noteUnit) setPlanUnitNote(plan.id, noteUnit, noteDraft);
+                    setNoteUnit(null);
+                  }}
+                >
+                  שמור
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

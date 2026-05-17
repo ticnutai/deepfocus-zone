@@ -342,6 +342,9 @@ export interface GeneralStudyPlan {
   reviewSpacingMode?: ReviewSpacingMode;
   reviewIntervals?: number[];
   archivedAt?: number;
+
+  // ── הערות לכל יחידה (key = unit name) ──
+  unitNotes?: Record<string, string>;
 }
 
 // === Plan Review Schedule ===
