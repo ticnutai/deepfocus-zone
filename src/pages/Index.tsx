@@ -839,6 +839,8 @@ const Index = () => {
         );
       case "backup-restore":
         return <BackupRestorePage />;
+      case "mishnayot":
+        return <MishnayotTracker />;
       case "db-inspector":
         return <SupabaseInspectorPage />;
       default:
