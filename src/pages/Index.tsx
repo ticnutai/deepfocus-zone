@@ -75,6 +75,7 @@ const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
   { id: "achievements", label: "הישגים", icon: Trophy },
   { id: "archive", label: "ארכיון", icon: Archive },
   { id: "backup-restore", label: "גיבוי ושחזור", icon: HardDrive },
+  { id: "mishnayot", label: "מעקב משניות", icon: BookOpen },
   { id: "db-inspector", label: "מסד נתונים", icon: DatabaseZap },
   { id: "admin", label: "ניהול משתמשים", icon: Shield },
   { id: "settings", label: "הגדרות", icon: Settings },
