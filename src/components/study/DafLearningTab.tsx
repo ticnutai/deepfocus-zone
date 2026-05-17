@@ -318,9 +318,6 @@ function DafLearningTabInner() {
     </div>
   );
 }
-import { BookText, Scroll, Layers } from "lucide-react";
-import { MishnaLearningTab } from "./MishnaLearningTab";
-import { ChumashLearningTab } from "./ChumashLearningTab";
 
 type LearnMode = "daf" | "mishna" | "chumash";
 const MODE_STORAGE_KEY = "daf-learning-mode";
