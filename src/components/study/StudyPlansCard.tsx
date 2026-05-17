@@ -2672,7 +2672,7 @@ export function StudyPlansCard() {
               <div
                 key={plan.id}
                 className={cn(
-                  "rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
+                  "group rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
                   isDarkCard
                     ? "border-gold/80 bg-gradient-to-br from-[hsl(var(--navy))] to-[hsl(var(--navy-soft))] text-primary-foreground hover:border-gold [&_.text-muted-foreground]:!text-primary-foreground/85 [&_.text-foreground]:!text-primary-foreground [&_.text-navy]:!text-primary-foreground [&_.hover\\:text-navy:hover]:!text-gold [&_.border-gold\\/15]:!border-white/25 [&_.border-gold\\/10]:!border-white/20"
                     : "border-gold/40 bg-card hover:border-gold/70",
@@ -2697,12 +2697,12 @@ export function StudyPlansCard() {
                     ) : plan.planType === "deck_review" ? (
                       <Badge className={cn("text-[10px] px-1.5 py-0 h-4", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">מערכות</Badge>
                     ) : (
-                      <Badge className={cn("text-[10px] px-1.5 py-0 h-4", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">
+                      <Badge className={cn("text-[10px] px-1.5 py-0 h-4 whitespace-nowrap", isDarkCard && "border-gold text-gold bg-gold/10")} variant="outline">
                         {formatPace(plan.unitsPerDay, plan)}
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       {dueReviewsCount > 0 && (
                         <button
                           onClick={() => setQuickReviewPlanId(plan.id)}
