@@ -3,6 +3,7 @@
 
 import { SHAS_BAVLI, SEDARIM } from "./shasData";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf } from "./shasGen";
+import { MISHNAYOT_DATA } from "./mishnayotData";
 
 // === המרת מספר לגמטריה ===
 const ONES = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
@@ -683,6 +684,27 @@ export const CATEGORY_TEMPLATES: CategoryTemplate[] = [
           children: fullDafNamesForMasechet(m).map((d) => ({
             name: d,
             children: fullAmudNamesForDaf(d).map((a) => ({ name: a })),
+          })),
+        })),
+      })),
+    }],
+  },
+  {
+    id: "mishnayot",
+    title: "ששה סדרי משנה / משניות",
+    description: "ששה סדרים → מסכת → פרק → משנה — כל 4,192 המשניות נוצרות אוטומטית",
+    emoji: "📕",
+    roots: [{
+      name: "ששה סדרי משנה",
+      children: MISHNAYOT_DATA.map((s) => ({
+        name: s.name,
+        children: s.masechtot.map((m) => ({
+          name: m.name,
+          children: m.chapters.map((mishnayotCount, perekIdx) => ({
+            name: `פרק ${toGematria(perekIdx + 1)}`,
+            children: Array.from({ length: mishnayotCount }, (_, mi) => ({
+              name: `משנה ${toGematria(mi + 1)}`,
+            })),
           })),
         })),
       })),
