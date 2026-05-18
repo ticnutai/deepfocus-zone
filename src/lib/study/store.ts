@@ -1434,7 +1434,7 @@ async function loadAll(userId: string): Promise<StudyState> {
   const localWidgetLayoutCache = readWidgetLayoutCache(userId);
   const effectiveWidgetLayout = (() => {
     // If cloud has nothing saved, always trust the local cache (avoid wiping user prefs).
-    if (!cloudWidgetLayout) return localWidgetLayoutCache?.layout;
+    if (!cloudWidgetLayout) return localWidgetLayoutCache?.layout ?? roleDefaultWidgetLayout;
     if (!localWidgetLayoutCache?.layout) return cloudWidgetLayout;
     return localWidgetLayoutCache.updatedAt >= cloudWidgetLayoutUpdatedAt
       ? localWidgetLayoutCache.layout
