@@ -52,7 +52,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export function CategoriesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const { state, deleteCard, setWidgetLayout, updateCard, setUiPref } = useStudy();
+  const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
 
   // Per-category sort mode (persisted in uiPrefs, synced to cloud)
   const sortMode: CategorySortMode = selectedCategory
