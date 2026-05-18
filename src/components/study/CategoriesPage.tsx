@@ -108,6 +108,13 @@ export function CategoriesPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerCategoryName, setPickerCategoryName] = useState<string | null>(null);
 
+  // Quick-run dialog state
+  const [quickRunOpen, setQuickRunOpen] = useState(false);
+  const [quickRunCat, setQuickRunCat] = useState<{ id: string; name: string } | null>(null);
+  // After session ends — offer to save as deck
+  const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
+  const { addDeck, addCardToDeck } = useStudy();
+
   const rawCategoryCards = useMemo(() => (
     selectedCategory
       ? state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`))
