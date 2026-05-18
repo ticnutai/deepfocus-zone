@@ -810,6 +810,48 @@ export function CardsManager() {
           "cards-filters": (
             <Card className="gold-frame p-3 sm:p-5 space-y-3 min-w-0">
               {activeDeck ? <DateRangePicker value={dateFilter} onChange={setDateFilter} /> : null}
+              {activeDeck && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-right">סוג שאלה:</span>
+                    {isTypeFilterActive && (
+                      <button
+                        onClick={() => setTypeFilter(new Set())}
+                        className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                      >
+                        נקה
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 justify-end">
+                    {(["flashcard", "multiple", "boolean", "combo"] as const).map((t) => {
+                      const active = typeFilter.has(t);
+                      const count = allDeckCards.filter((c) => c.type === t).length;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setTypeFilter((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(t)) next.delete(t); else next.add(t);
+                              return next;
+                            });
+                          }}
+                          disabled={count === 0 && !active}
+                          className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                            active
+                              ? "bg-gold text-navy border-gold font-semibold"
+                              : "bg-card border-gold/30 text-foreground hover:border-gold disabled:opacity-40 disabled:cursor-not-allowed"
+                          }`}
+                        >
+                          {TYPE_LABEL[t]} <span className="opacity-70">({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <p className="text-[11px] text-muted-foreground text-right">💡 גרור רגיל = העברה · גרירה עם Ctrl = העתקה (שומר גם במיקום המקורי)</p>
             </Card>
           ),
