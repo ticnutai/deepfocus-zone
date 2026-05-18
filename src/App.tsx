@@ -66,10 +66,9 @@ const App = () => (
             </Routes>
             </Suspense>
             <Suspense fallback={null}>
-              <DeferredPerfMonitor />
+              <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
             </Suspense>
             <GlobalRestoreHost />
-            <SyncStatusIndicator />
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>
