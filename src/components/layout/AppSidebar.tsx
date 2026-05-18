@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
+import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
 
 type NavItem = { id: string; label: string; icon: typeof Home; to?: string };
 
