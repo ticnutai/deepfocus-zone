@@ -40,6 +40,8 @@ interface Props {
   activeDeckId?: string | null;
   onStudyCategory?: (catName: string) => void;
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
+  /** הפעל שאלון על רשימת מזהי שאלות (לחיצה ימנית/סרגל בחירה) */
+  onStudyCardIds?: (ids: string[]) => void;
 }
 
 type LayoutMode = "grid" | "list" | "columns";
