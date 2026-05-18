@@ -36,7 +36,7 @@ const VALID_VIEWS: CategoryViewMode[] = ["browse", "explorer", "list", "cards", 
 
 export function CategoryManager({
   selectedCategory, onSelectCategory, onAddCardToCategory,
-  onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds,
+  onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun,
 }: Props) {
   const { state, setUiPref } = useStudy();
   const cloudView = state.uiPrefs?.categoryViewMode;
