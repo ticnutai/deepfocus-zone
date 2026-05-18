@@ -237,6 +237,9 @@ export interface UiPrefs {
   pinnedCategoryNames?: string[];
   // CategoryManager: selected view mode (synced across devices)
   categoryViewMode?: "browse" | "explorer" | "list" | "cards" | "mindmap";
+  // Dev tools toggles (admin only) — default false (off)
+  devShowPerfMonitor?: boolean;
+  devShowSyncIndicator?: boolean;
   // CategoriesPage: per-category sort mode for the cards list
   categorySortOrders?: Record<string, "name" | "createdNew" | "createdOld" | "favorites" | "manual">;
   // Mishnayot tracker: { [sederName]: { [masechetName]: { [perekIndex]: number[] of learned mishna indices (1-based) } } }

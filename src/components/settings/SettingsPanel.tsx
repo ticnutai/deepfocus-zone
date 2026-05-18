@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, Code2, Database, Repeat, Shield, Trash2 } from "lucide-react";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
 import { MigrationRunner } from "@/components/dev/MigrationRunner";
+import { DevIconsSettings } from "./DevIconsSettings";
 import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
@@ -58,7 +59,8 @@ export function SettingsPanel() {
           <CacheSettings />
         </TabsContent>
         {isAdmin && (
-          <TabsContent value="dev" className="mt-4">
+          <TabsContent value="dev" className="mt-4 space-y-4">
+            <DevIconsSettings />
             <MigrationRunner />
           </TabsContent>
         )}

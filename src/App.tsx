@@ -10,7 +10,7 @@ import { PermissionsProvider } from "@/hooks/usePermissions";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RestoreProvider } from "@/lib/study/RestoreContext";
 import { GlobalRestoreHost } from "@/components/study/GlobalRestoreHost";
-import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
+import { DevIconsHost } from "@/components/dev/DevIconsHost";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const Auth = lazy(() => import("./pages/Auth.tsx"));
@@ -66,10 +66,9 @@ const App = () => (
             </Routes>
             </Suspense>
             <Suspense fallback={null}>
-              <DeferredPerfMonitor />
+              <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
             </Suspense>
             <GlobalRestoreHost />
-            <SyncStatusIndicator />
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>
