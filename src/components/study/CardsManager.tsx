@@ -146,6 +146,7 @@ export function CardsManager() {
   const [copyCard, setCopyCard] = useState<StudyCardType | null>(null);
   const [decksDialogCard, setDecksDialogCard] = useState<StudyCardType | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>({
     field: "createdAt", from: null, to: null,
   });
