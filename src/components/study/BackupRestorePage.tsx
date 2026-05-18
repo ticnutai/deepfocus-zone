@@ -841,6 +841,48 @@ function CloudSection({
   restoreLoadingId: string | null;
   restoreProgress: CloudTransferProgress | null;
 }) {
+  const ms = useMultiSelect(records ?? [], (r) => r.id);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  const handleBulkDelete = useCallback(() => {
+    const ids = Array.from(ms.selected);
+    for (const id of ids) onDelete(id);
+    ms.clear();
+    setConfirmBulkDelete(false);
+  }, [ms, onDelete]);
+
+  const handleBulkRestore = useCallback(() => {
+    const ids = Array.from(ms.selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`לשחזר ${ids.length} גיבויים? (יישחזרו אחד אחרי השני)`)) return;
+    // sequential restore — onLoad is async via parent
+    for (const id of ids) onLoad(id);
+    ms.clear();
+  }, [ms, onLoad]);
+
+  const handleBulkDownload = useCallback(async () => {
+    const items = ms.selectedItems;
+    if (items.length === 0) return;
+    toast({ title: `מוריד ${items.length} גיבויים...` });
+    for (const r of items) {
+      try {
+        const snap = await loadCloudBackup(r.id);
+        if (snap) {
+          const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${r.name}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        console.error("Download failed", err);
+      }
+    }
+    ms.clear();
+  }, [ms]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
@@ -874,14 +916,39 @@ function CloudSection({
         <h2 className="font-display text-lg font-semibold text-foreground">גיבויים בענן</h2>
         <p className="text-xs text-muted-foreground">{records.length} גיבויים שמורים</p>
       </div>
+
+      <MultiSelectToolbar
+        count={ms.count}
+        total={ms.total}
+        allSelected={ms.allSelected}
+        onToggleAll={ms.toggleAll}
+        onClear={ms.clear}
+        alwaysVisible
+        actions={[
+          { icon: Upload, label: "שחזר נבחרים", onClick: handleBulkRestore },
+          { icon: Download, label: "הורד נבחרים", onClick: handleBulkDownload },
+          { icon: Trash2, label: "מחק נבחרים", onClick: () => setConfirmBulkDelete(true), variant: "destructive" },
+        ]}
+      />
+
       <ScrollArea className="max-h-[480px]">
         <div className="space-y-2 pr-1">
           {records.map((r) => (
             <div
               key={r.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-gold/20 bg-card/60 px-4 py-3"
+              className={cn(
+                "flex items-center justify-between gap-3 rounded-xl border bg-card/60 px-4 py-3 transition-colors",
+                ms.isSelected(r.id) ? "border-gold/70 bg-gold/5" : "border-gold/20",
+              )}
             >
               <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={ms.isSelected(r.id)}
+                  onChange={() => ms.toggle(r.id)}
+                  className="h-4 w-4 rounded border-gold/40 cursor-pointer accent-gold"
+                  aria-label={`בחר ${r.name}`}
+                />
                 <Button size="sm" variant="ghost" onClick={() => onDelete(r.id)} className="h-8 w-8 p-0 text-rose-400 hover:text-rose-600">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -890,7 +957,10 @@ function CloudSection({
                   {restoreLoadingId === r.id ? `טוען ${restoreProgress?.percent ?? 0}%` : "שחזר"}
                 </Button>
               </div>
-              <div className="text-right">
+              <div
+                className="text-right flex-1 cursor-pointer"
+                onClick={() => ms.toggle(r.id)}
+              >
                 <p className="text-sm font-semibold text-foreground">{r.name}</p>
                 <p className="text-xs text-muted-foreground">{fmtDate(r.created_at)} · {fmtBytes(r.size_bytes)}</p>
                 {restoreLoadingId === r.id && restoreProgress && (
@@ -901,6 +971,23 @@ function CloudSection({
           ))}
         </div>
       </ScrollArea>
+
+      <AlertDialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת {ms.count} גיבויים?</AlertDialogTitle>
+            <AlertDialogDescription>
+              פעולה זו תמחק את כל הגיבויים הנבחרים מהענן ולא ניתן לשחזרם.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive hover:bg-destructive/90">
+              מחק {ms.count} גיבויים
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
