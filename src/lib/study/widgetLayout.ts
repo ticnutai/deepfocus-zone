@@ -118,12 +118,12 @@ export const WIDGET_DEFS: Record<string, WidgetDef[]> = {
 
 export const DEFAULT_WIDGET_LAYOUT: WidgetLayout = {
   overview: [
-    { id: "weekly-summary",  visible: true, size: "full", order: 0 },
-    { id: "heatmap",         visible: true,  size: "full", order: 1 },
-    { id: "review-calendar", visible: false, size: "full", order: 2 },
-    { id: "study-plans",     visible: true,  size: "half", order: 3 },
-    { id: "quiz-plans",      visible: true,  size: "half", order: 5 },
-    { id: "goals-manager",   visible: true,  size: "full", order: 6 },
+    { id: "study-plans",     visible: true,  size: "half", order: 0 },
+    { id: "review-calendar", visible: true,  size: "full", order: 1 },
+    { id: "weekly-summary",  visible: true,  size: "full", order: 2 },
+    { id: "heatmap",         visible: false, size: "full", order: 3 },
+    { id: "quiz-plans",      visible: true,  size: "half", order: 4 },
+    { id: "goals-manager",   visible: true,  size: "full", order: 5 },
     { id: "daily-trackers",  visible: true,  size: "half", order: 6 },
     { id: "quote-card",      visible: true,  size: "half", order: 7 },
     { id: "ai-coach",        visible: true,  size: "half", order: 8 },
