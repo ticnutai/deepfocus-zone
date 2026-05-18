@@ -868,7 +868,7 @@ function CloudSection({
     toast({ title: `מוריד ${items.length} גיבויים...` });
     for (const r of items) {
       try {
-        const snap = await loadCloudBackup(r.id);
+        const snap = await loadCloudBackup(supabase, r.id);
         if (snap) {
           const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
           const url = URL.createObjectURL(blob);
