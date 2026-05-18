@@ -48,6 +48,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import type { TabConfig, SidebarConfig, WidgetLayout, UiPrefs } from "@/lib/study/types";
+import { useMultiSelect } from "@/hooks/useMultiSelect";
+import { MultiSelectToolbar } from "@/components/study/MultiSelectToolbar";
 
 // ─── Types & constants ──────────────────────────────────────────────────────
 
