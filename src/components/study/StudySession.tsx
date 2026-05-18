@@ -158,6 +158,9 @@ interface Props {
 export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Props) {
   const { state, reviewCard, setUiPref } = useStudy();
 
+  const comboPrefForQueue = (state.uiPrefs?.studyComboPref as ComboPref | undefined)
+    ?? ((typeof window !== "undefined" ? localStorage.getItem(COMBO_PREF_KEY) : null) as ComboPref | null)
+    ?? "both";
   const queue = useMemo(() => {
     // When cardIds is explicitly provided, use them directly (supports card_decks-linked cards).
     // When deckId is null (category-owned cards), use all cards.
@@ -170,10 +173,23 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
     } else {
       cards = state.cards;
     }
+    // Respect the combo-mode preference at the queue level so that
+    // "רק בחירה מרובה" actually hides pure flashcards (and vice versa).
+    if (comboPrefForQueue === "multi") {
+      cards = cards.filter((c) =>
+        c.type === "multiple" || c.type === "boolean" ||
+        (c.type === "combo" && Array.isArray(c.options) && c.options.length > 0)
+      );
+    } else if (comboPrefForQueue === "flash") {
+      cards = cards.filter((c) =>
+        c.type === "flashcard" ||
+        (c.type === "combo" && !!c.answer)
+      );
+    }
     if (mode === "srs") return buildStudyQueue(cards);
     return [...cards].sort(() => Math.random() - 0.5);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deckId, mode, cardIds]);
+  }, [deckId, mode, cardIds, comboPrefForQueue]);
 
   const [idx, setIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
