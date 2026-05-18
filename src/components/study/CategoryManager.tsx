@@ -27,6 +27,7 @@ interface Props {
   activeDeckId?: string | null;
   onStudyCategory?: (categoryName: string) => void;
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
+  onStudyCardIds?: (ids: string[]) => void;
 }
 
 const VIEW_MODE_KEY = "cat-view-mode-v1";
