@@ -1,80 +1,60 @@
 ## מטרה
+להוסיף בחירה-מרובה אחידה עם toolbar צף "בחר הכל / נקה הכל" בכל מקום שמוצגות שאלות, קטגוריות, גיבויים או פריטים אחרים.
 
-להפוך את "גיבוי ושחזור" למערכת מלאה שמגבה במפורש: **קטגוריות**, **כרטיסיות**, ו**השיוך ביניהן** (טבלת `card_categories` שעד היום לא נכללה כלל), עם גיבוי יומי אוטומטי, שמירה כפולה (ענן + JSON להורדה), ושאלה לפני כל שחזור.
-
----
-
-## 1. הרחבת מודל המצב (state)
-
-קובץ: `src/lib/study/types.ts`, `src/lib/study/store.ts`
-
-הוספת מערך חדש למצב:
+## ארכיטקטורה משותפת
+קובץ חדש: `src/hooks/useMultiSelect.ts`
 ```ts
-cardCategories: { id: string; cardId: string; categoryId: string; sortOrder: number }[]
-```
-- טעינה מ-`public.card_categories` ב-bootstrap (הוספה ל-`get_bootstrap_snapshot` RPC או query נפרד).
-- סינכרון דו-כיווני: כשמוסיפים/מסירים שיוך → insert/delete בענן.
-
-זה הכרחי כי הכרטיסים שזה עתה ייבאנו (13,207 שיוכים) לא מופיעים באפליקציה — המודל המקומי לא יודע עליהם.
-
----
-
-## 2. הרחבת ה-Snapshot
-
-קובץ: `src/lib/study/backup.ts`
-
-```ts
-export interface BackupSnapshot {
-  version: 2;                       // bump
-  data: {
-    cards, categories, decks, goals, ...   // קיים
-    cardCategories: CardCategoryLink[];    // ← חדש
-  }
+useMultiSelect<T>(items, getId) → {
+  selected, toggle, toggleAll, clear, isSelected, count, allSelected, anySelected
 }
 ```
-- `buildSnapshot` יכלול את `state.cardCategories`.
-- `parseJsonBackup` ידע להתמודד גם עם v1 (ללא שיוכים) וגם v2.
 
----
+קומפוננטה חדשה: `src/components/study/MultiSelectToolbar.tsx`
+- צף בראש הרשימה (sticky top), מופיע רק כש-`anySelected`
+- כפתורים: בחר הכל / נקה / מחק / שכפל / ייצא / חזרה (Undo) + actions מותאמים
+- תומך RTL, מציג "X נבחרו"
 
-## 3. גיבוי סלקטיבי (לפי בקשת המשתמש)
+## מיקומים שיקבלו את המערכת
 
-קומפוננטה חדשה: `src/components/study/BackupScopeDialog.tsx`
+### 1. `CardsManager.tsx` (כרטיסיות)
+- צ'קבוקס בכל שורה
+- toolbar עם: מחיקה, שכפול, ייצוא JSON/CSV, העברה לדק אחר, Undo
 
-תיבת דו-שיח עם 3 צ'קבוקסים:
-- ☑ קטגוריות בלבד (`categories`)
-- ☑ כרטיסיות בלבד (`cards`)
-- ☑ שיוכים בלבד (`cardCategories`)
-- או "הכל" (ברירת מחדל)
+### 2. `CategoryExplorerView.tsx` + `CategoryBrowseView.tsx` (עץ קטגוריות)
+- צ'קבוקס ליד כל קטגוריה (כולל ענפים)
+- toolbar עם: מחיקה מרובה, מיזוג, ייצוא, Undo
 
-הכפתורים בעמוד `BackupRestorePage` ירוצו דרך הדיאלוג הזה.
+### 3. `BackupRestorePage.tsx` — סקציית ענן
+- צ'קבוקס בכל שורת גיבוי בענן
+- toolbar עם: מחיקה מרובה, הורדה מרוכזת (ZIP), שחזור מרובה
 
----
+### 4. `BackupRestorePage.tsx` — סקציית היסטוריה
+- אותו דבר על הגיבויים המקומיים
 
-## 4. גיבוי יומי אוטומטי
+### 5. תצוגות שאלות נוספות
+חיפוש: `CardsListView`, `DeckCardsList`, `StudySession` היסטוריה — כל מקום שמציג שורות שאלות יקבל את אותו hook + toolbar.
 
-קובץ: `src/lib/study/autoBackup.ts` (קיים — נרחיב)
+## פעולות שיתמכו (לפי בקשת המשתמש)
+| פעולה | אייקון | תיאור |
+|---|---|---|
+| בחר הכל / נקה הכל | CheckSquare | toggle — לחיצה חוזרת מבטלת |
+| מחיקה מרובה | Trash2 | עם dialog אישור |
+| שחזור מרובה | Upload | מתוך גיבויים |
+| ייצוא/הורדה | Download | JSON/CSV/ZIP |
+| העתקה | Copy | שכפול הפריטים |
+| ביטול (Undo) | Undo2 | stack של 5 פעולות אחרונות |
 
-- בכל טעינת אפליקציה: בדוק `lastAutoBackupAt` ב-`user_settings.ui_prefs`.
-- אם חלפו ≥24 שעות: צור snapshot ושמור ל-`user_backups` עם `name = "אוטומטי YYYY-MM-DD"`.
-- שמירה על מקסימום 7 גיבויים אוטומטיים (FIFO — מחק ישנים).
-- אינדיקטור קטן בסטטוס למעלה: "✓ גובה היום ב-08:34".
+## מנגנון Undo
+`src/lib/study/undoStack.ts` — מחזיק את 5 הפעולות האחרונות (מחיקה/שכפול/וכו') עם snapshot של המצב לפני. כפתור Ctrl+Z / כפתור Undo ב-toolbar.
 
----
+## תנאי תצוגה
+ה-toolbar יוצג **רק כשנבחר לפחות פריט אחד** (לפי בחירת המשתמש). כפתור "בחר הכל" יהיה תמיד נגיש דרך header קטן בכל רשימה.
 
-## 5. הורדת JSON
+## סדר ביצוע (אינקרמנטלי)
+1. צור hook + toolbar + undoStack משותפים
+2. החל על CardsManager (העיקרי)
+3. החל על סקציית ענן ב-BackupRestorePage
+4. החל על עץ הקטגוריות
+5. החל על שאר התצוגות
 
-קיים כבר — נוודא שכולל את `cardCategories` ב-v2 ושיש כפתור נפרד "📥 הורד כ-JSON".
-
----
-
-## 6. שחזור עם אישור
-
-קומפוננטה: `src/components/study/RestoreConfirmDialog.tsx`
-
-לפני כל שחזור:
-- הצג סיכום: "X כרטיסיות, Y קטגוריות, Z שיוכים יישוחזרו"
-- בחירת אסטרטגיה:
-  - 🔁 **החלפה מלאה** — מוחק הכל ומחליף
-  - ➕ **מיזוג חכם** — מוסיף רק חסרים
-  - 🎯 **בחירה ידנ
+זה ייעשה בהדרגה — נתחיל ב-3 הראשונים ונבדוק תוצאה לפני המשך.

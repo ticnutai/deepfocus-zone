@@ -1,5 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download } from "lucide-react";
+import { useMultiSelect } from "@/hooks/useMultiSelect";
+import { MultiSelectToolbar } from "@/components/study/MultiSelectToolbar";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useSensor, useSensors, useDraggable, useDroppable,
@@ -263,6 +269,39 @@ export function CardsManager() {
     });
     return arr;
   }, [deckCards, cardSort, cardSortDir]);
+
+  // ── Multi-select for cards ────────────────────────────────────────────
+  const cardMs = useMultiSelect(sortedDeckCards, (c) => c.id);
+  const [confirmBulkDeleteCards, setConfirmBulkDeleteCards] = useState(false);
+
+  const bulkDeleteCards = () => {
+    const ids = Array.from(cardMs.selected);
+    for (const id of ids) deleteCard(id);
+    toast({ title: `${ids.length} שאלות נמחקו` });
+    cardMs.clear();
+    setConfirmBulkDeleteCards(false);
+  };
+
+  const bulkDuplicateCards = () => {
+    const items = cardMs.selectedItems;
+    for (const c of items) duplicateCard(c.id);
+    toast({ title: `${items.length} שאלות הועתקו` });
+    cardMs.clear();
+  };
+
+  const bulkExportCards = () => {
+    const items = cardMs.selectedItems;
+    if (!items.length) return;
+    const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards: items }, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cards_export_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: `${items.length} שאלות יוצאו` });
+  };
 
   if (session) {
     return (
@@ -889,12 +928,36 @@ export function CardsManager() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
+
+                  <MultiSelectToolbar
+                    count={cardMs.count}
+                    total={cardMs.total}
+                    allSelected={cardMs.allSelected}
+                    onToggleAll={cardMs.toggleAll}
+                    onClear={cardMs.clear}
+                    alwaysVisible
+                    actions={[
+                      { icon: Copy, label: "שכפל", onClick: bulkDuplicateCards },
+                      { icon: Download, label: "ייצא", onClick: bulkExportCards },
+                      { icon: Trash2, label: "מחק", onClick: () => setConfirmBulkDeleteCards(true), variant: "destructive" },
+                    ]}
+                  />
+
                   {sortedDeckCards.map((c) => {
                     const categoryTags = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
                     const plainTags = c.tags.filter((t) => !t.startsWith("cat:"));
                     const cardDeckCount = (state.cardDecks ?? []).filter((l) => l.cardId === c.id).length || 1;
+                    const isSel = cardMs.isSelected(c.id);
                     return (
                       <DraggableCardRow key={c.id} cardId={c.id}>
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={(e) => { e.stopPropagation(); cardMs.toggle(c.id); }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 h-4 w-4 rounded border-gold/40 cursor-pointer accent-gold shrink-0"
+                          aria-label="בחר שאלה"
+                        />
                         <div className="flex-1 text-right cursor-pointer" onClick={() => setHistoryCard(c)}>
                           <div className="flex items-center gap-1 justify-end mb-1 flex-wrap">
                             {cardDeckCount > 1 && <Badge className="text-[10px] bg-gold text-navy">📚 {cardDeckCount} מערכות</Badge>}
@@ -975,6 +1038,21 @@ export function CardsManager() {
       <CardHistoryDialog card={historyCard} open={!!historyCard} onOpenChange={(o) => !o && setHistoryCard(null)} />
       <CopyCardDialog card={copyCard} open={!!copyCard} onOpenChange={(o) => !o && setCopyCard(null)} />
       <CardDecksDialog card={decksDialogCard} open={!!decksDialogCard} onOpenChange={(o) => !o && setDecksDialogCard(null)} />
+
+      <AlertDialog open={confirmBulkDeleteCards} onOpenChange={setConfirmBulkDeleteCards}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת {cardMs.count} שאלות?</AlertDialogTitle>
+            <AlertDialogDescription>פעולה זו תמחק לצמיתות את כל השאלות הנבחרות.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={bulkDeleteCards} className="bg-destructive hover:bg-destructive/90">
+              מחק {cardMs.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     <DragOverlay>
       {draggedCardId ? (
