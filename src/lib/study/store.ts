@@ -1476,7 +1476,7 @@ async function loadAll(userId: string): Promise<StudyState> {
       updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
     })),
     tabConfig: tabConfigBundle.home,
-    sidebarConfig: tabConfigBundle.sidebar,
+    sidebarConfig: (tabConfigBundle.sidebar.length === 0 && roleDefaultSidebar) ? roleDefaultSidebar : tabConfigBundle.sidebar,
     widgetLayout: effectiveWidgetLayout,
     uiPrefs: (() => {
       const raw = (settingsR.data as Record<string, unknown> | null)?.ui_prefs;
