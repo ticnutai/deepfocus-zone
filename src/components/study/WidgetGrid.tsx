@@ -297,9 +297,14 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
   const toolbarHoverTimer = useRef<number | null>(null);
 
   const defs = WIDGET_DEFS[tabId] ?? [];
+  const blocklist = useFeatureBlocklist();
+  const { isAdmin } = usePermissions();
   const tabLayout: WidgetConfig[] = useMemo(
-    () => mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order),
-    [state.widgetLayout, tabId],
+    () => {
+      const merged = mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order);
+      return isAdmin ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
+    },
+    [state.widgetLayout, tabId, blocklist, isAdmin],
   );
 
   const save = useCallback((newTabLayout: WidgetConfig[]) => {
