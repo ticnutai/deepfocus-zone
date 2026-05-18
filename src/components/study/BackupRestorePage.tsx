@@ -1065,6 +1065,39 @@ function HistorySection({
     }
   };
 
+  const ms = useMultiSelect(entries, (e) => e.id);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  const handleBulkDelete = () => {
+    const ids = Array.from(ms.selected);
+    for (const id of ids) handleDelete(id);
+    ms.clear();
+    setConfirmBulkDelete(false);
+  };
+
+  const handleBulkRestore = () => {
+    const items = ms.selectedItems;
+    if (!items.length) return;
+    if (!window.confirm(`לשחזר ${items.length} גיבויים מההיסטוריה?`)) return;
+    for (const entry of items) handleRestore(entry);
+    ms.clear();
+  };
+
+  const handleBulkDownload = () => {
+    for (const entry of ms.selectedItems) {
+      try {
+        const blob = new Blob([entry.data], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${entry.label.replace(/[^\w\u0590-\u05FF\-_.]/g, "_")}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch { /* ignore */ }
+    }
+    ms.clear();
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
