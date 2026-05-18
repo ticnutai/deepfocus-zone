@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity } from "lucide-react";
+import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { PermissionsMatrix } from "./PermissionsMatrix";
 import { ApprovalTab } from "./ApprovalTab";
 import { UserPermOverrides } from "./UserPermOverrides";
 import { SyncMonitorTab } from "./SyncMonitorTab";
+import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { usePermissions } from "@/hooks/usePermissions";
 
 export function AdminPanel() {
