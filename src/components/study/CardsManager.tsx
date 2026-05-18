@@ -795,6 +795,7 @@ export function CardsManager() {
                       {deckCards.length} שאלות
                       {categoryFilter ? ` · קטגוריה: ${categoryFilter}` : ""}
                       {isDateFilterActive ? " · מסונן לפי תאריך" : ""}
+                      {isTypeFilterActive ? ` · סוג: ${Array.from(typeFilter).map((t) => TYPE_LABEL[t] ?? t).join(", ")}` : ""}
                       {" · "}{dueCount} מחכות לחזרה
                     </p>
                   </div>
