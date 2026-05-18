@@ -42,6 +42,8 @@ interface Props {
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
   /** הפעל שאלון על רשימת מזהי שאלות (לחיצה ימנית/סרגל בחירה) */
   onStudyCardIds?: (ids: string[]) => void;
+  /** Quick-run flow: opens dialog that asks scope/mode and runs without creating a deck */
+  onQuickRun?: (categoryId: string, categoryName: string) => void;
 }
 
 type LayoutMode = "grid" | "list" | "columns";
