@@ -14,6 +14,7 @@ import { StudyTab } from "@/components/study/StudyTab";
 import { DafLearningTab } from "@/components/study/DafLearningTab";
 import { CardsManager } from "@/components/study/CardsManager";
 import { CategoriesPage } from "@/components/study/CategoriesPage";
+import { CardsAndCategoriesPage } from "@/components/study/CardsAndCategoriesPage";
 import { SmartSearch } from "@/components/study/SmartSearch";
 import { WeeklySummary } from "@/components/study/WeeklySummary";
 import { GoalsManager } from "@/components/study/GoalsManager";
