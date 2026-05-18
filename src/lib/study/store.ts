@@ -1235,10 +1235,27 @@ async function loadAll(userId: string): Promise<StudyState> {
   let sessionsR: { data?: R<'learning_sessions'>[] | null };
   let catsData: { data?: R<'categories'>[] | null };
 
-  const bootstrap = await timeOp(
-    "db:bootstrap_snapshot", "db",
-    () => rpcClient.rpc("get_bootstrap_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
-  );
+  const [bootstrap, roleDefaultsR] = await Promise.all([
+    timeOp(
+      "db:bootstrap_snapshot", "db",
+      () => rpcClient.rpc("get_bootstrap_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+    ),
+    timeOp(
+      "db:role_layout_defaults", "db",
+      () => rpcClient.rpc("get_my_role_layout_defaults") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+    ).catch(() => ({ data: null, error: null })),
+  ]);
+  const roleDefaults = (roleDefaultsR?.data && typeof roleDefaultsR.data === "object") ? roleDefaultsR.data as Record<string, unknown> : null;
+  const roleDefaultWidgetLayout = (() => {
+    const raw = roleDefaults?.widget_layout;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as unknown as WidgetLayout;
+    return undefined;
+  })();
+  const roleDefaultSidebar = (() => {
+    const raw = roleDefaults?.sidebar_config;
+    if (Array.isArray(raw)) return raw as unknown as SidebarConfig[];
+    return undefined;
+  })();
 
   if (!bootstrap.error && bootstrap.data && typeof bootstrap.data === "object") {
     const payload = bootstrap.data as Record<string, unknown>;
