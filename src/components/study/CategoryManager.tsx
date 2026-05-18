@@ -28,6 +28,7 @@ interface Props {
   onStudyCategory?: (categoryName: string) => void;
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
   onStudyCardIds?: (ids: string[]) => void;
+  onQuickRun?: (categoryId: string, categoryName: string) => void;
 }
 
 const VIEW_MODE_KEY = "cat-view-mode-v1";
