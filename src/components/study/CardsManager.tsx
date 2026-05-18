@@ -1038,6 +1038,21 @@ export function CardsManager() {
       <CardHistoryDialog card={historyCard} open={!!historyCard} onOpenChange={(o) => !o && setHistoryCard(null)} />
       <CopyCardDialog card={copyCard} open={!!copyCard} onOpenChange={(o) => !o && setCopyCard(null)} />
       <CardDecksDialog card={decksDialogCard} open={!!decksDialogCard} onOpenChange={(o) => !o && setDecksDialogCard(null)} />
+
+      <AlertDialog open={confirmBulkDeleteCards} onOpenChange={setConfirmBulkDeleteCards}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת {cardMs.count} שאלות?</AlertDialogTitle>
+            <AlertDialogDescription>פעולה זו תמחק לצמיתות את כל השאלות הנבחרות.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={bulkDeleteCards} className="bg-destructive hover:bg-destructive/90">
+              מחק {cardMs.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     <DragOverlay>
       {draggedCardId ? (
