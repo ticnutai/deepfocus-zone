@@ -79,6 +79,7 @@ export function CategoryManager({
           activeDeckId={activeDeckId}
           onStudyCategory={onStudyCategory}
           onStudyMultipleCategories={onStudyMultipleCategories}
+          onStudyCardIds={onStudyCardIds}
         />
       )}
       {viewMode === "browse" && (
