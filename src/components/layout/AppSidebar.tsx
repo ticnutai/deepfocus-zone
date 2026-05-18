@@ -214,8 +214,11 @@ export function AppShellSidebar() {
     for (const def of DEFAULT_SIDEBAR_ITEMS) {
       if (!used.has(def.id)) result.push({ ...def, visible: true });
     }
-    return result.filter((i) => i.id !== "admin" || isAdmin);
-  }, [state.sidebarConfig, isAdmin]);
+    const blockedSet = new Set(blocklist.sections ?? []);
+    return result
+      .filter((i) => i.id !== "admin" || isAdmin)
+      .filter((i) => isAdmin || !blockedSet.has(i.id));
+  }, [state.sidebarConfig, isAdmin, blocklist]);
 
   const goSection = (id: string) => {
     if (pathname !== "/") {
