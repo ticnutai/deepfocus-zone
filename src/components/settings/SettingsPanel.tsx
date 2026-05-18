@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, Code2, Database, Repeat, Shield, Trash2 } from "lucide-react";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
 import { MigrationRunner } from "@/components/dev/MigrationRunner";
+import { DevIconsSettings } from "./DevIconsSettings";
 import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
