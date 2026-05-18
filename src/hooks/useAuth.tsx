@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -24,19 +24,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestMode, setGuestMode] = useState(() => localStorage.getItem(GUEST_KEY) === "1");
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    // Subscribe FIRST, then read existing session.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (s) setGuestMode(false); // real auth overrides guest mode
-      setLoading(false);
-    });
+    mountedRef.current = true;
+
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    // Wait for stored session FIRST, then subscribe to changes.
+    // This avoids the lock race between getSession and onAuthStateChange.
     supabase.auth.getSession().then(({ data }) => {
+      if (!mountedRef.current) return;
       setSession(data.session);
+      if (data.session) setGuestMode(false);
       setLoading(false);
+
+      // Only subscribe after getSession resolves to prevent lock contention.
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+        if (!mountedRef.current) return;
+        setSession(s);
+        if (s) setGuestMode(false);
+        setLoading(false);
+      });
+      subscription = sub.subscription;
     });
-    return () => sub.subscription.unsubscribe();
+
+    return () => {
+      mountedRef.current = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const signOut = useCallback(async () => {
