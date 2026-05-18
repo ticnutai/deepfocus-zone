@@ -3,8 +3,16 @@
  * Supports: JSON (full backup), CSV, TXT, XLSX (Excel)
  */
 import type { StudyState, Category, TabConfig, SidebarConfig, WidgetLayout, UiPrefs } from "./types";
+import { supabase } from "@/integrations/supabase/client";
 
 // ─── Snapshot type ─────────────────────────────────────────────────────────
+
+export interface CardCategoryLink {
+  id?: string;
+  cardId: string;
+  categoryId: string;
+  sortOrder?: number;
+}
 
 export interface BackupSnapshot {
   version: number;
@@ -14,6 +22,8 @@ export interface BackupSnapshot {
     decks:            StudyState["decks"];
     cards:            StudyState["cards"];
     categories:       StudyState["categories"];
+    /** Card↔Category associations from the cloud `card_categories` table. v2+ */
+    cardCategories?:  CardCategoryLink[];
     goals:            StudyState["goals"];
     shasPlan:         StudyState["shasPlan"];
     dayNotes:         StudyState["dayNotes"];
@@ -24,7 +34,62 @@ export interface BackupSnapshot {
   };
 }
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
+
+// ─── Cloud helpers for card↔category associations ─────────────────────────
+
+/** Fetch all card_categories rows for the current user from the cloud. */
+export async function fetchCloudCardCategories(): Promise<CardCategoryLink[]> {
+  const out: CardCategoryLink[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  // page through to bypass the 1000-row default cap
+  while (true) {
+    const { data, error } = await supabase
+      .from("card_categories")
+      .select("id, card_id, category_id, sort_order")
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message || "Failed to fetch card_categories");
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      out.push({
+        id: r.id as string,
+        cardId: r.card_id as string,
+        categoryId: r.category_id as string,
+        sortOrder: (r.sort_order as number) ?? 0,
+      });
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
+/** Upsert links into the cloud `card_categories` table for the current user. */
+export async function restoreCloudCardCategories(
+  links: CardCategoryLink[],
+  userId: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ inserted: number }> {
+  if (!links.length) return { inserted: 0 };
+  const batchSize = 500;
+  let inserted = 0;
+  for (let i = 0; i < links.length; i += batchSize) {
+    const slice = links.slice(i, i + batchSize).map((l) => ({
+      user_id: userId,
+      card_id: l.cardId,
+      category_id: l.categoryId,
+      sort_order: l.sortOrder ?? 0,
+    }));
+    const { error, count } = await supabase
+      .from("card_categories")
+      .upsert(slice, { onConflict: "card_id,category_id", count: "exact" });
+    if (error) throw new Error(error.message);
+    inserted += count ?? slice.length;
+    onProgress?.(Math.min(i + batchSize, links.length), links.length);
+  }
+  return { inserted };
+}
 
 // ─── Card type-safe helpers ─────────────────────────────────────────────────
 
@@ -139,6 +204,15 @@ export async function buildSnapshotAsync(
   const reviewIntervals = state.reviewIntervals ?? [1, 3, 7, 14, 30];
   emit("מכין מרווחי חזרה", 1);
 
+  // Fetch card↔category associations from cloud (v2+)
+  let cardCategories: CardCategoryLink[] = [];
+  try {
+    emit("אוסף שיוכי כרטיס↔קטגוריה", 0);
+    cardCategories = await fetchCloudCardCategories();
+  } catch (err) {
+    console.warn("[backup] Failed to fetch card_categories", err);
+  }
+
   emit("הושלם", 0);
   return {
     version: BACKUP_VERSION,
@@ -148,6 +222,7 @@ export async function buildSnapshotAsync(
       decks,
       cards,
       categories,
+      cardCategories,
       goals,
       shasPlan,
       dayNotes,
