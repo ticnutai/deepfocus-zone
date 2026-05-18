@@ -203,6 +203,11 @@ export function CategoriesPage() {
         setStudyCardIds(allIds);
         setStudyMode("multiple");
       }}
+      onStudyCardIds={(ids) => {
+        if (!ids.length) return;
+        setStudyCardIds(ids);
+        setStudyMode("multiple");
+      }}
     />
   );
 

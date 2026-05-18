@@ -40,6 +40,8 @@ interface Props {
   activeDeckId?: string | null;
   onStudyCategory?: (catName: string) => void;
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
+  /** הפעל שאלון על רשימת מזהי שאלות (לחיצה ימנית/סרגל בחירה) */
+  onStudyCardIds?: (ids: string[]) => void;
 }
 
 type LayoutMode = "grid" | "list" | "columns";
@@ -452,7 +454,10 @@ function FolderListRow({
   );
 }
 
-function CardTile({ card, query, onEdit, onDelete, selected, onToggleSelect, selectionMode }: {
+function CardTile({
+  card, query, onEdit, onDelete, selected, onToggleSelect, selectionMode,
+  decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen,
+}: {
   card: StudyCard;
   query?: string;
   onEdit?: () => void;
@@ -460,6 +465,11 @@ function CardTile({ card, query, onEdit, onDelete, selected, onToggleSelect, sel
   selected?: boolean;
   onToggleSelect?: () => void;
   selectionMode?: boolean;
+  decks?: { id: string; name: string }[];
+  onAddToDeck?: (deckId: string) => void;
+  onCreateDeckWithCard?: () => void;
+  onStudyOne?: () => void;
+  onClassifyOpen?: () => void;
 }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `card:${card.id}`, disabled: selectionMode });
   const highlighted = useMemo(() => {
@@ -475,7 +485,7 @@ function CardTile({ card, query, onEdit, onDelete, selected, onToggleSelect, sel
       </>
     );
   }, [card.question, query]);
-  return (
+  const tile = (
     <div
       ref={setNodeRef} {...(!selectionMode ? listeners : {})} {...attributes}
       onClick={(e) => {
@@ -533,10 +543,81 @@ function CardTile({ card, query, onEdit, onDelete, selected, onToggleSelect, sel
       </div>
     </div>
   );
+
+  // Right-click context menu — only when we have any actions to offer
+  const hasMenu = !!(onEdit || onDelete || onToggleSelect || onStudyOne || onAddToDeck || onClassifyOpen);
+  if (!hasMenu) return tile;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{tile}</ContextMenuTrigger>
+      <ContextMenuContent className="w-56">
+        {onStudyOne && (
+          <>
+            <ContextMenuItem onClick={onStudyOne}>
+              <Brain className="h-4 w-4 ml-2 text-gold" /> הפעל מבחן על שאלה זו
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {onToggleSelect && (
+          <ContextMenuItem onClick={onToggleSelect}>
+            {selected
+              ? <><CheckSquare className="h-4 w-4 ml-2 text-gold" /> בטל בחירה</>
+              : <><Square className="h-4 w-4 ml-2" /> בחר שאלה</>}
+          </ContextMenuItem>
+        )}
+        {onEdit && (
+          <ContextMenuItem onClick={onEdit}>
+            <Pencil className="h-4 w-4 ml-2" /> ערוך
+          </ContextMenuItem>
+        )}
+        {(decks || onCreateDeckWithCard || onClassifyOpen) && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Layers className="h-4 w-4 ml-2 text-gold" /> סווג / הוסף למערכת
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+              {onClassifyOpen && (
+                <>
+                  <ContextMenuItem onClick={onClassifyOpen}>
+                    <ListChecks className="h-4 w-4 ml-2 text-gold" /> בחר מערכות (דיאלוג)…
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                </>
+              )}
+              {onCreateDeckWithCard && (
+                <ContextMenuItem onClick={onCreateDeckWithCard}>
+                  <Plus className="h-4 w-4 ml-2" /> צור מערכת חדשה עם שאלה זו
+                </ContextMenuItem>
+              )}
+              {decks && decks.length > 0 && <ContextMenuSeparator />}
+              {decks?.map((d) => (
+                <ContextMenuItem key={d.id} onClick={() => onAddToDeck?.(d.id)}>
+                  <FolderPlus className="h-4 w-4 ml-2 text-muted-foreground" /> {d.name}
+                </ContextMenuItem>
+              ))}
+              {decks && decks.length === 0 && (
+                <ContextMenuItem disabled>אין מערכות קיימות</ContextMenuItem>
+              )}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        )}
+        {onDelete && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={onDelete} className="text-red-600 focus:text-red-700">
+              <Trash2 className="h-4 w-4 ml-2" /> מחק
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 /* ===================== MAIN ===================== */
-export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories }: Props) {
+export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds }: Props) {
   const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck } = useStudy();
 
   // === Persistent prefs ===
@@ -1936,10 +2017,20 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               {selectedCardIds.size > 0 && (
                 <div className="flex items-center gap-2 mb-2 rounded-xl border-2 border-gold/50 bg-gold/5 px-3 py-1.5">
                   <span className="text-xs font-bold text-gold">{selectedCardIds.size} נבחרו</span>
+                  {onStudyCardIds && (
+                    <Button
+                      size="sm"
+                      onClick={() => { onStudyCardIds([...selectedCardIds]); }}
+                      className="h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground mr-auto"
+                      title="הפעל מבחן על השאלות שנבחרו"
+                    >
+                      <Brain className="h-3 w-3" /> הפעל שאלות
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => { setClassifyDeckIds(new Set()); setNewDeckNameForClassify(""); setClassifyDialogOpen(true); }}
-                    className="h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground mr-auto"
+                    className={cn("h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground", !onStudyCardIds && "mr-auto")}
                   >
                     <Layers className="h-3 w-3" /> סווג למערכת
                   </Button>
@@ -1969,6 +2060,25 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                     onDelete={() => {
                       if (confirm(`מחק את השאלה "${card.question.slice(0, 40)}..."?`)) deleteCard(card.id);
                     }}
+                    decks={state.decks.map((d) => ({ id: d.id, name: d.name }))}
+                    onAddToDeck={(deckId) => {
+                      addCardToDeck(card.id, deckId);
+                      toast({ title: "השאלה שויכה למערכת", description: state.decks.find((d) => d.id === deckId)?.name ?? "" });
+                    }}
+                    onCreateDeckWithCard={() => {
+                      const name = window.prompt("שם המערכת החדשה:");
+                      if (!name?.trim()) return;
+                      const deck = addDeck(name.trim(), undefined, []);
+                      addCardToDeck(card.id, deck.id);
+                      toast({ title: "נוצרה מערכת חדשה", description: `${name.trim()} (שאלה אחת)` });
+                    }}
+                    onClassifyOpen={() => {
+                      setSelectedCardIds(new Set([card.id]));
+                      setClassifyDeckIds(new Set());
+                      setNewDeckNameForClassify("");
+                      setClassifyDialogOpen(true);
+                    }}
+                    onStudyOne={onStudyCardIds ? () => onStudyCardIds([card.id]) : undefined}
                   />
                 ))}
               </div>
