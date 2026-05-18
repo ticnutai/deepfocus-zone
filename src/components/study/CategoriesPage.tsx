@@ -167,12 +167,22 @@ export function CategoriesPage() {
   // If a study session is active, render it fullscreen
   if (studyMode && studyCardIds && studyCardIds.length > 0) {
     const firstDeckId = state.cards.find((c) => studyCardIds.includes(c.id))?.deckId ?? null;
+    const sessionIds = [...studyCardIds];
+    const sessionCatName = quickRunCat?.name ?? "";
     return (
       <StudySession
         deckId={firstDeckId}
         mode={studyMode as never}
         cardIds={studyCardIds}
-        onExit={() => { setStudyMode(null); setStudyCardIds(null); }}
+        onExit={() => {
+          // If session came from QuickRun, offer save-as-deck
+          if (quickRunCat) {
+            setPostSessionPrompt({ cardIds: sessionIds, categoryName: sessionCatName });
+            setQuickRunCat(null);
+          }
+          setStudyMode(null);
+          setStudyCardIds(null);
+        }}
       />
     );
   }
