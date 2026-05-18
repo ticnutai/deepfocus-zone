@@ -70,7 +70,7 @@ export function RoleDefaultsTab() {
         .select("widget_layout,sidebar_config,category_template,updated_at,updated_by")
         .eq("role_id", roleId)
         .maybeSingle();
-      setExisting(data as ExistingDefault | null);
+      setExisting((data ?? null) as unknown as ExistingDefault | null);
     } finally {
       setLoadingExisting(false);
     }
