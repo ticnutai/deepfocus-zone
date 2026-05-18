@@ -162,10 +162,10 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
           className="absolute top-0 right-0 left-0 z-20 flex items-center justify-between gap-2 px-3 py-1.5 rounded-t-xl bg-gradient-to-l from-gold/80 to-gold/60 text-navy cursor-grab active:cursor-grabbing touch-none shadow-md border-b-2 border-gold animate-pulse-slow"
           title="גרור כדי לסדר מחדש את הווידג'ט"
         >
-          <span className="text-[11px] font-bold opacity-80">גרור לסידור</span>
-          <div className="flex items-center gap-1.5">
-            <span className="font-display text-xs font-semibold truncate">{label}</span>
-            <GripVertical className="h-4 w-4" />
+          <span className="text-[11px] font-bold opacity-80 shrink-0">גרור לסידור</span>
+          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+            <span className="font-display text-xs font-semibold truncate min-w-0">{label}</span>
+            <GripVertical className="h-4 w-4 shrink-0" />
           </div>
         </div>
       )}
@@ -263,8 +263,8 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
           title={`הרחב "${label}"`}
           className="w-full flex items-center justify-between gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 text-right hover:bg-secondary/40 transition-colors"
         >
-          <ChevronDown className="h-4 w-4 text-gold" />
-          <span className="font-display text-sm font-semibold truncate">{label}</span>
+          <ChevronDown className="h-4 w-4 text-gold shrink-0" />
+          <span className="font-display text-sm font-semibold truncate min-w-0 flex-1 text-right">{label}</span>
         </button>
       ) : (
         children

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Brain, Play, BookOpen, ChevronDown, ChevronUp, Filter, Eye, EyeOff, Zap } from "lucide-react";
 import { ReviewCalendar } from "./ReviewCalendar";
 import { HeatmapPanel } from "./HeatmapPanel";
@@ -29,12 +29,31 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
 
   // All deck stats — computed before early return to satisfy Rules of Hooks
   const deckStats = useMemo(() => {
+    const catNameById = new Map((state.categories ?? []).map((c) => [c.id, c.name]));
+    const childrenOf = new Map<string | null, string[]>();
+    (state.categories ?? []).forEach((c) => {
+      const key = c.parentId ?? null;
+      const arr = childrenOf.get(key) ?? [];
+      arr.push(c.id);
+      childrenOf.set(key, arr);
+    });
+    const expandCatIds = (rootIds: string[], includeSubs: boolean): Set<string> => {
+      const result = new Set<string>(rootIds);
+      if (!includeSubs) return result;
+      const stack = [...rootIds];
+      while (stack.length) {
+        const id = stack.pop()!;
+        (childrenOf.get(id) ?? []).forEach((childId) => {
+          if (!result.has(childId)) { result.add(childId); stack.push(childId); }
+        });
+      }
+      return result;
+    };
     return state.decks.map((deck) => {
       const linkedIds = new Set((state.cardDecks ?? []).filter((l) => l.deckId === deck.id).map((l) => l.cardId));
+      const effectiveCatIds = expandCatIds(deck.categoryIds ?? [], deck.includeSubCategories !== false);
       const catNames = new Set(
-        (deck.categoryIds ?? [])
-          .map((id) => state.categories?.find((c) => c.id === id)?.name)
-          .filter(Boolean) as string[]
+        [...effectiveCatIds].map((id) => catNameById.get(id)).filter(Boolean) as string[]
       );
       const cards = state.cards.filter((c) =>
         c.deckId === deck.id ||
@@ -53,6 +72,23 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     return queue.slice(0, 10).map((c) => c.id);
   }, [state.cards]);
 
+  // ── DEBUG: log deckStats whenever it changes ────────────────────────────────
+  useEffect(() => {
+    if (!deckStats.length) return;
+    console.groupCollapsed(
+      `%c[🔍 DECK-DEBUG StudyTab] deckStats עודכן — ${state.cards.length} כרטיסים בזיכרון`,
+      'color: #ff8a65; font-weight: bold',
+    );
+    deckStats.forEach(({ deck, total, dueCount }) => {
+      console.debug(
+        `[🔍 StudyTab] מערכת "${deck.name}": סה"כ=${total} לחזרה=${dueCount} | categoryIds=${JSON.stringify(deck.categoryIds??[])} includeSubCats=${deck.includeSubCategories??true}`,
+      );
+    });
+    console.debug('[🔍] quickReviewIds:', quickReviewIds.length, 'כרטיסים');
+    console.groupEnd();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckStats, quickReviewIds]);
+
   if (session) {
     return (
       <div className="space-y-4">
@@ -69,10 +105,26 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
 
   const activeDeck = state.decks.find((d) => d.id === activeDeckId);
   const activeDeckLinkedIds = new Set((state.cardDecks ?? []).filter((l) => l.deckId === activeDeckId).map((l) => l.cardId));
+  // Expand subcategories for activeDeck
+  const _activeCatChildrenOf = new Map<string | null, string[]>();
+  (state.categories ?? []).forEach((c) => {
+    const key = c.parentId ?? null;
+    const arr = _activeCatChildrenOf.get(key) ?? [];
+    arr.push(c.id);
+    _activeCatChildrenOf.set(key, arr);
+  });
+  const _activeCatExpanded = new Set<string>(activeDeck?.categoryIds ?? []);
+  if (activeDeck?.includeSubCategories !== false) {
+    const stack = [...(activeDeck?.categoryIds ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      (_activeCatChildrenOf.get(id) ?? []).forEach((childId) => {
+        if (!_activeCatExpanded.has(childId)) { _activeCatExpanded.add(childId); stack.push(childId); }
+      });
+    }
+  }
   const activeDeckCatNames = new Set(
-    (activeDeck?.categoryIds ?? [])
-      .map((id) => state.categories?.find((c) => c.id === id)?.name)
-      .filter(Boolean) as string[]
+    [..._activeCatExpanded].map((id) => state.categories?.find((c) => c.id === id)?.name).filter(Boolean) as string[]
   );
   const activeDeckCards = activeDeck ? state.cards.filter((c) =>
     c.deckId === activeDeckId ||

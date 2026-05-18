@@ -5,7 +5,7 @@ import { timeOp, perf } from "@/lib/debug/perf";
 import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./srs";
 import { SHAS_BAVLI } from "./shasData";
 import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
-import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, removePendingDelete, removeSyncJob, saveStudyStateCache } from "./indexedStateCache";
+import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
 import { applyCloudSyncPref, isSyncEnabled } from "./syncControl";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -96,6 +96,8 @@ export function getCurrentStudyCardsCount(): number {
   return memState.cards.length;
 }
 const WIDGET_LAYOUT_CACHE_KEY = (userId: string) => `widget-layout-cache:${userId}`;
+/** Stores the widget_layout_updated_at timestamp that came from cloud on last loadAll(). Used to detect in-flight local changes during bg refresh. */
+const WIDGET_LAYOUT_CLOUD_TS_KEY = (userId: string) => `widget-layout-cloud-ts:${userId}`;
 const UI_PREFS_CACHE_KEY = (userId: string) => `ui-prefs-cache:${userId}`;
 const DECK_CATEGORIES_KEY = (userId: string) => `deck-categories:${userId}`;
 
@@ -176,12 +178,14 @@ const markCloudSyncJobs = (count: number) => {
 const clearLegacyBrowserCachesForUser = async (userId: string) => {
   try {
     localStorage.removeItem(WIDGET_LAYOUT_CACHE_KEY(userId));
+    localStorage.removeItem(WIDGET_LAYOUT_CLOUD_TS_KEY(userId));
     localStorage.removeItem(UI_PREFS_CACHE_KEY(userId));
     localStorage.removeItem(DECK_CATEGORIES_KEY(userId));
     localStorage.removeItem(`category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`);
     localStorage.removeItem(`category-prefetch-score:${userId}:v${CATEGORY_CACHE_VERSION}`);
     localStorage.removeItem(GUEST_STATE_KEY);
     await clearStudyStateCache(userId);
+    await clearWidgetLayoutIdb(userId);
   } catch {
     // ignore reset errors
   }
@@ -244,10 +248,30 @@ function dedupeBySemanticKeyLww<T>(
   return [...map.values()];
 }
 
+// The flashcard-twin deck was removed from DB. Filter it out of any cached local state
+// so deleted flashcard cards don't persist indefinitely in IndexedDB after the migration.
+const DEPRECATED_FLASHCARD_TWIN_DECK_ID = "b5e2f1a3-7c9d-4e8f-a012-3b4c5d6e7f8a";
+
 function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
   const categories = dedupeBySemanticKeyLww(state.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
-  const decks = dedupeBySemanticKeyLww(state.decks, (d) => normalizeName(d.name));
-  const cards = dedupeBySemanticKeyLww(state.cards, (c) => `${c.deckId ?? "none"}::${normalizeName(c.question)}`);
+  const decks = dedupeBySemanticKeyLww(
+    (state.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID),
+    (d) => normalizeName(d.name),
+  );
+  // Upgrade legacy "multiple" cards to "combo" so dual-mode study works regardless of
+  // whether a cloud sync has run (IDB may still hold the old type from a previous session).
+  const upgradeCard = (c: Card): Card => {
+    if (c.type !== "multiple") return c;
+    const mc = c as AnyCard;
+    const answer = mc.options && mc.correctIndices ? (mc.options[mc.correctIndices[0]] ?? undefined) : undefined;
+    return { ...c, type: "combo", answer, options: mc.options, correctIndices: mc.correctIndices } as Card;
+  };
+  const cards = dedupeBySemanticKeyLww(
+    (state.cards ?? [])
+      .filter((c) => c.deckId !== DEPRECATED_FLASHCARD_TWIN_DECK_ID)
+      .map(upgradeCard),
+    (c) => `${c.deckId ?? "none"}::${c.type ?? "flashcard"}::${normalizeName(c.question)}`,
+  );
 
   const categoryIds = new Set(categories.map((c) => c.id));
   const deckIds = new Set(decks.map((d) => d.id));
@@ -696,7 +720,13 @@ const cardFromRow = (r: CardRow): Card => {
     amud: (r.amud as 1 | 2 | null | undefined) ?? null,
   };
   if (r.type === "flashcard") return { ...base, type: "flashcard", answer: r.answer ?? "" };
-  if (r.type === "multiple") return { ...base, type: "multiple", options: (r.options as string[] | null) ?? [], correctIndices: (r.correct_indices as number[] | null) ?? [] };
+  if (r.type === "multiple") {
+    // Map "multiple" → "combo" so the card supports both flashcard and MC study modes.
+    const opts = (r.options as string[] | null) ?? [];
+    const correctIdxs = (r.correct_indices as number[] | null) ?? [];
+    const answer = r.answer ?? (correctIdxs.length > 0 && opts.length > 0 ? (opts[correctIdxs[0]] ?? undefined) : undefined);
+    return { ...base, type: "combo", answer, options: opts, correctIndices: correctIdxs, explanation: r.explanation ?? undefined };
+  }
   if (r.type === "boolean") return { ...base, type: "boolean", correct: !!r.correct_boolean, explanation: r.explanation ?? undefined };
   return { ...base, type: "combo", answer: r.answer ?? undefined, options: (r.options as string[] | undefined), correctIndices: (r.correct_indices as number[] | undefined), explanation: r.explanation ?? undefined };
 };
@@ -994,7 +1024,7 @@ async function runPhase2CardBackfill(userId: string, notifyFn: () => void) {
   phase2BackfillInFlight = true;
   phase2BackfillUserId = userId;
   const PAGE = 3000;
-  const CONCURRENCY = 8;
+  const CONCURRENCY = 2;
   let offset = 0;
   try {
     while (true) {
@@ -1432,6 +1462,8 @@ async function loadAll(userId: string): Promise<StudyState> {
     return settingsR.data?.updated_at ? new Date(settingsR.data.updated_at).getTime() : 0;
   })();
   const localWidgetLayoutCache = readWidgetLayoutCache(userId);
+  // Persist the cloud's widget layout timestamp so bg-refresh paths can compare against it.
+  localStorage.setItem(WIDGET_LAYOUT_CLOUD_TS_KEY(userId), String(cloudWidgetLayoutUpdatedAt));
   const effectiveWidgetLayout = (() => {
     // If cloud has nothing saved, always trust the local cache (avoid wiping user prefs).
     if (!cloudWidgetLayout) return localWidgetLayoutCache?.layout ?? roleDefaultWidgetLayout;
@@ -1601,13 +1633,18 @@ export function useStudy() {
 
         let hasCache = false;
         if (!needsHardReset && cachedState) {
-          memState = cachedState;
-          // Overlay localStorage widgetLayout cache — it's written synchronously on every
-          // setWidgetLayout call, so it's always as fresh or fresher than IDB (which has a
-          // 2-second debounce). Without this, a refresh within 2 seconds of a layout change
-          // reverts the layout because the IDB debounce timer was cancelled by the reload.
+          // Apply deprecation filters eagerly so stale IDB cards never flash on screen.
+          memState = applyBidirectionalDedupeGuards(cachedState);
+          // Overlay widget layout: prefer the freshest between dedicated IDB store (immediate write),
+          // localStorage (synchronous write), and the IDB state snapshot (2s debounce).
+          // Dedicated IDB store wins over localStorage if its timestamp is newer.
           const localWidgetCache = readWidgetLayoutCache(uid);
-          if (localWidgetCache?.layout) {
+          const idbWidgetCache = await readWidgetLayoutIdb(uid);
+          const lsTs = localWidgetCache?.updatedAt ?? 0;
+          const idbDedicatedTs = idbWidgetCache?.updatedAt ?? 0;
+          if (idbDedicatedTs > lsTs && idbWidgetCache?.layout) {
+            memState = { ...memState, widgetLayout: idbWidgetCache.layout };
+          } else if (localWidgetCache?.layout) {
             memState = { ...memState, widgetLayout: localWidgetCache.layout };
           }
           if (typeof cachedState.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(cachedState.uiPrefs.syncEnabled);
@@ -1669,7 +1706,10 @@ export function useStudy() {
                     const cloudBg = await loadAll(uid);
                     if (cancelled) return;
                     const mergedFull = mergeStudyStateLww(mergedDelta, cloudBg);
-                    memState = mergedFull;
+                    const localWlCacheFull = readWidgetLayoutCache(uid);
+                    const storedCloudTsFull = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
+                    const useLocalFull = localWlCacheFull?.layout && (localWlCacheFull.updatedAt ?? 0) > storedCloudTsFull;
+                    memState = useLocalFull ? { ...mergedFull, widgetLayout: localWlCacheFull.layout } : mergedFull;
                     if (typeof mergedFull.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedFull.uiPrefs.syncEnabled);
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
                     performance.mark("pashash:notify:bg-gap-refresh");
@@ -1684,8 +1724,12 @@ export function useStudy() {
                     void runPhase2CardBackfill(uid, notify);
                     return;
                   }
-                  const changed = mergedDelta !== memState;
-                  memState = mergedDelta;
+                  const localWlCacheDelta = readWidgetLayoutCache(uid);
+                  const storedCloudTsDelta = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
+                  const useLocalDelta = localWlCacheDelta?.layout && (localWlCacheDelta.updatedAt ?? 0) > storedCloudTsDelta;
+                  const mergedDeltaWithLayout = useLocalDelta ? { ...mergedDelta, widgetLayout: localWlCacheDelta.layout } : mergedDelta;
+                  const changed = mergedDeltaWithLayout !== memState;
+                  memState = mergedDeltaWithLayout;
                   if (typeof mergedDelta.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedDelta.uiPrefs.syncEnabled);
                   if (changed) {
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -1704,7 +1748,10 @@ export function useStudy() {
                   const cloudBg = await loadAll(uid);
                   if (cancelled) return;
                   const mergedBg = mergeStudyStateLww(memState, cloudBg);
-                  memState = mergedBg;
+                  const localWlCacheBg = readWidgetLayoutCache(uid);
+                  const storedCloudTsBg = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
+                  const useLocalBg = localWlCacheBg?.layout && (localWlCacheBg.updatedAt ?? 0) > storedCloudTsBg;
+                  memState = useLocalBg ? { ...mergedBg, widgetLayout: localWlCacheBg.layout } : mergedBg;
                   if (typeof mergedBg.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedBg.uiPrefs.syncEnabled);
                   await new Promise<void>((resolve) => setTimeout(resolve, 0));
                   performance.mark("pashash:notify:bg-refresh");
@@ -2119,6 +2166,9 @@ export function useStudy() {
       ...card, tags, id: uid(), createdAt: Date.now(),
       srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
     } as Card;
+    console.debug(
+      `[🔍 DECK-DEBUG addCard] כרטיס נוצר: id=${full.id.slice(0,8)} | deckId=${full.deckId??'null'} | tags=${JSON.stringify(full.tags)} | q="${(full.question??'').slice(0,70)}" | dueAt=${new Date(full.srs.dueAt).toLocaleString('he-IL')}`,
+    );
     setState((s) => ({ ...s, cards: [...s.cards, full] }));
     bg(supabase.from("cards").insert(cardToRow(full, userId)));
     // Only mirror into card_decks if the card has a deck
@@ -3343,15 +3393,48 @@ export function useStudy() {
     const userId = requireUser();
     const now = Date.now();
     setState((s) => ({ ...s, widgetLayout: layout }));
+    // 1. Sync writes: localStorage (instant) + IDB (immediate, survives localStorage clear)
     writeWidgetLayoutCache(userId, layout, now);
-    bg(supabase.from("user_settings").upsert(
-      {
-        user_id: userId,
-        widget_layout: layout as unknown as Json,
-        widget_layout_updated_at: new Date(now).toISOString(),
-      } as never,
-      { onConflict: "user_id" },
-    ), "user_settings.widget_layout");
+    void writeWidgetLayoutIdb(userId, layout, now);
+    // 2. Cloud: 3 retries with backoff, then enqueue full-sync on exhaustion
+    if (userId !== GUEST_ID && isSyncEnabled()) {
+      const MAX_RETRIES = 3;
+      const trySaveToCloud = async (attempt: number): Promise<void> => {
+        try {
+          const { error } = await supabase.from("user_settings").upsert(
+            {
+              user_id: userId,
+              widget_layout: layout as unknown as Json,
+              widget_layout_updated_at: new Date(now).toISOString(),
+            } as never,
+            { onConflict: "user_id" },
+          );
+          if (error) {
+            if (attempt < MAX_RETRIES) {
+              await new Promise<void>((r) => setTimeout(r, 400 * attempt));
+              return trySaveToCloud(attempt + 1);
+            }
+            console.error(`[widget_layout] cloud sync failed after ${MAX_RETRIES} attempts:`, error);
+            void enqueueFullSyncJob(userId, `widget_layout: ${error.message ?? "unknown"}`).then(async () => {
+              const jobs = await listSyncJobs(userId);
+              markCloudSyncJobs(jobs.length);
+            });
+            toast({ title: "שגיאה בשמירה לשרת", description: "הפריסה נשמרה מקומית ותסונכרן בהמשך", variant: "destructive" });
+          }
+        } catch (err) {
+          if (attempt < MAX_RETRIES) {
+            await new Promise<void>((r) => setTimeout(r, 400 * attempt));
+            return trySaveToCloud(attempt + 1);
+          }
+          console.error(`[widget_layout] cloud sync exception after ${MAX_RETRIES} attempts:`, err);
+          void enqueueFullSyncJob(userId, `widget_layout: ${String(err)}`).then(async () => {
+            const jobs = await listSyncJobs(userId);
+            markCloudSyncJobs(jobs.length);
+          });
+        }
+      };
+      void trySaveToCloud(1);
+    }
   }, []);
 
   const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {

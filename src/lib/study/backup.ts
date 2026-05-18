@@ -2,7 +2,7 @@
  * Backup, Restore, Export & Import utilities
  * Supports: JSON (full backup), CSV, TXT, XLSX (Excel)
  */
-import type { StudyState, Category, TabConfig, SidebarConfig, WidgetLayout, UiPrefs } from "./types";
+import type { StudyState, Category, Card, TabConfig, SidebarConfig, WidgetLayout, UiPrefs } from "./types";
 import { supabase } from "@/integrations/supabase/client";
 
 // ─── Snapshot type ─────────────────────────────────────────────────────────
@@ -89,6 +89,98 @@ export async function restoreCloudCardCategories(
     onProgress?.(Math.min(i + batchSize, links.length), links.length);
   }
   return { inserted };
+}
+
+// ─── Card type-safe helpers ─────────────────────────────────────────────────
+
+/** Upsert categories into the cloud, parents before children (topological order). */
+export async function restoreCloudCategories(
+  categories: Category[],
+  userId: string,
+): Promise<{ upserted: number }> {
+  if (!categories.length) return { upserted: 0 };
+  // Topological sort: roots first, then children whose parent was already emitted
+  const sorted: Category[] = [];
+  const emitted = new Set<string>();
+  let remaining = [...categories];
+  while (remaining.length > 0) {
+    const before = remaining.length;
+    const next: Category[] = [];
+    for (const c of remaining) {
+      if (c.parentId === null || emitted.has(c.parentId)) {
+        sorted.push(c);
+        emitted.add(c.id);
+      } else {
+        next.push(c);
+      }
+    }
+    // Prevent infinite loop if there are orphaned categories (parentId not in set)
+    if (next.length === before) {
+      // Push remaining as-is to avoid infinite loop
+      sorted.push(...next);
+      break;
+    }
+    remaining = next;
+  }
+  const batchSize = 500;
+  let upserted = 0;
+  for (let i = 0; i < sorted.length; i += batchSize) {
+    const slice = sorted.slice(i, i + batchSize).map((c) => ({
+      id: c.id,
+      user_id: userId,
+      name: c.name,
+      parent_id: c.parentId ?? null,
+      sort_order: c.sortOrder ?? 0,
+      color: c.color ?? null,
+      updated_at: new Date(c.updatedAt ?? c.createdAt ?? Date.now()).toISOString(),
+    }));
+    const { error } = await supabase
+      .from("categories")
+      .upsert(slice, { onConflict: "id" });
+    if (error) throw new Error(error.message);
+    upserted += slice.length;
+  }
+  return { upserted };
+}
+
+/** Upsert cards into the cloud `cards` table. */
+export async function restoreCloudCards(
+  cards: Card[],
+  userId: string,
+): Promise<{ upserted: number }> {
+  if (!cards.length) return { upserted: 0 };
+  const batchSize = 500;
+  let upserted = 0;
+  for (let i = 0; i < cards.length; i += batchSize) {
+    const slice = cards.slice(i, i + batchSize).map((c) => {
+      const ac = c as Card & Record<string, unknown>;
+      return {
+        id: c.id,
+        user_id: userId,
+        deck_id: c.deckId ?? null,
+        type: c.type,
+        question: c.question,
+        updated_at: new Date((ac.updatedAt as number | undefined) ?? Date.now()).toISOString(),
+        answer: (ac.answer as string | undefined) ?? null,
+        options: (ac.options as unknown[] | undefined) ?? null,
+        correct_indices: (ac.correctIndices as number[] | undefined) ?? null,
+        correct_boolean: c.type === "boolean" ? (ac.correct as boolean | undefined) ?? null : null,
+        explanation: (ac.explanation as string | undefined) ?? null,
+        tags: c.tags,
+        srs: c.srs,
+        stats: c.stats,
+        masechta: c.masechta ?? null,
+        daf: c.daf ?? null,
+        amud: c.amud ?? null,
+      };
+    });
+    const { error } = await supabase
+      .from("cards")
+      .upsert(slice, { onConflict: "id" });
+    if (error) throw new Error(error.message);
+    upserted += slice.length;
+  }
+  return { upserted };
 }
 
 // ─── Card type-safe helpers ─────────────────────────────────────────────────

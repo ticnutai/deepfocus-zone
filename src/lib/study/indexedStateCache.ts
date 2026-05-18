@@ -1,4 +1,4 @@
-import type { StudyState } from "./types";
+import type { StudyState, WidgetLayout } from "./types";
 import { timeOp } from "@/lib/debug/perf";
 
 type StudyStateCacheRecord = {
@@ -84,7 +84,14 @@ const SYNC_JOBS_STORE = "sync_jobs";
 const PENDING_DELETES_STORE = "pending_deletes";
 const DELETE_AUDIT_STORE = "delete_audit";
 const CLOUD_TO_IDB_DELETE_AUDIT_STORE = "cloud_to_idb_delete_audit";
-const DB_VERSION = 5;
+const WIDGET_LAYOUT_STORE = "widget_layout_cache";
+const DB_VERSION = 6;
+
+type WidgetLayoutCacheRecord = {
+  userId: string;
+  layout: WidgetLayout;
+  updatedAt: number;
+};
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -106,10 +113,63 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(CLOUD_TO_IDB_DELETE_AUDIT_STORE)) {
         db.createObjectStore(CLOUD_TO_IDB_DELETE_AUDIT_STORE, { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains(WIDGET_LAYOUT_STORE)) {
+        db.createObjectStore(WIDGET_LAYOUT_STORE, { keyPath: "userId" });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+/** Read widget layout from its dedicated IDB store (written immediately, no debounce). */
+export async function readWidgetLayoutIdb(userId: string): Promise<{ layout: WidgetLayout; updatedAt: number } | null> {
+  try {
+    const db = await openDb();
+    return await new Promise<{ layout: WidgetLayout; updatedAt: number } | null>((resolve) => {
+      const tx = db.transaction(WIDGET_LAYOUT_STORE, "readonly");
+      const req = tx.objectStore(WIDGET_LAYOUT_STORE).get(userId);
+      req.onsuccess = () => {
+        db.close();
+        const record = req.result as WidgetLayoutCacheRecord | undefined;
+        resolve(record ? { layout: record.layout, updatedAt: record.updatedAt } : null);
+      };
+      req.onerror = () => { db.close(); resolve(null); };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Write widget layout to its dedicated IDB store immediately (no debounce). */
+export async function writeWidgetLayoutIdb(userId: string, layout: WidgetLayout, updatedAt: number): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(WIDGET_LAYOUT_STORE, "readwrite");
+      const record: WidgetLayoutCacheRecord = { userId, layout, updatedAt };
+      const req = tx.objectStore(WIDGET_LAYOUT_STORE).put(record);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror = () => { db.close(); reject(req.error); };
+    });
+  } catch {
+    // ignore IDB write errors
+  }
+}
+
+/** Clear widget layout from its dedicated IDB store (used on cache reset). */
+export async function clearWidgetLayoutIdb(userId: string): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(WIDGET_LAYOUT_STORE, "readwrite");
+      const req = tx.objectStore(WIDGET_LAYOUT_STORE).delete(userId);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror = () => { db.close(); resolve(); };
+    });
+  } catch {
+    // ignore
+  }
 }
 
 const timeIdb = <T>(

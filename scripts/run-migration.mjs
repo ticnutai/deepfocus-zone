@@ -1,4 +1,4 @@
-// Migration Runner for flow-zone-master (nkqlojxjyjxoiuxiflrg)
+// Migration Runner for serene-blocker-buddy (hgjfpwdugvvtrfhycejv)
 // Uses exec_sql RPC — logs in as jj1212t@gmail.com and runs SQL directly
 
 import { createClient } from '@supabase/supabase-js';
@@ -9,8 +9,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const SUPABASE_URL = 'https://nkqlojxjyjxoiuxiflrg.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rcWxvanhqeWp4b2l1eGlmbHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODMwMDcsImV4cCI6MjA5NDI1OTAwN30.9MsRdzbEEC92TtaSx3HOZ6HxfqtCV4obMUOALlDelrE';
+const SUPABASE_URL = 'https://hgjfpwdugvvtrfhycejv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnamZwd2R1Z3Z2dHJmaHljZWp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMDc0NTYsImV4cCI6MjA5NDY4MzQ1Nn0.FQndqo2DC3GcTdYtQVUI_DHy451NO0N37rz7yjcpXYc';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'jj1212t@gmail.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '543211';
@@ -46,7 +46,14 @@ async function runSql(token, sql, name = 'migration') {
   const body = await res.json();
 
   if (res.ok) {
+    if (body && typeof body === 'object' && body.success === false) {
+      console.error('❌ exec_sql returned failure:', body.error);
+      return false;
+    }
     console.log('✅ Migration completed successfully!');
+    if (body && body.rows_affected !== undefined) {
+      console.log(`   Rows affected: ${body.rows_affected}`);
+    }
     console.log(`   Time: ${elapsed}ms`);
     return true;
   } else {

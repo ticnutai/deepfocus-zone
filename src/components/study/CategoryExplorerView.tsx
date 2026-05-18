@@ -8,6 +8,7 @@ import {
   ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal,
 } from "lucide-react";
 import { CategoryTemplatesDialog } from "./CategoryTemplatesDialog";
+import { TextPromptDialog } from "./TextPromptDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -672,6 +673,18 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [classifyDeckIds, setClassifyDeckIds] = useState<Set<string>>(new Set());
   const [newDeckNameForClassify, setNewDeckNameForClassify] = useState("");
 
+  // TextPromptDialog state (replaces window.prompt)
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptDefault, setPromptDefault] = useState("");
+  const [promptCallback, setPromptCallback] = useState<((val: string) => void) | null>(null);
+  const showPrompt = (title: string, defaultValue: string, cb: (val: string) => void) => {
+    setPromptTitle(title);
+    setPromptDefault(defaultValue);
+    setPromptCallback(() => cb);
+    setPromptOpen(true);
+  };
+
   const openCardPicker = (cat: Category, deckId: string) => {
     setPickerCat(cat);
     setPickerDeckId(deckId);
@@ -1099,12 +1112,13 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [state.decks]);
 
   const createDeckFromCategory = useCallback((cat: Category) => {
-    const name = window.prompt(`שם המערכת החדשה:`, cat.name)?.trim();
-    if (!name) return;
-    const deck = addDeck(name, undefined, []);
-    // Open picker so user can choose all or specific cards
-    openCardPicker(cat, deck.id);
-    toast({ title: "מערכת נוצרה", description: `"${name}" — בחר שאלות לשיוך` });
+    showPrompt(`שם המערכת החדשה:`, cat.name, (name) => {
+      const deck = addDeck(name, undefined, []);
+      // Open picker so user can choose all or specific cards
+      openCardPicker(cat, deck.id);
+      toast({ title: "מערכת נוצרה", description: `"${name}" — בחר שאלות לשיוך` });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDeck, updateDeckCategoryIds]);
 
   /* === Folder context menu === */
@@ -2076,11 +2090,11 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       toast({ title: "השאלה שויכה למערכת", description: state.decks.find((d) => d.id === deckId)?.name ?? "" });
                     }}
                     onCreateDeckWithCard={() => {
-                      const name = window.prompt("שם המערכת החדשה:");
-                      if (!name?.trim()) return;
-                      const deck = addDeck(name.trim(), undefined, []);
-                      addCardToDeck(card.id, deck.id);
-                      toast({ title: "נוצרה מערכת חדשה", description: `${name.trim()} (שאלה אחת)` });
+                      showPrompt("שם המערכת החדשה:", "", (name) => {
+                        const deck = addDeck(name, undefined, []);
+                        addCardToDeck(card.id, deck.id);
+                        toast({ title: "נוצרה מערכת חדשה", description: `${name} (שאלה אחת)` });
+                      });
                     }}
                     onClassifyOpen={() => {
                       setSelectedCardIds(new Set([card.id]));
@@ -2387,6 +2401,15 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
       {/* Templates dialog */}
       <CategoryTemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
+
+      {/* Generic text prompt dialog (replaces window.prompt) */}
+      <TextPromptDialog
+        open={promptOpen}
+        onOpenChange={setPromptOpen}
+        title={promptTitle}
+        defaultValue={promptDefault}
+        onConfirm={(val) => promptCallback?.(val)}
+      />
 
       {/* Multi-select summary dialog */}
       <Dialog open={multiSummaryOpen} onOpenChange={setMultiSummaryOpen}>

@@ -175,16 +175,19 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
     }
     // Respect the combo-mode preference at the queue level so that
     // "רק בחירה מרובה" actually hides pure flashcards (and vice versa).
-    if (comboPrefForQueue === "multi") {
-      cards = cards.filter((c) =>
-        c.type === "multiple" || c.type === "boolean" ||
-        (c.type === "combo" && Array.isArray(c.options) && c.options.length > 0)
-      );
-    } else if (comboPrefForQueue === "flash") {
-      cards = cards.filter((c) =>
-        c.type === "flashcard" ||
-        (c.type === "combo" && !!c.answer)
-      );
+    // In "practice" mode (תרגול חופשי) we show ALL card types regardless of preference.
+    if (mode !== "practice") {
+      if (comboPrefForQueue === "multi") {
+        cards = cards.filter((c) =>
+          c.type === "multiple" || c.type === "boolean" ||
+          (c.type === "combo" && Array.isArray(c.options) && c.options.length > 0)
+        );
+      } else if (comboPrefForQueue === "flash") {
+        cards = cards.filter((c) =>
+          c.type === "flashcard" ||
+          (c.type === "combo" && !!c.answer)
+        );
+      }
     }
     if (mode === "srs") return buildStudyQueue(cards);
     return [...cards].sort(() => Math.random() - 0.5);

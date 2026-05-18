@@ -22,6 +22,7 @@ import {
   ContextMenuTrigger, ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import { TextPromptDialog } from "./TextPromptDialog";
 // (יצירת דפים/עמודים אוטומטית הוסרה — משתמשים בתבנית ש"ס במקום)
 import { isUncategorized } from "@/lib/study/uncategorized";
 import { useToast } from "@/hooks/use-toast";
@@ -376,6 +377,18 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
 
   /* === Rename === */
   const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  /* === Text prompt dialog (replaces window.prompt) === */
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptDefault, setPromptDefault] = useState("");
+  const [promptCallback, setPromptCallback] = useState<((val: string) => void) | null>(null);
+  const showPrompt = (title: string, defaultValue: string, cb: (val: string) => void) => {
+    setPromptTitle(title);
+    setPromptDefault(defaultValue);
+    setPromptCallback(() => cb);
+    setPromptOpen(true);
+  };
   const handleRenameSubmit = useCallback((cat: Category, name: string) => {
     if (name.trim() && name !== cat.name) renameCategory(cat.id, name);
     setRenamingId(null);
@@ -552,11 +565,12 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
   }, [state.decks, updateDeckCategoryIds, toast]);
 
   const createDeckFromCategory = useCallback((cat: Category) => {
-    const name = window.prompt(`שם המערכת החדשה:`, displayCategoryName(cat.name))?.trim();
-    if (!name) return;
-    const deck = addDeck(name, undefined, []);
-    updateDeckCategoryIds(deck.id, [cat.id], true);
-    toast({ title: "מערכת נוצרה", description: `"${name}"` });
+    showPrompt(`שם המערכת החדשה:`, displayCategoryName(cat.name), (name) => {
+      const deck = addDeck(name, undefined, []);
+      updateDeckCategoryIds(deck.id, [cat.id], true);
+      toast({ title: "מערכת נוצרה", description: `"${name}"` });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDeck, updateDeckCategoryIds, toast]);
 
   /* === Navigation handlers === */
@@ -812,6 +826,14 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
 
       {/* confirm dialog */}
       {dialog}
+      {/* text prompt dialog (replaces window.prompt) */}
+      <TextPromptDialog
+        open={promptOpen}
+        onOpenChange={setPromptOpen}
+        title={promptTitle}
+        defaultValue={promptDefault}
+        onConfirm={(val) => promptCallback?.(val)}
+      />
     </div>
   );
 }

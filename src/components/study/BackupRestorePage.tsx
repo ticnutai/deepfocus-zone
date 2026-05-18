@@ -349,12 +349,24 @@ function CategoriesSection({
       );
       if (!ok) { setBusy(null); return; }
 
-      if (links.length > 0) {
-        const { restoreCloudCardCategories } = await import("@/lib/study/backup");
-        const { inserted } = await restoreCloudCardCategories(links, user.id);
-        toast({ title: "✓ שיוכים שוחזרו", description: `${inserted} שיוכים נוספו לענן` });
+      if (links.length > 0 || cards.length > 0 || cats.length > 0) {
+        const { restoreCloudCategories, restoreCloudCards, restoreCloudCardCategories } = await import("@/lib/study/backup");
+        let catUpserted = 0, cardUpserted = 0, inserted = 0;
+        if (cats.length > 0) {
+          ({ upserted: catUpserted } = await restoreCloudCategories(cats, user.id));
+        }
+        if (cards.length > 0) {
+          ({ upserted: cardUpserted } = await restoreCloudCards(cards, user.id));
+        }
+        if (links.length > 0) {
+          ({ inserted } = await restoreCloudCardCategories(links, user.id));
+        }
+        toast({
+          title: "✓ שוחזר בהצלחה",
+          description: `${catUpserted} קטגוריות · ${cardUpserted} כרטיסיות · ${inserted} שיוכים נוספו/עודכנו בענן`,
+        });
       } else {
-        toast({ title: "אין שיוכים בקובץ", description: "הקובץ הוא גרסת v1 ללא שיוכי כרטיס↔קטגוריה" });
+        toast({ title: "אין נתונים בקובץ", description: "הקובץ ריק או בפורמט לא מוכר" });
       }
     } catch (err) {
       toast({ title: "שגיאה בשחזור", description: String((err as Error).message), variant: "destructive" });

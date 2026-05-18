@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
   base: process.env.BUILD_TARGET === "electron" ? "./" : "/",
   server: {
     host: "::",
-    port: 4200,
+    port: 5000,
     hmr: {
       overlay: false,
     },

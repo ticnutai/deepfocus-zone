@@ -77,12 +77,37 @@ export function DeckEditDialog({ open, onOpenChange, deckId, onEditCard, onAddCa
   };
 
   const cards = useMemo(() => {
-    if (!deckId) return [];
+    if (!deckId || !deck) return [];
     const linkedIds = new Set(
       (state.cardDecks ?? []).filter((l) => l.deckId === deckId).map((l) => l.cardId),
     );
-    return state.cards.filter((c) => c.deckId === deckId || linkedIds.has(c.id));
-  }, [state.cards, state.cardDecks, deckId]);
+    // Build category-name lookup for this deck (same logic as getCardsForDeck in CardsManager)
+    const catNameById = new Map((state.categories ?? []).map((c) => [c.id, c.name]));
+    // Expand to sub-categories when includeSubCategories is true
+    const rootCatIds = deck.categoryIds ?? [];
+    let effectiveCatIds: string[];
+    if (deck.includeSubCategories !== false && rootCatIds.length > 0) {
+      const expanded = new Set<string>(rootCatIds);
+      const addSubs = (parentId: string) => {
+        (state.categories ?? []).filter((c) => c.parentId === parentId).forEach((c) => {
+          expanded.add(c.id);
+          addSubs(c.id);
+        });
+      };
+      rootCatIds.forEach(addSubs);
+      effectiveCatIds = [...expanded];
+    } else {
+      effectiveCatIds = rootCatIds;
+    }
+    const catNames = new Set(
+      effectiveCatIds.map((id) => catNameById.get(id)).filter(Boolean) as string[],
+    );
+    return state.cards.filter((c) =>
+      c.deckId === deckId ||
+      linkedIds.has(c.id) ||
+      (catNames.size > 0 && c.tags?.some((t) => t.startsWith("cat:") && catNames.has(t.slice(4)))),
+    );
+  }, [state.cards, state.cardDecks, state.categories, deckId, deck]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

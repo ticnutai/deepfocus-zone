@@ -173,10 +173,32 @@ export function CardsManager() {
       s.add(l.cardId);
       cardDecksByDeck.set(l.deckId, s);
     });
-    return (deck: { id: string; categoryIds?: string[] }) => {
+    // Pre-build a parent→children map for sub-category expansion
+    const childrenOf = new Map<string | null, string[]>();
+    (state.categories ?? []).forEach((c) => {
+      const key = c.parentId ?? null;
+      const arr = childrenOf.get(key) ?? [];
+      arr.push(c.id);
+      childrenOf.set(key, arr);
+    });
+    const expandCatIds = (rootIds: string[], includeSubs: boolean): Set<string> => {
+      const result = new Set<string>(rootIds);
+      if (!includeSubs) return result;
+      const stack = [...rootIds];
+      while (stack.length) {
+        const id = stack.pop()!;
+        (childrenOf.get(id) ?? []).forEach((childId) => {
+          if (!result.has(childId)) { result.add(childId); stack.push(childId); }
+        });
+      }
+      return result;
+    };
+    return (deck: { id: string; categoryIds?: string[]; includeSubCategories?: boolean }) => {
       const linkedIds = cardDecksByDeck.get(deck.id) ?? new Set<string>();
+      const rootCatIds = deck.categoryIds ?? [];
+      const effectiveCatIds = expandCatIds(rootCatIds, deck.includeSubCategories !== false);
       const catNames = new Set(
-        (deck.categoryIds ?? []).map((id) => catNameById.get(id)).filter(Boolean) as string[]
+        [...effectiveCatIds].map((id) => catNameById.get(id)).filter(Boolean) as string[]
       );
       return state.cards.filter((c) =>
         c.deckId === deck.id ||
@@ -185,6 +207,31 @@ export function CardsManager() {
       );
     };
   }, [state.cards, state.cardDecks, state.categories]);
+
+  // ── DEBUG: log deck-card matching whenever cards/decks change ──────────────
+  useEffect(() => {
+    if (!state.decks.length) return;
+    console.groupCollapsed(
+      `%c[🔍 DECK-DEBUG CardsManager] ${state.cards.length} כרטיסים, ${state.decks.length} מערכות`,
+      'color: #4fc3f7; font-weight: bold',
+    );
+    state.decks.forEach((deck) => {
+      const cards = getCardsForDeck(deck);
+      const due = cards.filter(isDue).length;
+      const linkedSet = new Set((state.cardDecks ?? []).filter((l) => l.deckId === deck.id).map((l) => l.cardId));
+      const viaId   = cards.filter((c) => c.deckId === deck.id).length;
+      const viaLink = cards.filter((c) => linkedSet.has(c.id)).length;
+      const viaTag  = cards.filter((c) => c.deckId !== deck.id && !linkedSet.has(c.id)).length;
+      const sample  = cards.slice(0, 3).map((c) => `${c.id.slice(0,8)} | ${(c.question??'').slice(0,40)} | tags=${JSON.stringify(c.tags)} | deckId=${c.deckId??'null'}`);
+      console.debug(
+        `[🔍 CardsManager] מערכת "${deck.name}": סה"כ=${cards.length} לחזרה=${due} | via_deckId=${viaId} via_cardDecks=${viaLink} via_catTag=${viaTag}\n` +
+        `  categoryIds=${JSON.stringify(deck.categoryIds??[])} includeSubCats=${deck.includeSubCategories??true}\n` +
+        `  דוגמאות:\n  ${sample.join('\n  ')}`,
+      );
+    });
+    console.groupEnd();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.cards, state.decks, state.cardDecks, state.categories]);
 
   // Sorted decks for display
   const sortedDecks = useMemo(() => {
@@ -982,7 +1029,11 @@ export function CardsManager() {
                   })}
                   {deckCards.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-8">
-                      {categoryFilter ? `אין שאלות בקטגוריה "${categoryFilter}"` : "אין שאלות במערכת זו. הוסף שאלה ראשונה!"}
+                      {categoryFilter
+                        ? `אין שאלות בקטגוריה "${categoryFilter}"`
+                        : (activeDeck && (!activeDeck.categoryIds || activeDeck.categoryIds.length === 0))
+                          ? 'מערכת זו אינה משויכת לקטגוריה. לחץ על עריכת מערכת כדי לשייך קטגוריה.'
+                          : 'אין שאלות במערכת זו. הוסף שאלה ראשונה!'}
                     </p>
                   )}
                 </div>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, X, FolderTree, Search, Star, Trash2, ChevronUp, ChevronDown, Pin, PinOff, Sparkles, Loader2, BookOpen, Eye } from "lucide-react";
 import { CategoryPickerDialog } from "./CategoryPickerDialog";
+import { TextPromptDialog } from "./TextPromptDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -89,6 +90,18 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   const [daf, setDaf] = useState<number | undefined>(initDaf);
   const [amud, setAmud] = useState<1 | 2>(initAmud);
   const [viewerOpen, setViewerOpen] = useState(false);
+
+  // Text prompt dialog state (replaces window.prompt)
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptDefault, setPromptDefault] = useState("");
+  const [promptCallback, setPromptCallback] = useState<((val: string) => void) | null>(null);
+  const showPrompt = (title: string, defaultValue: string, cb: (val: string) => void) => {
+    setPromptTitle(title);
+    setPromptDefault(defaultValue);
+    setPromptCallback(() => cb);
+    setPromptOpen(true);
+  };
   const currentMasechetMeta = useMemo(() => SHAS_BAVLI.find((m) => m.name === masechta), [masechta]);
 
   // Tags - extract category tags (cat:NAME) separately
@@ -276,13 +289,13 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   };
 
   const createSubcategory = (parentId: string, parentName: string) => {
-    const name = window.prompt(`שם תת-קטגוריה תחת "${parentName}":`)?.trim();
-    if (!name) return;
-    const leaf = createFromPath(name, parentId);
-    if (leaf) {
-      setSelectedCategoryNames((arr) => arr.includes(leaf) ? arr : [...arr, leaf]);
-      pushRecent([leaf]);
-    }
+    showPrompt(`שם תת-קטגוריה תחת "${parentName}":`, "", (name) => {
+      const leaf = createFromPath(name, parentId);
+      if (leaf) {
+        setSelectedCategoryNames((arr) => arr.includes(leaf) ? arr : [...arr, leaf]);
+        pushRecent([leaf]);
+      }
+    });
   };
 
   const toggleCategory = (name: string) => {
@@ -960,10 +973,10 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
                 <button
                   type="button"
                   onClick={() => {
-                    const name = window.prompt(`שם המערכת החדשה (תכלול את "${catName}"):`)?.trim();
-                    if (!name) return;
-                    const deck = addDeck(name, undefined, [catName]);
-                    updateDeckCategoryIds(deck.id, [cat.id], true);
+                    showPrompt(`שם המערכת החדשה (תכלול את "${catName}"):`, "", (name) => {
+                      const deck = addDeck(name, undefined, [catName]);
+                      updateDeckCategoryIds(deck.id, [cat.id], true);
+                    });
                   }}
                   className="px-2 py-0.5 rounded-full text-[11px] border-2 border-dashed border-gold/60 bg-card hover:border-gold hover:bg-secondary"
                 >
@@ -981,6 +994,14 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
         </Button>
       </DialogFooter>
       {dialog}
+      {/* text prompt dialog (replaces window.prompt) */}
+      <TextPromptDialog
+        open={promptOpen}
+        onOpenChange={setPromptOpen}
+        title={promptTitle}
+        defaultValue={promptDefault}
+        onConfirm={(val) => promptCallback?.(val)}
+      />
     </div>
   );
 }
