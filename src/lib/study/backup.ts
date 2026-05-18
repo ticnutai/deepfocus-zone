@@ -204,6 +204,15 @@ export async function buildSnapshotAsync(
   const reviewIntervals = state.reviewIntervals ?? [1, 3, 7, 14, 30];
   emit("מכין מרווחי חזרה", 1);
 
+  // Fetch card↔category associations from cloud (v2+)
+  let cardCategories: CardCategoryLink[] = [];
+  try {
+    emit("אוסף שיוכי כרטיס↔קטגוריה", 0);
+    cardCategories = await fetchCloudCardCategories();
+  } catch (err) {
+    console.warn("[backup] Failed to fetch card_categories", err);
+  }
+
   emit("הושלם", 0);
   return {
     version: BACKUP_VERSION,
@@ -213,6 +222,7 @@ export async function buildSnapshotAsync(
       decks,
       cards,
       categories,
+      cardCategories,
       goals,
       shasPlan,
       dayNotes,
