@@ -13,7 +13,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { StudyTab } from "@/components/study/StudyTab";
 import { DafLearningTab } from "@/components/study/DafLearningTab";
 import { CardsManager } from "@/components/study/CardsManager";
-import { CategoriesPage } from "@/components/study/CategoriesPage";
+import { CardsAndCategoriesPage } from "@/components/study/CardsAndCategoriesPage";
 import { SmartSearch } from "@/components/study/SmartSearch";
 import { WeeklySummary } from "@/components/study/WeeklySummary";
 import { GoalsManager } from "@/components/study/GoalsManager";
@@ -60,8 +60,7 @@ const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
   { id: "morning", label: "קימה בבוקר", icon: Sun },
   { id: "today", label: "היום שלי", icon: Calendar },
   { id: "tasks", label: "לוח משימות", icon: CheckSquare },
-  { id: "cards", label: "שאלות חזרה", icon: BookOpen },
-  { id: "categories", label: "קטגוריות", icon: FolderTree },
+  { id: "cards", label: "קטגוריות ושאלות", icon: FolderTree },
   { id: "search", label: "חיפוש חכם", icon: Search },
   { id: "habits", label: "הרגלים", icon: Target },
   { id: "journal", label: "יומן", icon: BookOpen },
@@ -1087,16 +1086,8 @@ const Index = () => {
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
             {active === "settings" ? (
               <SettingsPanel />
-            ) : active === "cards" ? (
-              <div className="space-y-6">
-                <div className="text-center space-y-1 animate-fade-in">
-                  <h1 className="font-display text-2xl font-bold text-gold">שאלות חזרה</h1>
-                  <p className="text-muted-foreground text-sm">ניהול מערכות, שאלות וקטגוריות</p>
-                </div>
-                <CardsManager />
-              </div>
-            ) : active === "categories" ? (
-              <CategoriesPage />
+            ) : active === "cards" || active === "categories" ? (
+              <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
             ) : active === "search" ? (
               <div className="space-y-6">
                 <div className="text-center space-y-1 animate-fade-in">
@@ -1303,7 +1294,7 @@ const Index = () => {
               onPick={(hit) => {
                 setSearchModalOpen(false);
                 if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
-                else if (hit.kind === "category" || hit.kind === "tag") setActive("categories");
+                else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
               }}
             />
           </div>
