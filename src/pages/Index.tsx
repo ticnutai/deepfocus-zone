@@ -1295,7 +1295,7 @@ const Index = () => {
               onPick={(hit) => {
                 setSearchModalOpen(false);
                 if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
-                else if (hit.kind === "category" || hit.kind === "tag") setActive("categories");
+                else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
               }}
             />
           </div>
