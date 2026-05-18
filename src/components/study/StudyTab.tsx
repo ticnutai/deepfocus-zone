@@ -46,6 +46,13 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     });
   }, [state.decks, state.cards, state.cardDecks, state.categories]);
 
+  // Quick Review: top 10 most urgent cards across ALL decks (priority-ordered).
+  // Computed before any early return to satisfy Rules of Hooks.
+  const quickReviewIds = useMemo(() => {
+    const queue = buildStudyQueue(state.cards);
+    return queue.slice(0, 10).map((c) => c.id);
+  }, [state.cards]);
+
   if (session) {
     return (
       <div className="space-y-4">
@@ -76,11 +83,6 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
   const totalDue = deckStats.reduce((s, d) => s + d.dueCount, 0);
   const displayedDecks = showAllDecks ? deckStats : deckStats.slice(0, 5);
 
-  // Quick Review: top 10 most urgent cards across ALL decks (priority-ordered).
-  const quickReviewIds = useMemo(() => {
-    const queue = buildStudyQueue(state.cards);
-    return queue.slice(0, 10).map((c) => c.id);
-  }, [state.cards]);
 
   const widgetMap: Record<string, React.ReactNode> = {
     "study-calendar": <ReviewCalendar deckId={activeDeckId ?? undefined} showTodayBadge={showBadge} />,
