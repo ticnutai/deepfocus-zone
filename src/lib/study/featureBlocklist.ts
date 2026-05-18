@@ -36,7 +36,7 @@ export async function loadFeatureBlocklist(): Promise<FeatureBlocklist> {
 
 export async function saveFeatureBlocklist(value: FeatureBlocklist): Promise<void> {
   await supabase.from("site_settings").upsert(
-    [{ key: KEY, value: value as unknown as Record<string, unknown> }],
+    [{ key: KEY, value: value as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
   emit(value);
