@@ -81,6 +81,7 @@ export function CategoryManager({
           onStudyCategory={onStudyCategory}
           onStudyMultipleCategories={onStudyMultipleCategories}
           onStudyCardIds={onStudyCardIds}
+          onQuickRun={onQuickRun}
         />
       )}
       {viewMode === "browse" && (
