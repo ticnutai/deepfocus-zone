@@ -273,6 +273,23 @@ function CategoriesSection({
   state: ReturnType<typeof useStudy>["state"];
   onTopicWizard: () => void;
 }) {
+  const { user } = useAuth();
+  const [busy, setBusy] = useState<"backup" | "restore" | null>(null);
+  const [linkCount, setLinkCount] = useState<number | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+
+  // Count cloud associations on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { count } = await supabase
+          .from("card_categories")
+          .select("*", { count: "exact", head: true });
+        setLinkCount(count ?? 0);
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
   const snap = buildTopicSnapshot(state, {
     includeSrs: true,
     includeGoals: false,
@@ -281,6 +298,68 @@ function CategoriesSection({
     includeDayNotes: false,
     includeShasPlan: false,
   });
+
+  const handleBackupAll = useCallback(async () => {
+    if (busy) return;
+    setBusy("backup");
+    try {
+      const { fetchCloudCardCategories } = await import("@/lib/study/backup");
+      toast({ title: "אוסף קטגוריות, כרטיסיות ושיוכים..." });
+      const links = await fetchCloudCardCategories();
+      const fullSnap: BackupSnapshot = {
+        ...snap,
+        version: 2,
+        data: { ...snap.data, cardCategories: links },
+      };
+      exportJson(fullSnap);
+      toast({
+        title: "✓ הגיבוי הושלם",
+        description: `${fullSnap.data.categories?.length ?? 0} קטגוריות · ${fullSnap.data.cards?.length ?? 0} כרטיסיות · ${links.length} שיוכים`,
+      });
+    } catch (err) {
+      toast({ title: "שגיאה בגיבוי", description: String((err as Error).message), variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, snap]);
+
+  const handleRestoreFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !user?.id) return;
+    if (busy) return;
+
+    setBusy("restore");
+    try {
+      const text = await file.text();
+      const parsed = parseJsonBackup(text);
+      const links = parsed.data.cardCategories ?? [];
+      const cards = parsed.data.cards ?? [];
+      const cats  = parsed.data.categories ?? [];
+
+      // Ask before restoring
+      const ok = window.confirm(
+        `הקובץ מכיל:\n` +
+        `• ${cats.length} קטגוריות\n` +
+        `• ${cards.length} כרטיסיות\n` +
+        `• ${links.length} שיוכים\n\n` +
+        `לשחזר? (השיוכים יתווספו לקיימים, לא יימחקו)`
+      );
+      if (!ok) { setBusy(null); return; }
+
+      if (links.length > 0) {
+        const { restoreCloudCardCategories } = await import("@/lib/study/backup");
+        const { inserted } = await restoreCloudCardCategories(links, user.id);
+        toast({ title: "✓ שיוכים שוחזרו", description: `${inserted} שיוכים נוספו לענן` });
+      } else {
+        toast({ title: "אין שיוכים בקובץ", description: "הקובץ הוא גרסת v1 ללא שיוכי כרטיס↔קטגוריה" });
+      }
+    } catch (err) {
+      toast({ title: "שגיאה בשחזור", description: String((err as Error).message), variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, user?.id]);
 
   return (
     <div className="space-y-5">
@@ -293,7 +372,47 @@ function CategoriesSection({
           <h2 className="font-display text-lg font-semibold text-foreground">קטגוריות ומערכות</h2>
           <p className="text-xs text-muted-foreground">
             {state.categories?.length ?? 0} קטגוריות · {state.decks?.length ?? 0} מערכות · {state.cards?.length ?? 0} כרטיסים
+            {linkCount !== null && <> · <span className="text-gold">{linkCount.toLocaleString("he-IL")} שיוכים בענן</span></>}
           </p>
+        </div>
+      </div>
+
+      {/* ★ NEW: Full backup with associations */}
+      <div className="rounded-xl border-2 border-gold/60 bg-gradient-to-br from-gold/10 to-transparent p-4 space-y-3">
+        <div className="flex items-start gap-2 text-right">
+          <Sparkles className="h-5 w-5 text-gold shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="font-display font-semibold text-foreground">גיבוי מלא: קטגוריות + כרטיסיות + שיוכים</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              מגבה את שלושת הרכיבים יחד כולל הקשר ביניהם — כך שניתן לשחזר בדיוק את אותו מבנה
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            onClick={handleBackupAll}
+            disabled={busy !== null}
+            className="bg-gold hover:bg-gold/90 text-background gap-2"
+          >
+            <Download className="h-4 w-4" />
+            {busy === "backup" ? "מגבה..." : "גבה הכל ל-JSON"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => restoreInputRef.current?.click()}
+            disabled={busy !== null}
+            className="border-gold/60 gap-2"
+          >
+            <Upload className="h-4 w-4" />
+            {busy === "restore" ? "משחזר..." : "שחזר מקובץ (עם אישור)"}
+          </Button>
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleRestoreFile}
+          />
         </div>
       </div>
 
@@ -311,7 +430,7 @@ function CategoriesSection({
         <div className="flex items-start gap-2">
           <Info className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
           <p className="text-xs text-muted-foreground text-right">
-            הגיבוי כולל את כל הקטגוריות, המערכות, הכרטיסים ונתוני חזרה (SRS). לגיבוי נבחר לפי קטגוריה ספציפית — לחץ "גיבוי לפי נושאים".
+            הגיבוי החלקי כולל קטגוריות, מערכות, כרטיסים ונתוני חזרה (SRS). הגיבוי המלא למעלה כולל בנוסף את <strong>השיוכים בענן</strong> בין כרטיס לקטגוריה (טבלת <code>card_categories</code>).
           </p>
         </div>
       </div>
