@@ -551,7 +551,7 @@ function CardTile({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{tile}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56" dir="rtl">
+      <ContextMenuContent className="w-56">
         {onStudyOne && (
           <>
             <ContextMenuItem onClick={onStudyOne}>
