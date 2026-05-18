@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
+import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
 
 type NavItem = { id: string; label: string; icon: typeof Home; to?: string };
 
@@ -179,6 +180,7 @@ export function AppShellSidebar() {
   const { user, signOut, isGuest } = useAuth();
   const { isAdmin } = usePermissions();
   const { state } = useStudy();
+  const blocklist = useFeatureBlocklist();
 
   const activeId = useMemo(() => {
     const s = new URLSearchParams(search).get("section");
@@ -212,8 +214,11 @@ export function AppShellSidebar() {
     for (const def of DEFAULT_SIDEBAR_ITEMS) {
       if (!used.has(def.id)) result.push({ ...def, visible: true });
     }
-    return result.filter((i) => i.id !== "admin" || isAdmin);
-  }, [state.sidebarConfig, isAdmin]);
+    const blockedSet = new Set(blocklist.sections ?? []);
+    return result
+      .filter((i) => i.id !== "admin" || isAdmin)
+      .filter((i) => isAdmin || !blockedSet.has(i.id));
+  }, [state.sidebarConfig, isAdmin, blocklist]);
 
   const goSection = (id: string) => {
     if (pathname !== "/") {

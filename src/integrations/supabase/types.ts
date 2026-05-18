@@ -518,6 +518,44 @@ export type Database = {
           },
         ]
       }
+      role_layout_defaults: {
+        Row: {
+          category_template: Json | null
+          created_at: string
+          role_id: string
+          sidebar_config: Json | null
+          updated_at: string
+          updated_by: string | null
+          widget_layout: Json | null
+        }
+        Insert: {
+          category_template?: Json | null
+          created_at?: string
+          role_id: string
+          sidebar_config?: Json | null
+          updated_at?: string
+          updated_by?: string | null
+          widget_layout?: Json | null
+        }
+        Update: {
+          category_template?: Json | null
+          created_at?: string
+          role_id?: string
+          sidebar_config?: Json | null
+          updated_at?: string
+          updated_by?: string | null
+          widget_layout?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_layout_defaults_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: true
+            referencedRelation: "app_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           action: Database["public"]["Enums"]["permission_action"]
@@ -1000,6 +1038,7 @@ export type Database = {
         }[]
       }
       get_due_count_today: { Args: never; Returns: number }
+      get_my_role_layout_defaults: { Args: never; Returns: Json }
       get_unreviewed_cards_page: {
         Args: { p_limit?: number; p_offset?: number }
         Returns: Json

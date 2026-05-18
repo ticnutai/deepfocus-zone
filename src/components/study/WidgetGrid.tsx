@@ -23,7 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
-import { mergeLayout, WIDGET_DEFS } from "@/lib/study/widgetLayout";
+import { mergeLayout, applyWidgetBlocklist, WIDGET_DEFS } from "@/lib/study/widgetLayout";
+import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
   GripVertical,
@@ -295,9 +297,14 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
   const toolbarHoverTimer = useRef<number | null>(null);
 
   const defs = WIDGET_DEFS[tabId] ?? [];
+  const blocklist = useFeatureBlocklist();
+  const { isAdmin } = usePermissions();
   const tabLayout: WidgetConfig[] = useMemo(
-    () => mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order),
-    [state.widgetLayout, tabId],
+    () => {
+      const merged = mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order);
+      return isAdmin ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
+    },
+    [state.widgetLayout, tabId, blocklist, isAdmin],
   );
 
   const save = useCallback((newTabLayout: WidgetConfig[]) => {

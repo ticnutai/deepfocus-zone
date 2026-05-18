@@ -241,3 +241,14 @@ export function mergeLayout(saved: WidgetConfig[] | undefined, tabId: string): W
   });
   return merged;
 }
+
+/** Apply admin-defined global widget blocklist — removes blocked widgets entirely */
+export function applyWidgetBlocklist(
+  layout: WidgetConfig[],
+  tabId: string,
+  blockedByTab: Record<string, string[]> | undefined,
+): WidgetConfig[] {
+  const blocked = new Set(blockedByTab?.[tabId] ?? []);
+  if (blocked.size === 0) return layout;
+  return layout.filter((w) => !blocked.has(w.id));
+}
