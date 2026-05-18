@@ -19,6 +19,7 @@ import { StudySession } from "./StudySession";
 import { WidgetGrid } from "./WidgetGrid";
 import { CategoryStudyPickerDialog } from "./CategoryStudyPickerDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
+import { QuickRunDialog } from "./QuickRunDialog";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
 import { displayCategoryName, PATH_SEP } from "@/lib/study/shasGen";
