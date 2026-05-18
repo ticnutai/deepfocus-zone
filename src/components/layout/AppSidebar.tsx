@@ -180,6 +180,7 @@ export function AppShellSidebar() {
   const { user, signOut, isGuest } = useAuth();
   const { isAdmin } = usePermissions();
   const { state } = useStudy();
+  const blocklist = useFeatureBlocklist();
 
   const activeId = useMemo(() => {
     const s = new URLSearchParams(search).get("section");
