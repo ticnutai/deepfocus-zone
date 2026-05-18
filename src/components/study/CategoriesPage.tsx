@@ -225,6 +225,10 @@ export function CategoriesPage() {
         setStudyCardIds(ids);
         setStudyMode("multiple");
       }}
+      onQuickRun={(id, name) => {
+        setQuickRunCat({ id, name });
+        setQuickRunOpen(true);
+      }}
     />
   );
 
