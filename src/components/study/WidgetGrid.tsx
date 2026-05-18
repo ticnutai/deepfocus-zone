@@ -23,7 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
-import { mergeLayout, WIDGET_DEFS } from "@/lib/study/widgetLayout";
+import { mergeLayout, applyWidgetBlocklist, WIDGET_DEFS } from "@/lib/study/widgetLayout";
+import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
   GripVertical,
