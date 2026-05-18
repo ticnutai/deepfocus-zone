@@ -1086,16 +1086,8 @@ const Index = () => {
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
             {active === "settings" ? (
               <SettingsPanel />
-            ) : active === "cards" ? (
-              <div className="space-y-6">
-                <div className="text-center space-y-1 animate-fade-in">
-                  <h1 className="font-display text-2xl font-bold text-gold">שאלות חזרה</h1>
-                  <p className="text-muted-foreground text-sm">ניהול מערכות, שאלות וקטגוריות</p>
-                </div>
-                <CardsManager />
-              </div>
-            ) : active === "categories" ? (
-              <CategoriesPage />
+            ) : active === "cards" || active === "categories" ? (
+              <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
             ) : active === "search" ? (
               <div className="space-y-6">
                 <div className="text-center space-y-1 animate-fade-in">
