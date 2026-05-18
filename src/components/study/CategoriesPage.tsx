@@ -113,7 +113,6 @@ export function CategoriesPage() {
   const [quickRunCat, setQuickRunCat] = useState<{ id: string; name: string } | null>(null);
   // After session ends — offer to save as deck
   const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
-  const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
 
   const rawCategoryCards = useMemo(() => (
     selectedCategory
