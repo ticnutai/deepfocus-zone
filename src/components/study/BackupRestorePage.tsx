@@ -1162,6 +1162,20 @@ function HistorySection({
         </div>
       </div>
 
+      <MultiSelectToolbar
+        count={ms.count}
+        total={ms.total}
+        allSelected={ms.allSelected}
+        onToggleAll={ms.toggleAll}
+        onClear={ms.clear}
+        alwaysVisible
+        actions={[
+          { icon: Upload, label: "שחזר נבחרים", onClick: handleBulkRestore },
+          { icon: Download, label: "הורד נבחרים", onClick: handleBulkDownload },
+          { icon: Trash2, label: "מחק נבחרים", onClick: () => setConfirmBulkDelete(true), variant: "destructive" },
+        ]}
+      />
+
       <ScrollArea className="max-h-[480px]">
         <div className="space-y-2 pr-1">
           {entries.length === 0 ? (
@@ -1173,9 +1187,19 @@ function HistorySection({
           ) : entries.map((entry) => (
             <div
               key={entry.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-gold/20 bg-card/60 px-4 py-3"
+              className={cn(
+                "flex items-center justify-between gap-3 rounded-xl border bg-card/60 px-4 py-3 transition-colors",
+                ms.isSelected(entry.id) ? "border-gold/70 bg-gold/5" : "border-gold/20",
+              )}
             >
               <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={ms.isSelected(entry.id)}
+                  onChange={() => ms.toggle(entry.id)}
+                  className="h-4 w-4 rounded border-gold/40 cursor-pointer accent-gold"
+                  aria-label={`בחר ${entry.label}`}
+                />
                 <Button size="sm" variant="ghost" onClick={() => handleDelete(entry.id)} className="h-8 w-8 p-0 text-rose-400 hover:text-rose-600">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -1184,7 +1208,7 @@ function HistorySection({
                   שחזר
                 </Button>
               </div>
-              <div className="text-right">
+              <div className="text-right flex-1 cursor-pointer" onClick={() => ms.toggle(entry.id)}>
                 <p className="text-sm font-semibold text-foreground">{entry.label}</p>
                 <p className="text-xs text-muted-foreground">
                   {fmtDate(entry.savedAt)} · {entry.sizeKb} KB · {entry.cardCount} כרטיסים · {entry.deckCount} מערכות
@@ -1194,6 +1218,21 @@ function HistorySection({
           ))}
         </div>
       </ScrollArea>
+
+      <AlertDialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>מחיקת {ms.count} גיבויים?</AlertDialogTitle>
+            <AlertDialogDescription>פעולה זו תמחק לצמיתות את הגיבויים המקומיים הנבחרים.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive hover:bg-destructive/90">
+              מחק {ms.count}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
