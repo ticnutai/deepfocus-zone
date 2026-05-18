@@ -270,6 +270,39 @@ export function CardsManager() {
     return arr;
   }, [deckCards, cardSort, cardSortDir]);
 
+  // ── Multi-select for cards ────────────────────────────────────────────
+  const cardMs = useMultiSelect(sortedDeckCards, (c) => c.id);
+  const [confirmBulkDeleteCards, setConfirmBulkDeleteCards] = useState(false);
+
+  const bulkDeleteCards = () => {
+    const ids = Array.from(cardMs.selected);
+    for (const id of ids) deleteCard(id);
+    toast({ title: `${ids.length} שאלות נמחקו` });
+    cardMs.clear();
+    setConfirmBulkDeleteCards(false);
+  };
+
+  const bulkDuplicateCards = () => {
+    const items = cardMs.selectedItems;
+    for (const c of items) duplicateCard(c.id);
+    toast({ title: `${items.length} שאלות הועתקו` });
+    cardMs.clear();
+  };
+
+  const bulkExportCards = () => {
+    const items = cardMs.selectedItems;
+    if (!items.length) return;
+    const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards: items }, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cards_export_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: `${items.length} שאלות יוצאו` });
+  };
+
   if (session) {
     return (
       <div className="space-y-4">
