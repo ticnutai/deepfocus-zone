@@ -59,7 +59,8 @@ export function SettingsPanel() {
           <CacheSettings />
         </TabsContent>
         {isAdmin && (
-          <TabsContent value="dev" className="mt-4">
+          <TabsContent value="dev" className="mt-4 space-y-4">
+            <DevIconsSettings />
             <MigrationRunner />
           </TabsContent>
         )}
