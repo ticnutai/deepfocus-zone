@@ -42,6 +42,8 @@ interface Props {
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
   /** הפעל שאלון על רשימת מזהי שאלות (לחיצה ימנית/סרגל בחירה) */
   onStudyCardIds?: (ids: string[]) => void;
+  /** Quick-run flow: opens dialog that asks scope/mode and runs without creating a deck */
+  onQuickRun?: (categoryId: string, categoryName: string) => void;
 }
 
 type LayoutMode = "grid" | "list" | "columns";
@@ -617,7 +619,7 @@ function CardTile({
 }
 
 /* ===================== MAIN ===================== */
-export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds }: Props) {
+export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun }: Props) {
   const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck } = useStudy();
 
   // === Persistent prefs ===
@@ -1110,6 +1112,14 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     const locked = isUncategorized(cat);
     return (
     <ContextMenuContent className="w-56">
+      {onQuickRun && (
+        <>
+          <ContextMenuItem onClick={() => onQuickRun(cat.id, cat.name)}>
+            <Brain className="h-4 w-4 ml-2 text-emerald-500" /> ⚡ הפעל שאלות (מהיר)
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
       {onStudyCategory && (
         <>
           <ContextMenuItem onClick={() => onStudyCategory(cat.name)}>

@@ -19,6 +19,7 @@ import { StudySession } from "./StudySession";
 import { WidgetGrid } from "./WidgetGrid";
 import { CategoryStudyPickerDialog } from "./CategoryStudyPickerDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
+import { QuickRunDialog } from "./QuickRunDialog";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
 import { displayCategoryName, PATH_SEP } from "@/lib/study/shasGen";
@@ -51,7 +52,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export function CategoriesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const { state, deleteCard, setWidgetLayout, updateCard, setUiPref } = useStudy();
+  const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
 
   // Per-category sort mode (persisted in uiPrefs, synced to cloud)
   const sortMode: CategorySortMode = selectedCategory
@@ -107,6 +108,12 @@ export function CategoriesPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerCategoryName, setPickerCategoryName] = useState<string | null>(null);
 
+  // Quick-run dialog state
+  const [quickRunOpen, setQuickRunOpen] = useState(false);
+  const [quickRunCat, setQuickRunCat] = useState<{ id: string; name: string } | null>(null);
+  // After session ends — offer to save as deck
+  const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
+
   const rawCategoryCards = useMemo(() => (
     selectedCategory
       ? state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`))
@@ -160,12 +167,22 @@ export function CategoriesPage() {
   // If a study session is active, render it fullscreen
   if (studyMode && studyCardIds && studyCardIds.length > 0) {
     const firstDeckId = state.cards.find((c) => studyCardIds.includes(c.id))?.deckId ?? null;
+    const sessionIds = [...studyCardIds];
+    const sessionCatName = quickRunCat?.name ?? "";
     return (
       <StudySession
         deckId={firstDeckId}
         mode={studyMode as never}
         cardIds={studyCardIds}
-        onExit={() => { setStudyMode(null); setStudyCardIds(null); }}
+        onExit={() => {
+          // If session came from QuickRun, offer save-as-deck
+          if (quickRunCat) {
+            setPostSessionPrompt({ cardIds: sessionIds, categoryName: sessionCatName });
+            setQuickRunCat(null);
+          }
+          setStudyMode(null);
+          setStudyCardIds(null);
+        }}
       />
     );
   }
@@ -207,6 +224,10 @@ export function CategoriesPage() {
         if (!ids.length) return;
         setStudyCardIds(ids);
         setStudyMode("multiple");
+      }}
+      onQuickRun={(id, name) => {
+        setQuickRunCat({ id, name });
+        setQuickRunOpen(true);
       }}
     />
   );

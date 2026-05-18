@@ -28,6 +28,7 @@ interface Props {
   onStudyCategory?: (categoryName: string) => void;
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
   onStudyCardIds?: (ids: string[]) => void;
+  onQuickRun?: (categoryId: string, categoryName: string) => void;
 }
 
 const VIEW_MODE_KEY = "cat-view-mode-v1";
@@ -35,7 +36,7 @@ const VALID_VIEWS: CategoryViewMode[] = ["browse", "explorer", "list", "cards", 
 
 export function CategoryManager({
   selectedCategory, onSelectCategory, onAddCardToCategory,
-  onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds,
+  onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun,
 }: Props) {
   const { state, setUiPref } = useStudy();
   const cloudView = state.uiPrefs?.categoryViewMode;
@@ -80,6 +81,7 @@ export function CategoryManager({
           onStudyCategory={onStudyCategory}
           onStudyMultipleCategories={onStudyMultipleCategories}
           onStudyCardIds={onStudyCardIds}
+          onQuickRun={onQuickRun}
         />
       )}
       {viewMode === "browse" && (
