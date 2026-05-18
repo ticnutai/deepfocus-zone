@@ -2017,10 +2017,20 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               {selectedCardIds.size > 0 && (
                 <div className="flex items-center gap-2 mb-2 rounded-xl border-2 border-gold/50 bg-gold/5 px-3 py-1.5">
                   <span className="text-xs font-bold text-gold">{selectedCardIds.size} נבחרו</span>
+                  {onStudyCardIds && (
+                    <Button
+                      size="sm"
+                      onClick={() => { onStudyCardIds([...selectedCardIds]); }}
+                      className="h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground mr-auto"
+                      title="הפעל מבחן על השאלות שנבחרו"
+                    >
+                      <Brain className="h-3 w-3" /> הפעל שאלות
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => { setClassifyDeckIds(new Set()); setNewDeckNameForClassify(""); setClassifyDialogOpen(true); }}
-                    className="h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground mr-auto"
+                    className={cn("h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground", !onStudyCardIds && "mr-auto")}
                   >
                     <Layers className="h-3 w-3" /> סווג למערכת
                   </Button>
@@ -2050,6 +2060,25 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                     onDelete={() => {
                       if (confirm(`מחק את השאלה "${card.question.slice(0, 40)}..."?`)) deleteCard(card.id);
                     }}
+                    decks={state.decks.map((d) => ({ id: d.id, name: d.name }))}
+                    onAddToDeck={(deckId) => {
+                      addCardToDeck(card.id, deckId);
+                      toast({ title: "השאלה שויכה למערכת", description: state.decks.find((d) => d.id === deckId)?.name ?? "" });
+                    }}
+                    onCreateDeckWithCard={() => {
+                      const name = window.prompt("שם המערכת החדשה:");
+                      if (!name?.trim()) return;
+                      const deck = addDeck(name.trim(), undefined, []);
+                      addCardToDeck(card.id, deck.id);
+                      toast({ title: "נוצרה מערכת חדשה", description: `${name.trim()} (שאלה אחת)` });
+                    }}
+                    onClassifyOpen={() => {
+                      setSelectedCardIds(new Set([card.id]));
+                      setClassifyDeckIds(new Set());
+                      setNewDeckNameForClassify("");
+                      setClassifyDialogOpen(true);
+                    }}
+                    onStudyOne={onStudyCardIds ? () => onStudyCardIds([card.id]) : undefined}
                   />
                 ))}
               </div>
