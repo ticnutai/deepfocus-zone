@@ -215,11 +215,15 @@ export function CardsManager() {
     if (categoryFilter) {
       result = result.filter((c) => c.tags.includes(`cat:${categoryFilter}`));
     }
+    if (typeFilter.size > 0) {
+      result = result.filter((c) => typeFilter.has(c.type));
+    }
     result = applyDateFilter(result, dateFilter);
     return result;
-  }, [allDeckCards, categoryFilter, dateFilter]);
+  }, [allDeckCards, categoryFilter, typeFilter, dateFilter]);
   const dueCount = deckCards.filter(isDue).length;
   const isDateFilterActive = dateFilter.from !== null || dateFilter.to !== null;
+  const isTypeFilterActive = typeFilter.size > 0;
 
   // Keep the quick-actions widget (cards-toolbar) above pinned categories in cards tab.
   useEffect(() => {
