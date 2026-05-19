@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { Eye, Check, X, ChevronLeft, ChevronRight, RotateCcw, Trophy, Settings2, LayoutGrid, Clock, ChevronDown, Calendar as CalendarIcon, RefreshCw, Timer, TrendingUp, TrendingDown, Minus, List, Grid2x2, Zap, Palette, Edit2, AlignRight, AlignCenter, AlignLeft } from "lucide-react";
+import { Eye, Check, X, ChevronLeft, ChevronRight, RotateCcw, Trophy, Settings2, LayoutGrid, Clock, ChevronDown, Calendar as CalendarIcon, RefreshCw, Timer, TrendingUp, TrendingDown, Minus, List, Grid2x2, Zap, Palette, Edit2, AlignRight, AlignCenter, AlignLeft, Pause, Play } from "lucide-react";
 import { QuizThemeEditorDialog, CustomQuizTheme, DEFAULT_CUSTOM_THEME, FONT_FAMILY_MAP, FONT_SIZE_MAP, FONT_WEIGHT_MAP, BORDER_RADIUS_MAP } from "./QuizThemeEditor";
 import { QuizTypographyPanel, QuizTypography, loadTypography, storeTypography, typographyToStyle, typographyToBgStyle, ANSWER_TYPOGRAPHY_KEY, loadAnswerTypography } from "./QuizTypographyPanel";
 import { Card } from "@/components/ui/card";
@@ -205,11 +205,37 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
 
   // Session-level timer (never resets per card)
   const sessionStart = useRef(Date.now());
+  const pausedAtRef = useRef<number | null>(null);
+  const pausedTotalMsRef = useRef(0);
+  const [timerRunning, setTimerRunning] = useState(true);
   const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - sessionStart.current) / 1000)), 1000);
-    return () => clearInterval(t);
+
+  const getElapsedSeconds = useCallback(() => {
+    const now = Date.now();
+    const livePausedMs = pausedAtRef.current ? (now - pausedAtRef.current) : 0;
+    const effectiveMs = Math.max(0, now - sessionStart.current - pausedTotalMsRef.current - livePausedMs);
+    return Math.floor(effectiveMs / 1000);
   }, []);
+
+  useEffect(() => {
+    setElapsed(getElapsedSeconds());
+    const t = setInterval(() => setElapsed(getElapsedSeconds()), 1000);
+    return () => clearInterval(t);
+  }, [getElapsedSeconds]);
+
+  const toggleTimerRunning = useCallback(() => {
+    if (timerRunning) {
+      pausedAtRef.current = Date.now();
+      setTimerRunning(false);
+      return;
+    }
+    if (pausedAtRef.current) {
+      pausedTotalMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = null;
+    }
+    setTimerRunning(true);
+    setElapsed(getElapsedSeconds());
+  }, [getElapsedSeconds, timerRunning]);
 
   // Quick Review: optional countdown timer that auto-ends the session.
   useEffect(() => {
@@ -649,7 +675,18 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
               <RefreshCw className="h-4 w-4" /> תרגל שוב רק את השגיאות
             </Button>
           )}
-          <Button onClick={() => { setIdx(0); setResults({ correct: 0, total: 0, totalMs: 0, failed: [] }); setRevealed(false); setSelected([]); setBoolPick(null); sessionStart.current = Date.now(); setElapsed(0); }}
+          <Button onClick={() => {
+            setIdx(0);
+            setResults({ correct: 0, total: 0, totalMs: 0, failed: [] });
+            setRevealed(false);
+            setSelected([]);
+            setBoolPick(null);
+            sessionStart.current = Date.now();
+            pausedAtRef.current = null;
+            pausedTotalMsRef.current = 0;
+            setTimerRunning(true);
+            setElapsed(0);
+          }}
             variant="outline" className="border-2 border-gold rounded-xl">
             <RotateCcw className="h-4 w-4" /> שוב
           </Button>
@@ -834,6 +871,18 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
               {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
             </span>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+            title={timerRunning ? "השהה שעון" : "המשך שעון"}
+            onClick={toggleTimerRunning}
+          >
+            {timerRunning
+              ? <><Pause className="h-3.5 w-3.5 text-gold" /><span className="text-xs">עצור שעון</span></>
+              : <><Play className="h-3.5 w-3.5 text-gold" /><span className="text-xs">הפעל שעון</span></>
+            }
+          </Button>
           <span className="text-sm text-muted-foreground">
             {idx + 1} / {queue.length} · {mode === "srs" ? "חזרה ממוקדת" : "תרגול חופשי"}
           </span>
@@ -1113,6 +1162,16 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                 selected.every((s) => card.correctIndices.includes(s));
               return (
                 <>
+                  {quizAnswerMode === "instant" && (
+                    <div className={cn(
+                      "p-3 rounded-xl border-2 text-center text-sm font-semibold",
+                      correct
+                        ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300"
+                        : "border-destructive bg-destructive/10 text-destructive"
+                    )}>
+                      {correct ? "נכון! ממשיך לשאלה הבאה..." : "טעות. התשובה הנכונה מסומנת בירוק..."}
+                    </div>
+                  )}
                   {quizAnswerMode === "button" && (
                     <NextReviewTabs value={nextInterval} customDate={customDate} onChange={setNextInterval} onCustomDate={setCustomDate} />
                   )}
@@ -1257,6 +1316,17 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                     const isSelected = selected.includes(i);
                     const isCorrect = card.correctIndices!.includes(i);
                     const showResult = revealed;
+                    const handleClick = () => {
+                      if (revealed) return;
+                      if (quizAnswerMode === "instant") {
+                        const correct = card.correctIndices!.length === 1 && card.correctIndices!.includes(i);
+                        setSelected([i]);
+                        setRevealed(true);
+                        setInstantPendingSubmit({ correct, quality: correct ? 5 : 1 });
+                        return;
+                      }
+                      setSelected((arr) => isSelected ? arr.filter((x) => x !== i) : [...arr, i]);
+                    };
                     let btnCls = "";
                     let btnStyle: React.CSSProperties = {};
                     let optTextStyle: React.CSSProperties = {};
@@ -1377,7 +1447,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                     btnStyle = { ...btnStyle, ...typographyToBgStyle(answerTypography) };
                     return (
                       <button key={i} dir="rtl" disabled={revealed}
-                        onClick={() => setSelected((arr) => isSelected ? arr.filter((x) => x !== i) : [...arr, i])}
+                        onClick={handleClick}
                         className={btnCls}
                         style={btnStyle}
                       >
@@ -1409,17 +1479,31 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
               );
             })()}
             {!revealed ? (
-              <Button disabled={selected.length === 0} onClick={() => setRevealed(true)}
-                className="w-full bg-gradient-navy text-primary-foreground rounded-xl py-6">
-                בדוק תשובה
-              </Button>
+              quizAnswerMode === "button" ? (
+                <Button disabled={selected.length === 0} onClick={() => setRevealed(true)}
+                  className="w-full bg-gradient-navy text-primary-foreground rounded-xl py-6">
+                  בדוק תשובה
+                </Button>
+              ) : null
             ) : (
               (() => {
                 const correct = selected.length === card.correctIndices!.length &&
                   selected.every((s) => card.correctIndices!.includes(s));
                 return (
                   <>
-                    <NextReviewTabs value={nextInterval} customDate={customDate} onChange={setNextInterval} onCustomDate={setCustomDate} />
+                    {quizAnswerMode === "instant" && (
+                      <div className={cn(
+                        "p-3 rounded-xl border-2 text-center text-sm font-semibold",
+                        correct
+                          ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300"
+                          : "border-destructive bg-destructive/10 text-destructive"
+                      )}>
+                        {correct ? "נכון! ממשיך לשאלה הבאה..." : "טעות. התשובה הנכונה מסומנת בירוק..."}
+                      </div>
+                    )}
+                    {quizAnswerMode === "button" && (
+                      <NextReviewTabs value={nextInterval} customDate={customDate} onChange={setNextInterval} onCustomDate={setCustomDate} />
+                    )}
                     <Button onClick={() => submit(correct, correct ? 5 : 1)}
                       className={cn("w-full rounded-xl py-6 text-primary-foreground",
                         correct ? "bg-green-600 hover:bg-green-700" : "bg-destructive hover:bg-destructive/90")}>

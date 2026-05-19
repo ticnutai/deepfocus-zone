@@ -495,11 +495,6 @@ export function CategoriesPage() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      <div className="text-right space-y-1 animate-fade-in">
-        <h1 className="font-display text-2xl font-bold text-gold">קטגוריות</h1>
-        <p className="text-muted-foreground text-sm">ניהול קטגוריות, תיקיות ושיוך שאלות</p>
-      </div>
-
       <WidgetGrid
         tabId="categories"
         widgetMap={{
@@ -552,6 +547,17 @@ export function CategoriesPage() {
         onOpenChange={setPickerOpen}
         categoryName={pickerCategoryName}
         onStart={(mode, cardIds) => {
+          setStudyCardIds(cardIds);
+          setStudyMode(mode);
+        }}
+      />
+
+      <QuickRunDialog
+        open={quickRunOpen}
+        onOpenChange={setQuickRunOpen}
+        categoryId={quickRunCat?.id ?? null}
+        categoryName={quickRunCat?.name ?? null}
+        onStart={(cardIds, mode) => {
           setStudyCardIds(cardIds);
           setStudyMode(mode);
         }}

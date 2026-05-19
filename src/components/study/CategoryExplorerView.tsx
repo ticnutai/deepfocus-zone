@@ -1378,7 +1378,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     <ContextMenuContent className="w-56">
       {onQuickRun && (
         <>
-          <ContextMenuItem onClick={() => onQuickRun(cat.id, cat.name)}>
+          <ContextMenuItem onSelect={() => onQuickRun(cat.id, cat.name)}>
             <Brain className="h-4 w-4 ml-2 text-emerald-500" /> ⚡ הפעל שאלות (מהיר)
           </ContextMenuItem>
           <ContextMenuSeparator />
