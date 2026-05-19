@@ -114,13 +114,13 @@ function masteryOf(card: StudyCard): number {
 function SidebarRow({
   cat, depth, hasKids, isOpen, isSelected, count, isFavorite,
   isRenaming, onRenameSubmit, onCancelRename,
-  onToggle, onSelect, onContext, onAdd,
+  onToggle, onSelect, onContext, onAdd, isHome, onSetHome,
 }: {
   cat: Category; depth: number; hasKids: boolean; isOpen: boolean;
   isSelected: boolean; count: number; isFavorite: boolean;
   isRenaming?: boolean; onRenameSubmit?: (name: string) => void; onCancelRename?: () => void;
   onToggle: () => void; onSelect: () => void; onContext: (cat: Category) => void;
-  onAdd?: () => void;
+  onAdd?: () => void; isHome?: boolean; onSetHome?: () => void;
 }) {
   const { setNodeRef: dropRef, isOver } = useDroppable({
     id: `catparent:${cat.id}`, data: { catId: cat.id, kind: "into" },
@@ -209,6 +209,21 @@ function SidebarRow({
             <Plus className="h-3 w-3" />
           </button>
         )}
+        {onSetHome && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSetHome(); }}
+            title={isHome ? "בטל כדף בית" : "הגדר כדף בית"}
+            className={cn(
+              "h-4 w-4 rounded flex items-center justify-center transition-opacity",
+              isHome
+                ? "opacity-100 text-amber-500"
+                : "opacity-0 group-hover:opacity-60 text-muted-foreground hover:text-amber-500",
+            )}
+          >
+            <Home className={cn("h-3 w-3", isHome && "fill-amber-500")} />
+          </button>
+        )}
       </div>
     </ContextMenuTrigger>
   );
@@ -217,16 +232,17 @@ function SidebarRow({
 /* === Folder tile (grid view) === */
 function FolderTileBase({
   cat, count, mastery, iconSize, isMultiSelected, isRenaming, isFavorite,
-  selectionMode,
-  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename,
+  selectionMode, isHome,
+  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
   showCount = true, showMastery = true,
 }: {
   cat: Category; count: number; mastery: number | null; iconSize: IconSize;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
-  selectionMode: boolean;
+  selectionMode: boolean; isHome?: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
+  onSetHome?: () => void;
   onRenameSubmit: (name: string) => void; onCancelRename: () => void;
   showCount?: boolean; showMastery?: boolean;
 }) {
@@ -332,6 +348,22 @@ function FolderTileBase({
           <ListChecks className="h-2.5 w-2.5" />
         </button>
       )}
+      {/* Home icon — top center, always visible when set, on-hover otherwise */}
+      {onSetHome && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSetHome(); }}
+          title={isHome ? "בטל כדף בית" : "הגדר כדף בית"}
+          className={cn(
+            "absolute top-1.5 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full flex items-center justify-center transition-all z-10",
+            isHome
+              ? "opacity-100 text-amber-500"
+              : "opacity-0 group-hover:opacity-70 text-muted-foreground hover:text-amber-500",
+          )}
+        >
+          <Home className={cn("h-3 w-3", isHome && "fill-amber-500")} />
+        </button>
+      )}
       <div className="flex flex-col items-center text-center gap-2 w-full">
         <div className="relative">
           <Folder
@@ -371,22 +403,23 @@ const FolderTile = memo(FolderTileBase, (p, n) =>
   p.iconSize === n.iconSize && p.isMultiSelected === n.isMultiSelected &&
   p.isRenaming === n.isRenaming && p.isFavorite === n.isFavorite &&
   p.selectionMode === n.selectionMode && p.showCount === n.showCount &&
-  p.showMastery === n.showMastery
+  p.showMastery === n.showMastery && p.isHome === n.isHome
 );
 
 /* === List row === */
 function FolderListRowBase({
   cat, count, mastery, isMultiSelected, isRenaming, isFavorite,
-  selectionMode,
-  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename,
+  selectionMode, isHome,
+  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
   showCount = true, showMastery = true, compact = false,
 }: {
   cat: Category; count: number; mastery: number | null;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
-  selectionMode: boolean;
+  selectionMode: boolean; isHome?: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
+  onSetHome?: () => void;
   onRenameSubmit: (name: string) => void; onCancelRename: () => void;
   showCount?: boolean; showMastery?: boolean; compact?: boolean;
 }) {
@@ -498,6 +531,21 @@ function FolderListRowBase({
           <ListChecks className="h-2.5 w-2.5" />
         </button>
       )}
+      {onSetHome && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSetHome(); }}
+          title={isHome ? "בטל כדף בית" : "הגדר כדף בית"}
+          className={cn(
+            "h-5 w-5 rounded flex items-center justify-center transition-all",
+            isHome
+              ? "opacity-100 text-amber-500"
+              : "opacity-0 group-hover:opacity-60 text-muted-foreground hover:text-amber-500",
+          )}
+        >
+          <Home className={cn("h-3.5 w-3.5", isHome && "fill-amber-500")} />
+        </button>
+      )}
     </div>
   );
 }
@@ -506,7 +554,7 @@ const FolderListRow = memo(FolderListRowBase, (p, n) =>
   p.isMultiSelected === n.isMultiSelected && p.isRenaming === n.isRenaming &&
   p.isFavorite === n.isFavorite && p.selectionMode === n.selectionMode &&
   p.showCount === n.showCount && p.showMastery === n.showMastery &&
-  p.compact === n.compact
+  p.compact === n.compact && p.isHome === n.isHome
 );
 
 function CardTileBase({
@@ -690,7 +738,7 @@ interface BenchState {
 
 /* ===================== MAIN ===================== */
 export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun, headerExtra }: Props) {
-  const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck } = useStudy();
+  const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck, setUiPref } = useStudy();
 
   // === Persistent prefs ===
   const [prefs, setPrefsState] = useState<ExplorerPrefs>(() => loadPrefs());
@@ -1070,6 +1118,24 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     setActiveSmartId(null);
     setMultiSelected(new Set());
   };
+
+  /* === Home category === */
+  const homeCategoryId = state.uiPrefs?.explorerHomeCategoryId ?? null;
+  const homeAppliedRef = useRef(false);
+  useEffect(() => {
+    if (homeAppliedRef.current) return;
+    if (!homeCategoryId) return;
+    const exists = state.categories.some((c) => c.id === homeCategoryId);
+    if (!exists) return;
+    homeAppliedRef.current = true;
+    navigateTo(homeCategoryId, false);
+  // only once, when categories load and home is known
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeCategoryId, state.categories.length]);
+
+  const setHomeCategory = useCallback((catId: string | null) => {
+    setUiPref("explorerHomeCategoryId", catId);
+  }, [setUiPref]);
 
   const handleSelectFolder = (cat: Category, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1463,6 +1529,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               isSelected={selectedCategory === cat.name}
               count={counts.get(cat.name) ?? 0}
               isFavorite={prefs.favorites.includes(cat.id)}
+              isHome={homeCategoryId === cat.id}
               isRenaming={renamingId === cat.id}
               onRenameSubmit={(name) => {
                 if (name.trim() && name !== cat.name) renameCategory(cat.id, name);
@@ -1479,6 +1546,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               }}
               onContext={() => { /* no-op, context handled by trigger */ }}
               onAdd={() => openAddQuestions(cat.name)}
+              onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
             />
             <FolderContextMenu cat={cat} />
           </ContextMenu>
@@ -1520,46 +1588,14 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
   return (
     <div dir="rtl" className="rounded-xl border-2 border-gold/30 bg-card overflow-hidden">
-      {/* ── Unified title bar (NOT zoomed — always readable) ── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gold/30 bg-gradient-to-l from-gold/10 to-transparent flex-wrap gap-y-1.5">
-        <span className="flex items-center justify-center h-7 w-7 rounded-full bg-gold/20 text-gold shrink-0">
-          <Layers className="h-4 w-4" />
-        </span>
-        <div className="flex-1" />
-        {/* View switcher — injected from CategoryManager */}
-        {headerExtra && (
-          <>
-            {headerExtra}
-            <div className="w-px h-5 bg-gold/30" />
-          </>
-        )}
-        {/* Zoom slider */}
-        <div className="hidden sm:flex items-center gap-1.5 select-none" title="גודל תצוגה">
-          <ZoomOut className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <input
-            type="range" min={0.6} max={1.45} step={0.05}
-            value={prefs.uiScale}
-            onChange={(e) => setPrefs({ uiScale: parseFloat(e.target.value) })}
-            className="w-24 accent-[hsl(var(--gold,45_90%_55%))] cursor-pointer h-1.5"
-          />
-          <ZoomIn className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <button type="button" title="אפס גודל"
-            onClick={() => setPrefs({ uiScale: 1.0 })}
-            className="text-[10px] text-muted-foreground hover:text-foreground w-7 text-center tabular-nums">
-            {Math.round(prefs.uiScale * 100)}%
-          </button>
-        </div>
-        {/* Templates button */}
-        <button type="button" onClick={() => setTemplatesOpen(true)}
-          className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs border border-gold/50 hover:bg-gold/10 transition-colors">
-          <Sparkles className="h-3.5 w-3.5 text-gold" /> תבניות
-        </button>
-      </div>
-
       {/* ── Everything below is zoomed ── */}
       <div ref={containerRef} tabIndex={-1} style={{ zoom: prefs.uiScale }} className="focus:outline-none">
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-gold/20 bg-gradient-to-l from-secondary/40 to-transparent px-3 py-2 flex-wrap">
+        {/* Layers icon */}
+        <span className="flex items-center justify-center h-7 w-7 rounded-full bg-gold/20 text-gold shrink-0">
+          <Layers className="h-4 w-4" />
+        </span>
         {/* Mobile sidebar toggle */}
         <button
           className="md:hidden h-8 w-8 rounded flex items-center justify-center hover:bg-secondary border border-gold/40"
@@ -1607,7 +1643,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
             value={search}
             onChange={(e) => { _searchTimer.current = performance.now(); setSearch(e.target.value); }}
             placeholder="חיפוש בתיקיות ובשאלות..."
-            className="h-9 text-sm w-full sm:w-64 border-gold/30 text-right pr-7"
+            className="h-9 text-sm w-full sm:w-44 border-gold/30 text-right pr-7"
           />
         </div>
 
@@ -1637,61 +1673,6 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Layout switcher */}
-        <div className="inline-flex border border-gold/40 rounded-md p-0.5 gap-0.5">
-          {([
-            { id: "grid", icon: LayoutGrid, label: "כרטיסים" },
-            { id: "list", icon: ListIcon, label: "רשימה" },
-            { id: "columns", icon: Columns3, label: "עמודות" },
-          ] as const).map(({ id, icon: Icon, label }) => (
-            <button key={id} title={label} onClick={() => setPrefs({ layout: id })}
-              className={cn("h-8 w-8 rounded flex items-center justify-center transition-all",
-                prefs.layout === id ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}>
-              <Icon className="h-4 w-4" />
-            </button>
-          ))}
-        </div>
-        {/* Icon size dropdown (single control to save space) */}
-        <div
-          className={cn(
-            "min-w-[126px] transition-opacity",
-            prefs.layout !== "grid" && "opacity-0 pointer-events-none",
-          )}
-          aria-hidden={prefs.layout !== "grid"}
-        >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                className="h-9 w-full border-gold/40 px-2.5 text-xs justify-between"
-                title="גודל אייקונים"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  {prefs.iconSize === "sm" ? "קטן" : prefs.iconSize === "md" ? "בינוני" : "גדול"}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[140px]">
-              <DropdownMenuLabel>גודל אייקונים</DropdownMenuLabel>
-              {([
-                ["sm", "קטן"],
-                ["md", "בינוני"],
-                ["lg", "גדול"],
-              ] as [IconSize, string][]).map(([size, label]) => (
-                <DropdownMenuCheckboxItem
-                  key={size}
-                  checked={prefs.iconSize === size}
-                  onCheckedChange={() => setPrefs({ iconSize: size })}
-                >
-                  {label}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
         {/* Preview toggle */}
         <button onClick={() => setPrefs({ showPreview: !prefs.showPreview })}
           title={prefs.showPreview ? "הסתר חלונית תצוגה" : "הצג חלונית תצוגה"}
@@ -1709,8 +1690,70 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               <SlidersHorizontal className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[200px]">
+          <DropdownMenuContent align="end" className="min-w-[220px]">
             <DropdownMenuLabel>אפשרויות תצוגה</DropdownMenuLabel>
+
+            {/* Layout */}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal py-1">פריסה</DropdownMenuLabel>
+            {([
+              { id: "grid", icon: LayoutGrid, label: "כרטיסים" },
+              { id: "list", icon: ListIcon, label: "רשימה" },
+              { id: "columns", icon: Columns3, label: "עמודות" },
+            ] as const).map(({ id, icon: Icon, label }) => (
+              <DropdownMenuCheckboxItem
+                key={id}
+                checked={prefs.layout === id}
+                onCheckedChange={() => setPrefs({ layout: id })}
+              >
+                <Icon className="h-3.5 w-3.5 ml-2" />
+                {label}
+              </DropdownMenuCheckboxItem>
+            ))}
+
+            {/* Icon size — only relevant in grid mode */}
+            {prefs.layout === "grid" && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal py-1">גודל אייקונים</DropdownMenuLabel>
+                {([
+                  ["sm", "קטן"],
+                  ["md", "בינוני"],
+                  ["lg", "גדול"],
+                ] as [IconSize, string][]).map(([size, label]) => (
+                  <DropdownMenuCheckboxItem
+                    key={size}
+                    checked={prefs.iconSize === size}
+                    onCheckedChange={() => setPrefs({ iconSize: size })}
+                  >
+                    {label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </>
+            )}
+
+            {/* Zoom slider */}
+            <DropdownMenuSeparator />
+            <div className="px-2 py-2 space-y-1">
+              <p className="text-xs text-muted-foreground">גודל תצוגה</p>
+              <div className="flex items-center gap-1.5">
+                <ZoomOut className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <input
+                  type="range" min={0.6} max={1.45} step={0.05}
+                  value={prefs.uiScale}
+                  onChange={(e) => setPrefs({ uiScale: parseFloat(e.target.value) })}
+                  className="flex-1 accent-[hsl(var(--gold,45_90%_55%))] cursor-pointer h-1.5"
+                />
+                <ZoomIn className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <button type="button"
+                  onClick={() => setPrefs({ uiScale: 1.0 })}
+                  className="text-[10px] text-muted-foreground hover:text-foreground w-7 text-center tabular-nums">
+                  {Math.round(prefs.uiScale * 100)}%
+                </button>
+              </div>
+            </div>
+
+            <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
               checked={prefs.showCounts}
               onCheckedChange={(v) => setPrefs({ showCounts: !!v })}
@@ -1806,6 +1849,18 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         </DropdownMenu>
         <input ref={fileInputRef} type="file" accept=".json,application/json" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) importTree(f); e.target.value = ""; }} />
+
+        {/* View switcher + Templates (from title bar) */}
+        {headerExtra && (
+          <>
+            <div className="w-px h-5 bg-gold/30 shrink-0" />
+            {headerExtra}
+          </>
+        )}
+        <button type="button" onClick={() => setTemplatesOpen(true)}
+          className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs border border-gold/50 hover:bg-gold/10 transition-colors shrink-0">
+          <Sparkles className="h-3.5 w-3.5 text-gold" /> תבניות
+        </button>
       </div>
 
       {/* Bulk action bar */}
@@ -2195,10 +2250,12 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   selectionMode={multiSelected.size > 0}
                                   isRenaming={renamingId === cat.id}
                                   isFavorite={prefs.favorites.includes(cat.id)}
+                                  isHome={homeCategoryId === cat.id}
                                   onOpen={() => enterFolder(cat)}
                                   onSelect={(e) => handleSelectFolder(cat, e)}
                                   onAdd={() => openAddQuestions(cat.name)}
                                   onStudy={onStudyCategory ? () => onStudyCategory(cat.name) : undefined}
+                                  onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
                                   onRenameSubmit={(name) => {
                                     if (name.trim() && name !== cat.name) renameCategory(cat.id, name);
                                     setRenamingId(null);
@@ -2228,10 +2285,12 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   selectionMode={multiSelected.size > 0}
                                   isRenaming={renamingId === cat.id}
                                   isFavorite={prefs.favorites.includes(cat.id)}
+                                  isHome={homeCategoryId === cat.id}
                                   onOpen={() => enterFolder(cat)}
                                   onSelect={(e) => handleSelectFolder(cat, e)}
                                   onAdd={() => openAddQuestions(cat.name)}
                                   onStudy={onStudyCategory ? () => onStudyCategory(cat.name) : undefined}
+                                  onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
                                   onRenameSubmit={(name) => {
                                     if (name.trim() && name !== cat.name) renameCategory(cat.id, name);
                                     setRenamingId(null);

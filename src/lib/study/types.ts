@@ -251,6 +251,8 @@ export interface UiPrefs {
   aiButtonPos?: { x: number; y: number };
   // Anthropic API key for AI question generation (stored in user account)
   anthropicApiKey?: string;
+  // CategoryExplorerView: the category id that opens by default on load
+  explorerHomeCategoryId?: string | null;
   aiButtonStyle?: { color: string; bg: string; size: number; shape: string; icon: string };
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
