@@ -3,6 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -16,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Plus, Check, RotateCcw, Trash2, ChevronDown, ChevronUp, BookOpen, Layout, RefreshCw, Pencil, ExternalLink,
   BookMarked, Scroll, Scale, Music, Star, PenLine, Library, Brain, Repeat, X, Calendar,
-  Eye, Grid2x2, Columns3, Table2, Rows3, Archive,
+  Circle, Grid2x2, Columns3, Table2, Rows3, Archive,
 } from "lucide-react";
 import { ReviewScheduleDialog } from "@/components/settings/ReviewScheduleSettings";
 import { PlanScheduleView } from "@/components/study/PlanScheduleView";
@@ -2473,46 +2481,37 @@ export function StudyPlansCard() {
           <h3 className="font-display text-lg font-semibold">תוכניות לימוד</h3>
         </div>
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1 border border-gold/40 rounded-xl p-1 bg-card/80">
-            <span className="px-1 text-[10px] text-muted-foreground flex items-center gap-1">
-              <Eye className="h-3 w-3" /> תצוגה
-            </span>
-            <button
-              onClick={() => setPlanView("classic")}
-              title="תצוגה קיימת"
-              className={cn("h-7 w-7 rounded-lg flex items-center justify-center", planView === "classic" ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}
-            >
-              <Layout className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setPlanView("grid2")}
-              title="רשת 2"
-              className={cn("h-7 w-7 rounded-lg flex items-center justify-center", planView === "grid2" ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}
-            >
-              <Grid2x2 className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setPlanView("grid3")}
-              title="רשת 3"
-              className={cn("h-7 w-7 rounded-lg flex items-center justify-center", planView === "grid3" ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}
-            >
-              <Columns3 className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setPlanView("table")}
-              title="טבלה"
-              className={cn("h-7 w-7 rounded-lg flex items-center justify-center", planView === "table" ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}
-            >
-              <Table2 className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setPlanView("compact")}
-              title="קומפקט"
-              className={cn("h-7 w-7 rounded-lg flex items-center justify-center", planView === "compact" ? "bg-gradient-navy text-primary-foreground" : "text-muted-foreground hover:bg-secondary")}
-            >
-              <Rows3 className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1 border border-gold/40 rounded-xl px-2 py-1 bg-card/80 text-[10px] text-muted-foreground hover:bg-secondary transition-colors">
+                <Circle className="h-2.5 w-2.5 fill-current" /> תצוגה
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40 text-right">
+              <DropdownMenuLabel className="text-right">תצוגת תוכניות</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setPlanView("classic")} className="gap-2 flex-row-reverse justify-end">
+                {planView === "classic" && "✓ "}קיימת
+                <Layout className="h-4 w-4" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPlanView("grid2")} className="gap-2 flex-row-reverse justify-end">
+                {planView === "grid2" && "✓ "}רשת 2
+                <Grid2x2 className="h-4 w-4" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPlanView("grid3")} className="gap-2 flex-row-reverse justify-end">
+                {planView === "grid3" && "✓ "}רשת 3
+                <Columns3 className="h-4 w-4" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPlanView("table")} className="gap-2 flex-row-reverse justify-end">
+                {planView === "table" && "✓ "}טבלה
+                <Table2 className="h-4 w-4" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPlanView("compact")} className="gap-2 flex-row-reverse justify-end">
+                {planView === "compact" && "✓ "}קומפקט
+                <Rows3 className="h-4 w-4" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="sm"
             onClick={() => setAddOpen(true)}
@@ -2521,15 +2520,22 @@ export function StudyPlansCard() {
             <Plus className="h-3.5 w-3.5" />
             הוסף תוכנית
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
             onClick={() => setShowArchive((v) => !v)}
-            className={cn("rounded-xl gap-1 border-gold/50", showArchive && "bg-gold/10")}
+            title="ארכיון"
+            className={cn(
+              "relative inline-flex items-center justify-center h-7 w-7 rounded-xl border border-gold/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors",
+              showArchive && "bg-gold/10 text-foreground"
+            )}
           >
             <Archive className="h-3.5 w-3.5" />
-            ארכיון ({archivedPlans.length})
-          </Button>
+            {archivedPlans.length > 0 && (
+              <span className="absolute -top-1.5 -left-1.5 min-w-[16px] h-4 px-1 rounded-full bg-gold text-[9px] font-bold text-white flex items-center justify-center leading-none">
+                {archivedPlans.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { FolderTree, BookOpen, Tag, Plus, Pencil, Trash2, Play, ArrowDownAZ, Calendar, Star, Pin, Hand, ArrowUpDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CategoryManager } from "./CategoryManager";
-import { CardEditor } from "./CardEditor";
-import { StudySession } from "./StudySession";
+const CardEditor = lazy(() => import("./CardEditor").then(m => ({ default: m.CardEditor })));
+const StudySession = lazy(() => import("./StudySession").then(m => ({ default: m.StudySession })));
 import { WidgetGrid } from "./WidgetGrid";
 import { CategoryStudyPickerDialog } from "./CategoryStudyPickerDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
@@ -68,6 +68,15 @@ export function CategoriesPage() {
   const toggleCardTag = (card: StudyCardType, tag: string) => {
     const has = card.tags.includes(tag);
     const next = has ? card.tags.filter((t) => t !== tag) : [...card.tags, tag];
+    updateCard(card.id, { tags: next });
+  };
+
+  const DIFF_COLORS = ["", "#94a3b8", "#4ade80", "#fbbf24", "#f97316", "#ef4444"];
+  const DIFF_TITLES = ["", "קל מאוד", "קל", "בינוני", "קשה", "קשה מאוד"];
+
+  const setDifficulty = (card: StudyCardType, level: number) => {
+    const noOldDiff = card.tags.filter((t) => !t.startsWith("diff:"));
+    const next = level === 0 ? noOldDiff : [...noOldDiff, `diff:${level}`];
     updateCard(card.id, { tags: next });
   };
 
@@ -170,6 +179,7 @@ export function CategoriesPage() {
     const sessionIds = [...studyCardIds];
     const sessionCatName = quickRunCat?.name ?? "";
     return (
+      <Suspense fallback={null}>
       <StudySession
         deckId={firstDeckId}
         mode={studyMode as never}
@@ -184,6 +194,7 @@ export function CategoriesPage() {
           setStudyCardIds(null);
         }}
       />
+      </Suspense>
     );
   }
 
@@ -336,7 +347,9 @@ export function CategoriesPage() {
             <div className="space-y-2 max-h-[560px] overflow-y-auto">
               {filteredCards.map((card) => {
                 const deck = getDeck(card.deckId);
-                const nonCatTags = card.tags.filter((t) => !t.startsWith("cat:") && !t.startsWith("sys:"));
+                const diffTag = card.tags.find((t) => t.startsWith("diff:"));
+                const diffLevel = diffTag ? parseInt(diffTag.split(":")[1]) : 0;
+                const nonCatTags = card.tags.filter((t) => !t.startsWith("cat:") && !t.startsWith("sys:") && !t.startsWith("diff:"));
                 const isFav = card.tags.includes(FAV_TAG);
                 const isPinned = card.tags.includes(PIN_TAG);
                 return (
@@ -378,13 +391,89 @@ export function CategoriesPage() {
                         </Badge>
                       </div>
                     </div>
+                    {/* Difficulty stars */}
+                    <div className="flex items-center gap-0.5" title={diffLevel ? DIFF_TITLES[diffLevel] : "הגדר רמת קושי"}>
+                      {[1, 2, 3, 4, 5].map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setDifficulty(card, diffLevel === lvl ? 0 : lvl)}
+                          className="text-[13px] leading-none transition-transform hover:scale-125 focus:outline-none"
+                          style={{
+                            color: lvl <= diffLevel ? DIFF_COLORS[diffLevel] : "#ffffff22",
+                            textShadow: lvl <= diffLevel ? `0 0 6px ${DIFF_COLORS[diffLevel]}` : "none",
+                          }}
+                          title={DIFF_TITLES[lvl]}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {nonCatTags.map((t) => (
-                          <span key={t} className={cn("inline-flex items-center gap-0.5 text-[10px] text-muted-foreground")}>
-                            <Tag className="h-2.5 w-2.5" />{t}
-                          </span>
-                        ))}
+                        {nonCatTags.map((t) =>
+                          t === "source:yeshiva" ? (
+                            <span
+                              key={t}
+                              title="yeshiva.org.il"
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                              style={{
+                                color: "#60b4ff",
+                                boxShadow: "0 0 5px 1px #3b9eff66",
+                                border: "1px solid #3b9eff88",
+                                background: "transparent",
+                              }}
+                            >
+                              y
+                            </span>
+                          ) : t === "source:shemesh" ? (
+                            <span
+                              key={t}
+                              title="שמש בגבעון"
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                              style={{
+                                color: "#4ade80",
+                                boxShadow: "0 0 5px 1px #22c55e66",
+                                border: "1px solid #22c55e88",
+                                background: "transparent",
+                              }}
+                            >
+                              s
+                            </span>
+                          ) : t === "source:ai" ? (
+                            <span
+                              key={t}
+                              title="נוצר על ידי AI"
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                              style={{
+                                color: "#f87171",
+                                boxShadow: "0 0 5px 1px #ef444466",
+                                border: "1px solid #ef444488",
+                                background: "transparent",
+                              }}
+                            >
+                              a
+                            </span>
+                          ) : t === "source:custom" ? (
+                            <span
+                              key={t}
+                              title="כרטיס מותאם אישית"
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                              style={{
+                                color: "#fde047",
+                                boxShadow: "0 0 5px 1px #eab30866",
+                                border: "1px solid #eab30888",
+                                background: "transparent",
+                              }}
+                            >
+                              c
+                            </span>
+                          ) : (
+                            <span key={t} className={cn("inline-flex items-center gap-0.5 text-[10px] text-muted-foreground")}>
+                              <Tag className="h-2.5 w-2.5" />{t}
+                            </span>
+                          )
+                        )}
                       </div>
                       {deck && (
                         <span className="text-[10px] text-muted-foreground border border-gold/30 rounded px-1.5 py-0.5">
@@ -427,12 +516,14 @@ export function CategoriesPage() {
             <DialogTitle>{editingCard ? "עריכת שאלה" : "הוספת שאלה"}</DialogTitle>
           </DialogHeader>
           {editorOpen && (
+            <Suspense fallback={null}>
             <CardEditor
               deckId={editingCard?.deckId ?? defaultDeckId}
               editCard={editingCard ?? undefined}
               prefillCategories={!editingCard && selectedCategory ? [selectedCategory] : undefined}
               onClose={() => setEditorOpen(false)}
             />
+            </Suspense>
           )}
         </DialogContent>
       </Dialog>

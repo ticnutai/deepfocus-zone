@@ -59,14 +59,14 @@ interface Props {
 
 export function PlanCalendar({ plan, reviews, onToggle }: Props) {
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d;
+  const [cursor, setCursor] = useState<{ hYear: number; hMonth: number }>(() => {
+    const hd = new HDate(new Date());
+    return { hYear: hd.getFullYear(), hMonth: hd.getMonth() };
   });
 
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
+  const { hYear, hMonth } = cursor;
+  const gregStart = new HDate(1, hMonth, hYear).greg();
+  const gregEnd = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
 
   // Build map: iso → { unit, done }
   const dayMap = useMemo<Map<string, DayData>>(() => {
@@ -74,8 +74,8 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
     if (!plan.units?.length) return map;
 
     const doneSet = new Set(plan.completedUnits);
-    const visibleStart = new Date(year, month, 1);
-    const visibleEnd = new Date(year, month + 1, 0);
+    const visibleStart = new HDate(1, hMonth, hYear).greg();
+    const visibleEnd = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
 
     const scheduleMap = buildPlanScheduleMap(plan, visibleStart, visibleEnd);
     scheduleMap.forEach((dayUnits, iso) => {
@@ -85,12 +85,12 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
     });
 
     return map;
-  }, [plan, year, month]);
+  }, [plan, hYear, hMonth]);
 
   // Hebrew calendar info
   const hebrewInfo = useMemo(() => {
-    const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0);
+    const start = new HDate(1, hMonth, hYear).greg();
+    const end = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
     const events = HebrewCalendar.calendar({
       start, end, sedrot: true, il: true,
       noMinorFast: false, noRoshChodesh: false,
@@ -119,7 +119,7 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
     const hebMonthLabel = hStartName === hEndName ? hStartName : `${hStartName} – ${hEndName}`;
 
     return { parshaByIso, holidayByIso, hebMonthLabel, hebYearStr };
-  }, [year, month]);
+  }, [hYear, hMonth]);
 
   // Build review map: iso → { pending, done }
   const reviewMap = useMemo(() => {
@@ -132,14 +132,14 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
     return m;
   }, [reviews]);
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = gregStart.getDay();
+  const daysInHebMonth = HDate.daysInMonth(hMonth, hYear);
   const today = new Date();
   const todayKey = dayKey(today);
 
   const cells: (Date | null)[] = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  for (let d = 1; d <= daysInHebMonth; d++) cells.push(new HDate(d, hMonth, hYear).greg());
 
   // Stats for the visible month
   const monthStats = useMemo(() => {
@@ -157,10 +157,10 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="חודש קודם">
+          <Button variant="ghost" size="icon" onClick={() => setCursor(({ hYear: y, hMonth: m }) => { let nm = m - 1, ny = y; if (nm < 1) { ny--; nm = HDate.isLeapYear(ny) ? 13 : 12; } return { hYear: ny, hMonth: nm }; })} aria-label="חודש קודם">
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="חודש הבא">
+          <Button variant="ghost" size="icon" onClick={() => setCursor(({ hYear: y, hMonth: m }) => { let nm = m + 1, ny = y; if (nm > (HDate.isLeapYear(ny) ? 13 : 12)) { ny++; nm = 1; } return { hYear: ny, hMonth: nm }; })} aria-label="חודש הבא">
             <ChevronLeft className="h-4 w-4" />
           </Button>
         </div>
@@ -170,7 +170,10 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
             {hebrewInfo.hebMonthLabel} <span className="text-gold">{hebrewInfo.hebYearStr}</span>
           </h3>
           <p className="text-[11px] text-muted-foreground">
-            {GREG_MONTHS[month]} {year}
+            {gregStart.getMonth() === gregEnd.getMonth()
+              ? `${GREG_MONTHS[gregStart.getMonth()]} ${gregStart.getFullYear()}`
+              : `${GREG_MONTHS[gregStart.getMonth()]}–${GREG_MONTHS[gregEnd.getMonth()]} ${gregEnd.getFullYear()}`
+            }
             {monthStats.scheduled > 0 && (
               <> · {monthStats.done}/{monthStats.scheduled} ימים הושלמו</>
             )}

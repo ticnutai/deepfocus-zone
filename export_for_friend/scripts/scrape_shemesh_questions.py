@@ -18,7 +18,8 @@ import requests
 
 API_KEY = "AIzaSyAZ_oGVhcLdZ7x1FUyU_LRFNQENuBRgTro"
 PROJECT = "shemesh-test"
-BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
+DB = "production"
+BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/{DB}/documents"
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output", "shemesh_questions")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -173,6 +174,7 @@ def scrape_tractate(tractate: dict) -> list[dict]:
             "daf": page,
             "questions": questions,
         })
+        print(f"    daf {page}: {len(questions)} questions", flush=True)
         # Polite rate limiting
         time.sleep(0.05)
 

@@ -577,10 +577,18 @@ const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
   if (!isSyncEnabled()) return; // user disabled cloud sync — IndexedDB only
   Promise.resolve(p).then((r) => {
     if (r?.error) {
-      const err = r.error as { message?: string; code?: string };
+      const err = r.error as { message?: string; code?: string; name?: string };
+      const msg = err.message ?? err.code ?? "";
+      // AbortError with 'steal' is a normal multi-tab Web Locks coordination event —
+      // the other tab completed the same write, so data is not lost. Suppress the toast.
+      const isStolenLock = (err.name === "AbortError" || msg.includes("AbortError")) && msg.includes("steal");
+      if (isStolenLock) {
+        console.debug(`[${label}] lock stolen by another tab (harmless)`);
+        return;
+      }
       console.error(`[${label}]`, err);
       if (currentUserId && currentUserId !== GUEST_ID) {
-        void enqueueFullSyncJob(currentUserId, `${label}: ${err.message ?? err.code ?? "unknown"}`)
+        void enqueueFullSyncJob(currentUserId, `${label}: ${msg || "unknown"}`)
           .then(async () => {
             const jobs = await listSyncJobs(currentUserId);
             markCloudSyncJobs(jobs.length);
@@ -588,7 +596,7 @@ const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
       }
       toast({
         title: "שגיאה בשמירה לשרת",
-        description: `${label}: ${err.message ?? err.code ?? "שגיאה לא ידועה"}`,
+        description: `${label}: ${msg || "שגיאה לא ידועה"}`,
         variant: "destructive",
       });
     }

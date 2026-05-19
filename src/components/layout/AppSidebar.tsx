@@ -15,33 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
-
-type NavItem = { id: string; label: string; icon: typeof Home; to?: string };
-
-const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
-  { id: "home", label: "בית", icon: Home },
-  { id: "blocker", label: "בודק רצפים", icon: Gauge },
-  { id: "morning", label: "קימה בבוקר", icon: Sun },
-  { id: "today", label: "היום שלי", icon: Calendar },
-  { id: "tasks", label: "לוח משימות", icon: CheckSquare },
-  { id: "cards", label: "קטגוריות ושאלות", icon: FolderTree },
-  { id: "search", label: "חיפוש חכם", icon: Search },
-  { id: "habits", label: "הרגלים", icon: Target },
-  { id: "journal", label: "יומן", icon: BookOpen },
-  { id: "timer", label: "טיימר", icon: Timer },
-  { id: "monitor", label: "בקרת מעקב", icon: Activity },
-  { id: "goals", label: "יעדים יומיים", icon: ListChecks },
-  { id: "book", label: "הספר שלי", icon: Library },
-  { id: "studio", label: "סטודיו מסמכים", icon: Folder },
-  { id: "pdf", label: "צפיין PDF", icon: FileText },
-  { id: "ai", label: "מאמן AI", icon: MessageCircle },
-  { id: "achievements", label: "הישגים", icon: Trophy },
-  { id: "archive", label: "ארכיון", icon: Archive },
-  { id: "backup-restore", label: "גיבוי ושחזור", icon: HardDrive },
-  { id: "db-inspector", label: "מסד נתונים", icon: DatabaseZap },
-  { id: "admin", label: "ניהול משתמשים", icon: Shield },
-  { id: "settings", label: "הגדרות", icon: Settings },
-];
+import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },

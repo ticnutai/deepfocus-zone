@@ -10,11 +10,11 @@ import json, uuid, os, sys, argparse, time
 from datetime import datetime, timezone
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
-SUPABASE_URL   = "https://htsuoqvafayyffyxjhhh.supabase.co"
+SUPABASE_URL   = "https://hgjfpwdugvvtrfhycejv.supabase.co"
 ANON_KEY       = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIs"
-                  "InJlZiI6Imh0c3VvcXZhZmF5eWZmeXhqaGhoIiwicm9sZSI6ImFub24iLCJpYXQ"
-                  "iOjE3Nzc0NzQ5OTgsImV4cCI6MjA5MzA1MDk5OH0.QI8kxYPYp9P84HoHl8qNjc"
-                  "Go7jVgobNsv7Fan0LIXxQ")
+                  "InJlZiI6ImhnamZwd2R1Z3Z2dHJmaHljZWp2Iiwicm9sZSI6ImFub24iLCJpYXQi"
+                  "OjE3NzkxMDc0NTYsImV4cCI6MjA5NDY4MzQ1Nn0.FQndqo2DC3GcTdYtQVUI_DHy"
+                  "451NO0N37rz7yjcpXYc")
 ADMIN_EMAIL    = "jj1212t@gmail.com"
 ADMIN_PASSWORD = "543211"
 INPUT_DIR      = "output/shemesh_questions"
@@ -28,22 +28,38 @@ except ImportError:
 
 # ─── Hebrew tractate names ─────────────────────────────────────────────────────
 TRACTATE_HEBREW = {
-    "avodah_zarah": "עבודה זרה",
-    "bava_batra":   "בבא בתרא",
+    # סדר זרעים
+    "brachot":      "ברכות",
+    # סדר מועד
+    "shabbat":      "שבת",
+    "eruvin":       "עירובין",
+    "pesachim":     "פסחים",
+    "shekalim":     "שקלים",
+    "yoma":         "יומא",
+    "sukkah":       "סוכה",
+    "beitzah":      "ביצה",
+    "rosh_hashanah":"ראש השנה",
+    "taanit":       "תענית",
+    "megillah":     "מגילה",
+    "moed_katan":   "מועד קטן",
+    "chagigah":     "חגיגה",
+    # סדר נשים
+    "yevamot":      "יבמות",
+    "ketubot":      "כתובות",
+    "nazir":        "נזיר",
+    "sotah":        "סוטה",
+    "gittin":       "גיטין",
+    "kiddushin":    "קידושין",
+    # סדר נזיקין
     "bava_kamma":   "בבא קמא",
     "bava_metzia":  "בבא מציעא",
-    "beitzah":      "ביצה",
-    "brachot":      "ברכות",
-    "chagigah":     "חגיגה",
-    "chullin":      "חולין",
-    "eruvin":       "עירובין",
-    "kiddushin":    "קידושין",
+    "bava_batra":   "בבא בתרא",
+    "sanhedrin":    "סנהדרין",
     "makkot":       "מכות",
-    "megillah":     "מגילה",
-    "shabbat":      "שבת",
-    "taanit":       "תענית",
-    "yevamot":      "יבמות",
+    "avodah_zarah": "עבודה זרה",
+    # סדר קודשים
     "zevachim":     "זבחים",
+    "chullin":      "חולין",
 }
 
 # Canonical order of tractates (for sort_order)
@@ -129,6 +145,28 @@ def insert_rows(token: str, table: str, rows: list[dict]) -> list[dict]:
         raise RuntimeError(f"[{table}] insert failed {r.status_code}: {r.text[:300]}")
     return r.json()
 
+def load_existing_questions(token: str, user_id: str) -> set[str]:
+    """Load all existing question texts for this user (trimmed, lowercased for comparison)."""
+    print("  [cards] טוען שאלות קיימות...")
+    rows, offset, page_size = [], 0, 1000
+    while True:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/cards?select=question&user_id=eq.{user_id}",
+            headers={**hdrs(token), "Range": f"{offset}-{offset + page_size - 1}",
+                     "Prefer": "count=none"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        chunk = r.json()
+        rows.extend(chunk)
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+    existing = {row["question"].strip() for row in rows if row.get("question")}
+    print(f"  [cards] נטענו {len(existing)} שאלות קיימות")
+    return existing
+    return count
+
 def upsert_rows(token: str, table: str, rows: list[dict], on_conflict: str) -> list[dict]:
     if not rows:
         return []
@@ -203,7 +241,9 @@ def load_json(path: str) -> list[dict]:
 
 def import_file(path: str, token: str, user_id: str,
                 cats: CatManager, root_id: str,
-                masechet_order: int, dry_run: bool, batch_size: int = 200):
+                masechet_order: int, dry_run: bool,
+                existing_questions: set[str] | None = None,
+                batch_size: int = 200):
     data = load_json(path)
     if not data:
         return 0, 0
@@ -221,6 +261,7 @@ def import_file(path: str, token: str, user_id: str,
         by_daf.setdefault(daf, []).extend(page["questions"])
 
     total_cards = 0
+    skipped = 0
     now = datetime.now(timezone.utc).isoformat()
 
     for daf_num in sorted(by_daf.keys()):
@@ -230,11 +271,15 @@ def import_file(path: str, token: str, user_id: str,
         # Ensure daf category
         daf_id = cats.ensure(daf_label, masechet_id, sort_order=daf_num)
 
-        # Build tags (cat: prefix for all 3 levels)
-        tags = [f"cat:{ROOT_CAT_NAME}", f"cat:{masechet_heb}", f"cat:{daf_label}"]
+        # Build tags (cat: prefix for all 3 levels) + source marker
+        tags = [f"cat:{ROOT_CAT_NAME}", f"cat:{masechet_heb}", f"cat:{daf_label}", "source:shemesh"]
 
         cards = []
         for q in questions:
+            q_text = q["question"].strip()
+            if existing_questions is not None and q_text in existing_questions:
+                skipped += 1
+                continue
             cards.append({
                 "id":              str(uuid.uuid4()),
                 "user_id":         user_id,
@@ -253,13 +298,18 @@ def import_file(path: str, token: str, user_id: str,
                 "created_at":      now,
             })
 
-        if not dry_run:
+        if not dry_run and cards:
             for i in range(0, len(cards), batch_size):
                 chunk = cards[i:i + batch_size]
                 insert_rows(token, "cards", chunk)
+            # Add newly inserted questions to the in-memory set so later tractates skip them
+            if existing_questions is not None:
+                for card in cards:
+                    existing_questions.add(card["question"].strip())
         total_cards += len(cards)
 
-    print(f"    {masechet_heb}: {len(by_daf)} דפים, {total_cards} שאלות "
+    skip_msg = f" (דולג על {skipped} קיימים)" if skipped else ""
+    print(f"    {masechet_heb}: {len(by_daf)} דפים, {total_cards} שאלות חדשות{skip_msg} "
           + ("(dry-run)" if dry_run else "(הוכנסו)"))
     return len(by_daf), total_cards
 
@@ -304,15 +354,21 @@ def main():
     root_id = cats.ensure(ROOT_CAT_NAME, None, sort_order=0)
     print(f"root '{ROOT_CAT_NAME}' id: {root_id}")
 
+    # Pre-load existing question texts to skip duplicates efficiently
+    existing_questions: set[str] | None = None
+    if not args.dry_run:
+        existing_questions = load_existing_questions(token, user_id)
+
     total_dafs = total_cards = 0
     for order_idx, (key, path) in enumerate(files):
         masechet_order = TRACTATE_ORDER.index(key) if key in TRACTATE_ORDER else 999
         d, c = import_file(path, token, user_id, cats, root_id,
-                           masechet_order, args.dry_run)
+                           masechet_order, args.dry_run,
+                           existing_questions=existing_questions)
         total_dafs  += d
         total_cards += c
 
-    print(f"\nסה\"כ: {total_dafs} דפים, {total_cards} שאלות"
+    print(f"\nסה\"כ: {total_dafs} דפים, {total_cards} שאלות חדשות"
           + (" (dry-run)" if args.dry_run else " הוכנסו"))
 
 if __name__ == "__main__":

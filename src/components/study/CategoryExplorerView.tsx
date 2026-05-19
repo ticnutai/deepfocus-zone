@@ -1,11 +1,13 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, memo } from "react";
+import { uiTimings } from "@/lib/debug/uiTimings";
+import { navBenchSignal, type BenchStepResult } from "@/lib/debug/navBenchSignal";
 import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
 import {
   Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronDown, FileText, Plus, Home,
   LayoutGrid, List as ListIcon, Columns3, Edit3, Copy, Trash2, FolderPlus,
   CheckSquare, Square, ArrowRightLeft, Star, Search, History, ArrowUpDown,
   Upload, Download, Sparkles, X, Eye, EyeOff, Layers, Pencil, ListChecks,
-  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal,
+  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal, PanelLeft,
 } from "lucide-react";
 import { CategoryTemplatesDialog } from "./CategoryTemplatesDialog";
 import { TextPromptDialog } from "./TextPromptDialog";
@@ -45,6 +47,8 @@ interface Props {
   onStudyCardIds?: (ids: string[]) => void;
   /** Quick-run flow: opens dialog that asks scope/mode and runs without creating a deck */
   onQuickRun?: (categoryId: string, categoryName: string) => void;
+  /** אופציונלי: תוכן נוסף שיוצג בשורת הכותרת (למשל: מיתג תצוגה) */
+  headerExtra?: React.ReactNode;
 }
 
 type LayoutMode = "grid" | "list" | "columns";
@@ -211,13 +215,15 @@ function SidebarRow({
 }
 
 /* === Folder tile (grid view) === */
-function FolderTile({
+function FolderTileBase({
   cat, count, mastery, iconSize, isMultiSelected, isRenaming, isFavorite,
+  selectionMode,
   onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename,
   showCount = true, showMastery = true,
 }: {
   cat: Category; count: number; mastery: number | null; iconSize: IconSize;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
+  selectionMode: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
@@ -283,9 +289,23 @@ function FolderTile({
           {count}
         </span>
       )}
-      {/* Favorite star — top left */}
-      {isFavorite && (
-        <Star className="absolute top-2 left-2 h-3.5 w-3.5 fill-gold text-gold" />
+      {/* Selection circle — top left, visible in selection mode; otherwise show favorite star */}
+      {selectionMode ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSelect(e); }}
+          className={cn(
+            "absolute top-1.5 left-1.5 h-4 w-4 rounded-full border-2 flex items-center justify-center z-10 transition-all",
+            isMultiSelected
+              ? "bg-gold border-gold text-white shadow-sm"
+              : "bg-white border-gold/40 hover:border-gold/70",
+          )}
+          title={isMultiSelected ? "בטל בחירה" : "בחר"}
+        >
+          {isMultiSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+        </button>
+      ) : (
+        isFavorite && <Star className="absolute top-2 left-2 h-3.5 w-3.5 fill-gold text-gold" />
       )}
       {/* Plus button — bottom right, hover only */}
       <button
@@ -346,15 +366,24 @@ function FolderTile({
     </div>
   );
 }
+const FolderTile = memo(FolderTileBase, (p, n) =>
+  p.cat === n.cat && p.count === n.count && p.mastery === n.mastery &&
+  p.iconSize === n.iconSize && p.isMultiSelected === n.isMultiSelected &&
+  p.isRenaming === n.isRenaming && p.isFavorite === n.isFavorite &&
+  p.selectionMode === n.selectionMode && p.showCount === n.showCount &&
+  p.showMastery === n.showMastery
+);
 
 /* === List row === */
-function FolderListRow({
+function FolderListRowBase({
   cat, count, mastery, isMultiSelected, isRenaming, isFavorite,
+  selectionMode,
   onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename,
   showCount = true, showMastery = true, compact = false,
 }: {
   cat: Category; count: number; mastery: number | null;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
+  selectionMode: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
@@ -406,8 +435,24 @@ function FolderListRow({
         isDragging && "opacity-40",
       )}
     >
+      {selectionMode ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSelect(e); }}
+          className={cn(
+            "h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+            isMultiSelected
+              ? "bg-gold border-gold text-white"
+              : "bg-white border-gold/40 hover:border-gold/70",
+          )}
+          title={isMultiSelected ? "בטל בחירה" : "בחר"}
+        >
+          {isMultiSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+        </button>
+      ) : (
+        isFavorite && <Star className="h-3 w-3 fill-gold text-gold shrink-0" />
+      )}
       <Folder className="h-5 w-5 text-gold shrink-0" />
-      {isFavorite && <Star className="h-3 w-3 fill-gold text-gold shrink-0" />}
       {isRenaming ? (
         <Input
           ref={inputRef}
@@ -456,8 +501,15 @@ function FolderListRow({
     </div>
   );
 }
+const FolderListRow = memo(FolderListRowBase, (p, n) =>
+  p.cat === n.cat && p.count === n.count && p.mastery === n.mastery &&
+  p.isMultiSelected === n.isMultiSelected && p.isRenaming === n.isRenaming &&
+  p.isFavorite === n.isFavorite && p.selectionMode === n.selectionMode &&
+  p.showCount === n.showCount && p.showMastery === n.showMastery &&
+  p.compact === n.compact
+);
 
-function CardTile({
+function CardTileBase({
   card, query, onEdit, onDelete, selected, onToggleSelect, selectionMode,
   decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen,
 }: {
@@ -618,9 +670,26 @@ function CardTile({
     </ContextMenu>
   );
 }
+const CardTile = memo(CardTileBase, (p, n) =>
+  p.card === n.card && p.query === n.query && p.selected === n.selected &&
+  p.selectionMode === n.selectionMode && p.decks === n.decks
+);
+
+/* ── Nav-bench internal state (used in useLayoutEffect below) ── */
+interface BenchState {
+  path: Array<string | null>;
+  stepLabels: string[];
+  numRuns: number;
+  onComplete: (steps: BenchStepResult[]) => void;
+  onProgress: (run: number, step: number) => void;
+  run: number;
+  step: number;
+  stepTimings: number[][];
+  originalParentId: string | null;
+}
 
 /* ===================== MAIN ===================== */
-export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun }: Props) {
+export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun, headerExtra }: Props) {
   const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck } = useStudy();
 
   // === Persistent prefs ===
@@ -638,6 +707,108 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
   const [history, setHistory] = useState<(string | null)[]>([null]);
   const [historyIdx, setHistoryIdx] = useState(0);
+
+  // ── UI timing probes (read by PerformancePage) ──────────────────────────
+  const _mountStart = useRef(performance.now());
+  useEffect(() => {
+    uiTimings.record("cat:mount", performance.now() - _mountStart.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const _navTimer = useRef<number | null>(null);
+  // ── Nav bench state ──────────────────────────────────────────────────────
+  const benchRef = useRef<BenchState | null>(null);
+  const benchResetPendingRef = useRef(false);
+  const currentParentIdRef = useRef<string | null>(null);
+  currentParentIdRef.current = currentParentId; // always up-to-date (no stale closure)
+  useLayoutEffect(() => {
+    if (_navTimer.current !== null) {
+      const ms = performance.now() - _navTimer.current;
+      uiTimings.record("cat:nav", ms);
+      _navTimer.current = null;
+
+      // If a bench run is in progress, advance it
+      const bench = benchRef.current;
+      if (bench) {
+        bench.stepTimings[bench.step].push(Math.round(ms));
+        bench.onProgress(bench.run, bench.step);
+        const nextStep = bench.step + 1;
+        const totalSteps = bench.path.length - 1;
+        if (nextStep < totalSteps) {
+          bench.step = nextStep;
+          setTimeout(() => {
+            _navTimer.current = performance.now();
+            setCurrentParentId(bench.path[nextStep + 1] as string | null);
+          }, 4);
+        } else {
+          const nextRun = bench.run + 1;
+          if (nextRun < bench.numRuns) {
+            bench.run = nextRun;
+            bench.step = 0;
+            // Reset to root (unmeasured), then start next run
+            benchResetPendingRef.current = true;
+            setTimeout(() => setCurrentParentId(null), 4);
+          } else {
+            // All runs done — restore original position and report results
+            const result: BenchStepResult[] = bench.stepLabels.map((label, i) => ({
+              label,
+              times: bench.stepTimings[i],
+            }));
+            const restore = bench.originalParentId;
+            benchRef.current = null;
+            setTimeout(() => {
+              setCurrentParentId(restore);
+              bench.onComplete(result);
+            }, 0);
+          }
+        }
+      }
+      return;
+    }
+
+    // After an inter-run reset-to-null renders: kick off the next run's first step
+    if (benchResetPendingRef.current && benchRef.current) {
+      benchResetPendingRef.current = false;
+      const bench = benchRef.current;
+      setTimeout(() => {
+        _navTimer.current = performance.now();
+        setCurrentParentId(bench.path[1] as string | null);
+      }, 4);
+    }
+  }, [currentParentId]); // fires after DOM update on every navigation
+
+  // Register bench trigger so NavFlowBench can drive this component
+  useEffect(() => {
+    navBenchSignal.register((path, numRuns, stepLabels, onComplete, onProgress) => {
+      if (benchRef.current) return; // already running
+      benchRef.current = {
+        path,
+        stepLabels,
+        numRuns,
+        onComplete,
+        onProgress,
+        run: 0,
+        step: 0,
+        stepTimings: Array.from({ length: path.length - 1 }, () => []),
+        originalParentId: currentParentIdRef.current,
+      };
+      onProgress(0, 0);
+      setTimeout(() => {
+        _navTimer.current = performance.now();
+        setCurrentParentId(path[1] as string | null);
+        setActiveSmartId(null);
+        setMultiSelected(new Set());
+      }, 4);
+    });
+    return () => navBenchSignal.unregister();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const _searchTimer = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (_searchTimer.current !== null) {
+      uiTimings.record("cat:search", performance.now() - _searchTimer.current);
+      _searchTimer.current = null;
+    }
+  }, [search]); // fires after DOM update on every search keystroke
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -646,6 +817,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [smartDialogOpen, setSmartDialogOpen] = useState(false);
   const [editingSmart, setEditingSmart] = useState<SmartFolder | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeSmartId, setActiveSmartId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -717,38 +889,44 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [state.cards]);
 
   const counts = useMemo(() => {
-    const map = new Map<string, number>();
-    aggregates.forEach((v, k) => map.set(k, v.count));
-    // Build parent->children map for recursion
+    // O(N+C): build direct-card index per category name, then memoized subtree
+    // aggregation — avoids the O(C×N) scan of the previous implementation.
+
+    // Step 1: parent->children map
     const childrenByParent = new Map<string | null, Category[]>();
     categories.forEach((c) => {
       const k = c.parentId;
       if (!childrenByParent.has(k)) childrenByParent.set(k, []);
       childrenByParent.get(k)!.push(c);
     });
-    // Set of cat-names per subtree
-    const subtreeNames = (cat: Category): Set<string> => {
-      const set = new Set<string>([cat.name]);
-      (childrenByParent.get(cat.id) ?? []).forEach((k) =>
-        subtreeNames(k).forEach((n) => set.add(n)),
-      );
-      return set;
-    };
-    // Pre-extract cat:NAME tags per card
-    const cardCatNames = state.cards.map((c) =>
-      c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4)),
-    );
-    // For each category, count UNIQUE cards whose any cat: tag is in subtree
-    categories.forEach((cat) => {
-      const names = subtreeNames(cat);
-      let count = 0;
-      for (const tags of cardCatNames) {
-        if (tags.some((n) => names.has(n))) count++;
-      }
-      map.set(cat.name, count);
+
+    // Step 2: direct card-index sets per category name  O(N)
+    const directCards = new Map<string, number[]>();
+    state.cards.forEach((c, i) => {
+      c.tags.forEach((t) => {
+        if (!t.startsWith("cat:")) return;
+        const n = t.slice(4);
+        if (!directCards.has(n)) directCards.set(n, []);
+        directCards.get(n)!.push(i);
+      });
     });
+
+    // Step 3: memoized subtree card-index sets  O(N × avg_depth)
+    const memo = new Map<string, Set<number>>();
+    function subtreeCardSet(cat: Category): Set<number> {
+      if (memo.has(cat.id)) return memo.get(cat.id)!;
+      const set = new Set<number>(directCards.get(cat.name) ?? []);
+      (childrenByParent.get(cat.id) ?? []).forEach((child) => {
+        for (const i of subtreeCardSet(child)) set.add(i);
+      });
+      memo.set(cat.id, set);
+      return set;
+    }
+
+    const map = new Map<string, number>();
+    categories.forEach((cat) => map.set(cat.name, subtreeCardSet(cat).size));
     return map;
-  }, [aggregates, categories, state.cards]);
+  }, [categories, state.cards]);
 
   const masteryOfCat = useCallback((name: string): number | null => {
     const a = aggregates.get(name);
@@ -863,6 +1041,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
   /* === History navigation === */
   const navigateTo = useCallback((parentId: string | null, push = true) => {
+    _navTimer.current = performance.now();
     setCurrentParentId(parentId);
     setActiveSmartId(null);
     setMultiSelected(new Set());
@@ -913,7 +1092,12 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       setLastSelectedId(cat.id);
       return;
     }
-    setMultiSelected(new Set([cat.id]));
+    // Single click always toggles selection (enters/exits selection mode)
+    setMultiSelected((s) => {
+      const n = new Set(s);
+      if (n.has(cat.id)) n.delete(cat.id); else n.add(cat.id);
+      return n;
+    });
     setLastSelectedId(cat.id);
     onSelectCategory(cat.name);
   };
@@ -1337,13 +1521,20 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   return (
     <div dir="rtl" className="rounded-xl border-2 border-gold/30 bg-card overflow-hidden">
       {/* ── Unified title bar (NOT zoomed — always readable) ── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gold/30 bg-gradient-to-l from-gold/10 to-transparent">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-gold/30 bg-gradient-to-l from-gold/10 to-transparent flex-wrap gap-y-1.5">
         <span className="flex items-center justify-center h-7 w-7 rounded-full bg-gold/20 text-gold shrink-0">
           <Layers className="h-4 w-4" />
         </span>
         <div className="flex-1" />
+        {/* View switcher — injected from CategoryManager */}
+        {headerExtra && (
+          <>
+            {headerExtra}
+            <div className="w-px h-5 bg-gold/30" />
+          </>
+        )}
         {/* Zoom slider */}
-        <div className="flex items-center gap-1.5 select-none" title="גודל תצוגה">
+        <div className="hidden sm:flex items-center gap-1.5 select-none" title="גודל תצוגה">
           <ZoomOut className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <input
             type="range" min={0.6} max={1.45} step={0.05}
@@ -1369,6 +1560,14 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       <div ref={containerRef} tabIndex={-1} style={{ zoom: prefs.uiScale }} className="focus:outline-none">
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-gold/20 bg-gradient-to-l from-secondary/40 to-transparent px-3 py-2 flex-wrap">
+        {/* Mobile sidebar toggle */}
+        <button
+          className="md:hidden h-8 w-8 rounded flex items-center justify-center hover:bg-secondary border border-gold/40"
+          title={mobileSidebarOpen ? "הסתר ניווט" : "הצג ניווט"}
+          onClick={() => setMobileSidebarOpen((v) => !v)}
+        >
+          <PanelLeft className={cn("h-4 w-4 transition-colors", mobileSidebarOpen && "text-gold")} />
+        </button>
         {/* History */}
         <div className="flex items-center gap-0.5 border border-gold/40 rounded-md p-0.5">
           <button onClick={goBack} disabled={historyIdx <= 0} title="חזור (Alt+→)"
@@ -1406,9 +1605,9 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { _searchTimer.current = performance.now(); setSearch(e.target.value); }}
             placeholder="חיפוש בתיקיות ובשאלות..."
-            className="h-9 text-sm w-64 border-gold/30 text-right pr-7"
+            className="h-9 text-sm w-full sm:w-64 border-gold/30 text-right pr-7"
           />
         </div>
 
@@ -1610,10 +1809,32 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       </div>
 
       {/* Bulk action bar */}
-      {multiSelected.size > 1 && (
+      {multiSelected.size > 0 && (
         <div className="flex items-center gap-2 bg-gold/10 border-b border-gold/30 px-3 py-1.5 text-xs">
           <CheckSquare className="h-3.5 w-3.5 text-gold" />
           <span className="font-bold">{multiSelected.size} נבחרו</span>
+          {/* Select all / deselect all circle */}
+          <button
+            type="button"
+            title={multiSelected.size === visibleFolders.length ? "בטל בחירת הכל" : "בחר הכל"}
+            onClick={() => {
+              if (multiSelected.size === visibleFolders.length) {
+                setMultiSelected(new Set());
+              } else {
+                setMultiSelected(new Set(visibleFolders.map((c) => c.id)));
+              }
+            }}
+            className={cn(
+              "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all",
+              multiSelected.size === visibleFolders.length
+                ? "bg-gold border-gold text-white"
+                : "bg-white border-gold/40 hover:border-gold/70",
+            )}
+          >
+            {multiSelected.size === visibleFolders.length
+              ? <Check className="h-2.5 w-2.5 stroke-[3]" />
+              : <span className="text-[8px] font-bold text-gold/60">✓</span>}
+          </button>
           <div className="flex-1" />
           {onStudyMultipleCategories && (
             <>
@@ -1633,7 +1854,9 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           <Button size="sm" variant="destructive" className="h-6 text-xs" onClick={handleBulkDelete}>
             <Trash2 className="h-3 w-3 ml-1" /> מחק
           </Button>
-          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setMultiSelected(new Set())}>נקה</Button>
+          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setMultiSelected(new Set())} title="יציאה ממצב בחירה (ESC)">
+            <X className="h-3.5 w-3.5" />
+          </Button>
         </div>
       )}
       {moveTargetOpen && multiSelected.size > 0 && (
@@ -1657,11 +1880,15 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         "grid min-h-[480px]",
         prefs.layout === "columns"
           ? "grid-cols-1"
-          : prefs.showPreview ? "grid-cols-[220px_1fr_240px]" : "grid-cols-[220px_1fr]",
+          : prefs.showPreview ? "grid-cols-1 md:grid-cols-[220px_1fr_240px]" : "grid-cols-1 md:grid-cols-[220px_1fr]",
       )}>
         {/* Sidebar */}
         {prefs.layout !== "columns" && (
-          <aside className="border-l border-gold/20 bg-secondary/20 p-2 overflow-y-auto max-h-[640px] space-y-2">
+          <aside className={cn(
+            "border-l border-gold/20 bg-secondary/20 p-2 overflow-y-auto space-y-2",
+            "max-h-[300px] md:max-h-[640px]",
+            mobileSidebarOpen ? "block" : "hidden md:block",
+          )}>
             {/* Favorites */}
             {favoriteCats.length > 0 && (
               <div>
@@ -1926,9 +2153,33 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                         return <span />;
                       })()}
                       </div>
-                      <h4 className="text-[11px] font-bold text-muted-foreground text-right uppercase tracking-wider">
-                        תיקיות ({visibleFolders.length})
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        {/* Select-all circle — always shown above the folder grid */}
+                        <button
+                          type="button"
+                          title={visibleFolders.length > 0 && multiSelected.size === visibleFolders.length ? "בטל בחירת הכל" : "בחר הכל"}
+                          onClick={() => {
+                            if (visibleFolders.length > 0 && multiSelected.size === visibleFolders.length) {
+                              setMultiSelected(new Set());
+                            } else {
+                              setMultiSelected(new Set(visibleFolders.map((c) => c.id)));
+                            }
+                          }}
+                          className={cn(
+                            "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all",
+                            visibleFolders.length > 0 && multiSelected.size === visibleFolders.length
+                              ? "bg-gold border-gold text-white shadow-sm"
+                              : "bg-white border-gold/40 hover:border-gold/70",
+                          )}
+                        >
+                          {visibleFolders.length > 0 && multiSelected.size === visibleFolders.length && (
+                            <Check className="h-2.5 w-2.5 stroke-[3]" />
+                          )}
+                        </button>
+                        <h4 className="text-[11px] font-bold text-muted-foreground text-right uppercase tracking-wider">
+                          תיקיות ({visibleFolders.length})
+                        </h4>
+                      </div>
                     </div>
                     {prefs.layout === "grid" ? (
                       <div dir="rtl" className={cn("grid gap-3 items-stretch", cfg.gridCols)}>
@@ -1941,6 +2192,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   mastery={masteryOfCat(cat.name)}
                                   iconSize={prefs.iconSize}
                                   isMultiSelected={multiSelected.has(cat.id)}
+                                  selectionMode={multiSelected.size > 0}
                                   isRenaming={renamingId === cat.id}
                                   isFavorite={prefs.favorites.includes(cat.id)}
                                   onOpen={() => enterFolder(cat)}
@@ -1973,6 +2225,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   cat={cat} count={counts.get(cat.name) ?? 0}
                                   mastery={masteryOfCat(cat.name)}
                                   isMultiSelected={multiSelected.has(cat.id)}
+                                  selectionMode={multiSelected.size > 0}
                                   isRenaming={renamingId === cat.id}
                                   isFavorite={prefs.favorites.includes(cat.id)}
                                   onOpen={() => enterFolder(cat)}
@@ -2112,7 +2365,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
         {/* Preview pane */}
         {prefs.showPreview && prefs.layout !== "columns" && (
-          <aside className="border-r border-gold/20 bg-secondary/10 p-3 overflow-y-auto max-h-[640px]">
+          <aside className="hidden md:block border-r border-gold/20 bg-secondary/10 p-3 overflow-y-auto max-h-[640px]">
             {previewCategory && previewStats ? (
               <div className="space-y-3">
                 <div className="text-center">

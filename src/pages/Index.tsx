@@ -34,6 +34,7 @@ import { ReviewCalendar } from "@/components/study/ReviewCalendar";
 import { AdminPanel } from "@/components/admin/AdminPanel";
 
 import { SupabaseInspectorPage } from "@/components/dev/SupabaseInspectorPage";
+import { PerformancePage } from "@/components/study/PerformancePage";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
@@ -52,33 +53,9 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { AiCardCapture } from "@/components/study/AiCardCapture";
-
-type NavItem = { id: string; label: string; icon: typeof Home };
-const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
-  { id: "home", label: "בית", icon: Home },
-  { id: "blocker", label: "בודק רצפים", icon: Gauge },
-  { id: "morning", label: "קימה בבוקר", icon: Sun },
-  { id: "today", label: "היום שלי", icon: Calendar },
-  { id: "tasks", label: "לוח משימות", icon: CheckSquare },
-  { id: "cards", label: "קטגוריות ושאלות", icon: FolderTree },
-  { id: "search", label: "חיפוש חכם", icon: Search },
-  { id: "habits", label: "הרגלים", icon: Target },
-  { id: "journal", label: "יומן", icon: BookOpen },
-  { id: "timer", label: "טיימר", icon: Timer },
-  { id: "monitor", label: "בקרת מעקב", icon: Activity },
-  { id: "goals", label: "יעדים יומיים", icon: ListChecks },
-  { id: "book", label: "הספר שלי", icon: Library },
-  { id: "studio", label: "סטודיו מסמכים", icon: Folder },
-  { id: "pdf", label: "צפיין PDF", icon: FileText },
-  { id: "ai", label: "מאמן AI", icon: MessageCircle },
-  { id: "achievements", label: "הישגים", icon: Trophy },
-  { id: "archive", label: "ארכיון", icon: Archive },
-  { id: "backup-restore", label: "גיבוי ושחזור", icon: HardDrive },
-  
-  { id: "db-inspector", label: "מסד נתונים", icon: DatabaseZap },
-  { id: "admin", label: "ניהול משתמשים", icon: Shield },
-  { id: "settings", label: "הגדרות", icon: Settings },
-];
+import { SystemRubric } from "@/components/study/SystemRubric";
+import { AIQuestionGenerator } from "@/components/ai/AIQuestionGenerator";
+import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
 const QUOTES = [
   { text: "הבחירה שלך, לא המזל שלך, קובעת את גורלך", author: "ג'ין ניד'" },
@@ -425,6 +402,7 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "daf",           l: "לימוד דף",      I: BookOpen },
   { v: "cards",         l: "שאלות חזרה",   I: BookOpen },
   { v: "analytics",     l: "ניתוחים",       I: Activity },
+  { v: "categories",    l: "קטגוריות ושאלות", I: FolderTree },
   { v: "achievements",  l: "הישגים",        I: Trophy },
   { v: "ai",            l: "ניתוח AI",      I: Sparkles },
   { v: "goals",         l: "יעדים",         I: Target },
@@ -851,6 +829,12 @@ const Index = () => {
         return <BackupRestorePage />;
       case "db-inspector":
         return <SupabaseInspectorPage />;
+      case "perf":
+        return <PerformancePage />;
+      case "ai-generator":
+        return <AIQuestionGenerator />;
+      case "system-rubric":
+        return <SystemRubric />;
       default:
         return null;
     }
@@ -1198,6 +1182,10 @@ const Index = () => {
 
               <TabsContent value="analytics" className="mt-6">
                 {visitedTabs.has("analytics") && <KnowledgeAnalytics />}
+              </TabsContent>
+
+              <TabsContent value="categories" className="mt-6">
+                {visitedTabs.has("categories") && <CardsAndCategoriesPage />}
               </TabsContent>
 
               {["achievements", "ai"].map((v) => (

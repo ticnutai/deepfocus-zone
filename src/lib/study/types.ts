@@ -42,6 +42,7 @@ export interface MultipleChoiceCard extends BaseCard {
   type: "multiple";
   options: string[];
   correctIndices: number[]; // supports multi-correct
+  explanation?: string;
 }
 
 export interface BooleanCard extends BaseCard {
@@ -246,6 +247,11 @@ export interface UiPrefs {
   mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)
   syncEnabled?: boolean;
+  // Floating AI button — position and appearance, synced across devices
+  aiButtonPos?: { x: number; y: number };
+  // Anthropic API key for AI question generation (stored in user account)
+  anthropicApiKey?: string;
+  aiButtonStyle?: { color: string; bg: string; size: number; shape: string; icon: string };
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
 }

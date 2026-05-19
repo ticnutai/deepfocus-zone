@@ -15,7 +15,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Folder, FolderOpen, Home, ChevronLeft, FileText, Pencil, Trash2, Plus,
   BookOpen, LayoutList, Edit3, Copy, Download, Star, Layers, FolderPlus,
-  ArrowRightLeft, Sparkles,
+  ArrowRightLeft, Sparkles, Check, X, Clipboard,
 } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
@@ -209,6 +209,8 @@ function CategoryChips({
   renamingId,
   onRenameSubmit,
   cardsFullyLoaded = true,
+  multiSelected,
+  onMultiSelect,
 }: {
   categories: Category[];
   activeId: string | null;
@@ -218,6 +220,8 @@ function CategoryChips({
   renamingId?: string | null;
   onRenameSubmit?: (cat: Category, name: string) => void;
   cardsFullyLoaded?: boolean;
+  multiSelected?: Set<string>;
+  onMultiSelect?: (id: string, shiftKey: boolean) => void;
 }) {
   if (categories.length === 0) {
     return (
@@ -232,17 +236,37 @@ function CategoryChips({
         const isRenaming = renamingId === cat.id;
         const locked = isUncategorized(cat);
 
+        const isChipSelected = multiSelected?.has(cat.id) ?? false;
+
         const chipButton = (
           <button
             type="button"
             onClick={() => !isRenaming && onSelect(cat)}
             className={cn(
-              "inline-flex items-center gap-2 rounded-xl border-2 px-3 py-1.5 text-sm font-medium transition-all select-none",
-              isActive
+              "group/chip relative inline-flex items-center gap-2 rounded-xl border-2 px-3 py-1.5 text-sm font-medium transition-all select-none",
+              isChipSelected
+                ? "border-gold bg-gold/10 shadow-sm"
+                : isActive
                 ? "border-gold bg-gradient-navy text-primary-foreground shadow-sm"
                 : "border-gold/40 bg-card hover:border-gold/70 hover:bg-secondary",
             )}
           >
+            {/* Multi-select checkbox — visible on hover or when selected */}
+            {onMultiSelect && (
+              <span
+                role="checkbox"
+                aria-checked={isChipSelected}
+                onClick={(e) => { e.stopPropagation(); onMultiSelect(cat.id, e.shiftKey); }}
+                className={cn(
+                  "absolute -top-1.5 -right-1.5 h-4 w-4 rounded border-2 flex items-center justify-center z-10 transition-all cursor-pointer",
+                  "opacity-0 group-hover/chip:opacity-100",
+                  isChipSelected ? "opacity-100 border-gold bg-gold text-white" : "border-gold/50 bg-card/90",
+                )}
+                title={isChipSelected ? "בטל בחירה" : "בחר"}
+              >
+                {isChipSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+              </span>
+            )}
             {isActive
               ? <FolderOpen className="h-4 w-4 text-gold shrink-0" />
               : <Folder className="h-4 w-4 text-gold/70 shrink-0" />}
@@ -573,6 +597,70 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDeck, updateDeckCategoryIds, toast]);
 
+  /* === Multi-select === */
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
+  const [lastSelectedChipId, setLastSelectedChipId] = useState<string | null>(null);
+
+  const handleChipMultiSelect = useCallback((id: string, shiftKey: boolean) => {
+    if (shiftKey && lastSelectedChipId) {
+      const ids = currentLevelCats.map((c) => c.id);
+      const from = ids.indexOf(lastSelectedChipId);
+      const to = ids.indexOf(id);
+      if (from !== -1 && to !== -1) {
+        setMultiSelected(new Set(ids.slice(Math.min(from, to), Math.max(from, to) + 1)));
+        return;
+      }
+    }
+    setMultiSelected((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    setLastSelectedChipId(id);
+  }, [lastSelectedChipId, currentLevelCats]);
+
+  // Clear selection when navigating
+  useEffect(() => { setMultiSelected(new Set()); setLastSelectedChipId(null); }, [path, activeCatId]);
+
+  // Keyboard: Escape = clear, Ctrl+A = select all visible chips
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && multiSelected.size > 0) {
+        e.preventDefault();
+        setMultiSelected(new Set());
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "a" && currentLevelCats.length > 0) {
+        e.preventDefault();
+        setMultiSelected(new Set(currentLevelCats.map((c) => c.id)));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [multiSelected.size, currentLevelCats]);
+
+  const selectedCats = useMemo(
+    () => currentLevelCats.filter((c) => multiSelected.has(c.id)),
+    [currentLevelCats, multiSelected],
+  );
+
+  const handleBulkCopyNames = useCallback(() => {
+    const names = selectedCats.map((c) => displayCategoryName(c.name)).join("\n");
+    navigator.clipboard.writeText(names);
+    toast({ title: "הועתק", description: `${selectedCats.length} קטגוריות` });
+  }, [selectedCats, toast]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedCats.length === 0) return;
+    if (!await confirm(`למחוק ${selectedCats.length} קטגוריות?`)) return;
+    selectedCats.forEach((c) => deleteCategory(c.id));
+    setMultiSelected(new Set());
+    toast({ title: "נמחקו", description: `${selectedCats.length} קטגוריות` });
+  }, [selectedCats, confirm, deleteCategory, toast]);
+
+  const handleBulkExport = useCallback(() => {
+    selectedCats.forEach((c) => exportBranch(c.id));
+    setMultiSelected(new Set());
+  }, [selectedCats, exportBranch]);
+
   /* === Navigation handlers === */
   const enterFolder = useCallback((cat: Category) => {
     setPath((prev) => [...prev, cat.id]);
@@ -672,6 +760,43 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
         ))}
       </div>
 
+      {/* ── Multi-select action bar ── */}
+      {multiSelected.size > 0 && (
+        <div className="sticky top-0 z-20 mx-3 mt-2 flex items-center gap-2 flex-wrap rounded-xl border-2 border-gold/60 bg-card px-3 py-2 shadow-elegant" dir="rtl">
+          <span className="text-xs font-bold text-gold">{multiSelected.size} נבחרו</span>
+          <div className="flex items-center gap-1 flex-wrap">
+            <button
+              onClick={handleBulkCopyNames}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-gold/40 hover:bg-secondary transition-colors"
+              title="העתק שמות"
+            >
+              <Clipboard className="h-3 w-3" /> העתק שמות
+            </button>
+            <button
+              onClick={handleBulkExport}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-gold/40 hover:bg-secondary transition-colors"
+              title="ייצוא נבחרים"
+            >
+              <Download className="h-3 w-3" /> ייצוא
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-red-400/40 text-red-500 hover:bg-red-500/10 transition-colors"
+              title="מחק נבחרים"
+            >
+              <Trash2 className="h-3 w-3" /> מחק
+            </button>
+            <button
+              onClick={() => setMultiSelected(new Set())}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-transparent hover:bg-secondary text-muted-foreground transition-colors"
+              title="בטל בחירה"
+            >
+              <X className="h-3 w-3" /> בטל
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Category chips row(s) ── */}
       <div className="border-b border-gold/20 px-3 pb-2 space-y-1">
         {/* Current level chips */}
@@ -685,6 +810,8 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
             renamingId={renamingId}
             onRenameSubmit={handleRenameSubmit}
             cardsFullyLoaded={cardsFullyLoaded}
+            multiSelected={multiSelected}
+            onMultiSelect={handleChipMultiSelect}
           />
         ) : (
           <p className="text-xs text-muted-foreground py-2 text-center">אין קטגוריות ברמה זו</p>

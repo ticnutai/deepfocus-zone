@@ -80,10 +80,9 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
   const showSubjects = state.uiPrefs?.showCalendarSubjects ?? false;
   const showCompleted = state.uiPrefs?.calShowCompleted ?? true;
   const showHoliday   = state.uiPrefs?.calShowHoliday   ?? true;
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d;
+  const [cursor, setCursor] = useState<{ hYear: number; hMonth: number }>(() => {
+    const hd = new HDate(new Date());
+    return { hYear: hd.getFullYear(), hMonth: hd.getMonth() };
   });
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
 
@@ -168,8 +167,9 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
     };
   }, [state.generalPlans, state.learningSessions, state.planReviews, state.shasReviews]);
 
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
+  const { hYear, hMonth } = cursor;
+  const gregStart = new HDate(1, hMonth, hYear).greg();
+  const gregEnd = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
 
   // General study plans: scheduled units by day (all non-masechta_review plans)
   const generalPlansByDay = useMemo(() => {
@@ -180,8 +180,8 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
       pendingUnits: Array<{ planId: string; unit: string }>;
       doneUnits: Array<{ planId: string; unit: string }>;
     }>();
-    const visibleStart = new Date(year, month, 1);
-    const visibleEnd = new Date(year, month + 1, 0);
+    const visibleStart = new HDate(1, hMonth, hYear).greg();
+    const visibleEnd = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
     (state.generalPlans ?? []).forEach((plan) => {
       if (plan.planType === "masechta_review") return;
       if (!plan.units?.length) return;
@@ -200,10 +200,10 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
       });
     });
     return map;
-  }, [state.generalPlans, year, month]);
+  }, [state.generalPlans, hYear, hMonth]);
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = gregStart.getDay();
+  const daysInHebMonth = HDate.daysInMonth(hMonth, hYear);
   const today = new Date();
   const todayKey = dayKey(today);
   const activeShasPlan = useMemo(() => {
@@ -220,13 +220,13 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
 
   const cells: (Date | null)[] = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  for (let d = 1; d <= daysInHebMonth; d++) cells.push(new HDate(d, hMonth, hYear).greg());
 
   // === לוח עברי: כותרת מרכזית + מיפוי תאריכים עבריים, פרשות וחגים ===
   const hebrewInfo = useMemo(() => {
-    // טווח החודש הלועזי המוצג
-    const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0);
+    // טווח החודש העברי המוצג
+    const start = new HDate(1, hMonth, hYear).greg();
+    const end = new HDate(HDate.daysInMonth(hMonth, hYear), hMonth, hYear).greg();
     const events = HebrewCalendar.calendar({
       start, end,
       sedrot: true,
@@ -278,7 +278,7 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
 
     return { parshaByIso, holidayByIso, hebMonthLabel, hebYearStr, upcomingParsha };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month]);
+  }, [hYear, hMonth]);
 
   return (
     <Card className="gold-frame p-5 space-y-4" dir="rtl">
@@ -286,10 +286,10 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           {/* RTL: ימינה=הקודם */}
-          <Button variant="ghost" size="icon" onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="חודש קודם">
+          <Button variant="ghost" size="icon" onClick={() => setCursor(({ hYear: y, hMonth: m }) => { let nm = m - 1, ny = y; if (nm < 1) { ny--; nm = HDate.isLeapYear(ny) ? 13 : 12; } return { hYear: ny, hMonth: nm }; })} aria-label="חודש קודם">
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="חודש הבא">
+          <Button variant="ghost" size="icon" onClick={() => setCursor(({ hYear: y, hMonth: m }) => { let nm = m + 1, ny = y; if (nm > (HDate.isLeapYear(ny) ? 13 : 12)) { ny++; nm = 1; } return { hYear: ny, hMonth: nm }; })} aria-label="חודש הבא">
             <ChevronLeft className="h-4 w-4" />
           </Button>
         </div>
@@ -299,7 +299,10 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
             {hebrewInfo.hebMonthLabel} <span className="text-gold">{hebrewInfo.hebYearStr}</span>
           </h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            {GREG_MONTHS[month]} {year} · לוח חזרות
+            {gregStart.getMonth() === gregEnd.getMonth()
+              ? `${GREG_MONTHS[gregStart.getMonth()]} ${gregStart.getFullYear()}`
+              : `${GREG_MONTHS[gregStart.getMonth()]}–${GREG_MONTHS[gregEnd.getMonth()]} ${gregEnd.getFullYear()}`
+            } · לוח חזרות
             {hebrewInfo.upcomingParsha && (
               <> · פרשת <span className="text-foreground font-medium">{hebrewInfo.upcomingParsha}</span></>
             )}
@@ -460,7 +463,7 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
                         </div>
                       )}
                     </div>
-                    <span className="text-[11px] text-muted-foreground">{date.getDate()}/{month + 1}/{year}</span>
+                    <span className="text-[11px] text-muted-foreground">{date.getDate()}/{date.getMonth() + 1}/{date.getFullYear()}</span>
                   </div>
                 </div>
                 <div className="p-3 space-y-2 text-right text-xs">

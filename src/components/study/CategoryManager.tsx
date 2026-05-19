@@ -66,10 +66,12 @@ export function CategoryManager({
 
   return (
     <div dir="rtl" className="space-y-2">
-      {/* View switcher — always visible so user can switch at any time */}
-      <div className="flex justify-end">
-        <CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />
-      </div>
+      {/* View switcher: shown standalone for non-explorer views; injected into explorer's title bar otherwise */}
+      {viewMode !== "explorer" && (
+        <div className="flex justify-end">
+          <CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />
+        </div>
+      )}
 
       {viewMode === "explorer" && (
         <CategoryExplorerView
@@ -82,6 +84,7 @@ export function CategoryManager({
           onStudyMultipleCategories={onStudyMultipleCategories}
           onStudyCardIds={onStudyCardIds}
           onQuickRun={onQuickRun}
+          headerExtra={<CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />}
         />
       )}
       {viewMode === "browse" && (

@@ -1,4 +1,4 @@
-import type { StudyState, WidgetLayout } from "./types";
+import type { StudyState, UiPrefs, WidgetLayout } from "./types";
 import { timeOp } from "@/lib/debug/perf";
 
 type StudyStateCacheRecord = {
@@ -85,7 +85,8 @@ const PENDING_DELETES_STORE = "pending_deletes";
 const DELETE_AUDIT_STORE = "delete_audit";
 const CLOUD_TO_IDB_DELETE_AUDIT_STORE = "cloud_to_idb_delete_audit";
 const WIDGET_LAYOUT_STORE = "widget_layout_cache";
-const DB_VERSION = 6;
+const UI_PREFS_STORE = "ui_prefs_cache";
+const DB_VERSION = 7;
 
 type WidgetLayoutCacheRecord = {
   userId: string;
@@ -116,10 +117,69 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(WIDGET_LAYOUT_STORE)) {
         db.createObjectStore(WIDGET_LAYOUT_STORE, { keyPath: "userId" });
       }
+      if (!db.objectStoreNames.contains(UI_PREFS_STORE)) {
+        db.createObjectStore(UI_PREFS_STORE, { keyPath: "userId" });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+type UiPrefsCacheRecord = {
+  userId: string;
+  prefs: UiPrefs;
+  updatedAt: number;
+};
+
+/** Read ui_prefs from its dedicated IDB store (written immediately, no debounce). */
+export async function readUiPrefsIdb(userId: string): Promise<{ prefs: UiPrefs; updatedAt: number } | null> {
+  try {
+    const db = await openDb();
+    return await new Promise<{ prefs: UiPrefs; updatedAt: number } | null>((resolve) => {
+      const tx = db.transaction(UI_PREFS_STORE, "readonly");
+      const req = tx.objectStore(UI_PREFS_STORE).get(userId);
+      req.onsuccess = () => {
+        db.close();
+        const record = req.result as UiPrefsCacheRecord | undefined;
+        resolve(record ? { prefs: record.prefs, updatedAt: record.updatedAt } : null);
+      };
+      req.onerror = () => { db.close(); resolve(null); };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Write ui_prefs to its dedicated IDB store immediately (no debounce). */
+export async function writeUiPrefsIdb(userId: string, prefs: UiPrefs, updatedAt: number): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(UI_PREFS_STORE, "readwrite");
+      const record: UiPrefsCacheRecord = { userId, prefs, updatedAt };
+      const req = tx.objectStore(UI_PREFS_STORE).put(record);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror = () => { db.close(); reject(req.error); };
+    });
+  } catch {
+    // ignore IDB write errors
+  }
+}
+
+/** Clear ui_prefs from its dedicated IDB store (used on cache reset). */
+export async function clearUiPrefsIdb(userId: string): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(UI_PREFS_STORE, "readwrite");
+      const req = tx.objectStore(UI_PREFS_STORE).delete(userId);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror = () => { db.close(); resolve(); };
+    });
+  } catch {
+    // ignore
+  }
 }
 
 /** Read widget layout from its dedicated IDB store (written immediately, no debounce). */

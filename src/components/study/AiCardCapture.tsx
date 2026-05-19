@@ -20,8 +20,8 @@ type Mode = "text" | "voice" | "image";
 type Shape = "circle" | "square" | "rounded";
 type IconName = "sparkles" | "bot" | "brain" | "wand" | "star" | "zap" | "chat" | "book" | "bulb";
 type IconStyle = { color: string; bg: string; size: number; shape: Shape; icon: IconName };
-const STYLE_KEY = "ai_capture_icon_style_v1";
-const POS_KEY = "ai_capture_icon_pos_v1";
+const STYLE_KEY = "ai_capture_icon_style_v1"; // legacy localStorage key — used for migration only
+const POS_KEY = "ai_capture_icon_pos_v1"; // legacy localStorage key — used for migration only
 const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
 const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
   sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
@@ -39,7 +39,7 @@ type Draft = {
 };
 
 export function AiCardCapture() {
-  const { state, addCard } = useStudy();
+  const { state, addCard, setUiPref } = useStudy();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
@@ -53,16 +53,37 @@ export function AiCardCapture() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [style, setStyle] = useState<IconStyle>(() => {
+    // Prefer uiPrefs from cloud/IDB, fall back to legacy localStorage for migration
+    if (state.uiPrefs?.aiButtonStyle) return { ...DEFAULT_STYLE, ...state.uiPrefs.aiButtonStyle } as IconStyle;
     try { const r = localStorage.getItem(STYLE_KEY); if (r) return { ...DEFAULT_STYLE, ...JSON.parse(r) }; } catch {}
     return DEFAULT_STYLE;
   });
-  useEffect(() => { try { localStorage.setItem(STYLE_KEY, JSON.stringify(style)); } catch {} }, [style]);
+  const isFirstStyleRender = useRef(true);
+  useEffect(() => {
+    if (isFirstStyleRender.current) { isFirstStyleRender.current = false; return; }
+    setUiPref("aiButtonStyle", style as { color: string; bg: string; size: number; shape: string; icon: string });
+  }, [style]);
+  // Sync style from cloud/IDB hydration after initial render
+  useEffect(() => {
+    if (state.uiPrefs?.aiButtonStyle) {
+      setStyle({ ...DEFAULT_STYLE, ...state.uiPrefs.aiButtonStyle } as IconStyle);
+    }
+  }, [state.uiPrefs?.aiButtonStyle]);
 
   const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    // Prefer uiPrefs from cloud/IDB, fall back to legacy localStorage for migration
+    if (state.uiPrefs?.aiButtonPos) return state.uiPrefs.aiButtonPos;
     try { const r = localStorage.getItem(POS_KEY); if (r) return JSON.parse(r); } catch {}
     return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
   });
-  useEffect(() => { try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch {} }, [pos]);
+  const currentPosRef = useRef(pos);
+  // Sync pos from cloud/IDB hydration after initial render
+  useEffect(() => {
+    if (state.uiPrefs?.aiButtonPos) {
+      setPos(state.uiPrefs.aiButtonPos);
+      currentPosRef.current = state.uiPrefs.aiButtonPos;
+    }
+  }, [state.uiPrefs?.aiButtonPos?.x, state.uiPrefs?.aiButtonPos?.y]);
 
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
@@ -76,12 +97,18 @@ export function AiCardCapture() {
     if (Math.abs(nx - pos.x) > 3 || Math.abs(ny - pos.y) > 3) dragRef.current.moved = true;
     const maxX = window.innerWidth - style.size;
     const maxY = window.innerHeight - style.size;
-    setPos({ x: Math.max(0, Math.min(maxX, nx)), y: Math.max(0, Math.min(maxY, ny)) });
+    const newPos = { x: Math.max(0, Math.min(maxX, nx)), y: Math.max(0, Math.min(maxY, ny)) };
+    currentPosRef.current = newPos;
+    setPos(newPos);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     const moved = dragRef.current?.moved;
     dragRef.current = null;
-    if (!moved) setOpen(true);
+    if (moved) {
+      setUiPref("aiButtonPos", currentPosRef.current);
+    } else {
+      setOpen(true);
+    }
   };
 
   const decks = state.decks ?? [];
