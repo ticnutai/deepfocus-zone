@@ -54,15 +54,15 @@ export function CategoriesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
 
-  // Per-category sort mode (persisted in uiPrefs, synced to cloud)
-  const sortMode: CategorySortMode = selectedCategory
-    ? (state.uiPrefs?.categorySortOrders?.[selectedCategory] ?? "name")
-    : "name";
+  // Global sort mode (persisted in uiPrefs, synced to cloud).
+  // Legacy fallback keeps existing users' behavior until they pick a new mode.
+  const legacySortMode: CategorySortMode | undefined = selectedCategory
+    ? state.uiPrefs?.categorySortOrders?.[selectedCategory]
+    : undefined;
+  const sortMode: CategorySortMode = state.uiPrefs?.categorySortMode ?? legacySortMode ?? "name";
 
   const setSortMode = (mode: CategorySortMode) => {
-    if (!selectedCategory) return;
-    const next = { ...(state.uiPrefs?.categorySortOrders ?? {}), [selectedCategory]: mode };
-    setUiPref("categorySortOrders", next);
+    setUiPref("categorySortMode", mode);
   };
 
   const toggleCardTag = (card: StudyCardType, tag: string) => {
@@ -123,11 +123,25 @@ export function CategoriesPage() {
   // After session ends — offer to save as deck
   const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
 
+  const directCardCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    state.cards.forEach((card) => {
+      card.tags.forEach((tag) => {
+        if (!tag.startsWith("cat:")) return;
+        const name = tag.slice(4);
+        map.set(name, (map.get(name) ?? 0) + 1);
+      });
+    });
+    return map;
+  }, [state.cards]);
+
+  const isClassificationPoint = !!(selectedCategory && (directCardCounts.get(selectedCategory) ?? 0) > 0);
+
   const rawCategoryCards = useMemo(() => (
-    selectedCategory
+    selectedCategory && isClassificationPoint
       ? state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`))
       : []
-  ), [selectedCategory, state.cards]);
+  ), [selectedCategory, state.cards, isClassificationPoint]);
 
   // Sort + pinned-on-top
   const filteredCards = useMemo(() => {
@@ -203,6 +217,7 @@ export function CategoriesPage() {
     <CategoryManager
       selectedCategory={selectedCategory}
       onSelectCategory={setSelectedCategory}
+      onEditCard={openEdit}
       expanded
       onStudyCategory={(catName) => {
         setPickerCategoryName(catName);
@@ -249,14 +264,14 @@ export function CategoriesPage() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {selectedCategory && (
+              {selectedCategory && isClassificationPoint && (
                 <Button size="sm" onClick={openNew}
                   className="bg-gradient-navy text-primary-foreground h-7 px-2 text-xs gap-1">
                   <Plus className="h-3.5 w-3.5" /> הוסף שאלה
                 </Button>
               )}
               <span className="text-xs text-muted-foreground">
-                {selectedCategory ? `${filteredCards.length} שאלות` : ""}
+                {selectedCategory && isClassificationPoint ? `${filteredCards.length} שאלות` : ""}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -279,7 +294,7 @@ export function CategoriesPage() {
           </div>
 
           {/* Practice buttons + sort menu */}
-          {selectedCategory && (
+          {selectedCategory && isClassificationPoint && (
             <div className="flex gap-2 justify-end items-center flex-wrap">
               {filteredCards.length > 0 && (
                 <Button size="sm" variant="outline"
@@ -330,8 +345,16 @@ export function CategoriesPage() {
             </div>
           )}
 
-          {/* Empty: category has no cards */}
-          {selectedCategory && filteredCards.length === 0 && (
+          {/* Intermediate category: navigation only */}
+          {selectedCategory && !isClassificationPoint && (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+              <FolderTree className="h-14 w-14 opacity-20" />
+              <p className="text-sm">בקטגוריה זו מוצג ניווט בלבד. שאלות מוצגות רק בנקודת הסיווג בפועל.</p>
+            </div>
+          )}
+
+          {/* Empty: classification category has no cards */}
+          {selectedCategory && isClassificationPoint && filteredCards.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
               <BookOpen className="h-14 w-14 opacity-20" />
               <p className="text-sm">אין שאלות בקטגוריה זו עדיין</p>
@@ -343,7 +366,7 @@ export function CategoriesPage() {
           )}
 
           {/* Card list */}
-          {filteredCards.length > 0 && (
+          {isClassificationPoint && filteredCards.length > 0 && (
             <div className="space-y-2 max-h-[560px] overflow-y-auto">
               {filteredCards.map((card) => {
                 const deck = getDeck(card.deckId);

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, memo } from "react";
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useDeferredValue } from "react";
 import { uiTimings } from "@/lib/debug/uiTimings";
 import { navBenchSignal, type BenchStepResult } from "@/lib/debug/navBenchSignal";
 import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
@@ -7,7 +7,7 @@ import {
   LayoutGrid, List as ListIcon, Columns3, Edit3, Copy, Trash2, FolderPlus,
   CheckSquare, Square, ArrowRightLeft, Star, Search, History, ArrowUpDown,
   Upload, Download, Sparkles, X, Eye, EyeOff, Layers, Pencil, ListChecks,
-  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal, PanelLeft,
+  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal, PanelLeft, Pin, PinOff,
 } from "lucide-react";
 import { CategoryTemplatesDialog } from "./CategoryTemplatesDialog";
 import { TextPromptDialog } from "./TextPromptDialog";
@@ -54,6 +54,31 @@ interface Props {
 type LayoutMode = "grid" | "list" | "columns";
 type IconSize = "sm" | "md" | "lg";
 type SortKey = "manual" | "name" | "created" | "count" | "mastery";
+type GlobalCategorySortMode = "name" | "createdNew" | "createdOld" | "favorites" | "manual";
+
+function mapGlobalSortToExplorer(mode: GlobalCategorySortMode): Pick<ExplorerPrefs, "sortKey" | "sortDesc" | "favoritesFirst"> {
+  switch (mode) {
+    case "name":
+      return { sortKey: "name", sortDesc: false, favoritesFirst: false };
+    case "createdNew":
+      return { sortKey: "created", sortDesc: true, favoritesFirst: false };
+    case "createdOld":
+      return { sortKey: "created", sortDesc: false, favoritesFirst: false };
+    case "favorites":
+      return { sortKey: "name", sortDesc: false, favoritesFirst: true };
+    case "manual":
+    default:
+      return { sortKey: "manual", sortDesc: false, favoritesFirst: false };
+  }
+}
+
+function mapExplorerToGlobalSort(prefs: Pick<ExplorerPrefs, "sortKey" | "sortDesc" | "favoritesFirst">): GlobalCategorySortMode | null {
+  if (prefs.favoritesFirst) return "favorites";
+  if (prefs.sortKey === "manual") return "manual";
+  if (prefs.sortKey === "name") return "name";
+  if (prefs.sortKey === "created") return prefs.sortDesc ? "createdNew" : "createdOld";
+  return null;
+}
 
 const ICON_PX: Record<IconSize, { folder: number; tile: string; gridCols: string }> = {
   sm: { folder: 36, tile: "p-2",  gridCols: "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8" },
@@ -559,7 +584,7 @@ const FolderListRow = memo(FolderListRowBase, (p, n) =>
 
 function CardTileBase({
   card, query, onEdit, onDelete, selected, onToggleSelect, selectionMode,
-  decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen,
+  decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen, pinned, onTogglePin,
 }: {
   card: StudyCard;
   query?: string;
@@ -573,6 +598,8 @@ function CardTileBase({
   onCreateDeckWithCard?: () => void;
   onStudyOne?: () => void;
   onClassifyOpen?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `card:${card.id}`, disabled: selectionMode });
   const highlighted = useMemo(() => {
@@ -620,6 +647,18 @@ function CardTileBase({
       {/* hover action buttons (edit/delete) — only shown when not in selection mode */}
       {!selectionMode && (
         <div className="absolute top-1.5 left-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          {onTogglePin && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+              className={cn(
+                "p-1 rounded bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground",
+                pinned && "text-gold",
+              )}
+              title={pinned ? "בטל הצמדה" : "הצמד שאלה"}
+            >
+              {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+            </button>
+          )}
           {onEdit && (
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -648,7 +687,7 @@ function CardTileBase({
   );
 
   // Right-click context menu — only when we have any actions to offer
-  const hasMenu = !!(onEdit || onDelete || onToggleSelect || onStudyOne || onAddToDeck || onClassifyOpen);
+  const hasMenu = !!(onEdit || onDelete || onToggleSelect || onStudyOne || onAddToDeck || onClassifyOpen || onTogglePin);
   if (!hasMenu) return tile;
 
   return (
@@ -673,6 +712,13 @@ function CardTileBase({
         {onEdit && (
           <ContextMenuItem onClick={onEdit}>
             <Pencil className="h-4 w-4 ml-2" /> ערוך
+          </ContextMenuItem>
+        )}
+        {onTogglePin && (
+          <ContextMenuItem onClick={onTogglePin}>
+            {pinned
+              ? <><PinOff className="h-4 w-4 ml-2" /> בטל הצמדת שאלה</>
+              : <><Pin className="h-4 w-4 ml-2" /> הצמד שאלה</>}
           </ContextMenuItem>
         )}
         {(decks || onCreateDeckWithCard || onClassifyOpen) && (
@@ -720,7 +766,7 @@ function CardTileBase({
 }
 const CardTile = memo(CardTileBase, (p, n) =>
   p.card === n.card && p.query === n.query && p.selected === n.selected &&
-  p.selectionMode === n.selectionMode && p.decks === n.decks
+  p.selectionMode === n.selectionMode && p.decks === n.decks && p.pinned === n.pinned
 );
 
 /* ── Nav-bench internal state (used in useLayoutEffect below) ── */
@@ -750,6 +796,31 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     });
   };
 
+  // Pull global category sort mode (cloud-synced) into explorer view prefs.
+  useEffect(() => {
+    const mode = state.uiPrefs?.categorySortMode;
+    if (!mode) return;
+    const mapped = mapGlobalSortToExplorer(mode);
+    setPrefsState((p) => {
+      if (
+        p.sortKey === mapped.sortKey
+        && p.sortDesc === mapped.sortDesc
+        && p.favoritesFirst === mapped.favoritesFirst
+      ) return p;
+      const next = { ...p, ...mapped };
+      savePrefs(next);
+      return next;
+    });
+  }, [state.uiPrefs?.categorySortMode]);
+
+  // Push explorer sort changes back to global category sort when mapping exists.
+  useEffect(() => {
+    const mapped = mapExplorerToGlobalSort(prefs);
+    if (!mapped) return;
+    if (state.uiPrefs?.categorySortMode === mapped) return;
+    setUiPref("categorySortMode", mapped);
+  }, [prefs, setUiPref, state.uiPrefs?.categorySortMode]);
+
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const [currentParentId, setCurrentParentId] = useState<string | null>(null);
@@ -760,7 +831,6 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const _mountStart = useRef(performance.now());
   useEffect(() => {
     uiTimings.record("cat:mount", performance.now() - _mountStart.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const _navTimer = useRef<number | null>(null);
   // ── Nav bench state ──────────────────────────────────────────────────────
@@ -848,7 +918,6 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       }, 4);
     });
     return () => navBenchSignal.unregister();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const _searchTimer = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -917,64 +986,97 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     ),
     [state.categories],
   );
+  const categoriesById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const categoriesByName = useMemo(() => new Map(categories.map((c) => [c.name, c])), [categories]);
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, Category[]>();
+    for (const cat of categories) {
+      const pid = cat.parentId ?? null;
+      if (!map.has(pid)) map.set(pid, []);
+      map.get(pid)!.push(cat);
+    }
+    return map;
+  }, [categories]);
+
+  const dedupedChildrenByParent = useMemo(() => {
+    const map = new Map<string | null, Category[]>();
+    for (const [pid, list] of childrenByParent.entries()) {
+      // Dedupe by name within same parent (guards stale local rows).
+      const byName = new Map<string, Category>();
+      for (const c of list) {
+        const existing = byName.get(c.name);
+        if (!existing) {
+          byName.set(c.name, c);
+          continue;
+        }
+        if ((c.createdAt ?? 0) > (existing.createdAt ?? 0)) byName.set(c.name, c);
+      }
+      map.set(pid, [...byName.values()]);
+    }
+    return map;
+  }, [childrenByParent]);
+
+  const directCardsByName = useMemo(() => {
+    const map = new Map<string, StudyCard[]>();
+    for (const card of state.cards) {
+      for (const tag of card.tags) {
+        if (!tag.startsWith("cat:")) continue;
+        const name = tag.slice(4);
+        const arr = map.get(name) ?? [];
+        arr.push(card);
+        map.set(name, arr);
+      }
+    }
+    return map;
+  }, [state.cards]);
 
   /* === Per-category aggregates === */
   const aggregates = useMemo(() => {
-    // Map: catName -> { count, mastered, totalReviews, correct }
     const m = new Map<string, { count: number; correct: number; total: number }>();
-    state.cards.forEach((c) => {
-      c.tags.forEach((t) => {
-        if (!t.startsWith("cat:")) return;
-        const n = t.slice(4);
-        const cur = m.get(n) ?? { count: 0, correct: 0, total: 0 };
-        cur.count += 1;
-        cur.correct += c.stats.correct;
-        cur.total += c.stats.totalReviews;
-        m.set(n, cur);
-      });
-    });
+    for (const [name, cards] of directCardsByName.entries()) {
+      let correct = 0;
+      let total = 0;
+      for (const card of cards) {
+        correct += card.stats.correct;
+        total += card.stats.totalReviews;
+      }
+      m.set(name, { count: cards.length, correct, total });
+    }
     return m;
-  }, [state.cards]);
+  }, [directCardsByName]);
+
+  const directCardCounts = useMemo(() => {
+    const directCounts = new Map<string, number>();
+    for (const [name, cards] of directCardsByName.entries()) {
+      directCounts.set(name, cards.length);
+    }
+    return directCounts;
+  }, [directCardsByName]);
 
   const counts = useMemo(() => {
-    // O(N+C): build direct-card index per category name, then memoized subtree
-    // aggregation — avoids the O(C×N) scan of the previous implementation.
+    const memoByCatId = new Map<string, number>();
+    const countById = (id: string): number => {
+      const cached = memoByCatId.get(id);
+      if (cached != null) return cached;
+      const cat = categoriesById.get(id);
+      if (!cat) return 0;
+      let total = directCardCounts.get(cat.name) ?? 0;
+      for (const child of childrenByParent.get(id) ?? []) {
+        total += countById(child.id);
+      }
+      memoByCatId.set(id, total);
+      return total;
+    };
 
-    // Step 1: parent->children map
-    const childrenByParent = new Map<string | null, Category[]>();
-    categories.forEach((c) => {
-      const k = c.parentId;
-      if (!childrenByParent.has(k)) childrenByParent.set(k, []);
-      childrenByParent.get(k)!.push(c);
-    });
-
-    // Step 2: direct card-index sets per category name  O(N)
-    const directCards = new Map<string, number[]>();
-    state.cards.forEach((c, i) => {
-      c.tags.forEach((t) => {
-        if (!t.startsWith("cat:")) return;
-        const n = t.slice(4);
-        if (!directCards.has(n)) directCards.set(n, []);
-        directCards.get(n)!.push(i);
-      });
-    });
-
-    // Step 3: memoized subtree card-index sets  O(N × avg_depth)
-    const memo = new Map<string, Set<number>>();
-    function subtreeCardSet(cat: Category): Set<number> {
-      if (memo.has(cat.id)) return memo.get(cat.id)!;
-      const set = new Set<number>(directCards.get(cat.name) ?? []);
-      (childrenByParent.get(cat.id) ?? []).forEach((child) => {
-        for (const i of subtreeCardSet(child)) set.add(i);
-      });
-      memo.set(cat.id, set);
-      return set;
-    }
-
-    const map = new Map<string, number>();
-    categories.forEach((cat) => map.set(cat.name, subtreeCardSet(cat).size));
-    return map;
-  }, [categories, state.cards]);
+    return {
+      get: (name: string): number => {
+        const cat = categoriesByName.get(name);
+        if (!cat) return directCardCounts.get(name) ?? 0;
+        return countById(cat.id);
+      },
+    };
+  }, [categoriesById, categoriesByName, childrenByParent, directCardCounts]);
 
   const masteryOfCat = useCallback((name: string): number | null => {
     const a = aggregates.get(name);
@@ -983,22 +1085,8 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [aggregates]);
 
   const childrenOf = useCallback(
-    (pid: string | null) => {
-      const list = categories.filter((c) => c.parentId === pid);
-      // Dedupe by name within the same parent — guards against stale local
-      // cache entries that share a name with a cloud category but have a
-      // different id (e.g. after a category rebuild).
-      const byName = new Map<string, typeof list[number]>();
-      for (const c of list) {
-        const existing = byName.get(c.name);
-        if (!existing) { byName.set(c.name, c); continue; }
-        // Prefer the entry with the larger createdAt (cloud bootstrap is
-        // typically newer than legacy local rows).
-        if ((c.createdAt ?? 0) > (existing.createdAt ?? 0)) byName.set(c.name, c);
-      }
-      return [...byName.values()];
-    },
-    [categories],
+    (pid: string | null) => dedupedChildrenByParent.get(pid) ?? [],
+    [dedupedChildrenByParent],
   );
 
   const breadcrumbs = useMemo(() => {
@@ -1068,22 +1156,21 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     return result;
   }, [currentParentId, categories, search, childrenOf, applySort, activeSmartId, prefs.hideEmpty, counts]);
 
+  const currentFolderName = useMemo(() => {
+    if (!currentParentId) return null;
+    return categoriesById.get(currentParentId)?.name ?? null;
+  }, [categoriesById, currentParentId]);
+
+  const cardsSourceCategory = selectedCategory ?? currentFolderName;
+
   /* === Cards visible in main area === */
   const cardsOfSelected = useMemo(() => {
     if (smartFolderCards) return smartFolderCards;
-    let base: StudyCard[] = [];
-    if (selectedCategory) {
-      base = state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`));
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      const matched = state.cards.filter((c) => c.question.toLowerCase().includes(q));
-      // Merge with current-category base so folder results don't hide card results
-      const seen = new Set(base.map((c) => c.id));
-      matched.forEach((c) => { if (!seen.has(c.id)) base.push(c); });
-    }
-    return base;
-  }, [state.cards, selectedCategory, smartFolderCards, search]);
+    if (!cardsSourceCategory) return [];
+    // Show cards only where they are directly classified.
+    return directCardsByName.get(cardsSourceCategory) ?? [];
+  }, [cardsSourceCategory, directCardsByName, smartFolderCards]);
+  const deferredCardsOfSelected = useDeferredValue(cardsOfSelected);
 
   const toggleOpen = (id: string) => setOpenIds((s) => ({ ...s, [id]: !s[id] }));
 
@@ -1102,21 +1189,36 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     }
   }, [historyIdx]);
 
+  // Single source of truth for tree navigation policy:
+  // navigation-only (no content selection side effects).
+  const applyTreeNavigationPolicy = useCallback(() => {
+    setMultiSelected(new Set());
+    setLastSelectedId(null);
+    onSelectCategory(null);
+  }, [onSelectCategory]);
+
+  const navigateTreeOnly = useCallback((parentId: string | null, push = true) => {
+    navigateTo(parentId, push);
+    applyTreeNavigationPolicy();
+  }, [applyTreeNavigationPolicy, navigateTo]);
+
   const goBack = () => {
     if (historyIdx <= 0) return;
     const target = history[historyIdx - 1];
+    _navTimer.current = performance.now();
     setHistoryIdx(historyIdx - 1);
     setCurrentParentId(target);
     setActiveSmartId(null);
-    setMultiSelected(new Set());
+    applyTreeNavigationPolicy();
   };
   const goForward = () => {
     if (historyIdx >= history.length - 1) return;
     const target = history[historyIdx + 1];
+    _navTimer.current = performance.now();
     setHistoryIdx(historyIdx + 1);
     setCurrentParentId(target);
     setActiveSmartId(null);
-    setMultiSelected(new Set());
+    applyTreeNavigationPolicy();
   };
 
   /* === Home category === */
@@ -1137,41 +1239,52 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     setUiPref("explorerHomeCategoryId", catId);
   }, [setUiPref]);
 
+  const toggleMarkedCategory = useCallback((catId: string) => {
+    setMultiSelected((s) => {
+      const n = new Set(s);
+      if (n.has(catId)) n.delete(catId);
+      else n.add(catId);
+      return n;
+    });
+    setLastSelectedId(catId);
+  }, []);
+
+  const markCategoryFromContext = useCallback((catId: string) => {
+    setMultiSelected((s) => {
+      if (s.has(catId)) return s;
+      const n = new Set(s);
+      n.add(catId);
+      return n;
+    });
+    setLastSelectedId(catId);
+  }, []);
+
   const handleSelectFolder = (cat: Category, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (e.shiftKey && lastSelectedId) {
+    if (e.altKey && e.shiftKey && lastSelectedId) {
       const ids = visibleFolders.map((c) => c.id);
       const a = ids.indexOf(lastSelectedId);
       const b = ids.indexOf(cat.id);
       if (a >= 0 && b >= 0) {
         const [from, to] = [Math.min(a, b), Math.max(a, b)];
         setMultiSelected(new Set(ids.slice(from, to + 1)));
+        setLastSelectedId(cat.id);
         return;
       }
     }
-    if (e.ctrlKey || e.metaKey) {
-      setMultiSelected((s) => {
-        const n = new Set(s);
-        if (n.has(cat.id)) n.delete(cat.id); else n.add(cat.id);
-        return n;
-      });
-      setLastSelectedId(cat.id);
+    if (e.altKey) {
+      // Marking is allowed only via Alt+click (or right-click context menu).
+      toggleMarkedCategory(cat.id);
       return;
     }
-    // Single click always toggles selection (enters/exits selection mode)
-    setMultiSelected((s) => {
-      const n = new Set(s);
-      if (n.has(cat.id)) n.delete(cat.id); else n.add(cat.id);
-      return n;
-    });
-    setLastSelectedId(cat.id);
-    onSelectCategory(cat.name);
+    // Single click is navigation-only.
+    setMultiSelected(new Set());
+    setLastSelectedId(null);
+    enterFolder(cat);
   };
 
   const enterFolder = (cat: Category) => {
-    navigateTo(cat.id);
-    if (!openIds[cat.id]) toggleOpen(cat.id);
-    onSelectCategory(cat.name);
+    navigateTreeOnly(cat.id);
   };
 
   const handleAddHere = () => {
@@ -1263,6 +1376,24 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     setPrefs({ favorites: [...set] });
   };
 
+  const pinnedCategoryNames = state.uiPrefs?.pinnedCategoryNames ?? [];
+  const pinnedCardIds = state.uiPrefs?.pinnedCardIds ?? [];
+
+  const togglePinnedCategoryName = useCallback((name: string) => {
+    const cur = state.uiPrefs?.pinnedCategoryNames ?? [];
+    const has = cur.includes(name);
+    const next = has ? cur.filter((n) => n !== name) : [...cur, name];
+    setUiPref("pinnedCategoryNames", next);
+    toast({ title: has ? "הוסר מהצמד" : "הוצמד", description: name });
+  }, [setUiPref, state.uiPrefs?.pinnedCategoryNames]);
+
+  const togglePinnedCardId = useCallback((cardId: string) => {
+    const cur = state.uiPrefs?.pinnedCardIds ?? [];
+    const has = cur.includes(cardId);
+    const next = has ? cur.filter((id) => id !== cardId) : [...cur, cardId];
+    setUiPref("pinnedCardIds", next);
+  }, [setUiPref, state.uiPrefs?.pinnedCardIds]);
+
   /* === Export / Import === */
   const exportBranch = (rootId: string | null) => {
     const collect = (pid: string | null): unknown => {
@@ -1338,7 +1469,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       else if (e.key === "Backspace" && currentParentId) {
         e.preventDefault();
         const parent = categories.find((c) => c.id === currentParentId);
-        navigateTo(parent?.parentId ?? null);
+        navigateTreeOnly(parent?.parentId ?? null);
       }
       else if (e.key === "Escape") { setMultiSelected(new Set()); setRenamingId(null); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
@@ -1405,6 +1536,11 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       <ContextMenuItem onClick={() => toggleFavorite(cat.id)}>
         <Star className={cn("h-4 w-4 ml-2", prefs.favorites.includes(cat.id) && "fill-gold text-gold")} />
         {prefs.favorites.includes(cat.id) ? "הסר ממועדפים" : "הוסף למועדפים"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => togglePinnedCategoryName(cat.name)}>
+        {pinnedCategoryNames.includes(cat.name)
+          ? <><PinOff className="h-4 w-4 ml-2" /> בטל הצמדת קטגוריה</>
+          : <><Pin className="h-4 w-4 ml-2" /> הצמד קטגוריה</>}
       </ContextMenuItem>
       <ContextMenuItem onClick={() => setTimeout(() => { console.log('[rename] setRenamingId', cat.id); setRenamingId(cat.id); }, 50)} disabled={locked}>
         <Edit3 className="h-4 w-4 ml-2" /> שנה שם <span className="mr-auto text-[10px] text-muted-foreground">F2</span>
@@ -1519,15 +1655,15 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
   const renderSidebar = (pid: string | null, depth: number): React.ReactNode => {
     return childrenOf(pid).map((cat) => {
-      const hasKids = categories.some((c) => c.parentId === cat.id);
+      const hasKids = (childrenByParent.get(cat.id)?.length ?? 0) > 0;
       const isOpen = !!openIds[cat.id];
       return (
         <div key={cat.id}>
           <ContextMenu>
             <SidebarRow
               cat={cat} depth={depth} hasKids={hasKids} isOpen={isOpen}
-              isSelected={selectedCategory === cat.name}
-              count={counts.get(cat.name) ?? 0}
+              isSelected={currentParentId === cat.id}
+              count={0}
               isFavorite={prefs.favorites.includes(cat.id)}
               isHome={homeCategoryId === cat.id}
               isRenaming={renamingId === cat.id}
@@ -1538,14 +1674,10 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               onCancelRename={() => setRenamingId(null)}
               onToggle={() => toggleOpen(cat.id)}
               onSelect={() => {
-                navigateTo(cat.id);
-                if (!isOpen && hasKids) toggleOpen(cat.id);
-                setMultiSelected(new Set([cat.id]));
-                setLastSelectedId(cat.id);
-                onSelectCategory(cat.name);
+                navigateTreeOnly(cat.id);
               }}
-              onContext={() => { /* no-op, context handled by trigger */ }}
-              onAdd={() => openAddQuestions(cat.name)}
+              onContext={() => markCategoryFromContext(cat.id)}
+              onAdd={undefined}
               onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
             />
             <FolderContextMenu cat={cat} />
@@ -1617,7 +1749,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         </div>
 
         <button
-          onClick={() => { navigateTo(null); onSelectCategory(null); }}
+          onClick={() => navigateTreeOnly(null)}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-gold transition-colors"
         >
           <Home className="h-3.5 w-3.5" /> בית
@@ -1626,7 +1758,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           <div key={c.id} className="flex items-center gap-1">
             <ChevronLeft className="h-3 w-3 text-muted-foreground" />
             <button
-              onClick={() => { navigateTo(c.id); onSelectCategory(c.name); }}
+              onClick={() => navigateTreeOnly(c.id)}
               className={cn("text-xs hover:text-gold transition-colors",
                 i === breadcrumbs.length - 1 ? "text-gold font-bold" : "text-foreground")}
             >
@@ -1952,9 +2084,9 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                 </div>
                 {favoriteCats.map((c) => (
                   <div key={c.id}
-                    onClick={() => { navigateTo(c.id); onSelectCategory(c.name); }}
+                    onClick={() => navigateTreeOnly(c.id)}
                     className={cn("flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer text-xs hover:bg-secondary",
-                      selectedCategory === c.name && "bg-gradient-navy text-primary-foreground")}>
+                      currentParentId === c.id && "bg-gradient-navy text-primary-foreground")}>
                     <Folder className="h-3 w-3 text-gold" />
                     <span className="flex-1 text-right truncate">{c.name}</span>
                   </div>
@@ -1980,7 +2112,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                 <ContextMenu key={sf.id}>
                   <ContextMenuTrigger asChild>
                     <div
-                      onClick={() => { setActiveSmartId(sf.id); setCurrentParentId(null); onSelectCategory(null); }}
+                      onClick={() => { setActiveSmartId(sf.id); navigateTreeOnly(null, false); }}
                       className={cn("flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer text-xs hover:bg-secondary",
                         activeSmartId === sf.id && "bg-gradient-navy text-primary-foreground")}>
                       <Sparkles className="h-3 w-3 text-gold" />
@@ -2003,7 +2135,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
             <div className="border-t border-gold/20 my-1" />
 
             <div
-              onClick={() => { navigateTo(null); onSelectCategory(null); }}
+              onClick={() => navigateTreeOnly(null)}
               className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer text-xs font-bold",
                 currentParentId === null && !activeSmartId ? "bg-gradient-navy text-primary-foreground" : "hover:bg-secondary")}
             >
@@ -2055,9 +2187,17 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                     const isColRenaming = renamingId === cat.id;
                     return (
                       <ContextMenu key={cat.id}>
-                        <ContextMenuTrigger asChild>
+                        <ContextMenuTrigger asChild onContextMenu={() => markCategoryFromContext(cat.id)}>
                           <div
-                            onClick={(e) => { if (isColRenaming) return; e.stopPropagation(); enterFolder(cat); }}
+                            onClick={(e) => {
+                              if (isColRenaming) return;
+                              e.stopPropagation();
+                              if (e.altKey) {
+                                toggleMarkedCategory(cat.id);
+                                return;
+                              }
+                              enterFolder(cat);
+                            }}
                             className={cn(
                               "flex items-center gap-1.5 px-2 py-1.5 cursor-pointer text-sm transition-all",
                               isInPath ? "bg-gradient-navy text-primary-foreground" : "hover:bg-secondary",
@@ -2129,6 +2269,21 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                               <FileText className="h-3.5 w-3.5 text-gold/80 shrink-0" />
                               <span className="flex-1 text-right truncate text-xs">{card.question}</span>
                               <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePinnedCardId(card.id);
+                                  }}
+                                  className={cn(
+                                    "p-0.5 rounded hover:bg-secondary/80 text-muted-foreground hover:text-foreground",
+                                    pinnedCardIds.includes(card.id) && "text-gold",
+                                  )}
+                                  title={pinnedCardIds.includes(card.id) ? "בטל הצמדת שאלה" : "הצמד שאלה"}
+                                >
+                                  {pinnedCardIds.includes(card.id)
+                                    ? <PinOff className="h-2.5 w-2.5" />
+                                    : <Pin className="h-2.5 w-2.5" />}
+                                </button>
                                 {onEditCard && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); onEditCard(card); }}
@@ -2240,7 +2395,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       <div dir="rtl" className={cn("grid gap-3 items-stretch", cfg.gridCols)}>
                         {visibleFolders.map((cat) => (
                           <ContextMenu key={cat.id}>
-                            <ContextMenuTrigger asChild>
+                            <ContextMenuTrigger asChild onContextMenu={() => markCategoryFromContext(cat.id)}>
                               <div>
                                 <FolderTile
                                   cat={cat} count={counts.get(cat.name) ?? 0}
@@ -2276,7 +2431,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       <div className="space-y-1.5">
                         {visibleFolders.map((cat) => (
                           <ContextMenu key={cat.id}>
-                            <ContextMenuTrigger asChild>
+                            <ContextMenuTrigger asChild onContextMenu={() => markCategoryFromContext(cat.id)}>
                               <div>
                                 <FolderListRow
                                   cat={cat} count={counts.get(cat.name) ?? 0}
@@ -2321,8 +2476,8 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               {/* Header row */}
               <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  {selectedCategory && !activeSmartId && (
-                    <Button size="sm" onClick={() => openAddQuestions(selectedCategory)}
+                  {cardsSourceCategory && !activeSmartId && (
+                    <Button size="sm" onClick={() => openAddQuestions(cardsSourceCategory)}
                       className="h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground">
                       <Plus className="h-3 w-3" /> שאלה חדשה
                     </Button>
@@ -2345,8 +2500,8 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                   </button>
                 </div>
                 <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  {activeSmartId ? "תוצאות" : search.trim() ? "תוצאות חיפוש" : `שאלות ב"${selectedCategory}"`}
-                  {" "}({cardsOfSelected.length})
+                  {activeSmartId ? "תוצאות" : search.trim() ? "תוצאות חיפוש" : `שאלות ב"${cardsSourceCategory ?? ""}"`}
+                  {" "}({deferredCardsOfSelected.length})
                 </h4>
               </div>
               {/* Action bar — visible when any cards are selected */}
@@ -2380,7 +2535,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
               )}
               {/* Cards grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {cardsOfSelected.map((card) => (
+                {deferredCardsOfSelected.map((card) => (
                   <CardTile
                     key={card.id}
                     card={card}
@@ -2393,6 +2548,8 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       return next;
                     })}
                     onEdit={onEditCard ? () => onEditCard(card) : undefined}
+                    pinned={pinnedCardIds.includes(card.id)}
+                    onTogglePin={() => togglePinnedCardId(card.id)}
                     onDelete={() => {
                       if (confirm(`מחק את השאלה "${card.question.slice(0, 40)}..."?`)) deleteCard(card.id);
                     }}

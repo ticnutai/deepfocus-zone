@@ -37,6 +37,8 @@ import type { Category, Card as StudyCard } from "@/lib/study/types";
 import { useConfirm } from "@/hooks/useConfirm";
 
 interface Props {
+  selectedCategory: string | null;
+  onSelectCategory: (name: string | null) => void;
   onAddCardToCategory: (catName: string) => void;
   onEditCard?: (card: StudyCard) => void;
 }
@@ -105,31 +107,6 @@ function sortedChildren(categories: Category[], parentId: string | null): Catego
   return categories
     .filter((c) => c.parentId === parentId)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt);
-}
-
-/**
- * DFS-collect all category names that are descendants (inclusive) of rootId.
- * Returns them in DFS order so card order matches tree order.
- */
-function subtreeNamesInOrder(categories: Category[], rootId: string | null): string[] {
-  const result: string[] = [];
-  function walk(parentId: string | null) {
-    const kids = sortedChildren(categories, parentId);
-    for (const cat of kids) {
-      result.push(cat.name);
-      walk(cat.id);
-    }
-  }
-  if (rootId === null) {
-    walk(null);
-  } else {
-    const root = categories.find((c) => c.id === rootId);
-    if (root) {
-      result.push(root.name);
-      walk(rootId);
-    }
-  }
-  return result;
 }
 
 /** Card type label */
@@ -376,7 +353,7 @@ function CategoryChips({
 
 /* ─── main component ─────────────────────────────────────────────── */
 
-export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
+export function CategoryBrowseView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard }: Props) {
   const {
     state, deleteCard, loadCategoryChildren,
     addCategory, addCategoriesBulk, deleteCategory, renameCategory,
@@ -465,16 +442,11 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
     return path.map((id) => categoriesById.get(id)).filter(Boolean) as Category[];
   }, [path, categoriesById]);
 
-  /* === Subtree-ordered cards === */
-  // Determine which subtree root to use for populating the card feed:
-  // If a chip is active → show cards from that chip's subtree
-  // Otherwise → show cards from the current folder's subtree (or root if at top)
-  const feedRootId = activeCatId ?? currentParentId;
-
-  const orderedCatNames = useMemo(
-    () => subtreeNamesInOrder(categories, feedRootId),
-    [categories, feedRootId],
-  );
+  const feedCategoryName = useMemo(() => {
+    if (selectedCategory) return selectedCategory;
+    if (!currentParentId) return null;
+    return categoriesById.get(currentParentId)?.name ?? null;
+  }, [selectedCategory, currentParentId, categoriesById]);
 
   // Build a name→cards map
   const cardsByName = useMemo(() => {
@@ -492,21 +464,11 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
     return m;
   }, [state.cards]);
 
-  // All cards in subtree order
+  // All cards in direct classification category only
   const allOrderedCards = useMemo(() => {
-    const result: { card: StudyCard; catName: string }[] = [];
-    const seen = new Set<string>();
-    for (const name of orderedCatNames) {
-      const cards = cardsByName.get(name) ?? [];
-      for (const card of cards) {
-        if (!seen.has(card.id)) {
-          seen.add(card.id);
-          result.push({ card, catName: name });
-        }
-      }
-    }
-    return result;
-  }, [orderedCatNames, cardsByName]);
+    if (!feedCategoryName) return [];
+    return (cardsByName.get(feedCategoryName) ?? []).map((card) => ({ card, catName: feedCategoryName }));
+  }, [cardsByName, feedCategoryName]);
 
   // Counts map for chip badges (subtree counts)
   // Uses pre-built cardsByName so we iterate names not all cards (O(cats×subtree) vs O(cats×cards×tags))
@@ -594,7 +556,6 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
       updateDeckCategoryIds(deck.id, [cat.id], true);
       toast({ title: "מערכת נוצרה", description: `"${name}"` });
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDeck, updateDeckCategoryIds, toast]);
 
   /* === Multi-select === */
@@ -613,7 +574,8 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
     }
     setMultiSelected((s) => {
       const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
     setLastSelectedChipId(id);
@@ -665,26 +627,29 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
   const enterFolder = useCallback((cat: Category) => {
     setPath((prev) => [...prev, cat.id]);
     setActiveCatId(null);
-  }, []);
+    onSelectCategory(cat.name);
+  }, [onSelectCategory]);
 
   const navigateToIndex = useCallback((idx: number) => {
-    setPath((prev) => prev.slice(0, idx + 1));
+    setPath((prev) => {
+      const next = prev.slice(0, idx + 1);
+      const targetId = next[next.length - 1] ?? null;
+      const targetName = targetId ? (categoriesById.get(targetId)?.name ?? null) : null;
+      onSelectCategory(targetName);
+      return next;
+    });
     setActiveCatId(null);
-  }, []);
+  }, [categoriesById, onSelectCategory]);
 
   const goHome = useCallback(() => {
     setPath([]);
     setActiveCatId(null);
-  }, []);
+    onSelectCategory(null);
+  }, [onSelectCategory]);
 
   const handleChipClick = useCallback((cat: Category) => {
-    if (activeCatId === cat.id) {
-      // Second click → enter this folder
-      enterFolder(cat);
-    } else {
-      setActiveCatId(cat.id);
-    }
-  }, [activeCatId, enterFolder]);
+    enterFolder(cat);
+  }, [enterFolder]);
 
   // Sub-categories of the active chip (shown as a second row)
   const activeChipChildren = useMemo(() => {
@@ -715,16 +680,16 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
   }), [
     enterFolder, onAddCardToCategory, addCategory, deleteCategory, confirm,
     duplicateCategory, exportBranch, toggleFavorite, addCategoryToDeck,
-    createDeckFromCategory, moveCategory, addCategoriesBulk, favorites,
-    state.decks, categories, toast,
+    createDeckFromCategory, moveCategory, favorites,
+    state.decks, categories,
   ]);
 
   const totalCount = allOrderedCards.length;
   const feedLabel = useMemo(() => {
-    if (!feedRootId) return "כל הקטגוריות";
-    const cat = categoriesById.get(feedRootId);
-    return cat ? categoryLabel(cat) : "נבחר";
-  }, [feedRootId, categoriesById, categoryLabel]);
+    if (!feedCategoryName) return "כל הקטגוריות";
+    const cat = categoriesByName.get(feedCategoryName);
+    return cat ? categoryLabel(cat) : feedCategoryName;
+  }, [feedCategoryName, categoriesByName, categoryLabel]);
 
   return (
     <div dir="rtl" className="flex flex-col gap-0 h-full min-h-0">
@@ -829,8 +794,7 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
               counts={counts}
               onSelect={(cat) => {
                 // Clicking a sub-chip enters that folder directly
-                setPath((prev) => [...prev, activeCatId!, cat.id].filter((v, i, a) => a.indexOf(v) === i));
-                setActiveCatId(cat.id);
+                enterFolder(cat);
               }}
               menu={menuProps}
               renamingId={renamingId}
@@ -846,13 +810,13 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
         {/* Feed header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {feedRootId && (
+            {feedCategoryName && (
               <Button
                 size="sm"
                 variant="outline"
                 className="h-7 text-xs border-gold/40 gap-1"
                 onClick={() => onAddCardToCategory(
-                  categoriesById.get(feedRootId)?.name ?? "",
+                  feedCategoryName ?? "",
                 )}
               >
                 <Plus className="h-3 w-3" /> הוסף שאלה
@@ -876,7 +840,7 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
           className="flex-1 min-h-[340px] max-h-[560px] overflow-y-auto rounded-xl border-2 border-gold/35 bg-secondary/10"
         >
           {allOrderedCards.length === 0 ? (
-            !cardsFullyLoaded && feedRootId ? (
+            !cardsFullyLoaded && feedCategoryName ? (
               // Phase 2 backfill still loading — cards for this category may still arrive.
               // Show skeleton rows instead of "אין שאלות" to avoid flashing wrong empty state.
               <div className="p-2 space-y-2">
@@ -894,16 +858,16 @@ export function CategoryBrowseView({ onAddCardToCategory, onEditCard }: Props) {
             ) : (
               <div className="flex flex-col items-center justify-center h-full py-16 text-muted-foreground gap-3">
                 <LayoutList className="h-14 w-14 opacity-15" />
-                {feedRootId
+                {feedCategoryName
                   ? <p className="text-sm">אין שאלות בקטגוריה הנבחרת</p>
                   : <p className="text-sm">בחר קטגוריה למעלה כדי לראות שאלות</p>
                 }
-                {feedRootId && (
+                {feedCategoryName && (
                   <Button
                     size="sm"
                     className="bg-gradient-navy text-primary-foreground gap-1"
                     onClick={() => onAddCardToCategory(
-                      categoriesById.get(feedRootId)?.name ?? "",
+                      feedCategoryName,
                     )}
                   >
                     <Plus className="h-3.5 w-3.5" /> הוסף שאלה ראשונה

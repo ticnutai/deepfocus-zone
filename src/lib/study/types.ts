@@ -236,6 +236,8 @@ export interface UiPrefs {
   cardsDeckView?: "list" | "grid" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)
   pinnedCategoryNames?: string[];
+  // Pinned question ids for Pinned widget (synced)
+  pinnedCardIds?: string[];
   // CategoryManager: selected view mode (synced across devices)
   categoryViewMode?: "browse" | "explorer" | "list" | "cards" | "mindmap";
   // Dev tools toggles (admin only) — default false (off)
@@ -243,6 +245,8 @@ export interface UiPrefs {
   devShowSyncIndicator?: boolean;
   // CategoriesPage: per-category sort mode for the cards list
   categorySortOrders?: Record<string, "name" | "createdNew" | "createdOld" | "favorites" | "manual">;
+  // CategoriesPage: global sort mode for cards list (applies to all categories)
+  categorySortMode?: "name" | "createdNew" | "createdOld" | "favorites" | "manual";
   // Mishnayot tracker: { [sederName]: { [masechetName]: { [perekIndex]: number[] of learned mishna indices (1-based) } } }
   mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)

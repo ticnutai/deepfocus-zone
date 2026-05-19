@@ -88,7 +88,12 @@ export function CategoryManager({
         />
       )}
       {viewMode === "browse" && (
-        <CategoryBrowseView onAddCardToCategory={addCard} onEditCard={onEditCard} />
+        <CategoryBrowseView
+          selectedCategory={selectedCategory}
+          onSelectCategory={onSelectCategory}
+          onAddCardToCategory={addCard}
+          onEditCard={onEditCard}
+        />
       )}
       {viewMode === "list" && (
         <CategoryListView

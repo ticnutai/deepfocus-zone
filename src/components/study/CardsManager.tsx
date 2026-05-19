@@ -40,6 +40,7 @@ import { StudySession } from "./StudySession";
 import { DeckCreateDialog } from "./DeckCreateDialog";
 import { DeckEditDialog } from "./DeckEditDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
+import { PATH_SEP, dafLabel } from "@/lib/study/shasGen";
 
 // helper: collect a category id and all its descendant ids
 function collectDescendants(rootId: string, cats: { id: string; parentId: string | null }[]): Set<string> {
@@ -62,6 +63,86 @@ const TYPE_LABEL: Record<string, string> = {
   boolean: "נכון/לא",
   combo: "משולבת",
 };
+
+function normalizeCategorySegment(seg: string): string {
+  const s = seg.trim();
+  if (!s) return s;
+  const noPrefix = s.replace(/^דף\s+/, "").trim();
+  if (/^ע["׳']?[אב]$/u.test(noPrefix)) {
+    return noPrefix.includes('"') ? noPrefix : (noPrefix.includes("׳") ? noPrefix : noPrefix.replace(/^ע([אב])$/u, 'ע"$1'));
+  }
+  if (/^[א-ת]{1,3}\.?$/u.test(noPrefix)) {
+    const base = noPrefix.replace(/\.$/u, "");
+    return `${base}'`;
+  }
+  return noPrefix;
+}
+
+function buildCanonicalCategoryChips(
+  rawCategoryTags: string[],
+  categories: Array<{ id: string; name: string; parentId: string | null }>,
+): string[] {
+  if (rawCategoryTags.length === 0) return [];
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const byName = new Map<string, { id: string; name: string; parentId: string | null }>();
+  const depthOf = (cat: { id: string; name: string; parentId: string | null }): number => {
+    let d = 0;
+    let cur: { id: string; name: string; parentId: string | null } | undefined = cat;
+    while (cur?.parentId) {
+      d += 1;
+      cur = byId.get(cur.parentId);
+    }
+    return d;
+  };
+
+  for (const cat of categories) {
+    const prev = byName.get(cat.name);
+    if (!prev || depthOf(cat) > depthOf(prev)) byName.set(cat.name, cat);
+  }
+
+  const pathFromTree = (leafName: string): string[] => {
+    const leaf = byName.get(leafName);
+    if (!leaf) return [leafName];
+    const parts: string[] = [];
+    let cur: { id: string; name: string; parentId: string | null } | undefined = leaf;
+    while (cur) {
+      parts.unshift(cur.name);
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+    }
+    return parts;
+  };
+
+  const paths = rawCategoryTags
+    .map((t) => {
+      const explicitPath = t.includes(PATH_SEP) ? t.split(PATH_SEP).map((x) => x.trim()).filter(Boolean) : null;
+      const inferredPath = explicitPath && explicitPath.length > 1 ? explicitPath : pathFromTree(t);
+      return inferredPath.map(normalizeCategorySegment).filter(Boolean);
+    })
+    .filter((parts) => parts.length > 0);
+  if (paths.length === 0) return [];
+
+  const longest = paths.reduce((best, cur) => (cur.length > best.length ? cur : best), paths[0]);
+  if (longest.length >= 2) {
+    return Array.from(new Set(longest));
+  }
+
+  const uniq = new Set<string>();
+  paths.flat().forEach((p) => uniq.add(p));
+  return [...uniq];
+}
+
+function buildShasHierarchyChips(card: Pick<StudyCardType, "masechta" | "daf" | "amud">): string[] | null {
+  if (!card.masechta || !card.daf) return null;
+  const chips = [
+    'ש"ס',
+    'מועד',
+    card.masechta.trim(),
+    dafLabel(card.daf).replace('.', "'"),
+  ];
+  if (card.amud === 1) chips.push('ע"א');
+  else if (card.amud === 2) chips.push('ע"ב');
+  return chips;
+}
 
 export function CardsManager() {
   const { state, addDeck, deleteDeck, deleteCard, moveCardToDeck, addCardToDeck, setCardCategories, setDeckCategories, duplicateCard, moveCategory, reorderCategories, duplicateCategoryUnder, setUiPref, setWidgetLayout } = useStudy();
@@ -856,6 +937,7 @@ export function CardsManager() {
               onSelectCategory={(name) => {
                 setCategoryFilter(name);
               }}
+              onEditCard={(card) => openEditCard(card)}
             />
           ),
           "cards-categories": (
@@ -992,6 +1074,8 @@ export function CardsManager() {
 
                   {sortedDeckCards.map((c) => {
                     const categoryTags = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
+                    const shasChips = buildShasHierarchyChips(c);
+                    const categoryChips = shasChips ?? buildCanonicalCategoryChips(categoryTags, state.categories ?? []);
                     const plainTags = c.tags.filter((t) => !t.startsWith("cat:"));
                     const cardDeckCount = (state.cardDecks ?? []).filter((l) => l.cardId === c.id).length || 1;
                     const isSel = cardMs.isSelected(c.id);
@@ -1008,8 +1092,68 @@ export function CardsManager() {
                         <div className="flex-1 text-right cursor-pointer" onClick={() => setHistoryCard(c)}>
                           <div className="flex items-center gap-1 justify-end mb-1 flex-wrap">
                             {cardDeckCount > 1 && <Badge className="text-[10px] bg-gold text-navy">📚 {cardDeckCount} מערכות</Badge>}
-                            {categoryTags.map((t) => <Badge key={t} className="text-[10px] bg-navy text-primary-foreground">📁 {t}</Badge>)}
-                            {plainTags.map((t) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
+                            {categoryChips.map((t) => <Badge key={t} className="text-[10px] bg-navy text-primary-foreground">📁 {t}</Badge>)}
+                            {plainTags.map((t) =>
+                              t === "source:yeshiva" ? (
+                                <span
+                                  key={t}
+                                  title="yeshiva.org.il"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                                  style={{
+                                    color: "#60b4ff",
+                                    boxShadow: "0 0 5px 1px #3b9eff66",
+                                    border: "1px solid #3b9eff88",
+                                    background: "transparent",
+                                  }}
+                                >
+                                  y
+                                </span>
+                              ) : t === "source:shemesh" ? (
+                                <span
+                                  key={t}
+                                  title="שמש בגבעון"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                                  style={{
+                                    color: "#4ade80",
+                                    boxShadow: "0 0 5px 1px #22c55e66",
+                                    border: "1px solid #22c55e88",
+                                    background: "transparent",
+                                  }}
+                                >
+                                  s
+                                </span>
+                              ) : t === "source:ai" ? (
+                                <span
+                                  key={t}
+                                  title="נוצר על ידי AI"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                                  style={{
+                                    color: "#f87171",
+                                    boxShadow: "0 0 5px 1px #ef444466",
+                                    border: "1px solid #ef444488",
+                                    background: "transparent",
+                                  }}
+                                >
+                                  a
+                                </span>
+                              ) : t === "source:custom" ? (
+                                <span
+                                  key={t}
+                                  title="כרטיס מותאם אישית"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                                  style={{
+                                    color: "#fde047",
+                                    boxShadow: "0 0 5px 1px #eab30866",
+                                    border: "1px solid #eab30888",
+                                    background: "transparent",
+                                  }}
+                                >
+                                  c
+                                </span>
+                              ) : (
+                                <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                              )
+                            )}
                             <Badge variant="outline" className="border-gold text-xs">{TYPE_LABEL[c.type] ?? c.type}</Badge>
                           </div>
                           <p className="text-sm font-medium text-foreground">{c.question}</p>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pin, PinOff, FolderTree, ChevronLeft, GripVertical, Search } from "lucide-react";
+import { Pin, PinOff, FolderTree, ChevronLeft, GripVertical, Search, FileText, Pencil } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useStudy } from "@/lib/study/store";
+import type { Card as StudyCard } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
 interface Props {
   onSelectCategory: (name: string) => void;
+  onEditCard?: (card: StudyCard) => void;
 }
 
 interface SortablePinnedRowProps {
@@ -74,10 +76,11 @@ function SortablePinnedRow({ id, name, isSubCategory, count, onSelectCategory, o
   );
 }
 
-export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
+export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) {
   const { state, setUiPref } = useStudy();
   const [query, setQuery] = useState("");
-  const pinned = state.uiPrefs?.pinnedCategoryNames ?? [];
+  const pinned = useMemo(() => state.uiPrefs?.pinnedCategoryNames ?? [], [state.uiPrefs?.pinnedCategoryNames]);
+  const pinnedCardIds = useMemo(() => state.uiPrefs?.pinnedCardIds ?? [], [state.uiPrefs?.pinnedCardIds]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
@@ -93,6 +96,19 @@ export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
     });
   }, [pinned, setUiPref, state.categories]);
 
+  useEffect(() => {
+    if (!pinnedCardIds.length) return;
+    const existing = new Set((state.cards ?? []).map((c) => c.id));
+    const missing = pinnedCardIds.filter((id) => !existing.has(id));
+    if (!missing.length) return;
+    const next = pinnedCardIds.filter((id) => existing.has(id));
+    setUiPref("pinnedCardIds", next);
+    toast({
+      title: "עודכנו מוצמדים",
+      description: `הוסרו ${missing.length} שאלות שלא קיימות יותר`,
+    });
+  }, [pinnedCardIds, setUiPref, state.cards]);
+
   const categories = useMemo(() => {
     const byName = new Map((state.categories ?? []).map((c) => [c.name, c] as const));
     return pinned
@@ -106,6 +122,19 @@ export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
     return categories.filter((c) => c.name.toLowerCase().includes(q));
   }, [categories, query]);
 
+  const pinnedCards = useMemo(() => {
+    const byId = new Map((state.cards ?? []).map((c) => [c.id, c] as const));
+    return pinnedCardIds
+      .map((id) => byId.get(id))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+  }, [pinnedCardIds, state.cards]);
+
+  const filteredCards = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return pinnedCards;
+    return pinnedCards.filter((c) => c.question.toLowerCase().includes(q));
+  }, [pinnedCards, query]);
+
   const counts = new Map<string, number>();
   (state.cards ?? []).forEach((card) => {
     (card.tags ?? []).forEach((tag) => {
@@ -118,6 +147,11 @@ export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
   const unpin = (name: string) => {
     const next = pinned.filter((x) => x !== name);
     setUiPref("pinnedCategoryNames", next);
+  };
+
+  const unpinCard = (cardId: string) => {
+    const next = pinnedCardIds.filter((id) => id !== cardId);
+    setUiPref("pinnedCardIds", next);
   };
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -139,7 +173,7 @@ export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
           </span>
           <h3 className="font-display text-base font-semibold">קטגוריות מוצמדות</h3>
         </div>
-        <span className="text-xs text-muted-foreground">{categories.length} מוצמדות</span>
+        <span className="text-xs text-muted-foreground">{categories.length + pinnedCards.length} מוצמדים</span>
       </div>
 
       <div className="relative">
@@ -152,35 +186,88 @@ export function PinnedCategoriesWidget({ onSelectCategory }: Props) {
         />
       </div>
 
-      {categories.length === 0 ? (
+      {categories.length === 0 && pinnedCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
           <FolderTree className="h-10 w-10 opacity-25" />
-          <p className="text-sm">אין קטגוריות מוצמדות</p>
-          <p className="text-xs">הצמד מתוך עץ הקטגוריות (תפריט ימני או כפתור הצמד)</p>
+          <p className="text-sm">אין פריטים מוצמדים</p>
+          <p className="text-xs">אפשר להצמיד קטגוריה או שאלה ולהגיע אליה מהר</p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : filtered.length === 0 && filteredCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
           <Search className="h-8 w-8 opacity-30" />
           <p className="text-sm">לא נמצאו תוצאות לחיפוש</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={filtered.map((c) => c.name)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2 max-h-[420px] overflow-y-auto">
-              {filtered.map((cat) => (
-                <SortablePinnedRow
-                  key={cat.name}
-                  id={cat.name}
-                  name={cat.name}
-                  isSubCategory={!!cat.parentId}
-                  count={counts.get(cat.name) ?? 0}
-                  onSelectCategory={onSelectCategory}
-                  onUnpin={unpin}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <div className="space-y-3 max-h-[420px] overflow-y-auto">
+          {filtered.length > 0 && (
+            <>
+              <div className="text-[11px] font-bold text-muted-foreground">קטגוריות מוצמדות</div>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={filtered.map((c) => c.name)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {filtered.map((cat) => (
+                      <SortablePinnedRow
+                        key={cat.name}
+                        id={cat.name}
+                        name={cat.name}
+                        isSubCategory={!!cat.parentId}
+                        count={counts.get(cat.name) ?? 0}
+                        onSelectCategory={onSelectCategory}
+                        onUnpin={unpin}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </>
+          )}
+
+          {filteredCards.length > 0 && (
+            <>
+              <div className="text-[11px] font-bold text-muted-foreground">שאלות מוצמדות</div>
+              <div className="space-y-2">
+                {filteredCards.map((card) => {
+                  const firstTag = (card.tags ?? []).find((t) => t.startsWith("cat:"));
+                  const catName = firstTag ? firstTag.slice(4) : "ללא קטגוריה";
+                  return (
+                    <div key={card.id} className="rounded-xl border border-gold/30 bg-card px-3 py-2.5 flex items-start gap-2 hover:border-gold/60 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => onSelectCategory(catName)}
+                        className="flex-1 min-w-0 text-right"
+                        title={card.question}
+                      >
+                        <p className="text-sm font-medium truncate">{card.question}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{catName}</p>
+                      </button>
+                      {onEditCard && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => onEditCard(card)}
+                          title="ערוך שאלה"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => unpinCard(card.id)}
+                        title="בטל הצמדה"
+                      >
+                        <PinOff className="h-3.5 w-3.5" />
+                      </Button>
+                      <FileText className="h-4 w-4 text-gold/70 mt-1" />
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </Card>
   );
