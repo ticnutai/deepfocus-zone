@@ -255,7 +255,7 @@ const DEPRECATED_FLASHCARD_TWIN_DECK_ID = "b5e2f1a3-7c9d-4e8f-a012-3b4c5d6e7f8a"
 function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
   const categories = dedupeBySemanticKeyLww(state.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
   const decks = dedupeBySemanticKeyLww(
-    (state.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID),
+    (state.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID && !deletedDeckIds.has(d.id)),
     (d) => normalizeName(d.name),
   );
   // Upgrade legacy "multiple" cards to "combo" so dual-mode study works regardless of
@@ -295,6 +295,11 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
 // the matching local rows. This is the multi-device delete-propagation path:
 // without it, device B (which still has X locally) would resurrect X on hydrate.
 let lastCloudCategoryTombstones: Set<string> = new Set();
+
+// Deck hard-delete tombstones: deck ids deleted via the UI this session.
+// Prevents delta/full sync from re-adding a deck that was just deleted before
+// the cloud DELETE confirmed. Cleared only after cloud confirms the deletion.
+const deletedDeckIds: Set<string> = new Set();
 
 const mergeStudyStateLww = (local: StudyState, cloud: StudyState): StudyState => {
   const localUiTs = typeof local.uiPrefs?.updatedAt === "number" ? local.uiPrefs.updatedAt : 0;
@@ -413,18 +418,51 @@ const rpcClient = supabase as unknown as {
   rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
 };
 
+let cachedAccessToken: string | null = null;
+let cachedAccessTokenAt = 0;
+let accessTokenInFlight: Promise<string | null> | null = null;
+const ACCESS_TOKEN_TTL_MS = 60 * 1000;
+
+const getCachedAccessToken = async (): Promise<string | null> => {
+  const now = Date.now();
+  if (now - cachedAccessTokenAt <= ACCESS_TOKEN_TTL_MS) return cachedAccessToken;
+  if (accessTokenInFlight) return accessTokenInFlight;
+
+  accessTokenInFlight = supabase.auth.getSession()
+    .then(({ data }) => {
+      cachedAccessToken = data.session?.access_token ?? null;
+      cachedAccessTokenAt = Date.now();
+      return cachedAccessToken;
+    })
+    .catch(() => {
+      cachedAccessToken = null;
+      cachedAccessTokenAt = Date.now();
+      return null;
+    })
+    .finally(() => {
+      accessTokenInFlight = null;
+    });
+
+  return accessTokenInFlight;
+};
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  cachedAccessToken = session?.access_token ?? null;
+  cachedAccessTokenAt = Date.now();
+});
+
 const isAbortError = (error: unknown) => {
   return error instanceof DOMException && error.name === "AbortError";
 };
 
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = await getCachedAccessToken();
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_category_children`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: SUPABASE_PUBLISHABLE_KEY,
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify({ p_parent_id: parentId }),
     signal,
@@ -2147,6 +2185,9 @@ export function useStudy() {
 
   const deleteDeck = useCallback((id: string) => {
     const userId = currentUserId;
+    // Mark as deleted before touching state so that any in-flight sync that
+    // completes right after cannot resurrect the deck via mergeByKeyLww.
+    deletedDeckIds.add(id);
     setState((s) => {
       const nextDC = { ...(s.deckCategories ?? {}) };
       delete nextDC[id];
@@ -2154,12 +2195,21 @@ export function useStudy() {
       return {
         ...s,
         decks: s.decks.filter((d) => d.id !== id),
+        // Remove all card–deck associations for this deck from local state.
+        cardDecks: (s.cardDecks ?? []).filter((cd) => cd.deckId !== id),
         // Cards are NOT deleted — they remain as category-owned cards (deckId becomes null)
         cards: s.cards.map((c) => c.deckId === id ? { ...c, deckId: null } as Card : c),
         deckCategories: nextDC,
       };
     });
-    bg(supabase.from("decks").delete().eq("id", id));
+    // Delete the deck row from cloud, then also remove orphaned card_deck rows.
+    // We clear the tombstone only after both deletes confirm so that any sync
+    // that races during the await cannot restore the deck.
+    void (async () => {
+      await supabase.from("decks").delete().eq("id", id);
+      await supabase.from("card_decks").delete().eq("deck_id", id);
+      deletedDeckIds.delete(id);
+    })();
   }, []);
 
   const addCard = useCallback((card: Omit<Card, "id" | "createdAt" | "srs" | "stats">) => {

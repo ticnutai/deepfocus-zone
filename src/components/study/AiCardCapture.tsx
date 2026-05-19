@@ -23,6 +23,24 @@ type IconStyle = { color: string; bg: string; size: number; shape: Shape; icon: 
 const STYLE_KEY = "ai_capture_icon_style_v1"; // legacy localStorage key — used for migration only
 const POS_KEY = "ai_capture_icon_pos_v1"; // legacy localStorage key — used for migration only
 const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
+const normalizeIconStyle = (value: unknown): IconStyle => {
+  const raw = (value && typeof value === "object") ? (value as Partial<IconStyle>) : {};
+  return {
+    color: typeof raw.color === "string" ? raw.color : DEFAULT_STYLE.color,
+    bg: typeof raw.bg === "string" ? raw.bg : DEFAULT_STYLE.bg,
+    size: typeof raw.size === "number" ? raw.size : DEFAULT_STYLE.size,
+    shape: raw.shape === "circle" || raw.shape === "square" || raw.shape === "rounded" ? raw.shape : DEFAULT_STYLE.shape,
+    icon: raw.icon === "sparkles" || raw.icon === "bot" || raw.icon === "brain" || raw.icon === "wand" || raw.icon === "star" || raw.icon === "zap" || raw.icon === "chat" || raw.icon === "book" || raw.icon === "bulb" ? raw.icon : DEFAULT_STYLE.icon,
+  };
+};
+const sameIconStyle = (a: IconStyle, b: IconStyle): boolean => (
+  a.color === b.color &&
+  a.bg === b.bg &&
+  a.size === b.size &&
+  a.shape === b.shape &&
+  a.icon === b.icon
+);
+const samePos = (a: { x: number; y: number }, b: { x: number; y: number }): boolean => a.x === b.x && a.y === b.y;
 const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
   sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
   zap: Zap, chat: MessageCircle, book: BookOpen, bulb: Lightbulb,
@@ -54,19 +72,23 @@ export function AiCardCapture() {
 
   const [style, setStyle] = useState<IconStyle>(() => {
     // Prefer uiPrefs from cloud/IDB, fall back to legacy localStorage for migration
-    if (state.uiPrefs?.aiButtonStyle) return { ...DEFAULT_STYLE, ...state.uiPrefs.aiButtonStyle } as IconStyle;
-    try { const r = localStorage.getItem(STYLE_KEY); if (r) return { ...DEFAULT_STYLE, ...JSON.parse(r) }; } catch {}
+    if (state.uiPrefs?.aiButtonStyle) return normalizeIconStyle(state.uiPrefs.aiButtonStyle);
+    try { const r = localStorage.getItem(STYLE_KEY); if (r) return normalizeIconStyle(JSON.parse(r)); } catch {}
     return DEFAULT_STYLE;
   });
   const isFirstStyleRender = useRef(true);
   useEffect(() => {
     if (isFirstStyleRender.current) { isFirstStyleRender.current = false; return; }
-    setUiPref("aiButtonStyle", style as { color: string; bg: string; size: number; shape: string; icon: string });
-  }, [style]);
+    const cloudStyle = normalizeIconStyle(state.uiPrefs?.aiButtonStyle);
+    if (!sameIconStyle(cloudStyle, style)) {
+      setUiPref("aiButtonStyle", style as { color: string; bg: string; size: number; shape: string; icon: string });
+    }
+  }, [style, setUiPref, state.uiPrefs?.aiButtonStyle]);
   // Sync style from cloud/IDB hydration after initial render
   useEffect(() => {
     if (state.uiPrefs?.aiButtonStyle) {
-      setStyle({ ...DEFAULT_STYLE, ...state.uiPrefs.aiButtonStyle } as IconStyle);
+      const next = normalizeIconStyle(state.uiPrefs.aiButtonStyle);
+      setStyle((prev) => sameIconStyle(prev, next) ? prev : next);
     }
   }, [state.uiPrefs?.aiButtonStyle]);
 
@@ -80,8 +102,9 @@ export function AiCardCapture() {
   // Sync pos from cloud/IDB hydration after initial render
   useEffect(() => {
     if (state.uiPrefs?.aiButtonPos) {
-      setPos(state.uiPrefs.aiButtonPos);
-      currentPosRef.current = state.uiPrefs.aiButtonPos;
+      const next = state.uiPrefs.aiButtonPos;
+      setPos((prev) => samePos(prev, next) ? prev : next);
+      currentPosRef.current = next;
     }
   }, [state.uiPrefs?.aiButtonPos?.x, state.uiPrefs?.aiButtonPos?.y]);
 
