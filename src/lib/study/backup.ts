@@ -176,7 +176,7 @@ export async function restoreCloudCards(
     });
     const { error } = await supabase
       .from("cards")
-      .upsert(slice, { onConflict: "id" });
+      .upsert(slice as never, { onConflict: "id" });
     if (error) throw new Error(error.message);
     upserted += slice.length;
   }
