@@ -25,6 +25,9 @@
     "createStartMenuShortcut": true,
     "shortcutName": "פשש"
   },
+  "portable": {
+    "artifactName": "pashash-portable-${version}.${ext}"
+  },
   "mac": {
     "target": ["dmg"],
     "category": "public.app-category.education"

@@ -25,6 +25,9 @@ export interface CustomQuizTheme {
   optionsBorderRadius: "sm" | "md" | "lg" | "full";
   optionWrapperBg: string;
   optionColors: Array<{ bg: string; text: string; border: string }>;
+  badgeBorderColor: string;
+  badgeTextColor: string;
+  breadcrumbColor: string;
 }
 
 export interface SavedTheme {
@@ -151,6 +154,9 @@ export const DEFAULT_CUSTOM_THEME: CustomQuizTheme = {
     { bg: "#14b8a6", text: "#ffffff", border: "#2dd4bf" },
     { bg: "#f43f5e", text: "#ffffff", border: "#fb7185" },
   ],
+  badgeBorderColor: "#d9a326",
+  badgeTextColor:   "#0c1c3b",
+  breadcrumbColor:  "#576175",
 };
 
 // ─── Subcomponents ────────────────────────────────────────────────────────────
@@ -280,9 +286,24 @@ function ThemePreview({ theme }: { theme: CustomQuizTheme }) {
     <div className="rounded-xl border border-border overflow-hidden">
       {/* Question box */}
       <div
-        className="p-4 border-b-2"
+        className="relative p-4 pt-8 border-b-2"
         style={{ backgroundColor: theme.questionBg, borderColor: theme.questionBorder }}
       >
+        {/* Badge (top-right) */}
+        <div
+          className="absolute top-2 right-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+          style={{ borderColor: theme.badgeBorderColor, color: theme.badgeTextColor }}
+        >
+          משולבת
+        </div>
+        {/* Breadcrumb (top-left) */}
+        <span
+          className="absolute top-2 left-2 text-[10px] max-w-[55%] truncate"
+          dir="rtl"
+          style={{ color: theme.breadcrumbColor }}
+        >
+          זרעים ❯ ברכות ❯ ברכות · ג.
+        </span>
         <p
           className="text-right leading-relaxed"
           style={{ color: theme.questionText, fontFamily, fontSize, fontWeight }}
@@ -411,7 +432,8 @@ export function QuizThemeEditorDialog({ open, value, onSave, onPreview, onClose 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
       <DialogContent
-        className="max-w-lg max-h-[92vh] overflow-hidden flex flex-col"
+        className="max-h-[92vh] overflow-hidden flex flex-col"
+        style={{ maxWidth: "min(56rem, 95vw)" }}
         dir="rtl"
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -439,11 +461,14 @@ export function QuizThemeEditorDialog({ open, value, onSave, onPreview, onClose 
           </TabsList>
 
           {/* ── EDIT TAB ── */}
-          <TabsContent value="edit" className="flex-1 overflow-y-auto space-y-4 mt-3 min-h-0 pr-0.5">
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">תצוגה מקדימה:</p>
-              <ThemePreview theme={draft} />
-            </div>
+          <TabsContent value="edit" className="flex-1 overflow-hidden flex flex-col md:flex-row gap-4 mt-3 min-h-0">
+            {/* Left: controls (scrollable) */}
+            <div className="flex-1 overflow-y-auto space-y-4 min-w-0 pr-0.5">
+              {/* Mobile-only inline preview */}
+              <div className="md:hidden">
+                <p className="text-xs text-muted-foreground mb-2">תצוגה מקדימה:</p>
+                <ThemePreview theme={draft} />
+              </div>
 
             {/* Question area */}
             <div className="space-y-3 pt-3 border-t border-border">
@@ -500,6 +525,16 @@ export function QuizThemeEditorDialog({ open, value, onSave, onPreview, onClose 
                     {FONT_SIZE_OPTIONS.map((f) => <span key={f.value}>{f.value}</span>)}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Badge & breadcrumb */}
+            <div className="space-y-3 pt-3 border-t border-border">
+              <h4 className="font-semibold text-sm">תגית סוג ונתיב קטגוריה</h4>
+              <div className="flex flex-wrap gap-x-5 gap-y-3">
+                <ColorField label="מסגרת תגית" value={draft.badgeBorderColor} onChange={(v) => update("badgeBorderColor", v)} palette={palette} onPaletteAdd={handlePaletteAdd} />
+                <ColorField label="טקסט תגית"  value={draft.badgeTextColor}   onChange={(v) => update("badgeTextColor", v)}   palette={palette} onPaletteAdd={handlePaletteAdd} />
+                <ColorField label="נתיב קטגוריה" value={draft.breadcrumbColor} onChange={(v) => update("breadcrumbColor", v)} palette={palette} onPaletteAdd={handlePaletteAdd} />
               </div>
             </div>
 
@@ -605,6 +640,13 @@ export function QuizThemeEditorDialog({ open, value, onSave, onPreview, onClose 
                   </div>
                 </>
               )}
+            </div>
+            </div>{/* end controls column */}
+
+            {/* Right: sticky live preview (desktop only) */}
+            <div className="hidden md:flex flex-col gap-3 w-[290px] shrink-0 overflow-y-auto">
+              <p className="text-xs font-medium text-muted-foreground">תצוגה מקדימה</p>
+              <ThemePreview theme={draft} />
             </div>
           </TabsContent>
 

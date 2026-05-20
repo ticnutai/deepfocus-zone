@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { Eye, Check, X, ChevronLeft, ChevronRight, RotateCcw, Trophy, Settings2, LayoutGrid, Clock, ChevronDown, Calendar as CalendarIcon, RefreshCw, Timer, TrendingUp, TrendingDown, Minus, List, Grid2x2, Zap, Palette, Edit2, AlignRight, AlignCenter, AlignLeft, Pause, Play } from "lucide-react";
+import { Eye, Check, X, ChevronLeft, ChevronRight, RotateCcw, Trophy, Settings2, LayoutGrid, Clock, ChevronDown, Calendar as CalendarIcon, RefreshCw, Timer, TrendingUp, TrendingDown, Minus, List, Grid2x2, Zap, Palette, Edit2, Copy, AlignRight, AlignCenter, AlignLeft, Pause, Play } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { QuizThemeEditorDialog, CustomQuizTheme, DEFAULT_CUSTOM_THEME, FONT_FAMILY_MAP, FONT_SIZE_MAP, FONT_WEIGHT_MAP, BORDER_RADIUS_MAP } from "./QuizThemeEditor";
 import { QuizTypographyPanel, QuizTypography, loadTypography, storeTypography, typographyToStyle, typographyToBgStyle, ANSWER_TYPOGRAPHY_KEY, loadAnswerTypography } from "./QuizTypographyPanel";
@@ -50,6 +50,52 @@ const COLORFUL_OPTS: { base: string; sel: string }[] = [
   { base: "bg-teal-600/90 border-teal-400",       sel: "bg-teal-700 border-teal-200 ring-2 ring-white/30" },
   { base: "bg-rose-600/90 border-rose-400",       sel: "bg-rose-700 border-rose-200 ring-2 ring-white/30" },
 ];
+
+// Seeds for duplicating builtin themes into the custom editor
+const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
+  classic: {
+    questionBg: "#ffffff", questionText: "#0c1831", questionBorder: "#c9a84c",
+    questionFontFamily: "sans", questionFontSize: "2xl", questionFontWeight: "semibold",
+    answerFontFamily: "sans", answerFontSize: "base", answerFontWeight: "semibold",
+    optionsLayout: "list", optionsBorderRadius: "md", optionWrapperBg: "",
+    optionColors: Array(6).fill({ bg: "#ffffff", text: "#0c1831", border: "#c9a84c" }),
+  },
+  millionaire: {
+    questionBg: "#061022", questionText: "#ffffff", questionBorder: "#ca8a04",
+    questionFontFamily: "sans", questionFontSize: "2xl", questionFontWeight: "semibold",
+    answerFontFamily: "sans", answerFontSize: "base", answerFontWeight: "semibold",
+    optionsLayout: "grid", optionsBorderRadius: "full", optionWrapperBg: "#061022",
+    optionColors: Array(6).fill({ bg: "#0d2040", text: "#ffffff", border: "#ca8a04" }),
+  },
+  navy: {
+    questionBg: "#ffffff", questionText: "#14225c", questionBorder: "#14225c",
+    questionFontFamily: "sans", questionFontSize: "2xl", questionFontWeight: "semibold",
+    answerFontFamily: "sans", answerFontSize: "base", answerFontWeight: "semibold",
+    optionsLayout: "list", optionsBorderRadius: "md", optionWrapperBg: "",
+    optionColors: Array(6).fill({ bg: "#14225c", text: "#ffffff", border: "#14225c" }),
+  },
+  dark: {
+    questionBg: "#111827", questionText: "#ffffff", questionBorder: "#ca8a04",
+    questionFontFamily: "sans", questionFontSize: "2xl", questionFontWeight: "semibold",
+    answerFontFamily: "sans", answerFontSize: "base", answerFontWeight: "semibold",
+    optionsLayout: "list", optionsBorderRadius: "md", optionWrapperBg: "#111827",
+    optionColors: Array(6).fill({ bg: "#1f2937", text: "#ffffff", border: "#ca8a04" }),
+  },
+  colorful: {
+    questionBg: "#ffffff", questionText: "#1a1a2e", questionBorder: "#e5e7eb",
+    questionFontFamily: "sans", questionFontSize: "2xl", questionFontWeight: "semibold",
+    answerFontFamily: "sans", answerFontSize: "base", answerFontWeight: "semibold",
+    optionsLayout: "grid", optionsBorderRadius: "lg", optionWrapperBg: "",
+    optionColors: [
+      { bg: "#2563eb", text: "#ffffff", border: "#60a5fa" },
+      { bg: "#059669", text: "#ffffff", border: "#34d399" },
+      { bg: "#ea580c", text: "#ffffff", border: "#fb923c" },
+      { bg: "#7c3aed", text: "#ffffff", border: "#a78bfa" },
+      { bg: "#0d9488", text: "#ffffff", border: "#2dd4bf" },
+      { bg: "#e11d48", text: "#ffffff", border: "#fb7185" },
+    ],
+  },
+};
 
 type QuizHistoryEntry = { date: string; pct: number; totalMs: number; mode: string; total: number };
 
@@ -330,6 +376,8 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
   }, []);
 
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+  const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const [mobileSettingsDropdownOpen, setMobileSettingsDropdownOpen] = useState(false);
 
   const [typography, setTypography] = useState<QuizTypography>(loadTypography);
   const [answerTypography, setAnswerTypography] = useState<QuizTypography>(loadAnswerTypography);
@@ -768,7 +816,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                 <Timer className="h-3 w-3 text-gold" />{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
               </span>
             )}
-            <DropdownMenu>
+            <DropdownMenu open={mobileSettingsDropdownOpen} onOpenChange={setMobileSettingsDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1">
                   <Settings2 className="h-3.5 w-3.5 text-gold" />
@@ -780,8 +828,25 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                 <DropdownMenuLabel>עיצוב</DropdownMenuLabel>
                 {(["classic", "millionaire", "navy", "dark", "colorful", "custom"] as QuizTheme[]).map((t) => (
                   <DropdownMenuItem key={t} onClick={() => { setQuizTheme(t); if (t === "custom") setThemeEditorOpen(true); }}
-                    className={cn("gap-2", quizTheme === t && "font-bold bg-secondary")}>
-                    <span>{QUIZ_THEME_META[t].icon}</span>{QUIZ_THEME_META[t].label}
+                    className={cn("gap-2 justify-between", quizTheme === t && "font-bold bg-secondary")}>
+                    <span className="flex items-center gap-2"><span>{QUIZ_THEME_META[t].icon}</span>{QUIZ_THEME_META[t].label}</span>
+                    {t !== "custom" && (
+                      <button
+                        title={`שכפל "${QUIZ_THEME_META[t].label}" לעריכה`}
+                        className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setCustomQuizTheme(BUILTIN_THEME_SEEDS[t]!);
+                          setQuizTheme("custom");
+                          setMobileSettingsDropdownOpen(false);
+                          setThemeEditorOpen(true);
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    )}
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
@@ -821,7 +886,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
         {/* RIGHT edge (RTL start): quiz theme picker + edit btn */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {/* Quiz theme picker */}
-          <DropdownMenu>
+          <DropdownMenu open={themeDropdownOpen} onOpenChange={setThemeDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1" title="עיצוב שאלות אמריקאיות">
                 <Palette className="h-3.5 w-3.5 text-gold" />
@@ -843,8 +908,24 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                     <div>{QUIZ_THEME_META[t].label}</div>
                     <div className="text-xs text-muted-foreground font-normal">{QUIZ_THEME_META[t].desc}</div>
                   </div>
-                  {t === "custom" && (
+                  {t === "custom" ? (
                     <Edit2 className="h-3 w-3 text-muted-foreground mt-1 shrink-0" />
+                  ) : (
+                    <button
+                      title={`שכפל "${QUIZ_THEME_META[t].label}" לעריכה`}
+                      className="shrink-0 mt-0.5 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setCustomQuizTheme(BUILTIN_THEME_SEEDS[t]!);
+                        setQuizTheme("custom");
+                        setThemeDropdownOpen(false);
+                        setThemeEditorOpen(true);
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
                   )}
                 </DropdownMenuItem>
               ))}
@@ -973,12 +1054,20 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
 
       <div className={cn("relative flex items-center justify-center rounded-2xl border-2", isMobile ? "p-3 pt-8 overflow-y-auto" : "min-h-[200px] p-6 pt-10", questionAreaCls)} style={questionAreaStyle}>
         {/* Top-right corner: card type badge */}
-        <Badge variant="outline" className="absolute top-3 right-3 border-gold text-navy text-xs">
+        <Badge
+          variant="outline"
+          className="absolute top-3 right-3 border-gold text-navy text-xs"
+          style={quizTheme === "custom" ? { borderColor: customQuizTheme.badgeBorderColor, color: customQuizTheme.badgeTextColor } : {}}
+        >
           {card.type === "flashcard" ? "כרטיסיה" : card.type === "multiple" ? "אמריקאית" : card.type === "boolean" ? "נכון/לא נכון" : "משולבת"}
         </Badge>
         {/* Top-left corner: category breadcrumb */}
         {categoryBreadcrumb && (
-          <span className="absolute top-3 left-3 text-xs text-muted-foreground max-w-[55%] truncate" dir="rtl">
+          <span
+            className="absolute top-3 left-3 text-xs text-muted-foreground max-w-[55%] truncate"
+            dir="rtl"
+            style={quizTheme === "custom" ? { color: customQuizTheme.breadcrumbColor } : {}}
+          >
             {categoryBreadcrumb}
           </span>
         )}
@@ -1626,6 +1715,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
       </div>
 
       <QuizThemeEditorDialog
+        key={themeEditorOpen ? "editor-open" : "editor-closed"}
         open={themeEditorOpen}
         value={customQuizTheme}
         onSave={saveCustomTheme}
