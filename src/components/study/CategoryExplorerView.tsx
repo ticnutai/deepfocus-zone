@@ -1046,37 +1046,37 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
     return m;
   }, [directCardsByName]);
 
-  const directCardCounts = useMemo(() => {
-    const directCounts = new Map<string, number>();
-    for (const [name, cards] of directCardsByName.entries()) {
-      directCounts.set(name, cards.length);
-    }
-    return directCounts;
-  }, [directCardsByName]);
-
   const counts = useMemo(() => {
-    const memoByCatId = new Map<string, number>();
-    const countById = (id: string): number => {
-      const cached = memoByCatId.get(id);
+    // Use Set<string> deduplication to avoid counting cards that are tagged
+    // at multiple hierarchy levels (e.g. cat:ש"ס + cat:ברכות + cat:ברכות ב.)
+    // multiple times when computing the recursive count for an ancestor.
+    const memoById = new Map<string, Set<string>>();
+    const cardSetById = (id: string): Set<string> => {
+      const cached = memoById.get(id);
       if (cached != null) return cached;
       const cat = categoriesById.get(id);
-      if (!cat) return 0;
-      let total = directCardCounts.get(cat.name) ?? 0;
-      for (const child of childrenByParent.get(id) ?? []) {
-        total += countById(child.id);
+      const result = new Set<string>();
+      if (!cat) { memoById.set(id, result); return result; }
+      for (const card of directCardsByName.get(cat.name) ?? []) {
+        result.add(card.id);
       }
-      memoByCatId.set(id, total);
-      return total;
+      for (const child of childrenByParent.get(id) ?? []) {
+        for (const cid of cardSetById(child.id)) {
+          result.add(cid);
+        }
+      }
+      memoById.set(id, result);
+      return result;
     };
 
     return {
       get: (name: string): number => {
         const cat = categoriesByName.get(name);
-        if (!cat) return directCardCounts.get(name) ?? 0;
-        return countById(cat.id);
+        if (!cat) return directCardsByName.get(name)?.length ?? 0;
+        return cardSetById(cat.id).size;
       },
     };
-  }, [categoriesById, categoriesByName, childrenByParent, directCardCounts]);
+  }, [categoriesById, categoriesByName, childrenByParent, directCardsByName]);
 
   const masteryOfCat = useCallback((name: string): number | null => {
     const a = aggregates.get(name);
