@@ -301,7 +301,7 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
                 dir="rtl"
               >
                 <p className="text-[11px] text-muted-foreground mb-1">
-                  {date.getDate()}/{month + 1}/{year} · {hebDay} {Locale.gettext(hebDate.getMonthName(), "he")}
+                  {date.getDate()}/{date.getMonth() + 1}/{date.getFullYear()} · {hebDay} {Locale.gettext(hebDate.getMonthName(), "he")}
                 </p>
                 {dayData && <p className="text-sm font-semibold">{dayData.unit}</p>}
                 {dayData && (isDone
