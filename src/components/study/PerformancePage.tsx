@@ -269,8 +269,8 @@ function PrevArrow({ current, previous }: { current: number; previous?: number }
   if (previous == null) return null;
   const diff = current - previous;
   if (Math.abs(diff) < 2) return <Minus className="h-3.5 w-3.5 text-muted-foreground/50" />;
-  if (diff < 0) return <TrendingDown className="h-3.5 w-3.5 text-emerald-600" title={`${diff}ms מהסיבוב הקודם`} />;
-  return <TrendingUp className="h-3.5 w-3.5 text-red-500" title={`+${diff}ms מהסיבוב הקודם`} />;
+  if (diff < 0) return <span title={`${diff}ms מהסיבוב הקודם`}><TrendingDown className="h-3.5 w-3.5 text-emerald-600" /></span>;
+  return <span title={`+${diff}ms מהסיבוב הקודם`}><TrendingUp className="h-3.5 w-3.5 text-red-500" /></span>;
 }
 
 const GROUP_LABELS: Record<TestGroup, string> = {

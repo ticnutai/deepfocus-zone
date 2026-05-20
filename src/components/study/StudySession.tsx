@@ -776,7 +776,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56" dir="rtl">
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>עיצוב</DropdownMenuLabel>
                 {(["classic", "millionaire", "navy", "dark", "colorful", "custom"] as QuizTheme[]).map((t) => (
                   <DropdownMenuItem key={t} onClick={() => { setQuizTheme(t); if (t === "custom") setThemeEditorOpen(true); }}
@@ -793,7 +793,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                 <DropdownMenuLabel>תצוגה</DropdownMenuLabel>
                 <DropdownMenuItem onClick={() => setViewMode("classic")} className={cn(viewMode === "classic" && "font-bold bg-secondary")}>קלאסי</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setViewMode("flip")} className={cn(viewMode === "flip" && "font-bold bg-secondary")}>כרטיס מתהפך</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setViewMode("list")} className={cn(viewMode === "list" && "font-bold bg-secondary")}>רשימה</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode("list")} className={cn((viewMode as string) === "list" && "font-bold bg-secondary")}>רשימה</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setViewMode("test")} className={cn(viewMode === "test" && "font-bold bg-secondary")}>מבחן</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>יישור שאלה</DropdownMenuLabel>

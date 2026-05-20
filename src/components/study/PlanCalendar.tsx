@@ -113,9 +113,9 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
     const hEnd = new HDate(end);
     const hStartName = Locale.gettext(hStart.getMonthName(), "he");
     const hEndName = Locale.gettext(hEnd.getMonthName(), "he");
-    const hYear = hStart.getFullYear();
+    const hYearStart = hStart.getFullYear();
     const toHebYear = (y: number) => `ה'${gematriya(y % 1000)}`;
-    const hebYearStr = toHebYear(hYear);
+    const hebYearStr = toHebYear(hYearStart);
     const hebMonthLabel = hStartName === hEndName ? hStartName : `${hStartName} – ${hEndName}`;
 
     return { parshaByIso, holidayByIso, hebMonthLabel, hebYearStr };
@@ -301,7 +301,7 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
                 dir="rtl"
               >
                 <p className="text-[11px] text-muted-foreground mb-1">
-                  {date.getDate()}/{month + 1}/{year} · {hebDay} {Locale.gettext(hebDate.getMonthName(), "he")}
+                  {date.getDate()}/{date.getMonth() + 1}/{date.getFullYear()} · {hebDay} {Locale.gettext(hebDate.getMonthName(), "he")}
                 </p>
                 {dayData && <p className="text-sm font-semibold">{dayData.unit}</p>}
                 {dayData && (isDone
