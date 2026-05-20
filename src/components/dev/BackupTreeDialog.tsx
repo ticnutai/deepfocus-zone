@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, ChevronRight, Download, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toGematria } from "@/lib/study/shasGen";
 import type { StudyState } from "@/lib/study/types";
 import {
   buildSelectionTree,
@@ -43,6 +44,7 @@ function toCheckedProp(state: CheckState): boolean | "indeterminate" {
 function DafRow({
   groupId, daf, count, selected, onToggle,
 }: { groupId: string; daf: number; count: number; selected: boolean; onToggle: (id: string, val: boolean) => void }) {
+  const dafLabel = `${toGematria(daf)}'`;
   return (
     <div
       dir="rtl"
@@ -54,7 +56,7 @@ function DafRow({
         onCheckedChange={(v) => onToggle(groupId, !!v)}
         onClick={(e) => e.stopPropagation()}
       />
-      <span className="text-xs text-muted-foreground">דף {daf}</span>
+      <span className="text-xs text-muted-foreground">דף {dafLabel}</span>
       <span className="text-[11px] text-muted-foreground/50 mr-auto">{count}</span>
     </div>
   );

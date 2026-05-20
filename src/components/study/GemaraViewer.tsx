@@ -3,6 +3,7 @@ import { ExternalLink, FileText, BookOpen, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { fetchSefariaDaf, sefariaUrl, isSefariaSupported, masechtaSlug } from "@/lib/study/sefaria";
+import { toGematria } from "@/lib/study/shasGen";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -61,13 +62,14 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
   }, [source, masechta, daf, amud]);
 
   const amudLabel = amud === 1 ? 'ע"א' : 'ע"ב';
+  const dafLabel = `${toGematria(daf)}'`;
 
   return (
     <div className={cn("flex flex-col h-full bg-card border-2 border-gold/30 rounded-xl overflow-hidden", className)} dir="rtl">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gold/30 bg-gold/5">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <BookOpen className="h-4 w-4 text-gold" />
-          {masechta} · דף {daf} · {amudLabel}
+          {masechta} · דף {dafLabel} · {amudLabel}
         </div>
         <div className="flex items-center gap-1">
           <ToggleGroup type="single" value={source} onValueChange={(v) => v && setSource(v as Source)} size="sm">
@@ -91,7 +93,7 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
           <iframe
             src={pdfUrl}
             className="w-full h-full border-0"
-            title={`גמרא ${masechta} ${daf}${amudLabel}`}
+            title={`גמרא ${masechta} ${dafLabel}${amudLabel}`}
           />
         )}
         {source === "text" && (

@@ -55,6 +55,7 @@ export function AIQuestionGenerator() {
 
   const selectedMasechet = SHAS_BAVLI.find((m) => m.name === masechet);
   const maxDaf = selectedMasechet?.pages ?? 120;
+  const dafLabel = `${toHebrewNumeral(daf)}'`;
 
   const textForClaude = loadedText
     ? textMode === "aramaic"
@@ -271,7 +272,7 @@ export function AIQuestionGenerator() {
           className="border-gold/50 w-full gap-2"
         >
           {textLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-          {textLoading ? "טוען מ-Sefaria..." : `טען טקסט — ${masechet} דף ${daf} ${AMUD_LABELS[amud]}`}
+          {textLoading ? "טוען מ-Sefaria..." : `טען טקסט — ${masechet} דף ${dafLabel} ${AMUD_LABELS[amud]}`}
         </Button>
         {textError && <p className="text-xs text-red-400">{textError}</p>}
       </Card>
@@ -339,7 +340,7 @@ export function AIQuestionGenerator() {
             <p className="text-sm font-semibold text-foreground">
               {questions.length} שאלות נוצרו
               <span className="text-xs text-muted-foreground mr-2">
-                — {masechet} דף {daf} {AMUD_LABELS[amud]}
+                — {masechet} דף {dafLabel} {AMUD_LABELS[amud]}
               </span>
             </p>
             <Badge

@@ -52,6 +52,7 @@ function DafLearningTabInner() {
   const [studyOpen, setStudyOpen] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
+  const [countsReady, setCountsReady] = useState(false);
 
   // שמור בחירה
   useEffect(() => { saveState({ seder, masechta, daf, amud, layout, practiceMode, practiceScale }); }, [seder, masechta, daf, amud, layout, practiceMode, practiceScale]);
@@ -69,10 +70,17 @@ function DafLearningTabInner() {
   const currentMasechet = SHAS_BAVLI.find((m) => m.name === masechta);
   const totalPages = currentMasechet?.pages ?? 0;
 
+  // כדי שהטאב יופיע מיידית: דוחים את חישובי הספירות לרגע שאחרי הציור הראשון.
+  useEffect(() => {
+    setCountsReady(false);
+    const timer = window.setTimeout(() => setCountsReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [state.cards, state.categories, masechta, totalPages]);
+
   // ספירת כרטיסים פר-דף (לבחירה מהירה)
   const dafCounts = useMemo(
-    () => countCardsPerDaf(state.cards, state.categories, masechta, totalPages),
-    [state.cards, state.categories, masechta, totalPages],
+    () => (countsReady ? countCardsPerDaf(state.cards, state.categories, masechta, totalPages) : new Map()),
+    [state.cards, state.categories, masechta, totalPages, countsReady],
   );
 
   // כרטיסים לעמוד הנוכחי
@@ -319,20 +327,25 @@ function DafLearningTabInner() {
   );
 }
 
-type LearnMode = "daf" | "mishna" | "chumash";
+type LearnMode = "shas" | "mishna" | "chumash";
 const MODE_STORAGE_KEY = "daf-learning-mode";
 
 export function DafLearningTab() {
   const [mode, setMode] = useState<LearnMode>(() => {
-    try { return (localStorage.getItem(MODE_STORAGE_KEY) as LearnMode) || "daf"; }
-    catch { return "daf"; }
+    try {
+      const stored = localStorage.getItem(MODE_STORAGE_KEY);
+      if (stored === "daf") return "shas";
+      if (stored === "shas" || stored === "mishna" || stored === "chumash") return stored;
+      return "shas";
+    }
+    catch { return "shas"; }
   });
   useEffect(() => {
     try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch { /* ignore */ }
   }, [mode]);
 
   const tabs: { id: LearnMode; label: string; icon: typeof BookText }[] = [
-    { id: "daf",     label: "דף (ש\"ס)", icon: Layers },
+    { id: "shas",    label: "ש\"ס", icon: Layers },
     { id: "mishna",  label: "משנה",      icon: BookText },
     { id: "chumash", label: "חומש",      icon: Scroll },
   ];
@@ -359,7 +372,7 @@ export function DafLearningTab() {
         })}
       </ToggleGroup>
 
-      {mode === "daf"     && <DafLearningTabInner />}
+      {mode === "shas"    && <DafLearningTabInner />}
       {mode === "mishna"  && <MishnaLearningTab />}
       {mode === "chumash" && <ChumashLearningTab />}
     </div>

@@ -1,6 +1,8 @@
 import type { Card, Category } from "./types";
 import { displayCategoryName, dafLabel } from "./shasGen";
 
+type DafBucket = { a: Set<string>; b: Set<string>; generic: Set<string> };
+
 /**
  * מסנן כרטיסים השייכים לדף/עמוד נתון של מסכת.
  * תומך גם בשיוך מובנה (masechta/daf/amud) וגם בתגיות `cat:<categoryName>` ישנות.
@@ -75,10 +77,112 @@ export function countCardsPerDaf(
   totalPages: number,
 ): Map<number, { a: number; b: number; total: number }> {
   const out = new Map<number, { a: number; b: number; total: number }>();
+  const cats = categories ?? [];
+  const catsById = new Map(cats.map((c) => [c.id, c]));
+
+  const variantToDaf = new Map<string, number>();
   for (let d = 2; d <= totalPages + 1; d++) {
-    const a = filterCardsByDafAmud(cards, categories, masechta, d, 1).length;
-    const b = filterCardsByDafAmud(cards, categories, masechta, d, 2).length;
-    if (a + b > 0) out.set(d, { a, b, total: a + b });
+    const lbl = dafLabel(d);
+    const noDot = lbl.replace(".", "");
+    variantToDaf.set(lbl, d);
+    variantToDaf.set(noDot, d);
+    variantToDaf.set(`דף ${noDot}`, d);
   }
+
+  const buckets = new Map<number, DafBucket>();
+  const getBucket = (d: number): DafBucket => {
+    let b = buckets.get(d);
+    if (!b) {
+      b = { a: new Set<string>(), b: new Set<string>(), generic: new Set<string>() };
+      buckets.set(d, b);
+    }
+    return b;
+  };
+
+  for (const cat of cats) {
+    let cur: Category | undefined = cat;
+    let guard = 0;
+    let hasMasechta = false;
+    let foundDaf: number | null = null;
+    let foundAmud: 1 | 2 | null = null;
+
+    while (cur && guard < 32) {
+      const leaf = displayCategoryName(cur.name);
+      if (leaf === masechta) hasMasechta = true;
+      if (leaf === 'ע"א') foundAmud = 1;
+      else if (leaf === 'ע"ב') foundAmud = 2;
+
+      const d = variantToDaf.get(leaf);
+      if (d) foundDaf = d;
+
+      cur = cur.parentId ? catsById.get(cur.parentId) : undefined;
+      guard += 1;
+    }
+
+    if (!hasMasechta || !foundDaf) continue;
+    const bucket = getBucket(foundDaf);
+    if (foundAmud === 1) bucket.a.add(cat.name);
+    else if (foundAmud === 2) bucket.b.add(cat.name);
+    else bucket.generic.add(cat.name);
+  }
+
+  for (const card of cards) {
+    const structuredMatch = card.masechta === masechta && !!card.daf;
+    if (structuredMatch) {
+      const d = card.daf as number;
+      if (d >= 2 && d <= totalPages + 1) {
+        const current = out.get(d) ?? { a: 0, b: 0, total: 0 };
+        if (card.amud === 1) {
+          current.a += 1;
+          current.total += 1;
+        } else if (card.amud === 2) {
+          current.b += 1;
+          current.total += 1;
+        } else {
+          // Preserve legacy behavior where cards without explicit amud appear in both badges.
+          current.a += 1;
+          current.b += 1;
+          current.total += 2;
+        }
+        out.set(d, current);
+      }
+      continue;
+    }
+
+    if (!card.tags || card.tags.length === 0) continue;
+
+    const byDafHit = new Map<number, { hasA: boolean; hasB: boolean }>();
+    for (const tag of card.tags) {
+      if (!tag.startsWith("cat:")) continue;
+      const catName = tag.slice(4);
+      for (const [d, bucket] of buckets) {
+        const hitA = bucket.a.has(catName) || bucket.generic.has(catName);
+        const hitB = bucket.b.has(catName) || bucket.generic.has(catName);
+        if (!hitA && !hitB) continue;
+        const hit = byDafHit.get(d) ?? { hasA: false, hasB: false };
+        if (hitA) hit.hasA = true;
+        if (hitB) hit.hasB = true;
+        byDafHit.set(d, hit);
+      }
+    }
+
+    for (const [d, hit] of byDafHit) {
+      const current = out.get(d) ?? { a: 0, b: 0, total: 0 };
+      if (hit.hasA) {
+        current.a += 1;
+        current.total += 1;
+      }
+      if (hit.hasB) {
+        current.b += 1;
+        current.total += 1;
+      }
+      out.set(d, current);
+    }
+  }
+
+  for (const [d, counts] of Array.from(out.entries())) {
+    if (d < 2 || d > totalPages + 1 || counts.total === 0) out.delete(d);
+  }
+
   return out;
 }

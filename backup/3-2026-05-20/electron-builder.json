@@ -1,0 +1,36 @@
+{
+  "appId": "com.pashash.studyapp",
+  "productName": "פשש",
+  "directories": {
+    "output": "release",
+    "buildResources": "electron/build"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "asar": true,
+  "win": {
+    "target": [
+      { "target": "nsis", "arch": ["x64"] }
+    ],
+    "artifactName": "pashash-setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "פשש"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.education"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "category": "Education"
+  }
+}

@@ -1,3 +1,5 @@
+import { toHebrewNumeral } from "@/lib/ai/sefariaClient";
+
 export interface GeneratedQuestion {
   question: string;
   options: string[];     // exactly 4
@@ -14,7 +16,7 @@ export async function generateQuestionsWithClaude(
   count = 10,
 ): Promise<GeneratedQuestion[]> {
   const amudLabel = amud === "a" ? "עמוד א" : "עמוד ב";
-  const dafLabel = String(daf); // numeric; display as-is
+  const dafLabel = `${toHebrewNumeral(daf)}'`;
 
   const systemPrompt =
     "אתה מומחה לתלמוד בבלי ומומחה בהוראה. אתה מייצר שאלות בחינה איכותיות בעברית.";
