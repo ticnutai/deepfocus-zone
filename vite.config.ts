@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 // When BUILD_TARGET=electron, emit relative asset paths so the bundle works
@@ -15,7 +16,50 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [
+    react(),
+    mode === "development" && componentTagger(),
+    process.env.BUILD_TARGET !== "electron" && VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/hgjfpwdugvvtrfhycejv\.supabase\.co\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "supabase-api",
+              expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
+              networkTimeoutSeconds: 10,
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts",
+              expiration: { maxEntries: 20, maxAgeSeconds: 31536000 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
+      manifest: {
+        name: "מעקב למידה",
+        short_name: "פשש",
+        description: "מערכת לימוד וחזרות",
+        theme_color: "#1a1f2e",
+        background_color: "#1a1f2e",
+        display: "standalone",
+        start_url: "/",
+        lang: "he",
+        dir: "rtl",
+        icons: [
+          { src: "/favicon.ico", sizes: "48x48", type: "image/x-icon" },
+        ],
+      },
+    }),
+  ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

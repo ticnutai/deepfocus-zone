@@ -10,19 +10,8 @@ import {
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { StudyTab } from "@/components/study/StudyTab";
-import { CardsManager } from "@/components/study/CardsManager";
-import { CardsAndCategoriesPage } from "@/components/study/CardsAndCategoriesPage";
-import { SmartSearch } from "@/components/study/SmartSearch";
-import { StudyPlansCard } from "@/components/study/StudyPlansCard";
-import { QuizPlansCard } from "@/components/study/QuizPlansCard";
-import { TodayReviewsCard } from "@/components/study/TodayReviewsCard";
-import { InsightsCard } from "@/components/study/InsightsCard";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
-import { TaskCard } from "@/components/study/TaskCard";
-import { HeatmapPanel } from "@/components/study/HeatmapPanel";
-import { ReviewCalendar } from "@/components/study/ReviewCalendar";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
@@ -57,6 +46,17 @@ const SettingsPanel = lazy(() => import("@/components/settings/SettingsPanel").t
 const AiCardCapture = lazy(() => import("@/components/study/AiCardCapture").then(m => ({ default: m.AiCardCapture })));
 const SystemRubric = lazy(() => import("@/components/study/SystemRubric").then(m => ({ default: m.SystemRubric })));
 const AIQuestionGenerator = lazy(() => import("@/components/ai/AIQuestionGenerator").then(m => ({ default: m.AIQuestionGenerator })));
+const StudyTab = lazy(() => import("@/components/study/StudyTab").then(m => ({ default: m.StudyTab })));
+const CardsManager = lazy(() => import("@/components/study/CardsManager").then(m => ({ default: m.CardsManager })));
+const CardsAndCategoriesPage = lazy(() => import("@/components/study/CardsAndCategoriesPage").then(m => ({ default: m.CardsAndCategoriesPage })));
+const SmartSearch = lazy(() => import("@/components/study/SmartSearch").then(m => ({ default: m.SmartSearch })));
+const StudyPlansCard = lazy(() => import("@/components/study/StudyPlansCard").then(m => ({ default: m.StudyPlansCard })));
+const QuizPlansCard = lazy(() => import("@/components/study/QuizPlansCard").then(m => ({ default: m.QuizPlansCard })));
+const TodayReviewsCard = lazy(() => import("@/components/study/TodayReviewsCard").then(m => ({ default: m.TodayReviewsCard })));
+const InsightsCard = lazy(() => import("@/components/study/InsightsCard").then(m => ({ default: m.InsightsCard })));
+const TaskCard = lazy(() => import("@/components/study/TaskCard").then(m => ({ default: m.TaskCard })));
+const HeatmapPanel = lazy(() => import("@/components/study/HeatmapPanel").then(m => ({ default: m.HeatmapPanel })));
+const ReviewCalendar = lazy(() => import("@/components/study/ReviewCalendar").then(m => ({ default: m.ReviewCalendar })));
 
 const QUOTES = [
   { text: "הבחירה שלך, לא המזל שלך, קובעת את גורלך", author: "ג'ין ניד'" },
@@ -1074,14 +1074,18 @@ const Index = () => {
                 <SettingsPanel />
               </Suspense>
             ) : active === "cards" || active === "categories" ? (
-              <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
+              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
+              </Suspense>
             ) : active === "search" ? (
               <div className="space-y-6">
                 <div className="text-center space-y-1 animate-fade-in">
                   <h1 className="font-display text-2xl font-bold text-gold">חיפוש חכם</h1>
                   <p className="text-muted-foreground text-sm">חפש שאלות, תשובות, תגיות, קטגוריות ומערכות · קיצור: Ctrl+K</p>
                 </div>
-                <SmartSearch variant="page" />
+                <Suspense fallback={<Skeleton className="h-12 w-full rounded-xl" />}>
+                  <SmartSearch variant="page" />
+                </Suspense>
               </div>
             ) : active === "admin" ? (
               <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
@@ -1170,7 +1174,11 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="study" className="mt-6">
-                {visitedTabs.has("study") && <StudyTab showBadge={showStudiedBadge} onToggleBadge={toggleStudiedBadge} />}
+                {visitedTabs.has("study") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <StudyTab showBadge={showStudiedBadge} onToggleBadge={toggleStudiedBadge} />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="daf" className="mt-6" forceMount>
@@ -1182,7 +1190,11 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="cards" className="mt-6" forceMount>
-                {visitedTabs.has("cards") && <CardsManager />}
+                {visitedTabs.has("cards") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <CardsManager />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="goals" className="mt-6">
@@ -1212,7 +1224,11 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="categories" className="mt-6" forceMount>
-                {visitedTabs.has("categories") && <CardsAndCategoriesPage />}
+                {visitedTabs.has("categories") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <CardsAndCategoriesPage />
+                  </Suspense>
+                )}
               </TabsContent>
 
               {["achievements", "ai"].map((v) => (
@@ -1308,14 +1324,16 @@ const Index = () => {
             <DialogTitle className="text-right text-base">חיפוש חכם</DialogTitle>
           </DialogHeader>
           <div className="p-4 pt-2">
-            <SmartSearch
-              variant="modal"
-              onPick={(hit) => {
-                setSearchModalOpen(false);
-                if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
-                else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
-              }}
-            />
+            <Suspense fallback={<Skeleton className="h-12 w-full rounded-xl" />}>
+              <SmartSearch
+                variant="modal"
+                onPick={(hit) => {
+                  setSearchModalOpen(false);
+                  if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
+                  else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
+                }}
+              />
+            </Suspense>
           </div>
         </DialogContent>
       </Dialog>

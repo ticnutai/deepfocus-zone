@@ -61,6 +61,8 @@ export default function Auth() {
 
   const signIn = async () => {
     setBusy(true);
+    // Preload the main app bundle while the auth request is in-flight
+    void import("./Index");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) return toast.error(error.message);
