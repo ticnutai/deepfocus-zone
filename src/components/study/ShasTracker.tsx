@@ -97,7 +97,7 @@ export function ShasTracker() {
   const todayDateStr = new Date().toISOString().slice(0, 10);
   const expectedPosition = useMemo(
     () => plan ? computeExpectedShasPosition(plan, todayDateStr) : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [plan, todayDateStr],
   );
 

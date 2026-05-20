@@ -64,7 +64,7 @@ export async function fetchSefariaDaf(
   if (!res.ok) throw new Error(`Sefaria fetch failed: ${res.status}`);
   const data = await res.json();
   const versions = (data?.versions ?? []) as Array<{ text: unknown }>;
-  let raw: unknown = versions[0]?.text ?? data?.text ?? [];
+  const raw: unknown = versions[0]?.text ?? data?.text ?? [];
   // השטחה — ייתכן מערך מקונן
   const flat: string[] = [];
   const walk = (v: unknown) => {

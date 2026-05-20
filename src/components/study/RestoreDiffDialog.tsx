@@ -584,7 +584,7 @@ export function RestoreDiffDialog({ open, onOpenChange, snapshot, onRuntimeStatu
       };
 
       const perf = PERF_CONFIGS[perfMode];
-      let cardConcurrency = perf.initialConcurrency;
+      const cardConcurrency = perf.initialConcurrency;
       setActiveCardConcurrency(cardConcurrency);
 
       const maybeThrottle = async () => {

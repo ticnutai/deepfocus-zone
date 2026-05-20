@@ -447,7 +447,7 @@ export function PerformancePage() {
       setLabel("");
       setRunning(false);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [state.cards, state.categories, history, label, enabledGroups, thresholds, isTestFailing],
   );
 

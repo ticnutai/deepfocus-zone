@@ -44,7 +44,7 @@ export function cardWeakness(card: Card): number {
 
 /** בחירת קלפים לסשן אחד לפי plan */
 export function buildSession(allCards: Card[], plan: QuizPlan, count: number, attempts: QuizAttempt[]): Card[] {
-  let pool = filterCardsForPlan(allCards, plan);
+  const pool = filterCardsForPlan(allCards, plan);
   if (!pool.length) return [];
 
   const wrongIds = new Set<string>();

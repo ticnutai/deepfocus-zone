@@ -71,7 +71,7 @@ export function CategoryStudyPickerDialog({ open, onOpenChange, categoryName, on
 
   // ─── Init on dialog open ─────────────────────────────────────────────────────
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useMemo(() => {
     if (open && rootCat) {
       // Select all by default

@@ -610,7 +610,7 @@ export function SupabaseInspectorPage() {
   };
 
   const getSortedSchema = () => {
-    let sorted = [...SCHEMA];
+    const sorted = [...SCHEMA];
     if (!sortField || !sortDir) return sorted;
 
     return sorted.sort((a, b) => {
