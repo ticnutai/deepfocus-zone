@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo } from "react";
 import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
@@ -40,7 +40,7 @@ function saveState(s: SavedState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 
-function DafLearningTabInner() {
+function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const { state } = useStudy();
   const saved = useMemo(() => loadSaved(), []);
 
@@ -179,7 +179,7 @@ function DafLearningTabInner() {
     </Card>
   );
 
-  const gemara = <GemaraViewer masechta={masechta} daf={daf} amud={amud} className="h-full" />;
+  const gemara = <GemaraViewer masechta={masechta} daf={daf} amud={amud} className="h-full" isActive={isVisible} />;
 
   const startPractice = () => setStudyOpen(true);
   const practiceModeMenu = (
@@ -330,7 +330,7 @@ function DafLearningTabInner() {
 type LearnMode = "shas" | "mishna" | "chumash";
 const MODE_STORAGE_KEY = "daf-learning-mode";
 
-export function DafLearningTab() {
+function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
   const [mode, setMode] = useState<LearnMode>(() => {
     try {
       const stored = localStorage.getItem(MODE_STORAGE_KEY);
@@ -372,9 +372,12 @@ export function DafLearningTab() {
         })}
       </ToggleGroup>
 
-      {mode === "shas"    && <DafLearningTabInner />}
+      {mode === "shas"    && <DafLearningTabInner isVisible={isVisible} />}
       {mode === "mishna"  && <MishnaLearningTab />}
       {mode === "chumash" && <ChumashLearningTab />}
     </div>
   );
 }
+
+const DafLearningTabMemo = memo(DafLearningTab);
+export { DafLearningTabMemo as DafLearningTab };

@@ -1158,11 +1158,11 @@ const Index = () => {
                 {visitedTabs.has("study") && <StudyTab showBadge={showStudiedBadge} onToggleBadge={toggleStudiedBadge} />}
               </TabsContent>
 
-              <TabsContent value="daf" className="mt-6">
-                {visitedTabs.has("daf") && <DafLearningTab />}
+              <TabsContent value="daf" className="mt-6" forceMount>
+                {visitedTabs.has("daf") && <DafLearningTab isVisible={activeTab === "daf"} />}
               </TabsContent>
 
-              <TabsContent value="cards" className="mt-6">
+              <TabsContent value="cards" className="mt-6" forceMount>
                 {visitedTabs.has("cards") && <CardsManager />}
               </TabsContent>
 
@@ -1184,7 +1184,7 @@ const Index = () => {
                 {visitedTabs.has("analytics") && <KnowledgeAnalytics />}
               </TabsContent>
 
-              <TabsContent value="categories" className="mt-6">
+              <TabsContent value="categories" className="mt-6" forceMount>
                 {visitedTabs.has("categories") && <CardsAndCategoriesPage />}
               </TabsContent>
 
@@ -1196,7 +1196,7 @@ const Index = () => {
                 </TabsContent>
               ))}
 
-              <TabsContent value="backup" className="mt-6">
+              <TabsContent value="backup" className="mt-6" forceMount>
                 {visitedTabs.has("backup") && <BackupRestorePage />}
               </TabsContent>
             </Tabs>

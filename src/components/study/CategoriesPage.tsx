@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense, memo } from "react";
 import { FolderTree, BookOpen, Tag, Plus, Pencil, Trash2, Play, ArrowDownAZ, Calendar, Star, Pin, Hand, ArrowUpDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,7 @@ const TYPE_LABEL: Record<string, string> = {
   combo: "משולבת",
 };
 
-export function CategoriesPage() {
+function CategoriesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
 
@@ -588,3 +588,6 @@ export function CategoriesPage() {
     </div>
   );
 }
+
+const CategoriesPageMemo = memo(CategoriesPage);
+export { CategoriesPageMemo as CategoriesPage };

@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { Eye, Check, X, ChevronLeft, ChevronRight, RotateCcw, Trophy, Settings2, LayoutGrid, Clock, ChevronDown, Calendar as CalendarIcon, RefreshCw, Timer, TrendingUp, TrendingDown, Minus, List, Grid2x2, Zap, Palette, Edit2, AlignRight, AlignCenter, AlignLeft, Pause, Play } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { QuizThemeEditorDialog, CustomQuizTheme, DEFAULT_CUSTOM_THEME, FONT_FAMILY_MAP, FONT_SIZE_MAP, FONT_WEIGHT_MAP, BORDER_RADIUS_MAP } from "./QuizThemeEditor";
 import { QuizTypographyPanel, QuizTypography, loadTypography, storeTypography, typographyToStyle, typographyToBgStyle, ANSWER_TYPOGRAPHY_KEY, loadAnswerTypography } from "./QuizTypographyPanel";
 import { Card } from "@/components/ui/card";
@@ -157,6 +158,7 @@ interface Props {
 
 export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Props) {
   const { state, reviewCard, setUiPref } = useStudy();
+  const isMobile = useIsMobile();
 
   const comboPrefForQueue = (state.uiPrefs?.studyComboPref as ComboPref | undefined)
     ?? ((typeof window !== "undefined" ? localStorage.getItem(COMBO_PREF_KEY) : null) as ComboPref | null)
@@ -236,6 +238,14 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
     setTimerRunning(true);
     setElapsed(getElapsedSeconds());
   }, [getElapsedSeconds, timerRunning]);
+
+  // Lock body scroll on mobile while session is fullscreen
+  useEffect(() => {
+    if (!isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isMobile]);
 
   // Quick Review: optional countdown timer that auto-ends the session.
   useEffect(() => {
@@ -735,8 +745,79 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
   };
 
   return (
-    <Card className="gold-frame p-6 space-y-5 animate-fade-in" dir="rtl">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+    <Card className={cn("animate-fade-in", isMobile ? "fixed inset-0 z-50 rounded-none border-none bg-background flex flex-col gap-2 p-3 overflow-hidden" : "gold-frame p-6 space-y-5")} dir="rtl">
+      {/* ── Mobile compact toolbar ── */}
+      {isMobile && (
+        <div className="shrink-0 flex items-center justify-between gap-1 pt-1">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={onExit}>
+            <X className="h-4 w-4 ml-1" /> יציאה
+          </Button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">{idx + 1}/{queue.length}</span>
+            {timeLimitSec ? (() => {
+              const remain = Math.max(0, timeLimitSec - elapsed);
+              const danger = remain <= 30;
+              return (
+                <span className={cn("text-xs font-bold border rounded px-1.5 py-0.5 flex items-center gap-0.5",
+                  danger ? "border-destructive/60 text-destructive animate-pulse" : "border-gold/50 text-gold")}>
+                  <Timer className="h-3 w-3" />{Math.floor(remain / 60)}:{String(remain % 60).padStart(2, "0")}
+                </span>
+              );
+            })() : (
+              <span className="text-xs text-muted-foreground border border-gold/30 rounded px-1.5 py-0.5 flex items-center gap-0.5">
+                <Timer className="h-3 w-3 text-gold" />{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1">
+                  <Settings2 className="h-3.5 w-3.5 text-gold" />
+                  <span className="text-xs">הגדרות</span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56" dir="rtl">
+                <DropdownMenuLabel>עיצוב</DropdownMenuLabel>
+                {(["classic", "millionaire", "navy", "dark", "colorful", "custom"] as QuizTheme[]).map((t) => (
+                  <DropdownMenuItem key={t} onClick={() => { setQuizTheme(t); if (t === "custom") setThemeEditorOpen(true); }}
+                    className={cn("gap-2", quizTheme === t && "font-bold bg-secondary")}>
+                    <span>{QUIZ_THEME_META[t].icon}</span>{QUIZ_THEME_META[t].label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>מסלול שאלות</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => setComboPref("flash")} className={cn("gap-2", comboPref === "flash" && "font-bold bg-secondary")}><Eye className="h-4 w-4" /> רק תשובה פתוחה</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setComboPref("multi")} className={cn("gap-2", comboPref === "multi" && "font-bold bg-secondary")}><Check className="h-4 w-4" /> רק בחירה מרובה</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setComboPref("both")} className={cn("gap-2", comboPref === "both" && "font-bold bg-secondary")}><RotateCcw className="h-4 w-4" /> שניהם</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>תצוגה</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => setViewMode("classic")} className={cn(viewMode === "classic" && "font-bold bg-secondary")}>קלאסי</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode("flip")} className={cn(viewMode === "flip" && "font-bold bg-secondary")}>כרטיס מתהפך</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode("list")} className={cn(viewMode === "list" && "font-bold bg-secondary")}>רשימה</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode("test")} className={cn(viewMode === "test" && "font-bold bg-secondary")}>מבחן</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>יישור שאלה</DropdownMenuLabel>
+                {(["right", "center", "left"] as QuestionAlign[]).map((a) => (
+                  <DropdownMenuItem key={a} onClick={() => { setQuestionAlign(a); setTypography((prev) => { const t = { ...prev, align: a }; storeTypography(t); return t; }); try { localStorage.setItem(QUESTION_ALIGN_KEY, a); } catch { /* noop */ } }}
+                    className={cn(questionAlign === a && "font-bold bg-secondary")}>
+                    {a === "right" ? "ימין" : a === "center" ? "מרכז" : "שמאל"}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>מצב תשובה</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => setQuizAnswerMode("instant")} className={cn("gap-2", quizAnswerMode === "instant" && "font-bold bg-secondary")}><Zap className="h-4 w-4" /> מיידי</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setQuizAnswerMode("button")} className={cn("gap-2", quizAnswerMode === "button" && "font-bold bg-secondary")}><Check className="h-4 w-4" /> בדוק תשובה</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={toggleTimerRunning} className="gap-2">
+                  {timerRunning ? <><Pause className="h-4 w-4" /> עצור שעון</> : <><Play className="h-4 w-4" /> הפעל שעון</>}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      )}
+      {/* ── Desktop toolbar (hidden on mobile) ── */}
+      <div className={cn("flex items-center justify-between gap-2 flex-wrap", isMobile && "hidden")}>
         {/* RIGHT edge (RTL start): quiz theme picker + edit btn */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {/* Quiz theme picker */}
@@ -888,9 +969,9 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
           </span>
         </div>
       </div>
-      <Progress value={progress} className="h-2" />
+      <Progress value={progress} className={cn("h-2", isMobile && "shrink-0")} />
 
-      <div className={cn("relative min-h-[200px] flex items-center justify-center p-6 pt-10 rounded-2xl border-2", questionAreaCls)} style={questionAreaStyle}>
+      <div className={cn("relative flex items-center justify-center rounded-2xl border-2", isMobile ? "p-3 pt-8 overflow-y-auto" : "min-h-[200px] p-6 pt-10", questionAreaCls)} style={questionAreaStyle}>
         {/* Top-right corner: card type badge */}
         <Badge variant="outline" className="absolute top-3 right-3 border-gold text-navy text-xs">
           {card.type === "flashcard" ? "כרטיסיה" : card.type === "multiple" ? "אמריקאית" : card.type === "boolean" ? "נכון/לא נכון" : "משולבת"}
@@ -935,6 +1016,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
         </div>
       </div>
 
+      <div className={cn(isMobile ? "flex-1 min-h-0" : "shrink-0")}>
       {/* Flashcard */}
       {card.type === "flashcard" && (
         <div className="space-y-3" dir="rtl">
@@ -961,7 +1043,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
 
       {/* Multiple choice */}
       {card.type === "multiple" && (
-        <div className="space-y-3" dir="rtl">
+        <div className={cn("space-y-3", isMobile && "h-full min-h-0 flex flex-col")} dir="rtl">
           {/* Theme-aware options rendering */}
           {(() => {
             const isGrid = quizTheme === "millionaire" || quizTheme === "colorful" || (quizTheme === "custom" && customQuizTheme.optionsLayout === "grid");
@@ -974,8 +1056,13 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
               "space-y-2";
             const wrapperStyle: React.CSSProperties = (quizTheme === "custom" && customQuizTheme.optionWrapperBg)
               ? { backgroundColor: customQuizTheme.optionWrapperBg } : {};
+            const mobileWrapperCls = isMobile && isGrid
+              ? "flex-1 min-h-0 auto-rows-fr"
+              : isMobile
+              ? "flex-1 min-h-0 flex flex-col"
+              : "";
             return (
-              <div className={wrapperCls} style={wrapperStyle}>
+              <div className={cn(wrapperCls, mobileWrapperCls)} style={wrapperStyle}>
                 {card.options.map((opt, i) => {
                   const isSelected = selected.includes(i);
                   const isCorrect = card.correctIndices.includes(i);
@@ -1116,7 +1203,14 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                   btnStyle = { ...btnStyle, ...typographyToBgStyle(answerTypography) };
 
                   return (
-                    <button key={i} dir="rtl" disabled={revealed} onClick={handleClick} className={btnCls} style={btnStyle}>
+                    <button
+                      key={i}
+                      dir="rtl"
+                      disabled={revealed}
+                      onClick={handleClick}
+                      className={cn(btnCls, isMobile && (isGrid ? "h-full min-h-0" : "flex-1 min-h-0"))}
+                      style={btnStyle}
+                    >
                       {isGrid ? (
                         // Grid layout: text stacked, letter+icon at bottom
                         <>
@@ -1297,7 +1391,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
 
         // multi mode
         return (
-          <div className="space-y-3" dir="rtl">
+          <div className={cn("space-y-3", isMobile && "h-full min-h-0 flex flex-col")} dir="rtl">
             {/* Reuse the same theme-aware rendering as normal mode */}
             {(() => {
               const isGrid = quizTheme === "millionaire" || quizTheme === "colorful" || (quizTheme === "custom" && customQuizTheme.optionsLayout === "grid");
@@ -1310,8 +1404,13 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                 "space-y-2";
               const wrapperStyle: React.CSSProperties = (quizTheme === "custom" && customQuizTheme.optionWrapperBg)
                 ? { backgroundColor: customQuizTheme.optionWrapperBg } : {};
+              const mobileWrapperCls = isMobile && isGrid
+                ? "flex-1 min-h-0 auto-rows-fr"
+                : isMobile
+                ? "flex-1 min-h-0 flex flex-col"
+                : "";
               return (
-                <div className={wrapperCls} style={wrapperStyle}>
+                <div className={cn(wrapperCls, mobileWrapperCls)} style={wrapperStyle}>
                   {card.options!.map((opt, i) => {
                     const isSelected = selected.includes(i);
                     const isCorrect = card.correctIndices!.includes(i);
@@ -1446,9 +1545,12 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
                     };
                     btnStyle = { ...btnStyle, ...typographyToBgStyle(answerTypography) };
                     return (
-                      <button key={i} dir="rtl" disabled={revealed}
+                      <button
+                        key={i}
+                        dir="rtl"
+                        disabled={revealed}
                         onClick={handleClick}
-                        className={btnCls}
+                        className={cn(btnCls, isMobile && (isGrid ? "h-full min-h-0" : "flex-1 min-h-0"))}
                         style={btnStyle}
                       >
                         {isGrid ? (
@@ -1521,6 +1623,7 @@ export function StudySession({ deckId, mode, cardIds, onExit, timeLimitSec }: Pr
           </div>
         );
       })()}
+      </div>
 
       <QuizThemeEditorDialog
         open={themeEditorOpen}

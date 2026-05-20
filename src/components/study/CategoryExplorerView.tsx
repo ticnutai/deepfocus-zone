@@ -7,7 +7,7 @@ import {
   LayoutGrid, List as ListIcon, Columns3, Edit3, Copy, Trash2, FolderPlus,
   CheckSquare, Square, ArrowRightLeft, Star, Search, History, ArrowUpDown,
   Upload, Download, Sparkles, X, Eye, EyeOff, Layers, Pencil, ListChecks,
-  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal, PanelLeft, Pin, PinOff,
+  ZoomIn, ZoomOut, Brain, BarChart2, Check, SlidersHorizontal, PanelLeft, Pin, PinOff, Filter,
 } from "lucide-react";
 import { CategoryTemplatesDialog } from "./CategoryTemplatesDialog";
 import { TextPromptDialog } from "./TextPromptDialog";
@@ -1805,6 +1805,20 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Hide-empty quick toggle */}
+        <button
+          onClick={() => setPrefs({ hideEmpty: !prefs.hideEmpty })}
+          title={prefs.hideEmpty ? "הצג גם תיקיות ריקות" : "הסתר תיקיות ריקות (ללא שאלות)"}
+          className={cn(
+            "h-9 w-9 rounded border flex items-center justify-center transition-colors",
+            prefs.hideEmpty
+              ? "border-gold bg-gold/20 text-gold hover:bg-gold/30"
+              : "border-gold/40 hover:bg-secondary text-muted-foreground",
+          )}
+        >
+          <Filter className="h-4 w-4" />
+        </button>
+
         {/* Preview toggle */}
         <button onClick={() => setPrefs({ showPreview: !prefs.showPreview })}
           title={prefs.showPreview ? "הסתר חלונית תצוגה" : "הצג חלונית תצוגה"}
@@ -2358,10 +2372,19 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                           );
                         })()}
                         {(() => {
-                        const cur = currentParentId ? categories.find((c) => c.id === currentParentId) : null;
-                        if (!cur) return <span />;
-                        return <span />;
-                      })()}
+                          const cur = currentParentId ? categories.find((c) => c.id === currentParentId) : null;
+                          if (!cur) return null;
+                          return (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => createDeckFromCategory(cur)}
+                              className="h-7 text-xs gap-1 border-gold/50 text-gold hover:bg-gold/10"
+                            >
+                              <Layers className="h-3.5 w-3.5" /> צור ערכה
+                            </Button>
+                          );
+                        })()}
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Select-all circle — always shown above the folder grid */}

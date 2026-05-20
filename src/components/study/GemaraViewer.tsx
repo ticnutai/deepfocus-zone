@@ -14,9 +14,10 @@ interface Props {
   daf: number;
   amud: 1 | 2;
   className?: string;
+  isActive?: boolean;
 }
 
-export function GemaraViewer({ masechta, daf, amud, className }: Props) {
+export function GemaraViewer({ masechta, daf, amud, className, isActive = true }: Props) {
   const [source, setSource] = useState<Source>("pdf");
   const [pdfExists, setPdfExists] = useState<boolean | null>(null);
   const [text, setText] = useState<string[] | null>(null);
@@ -31,13 +32,14 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
 
   // בדוק קיום PDF
   useEffect(() => {
+    if (!isActive) return;
     let cancel = false;
     setPdfExists(null);
     fetch(pdfUrl, { method: "HEAD" })
       .then((r) => { if (!cancel) setPdfExists(r.ok); })
       .catch(() => { if (!cancel) setPdfExists(false); });
     return () => { cancel = true; };
-  }, [pdfUrl]);
+  }, [pdfUrl, isActive]);
 
   // אם PDF לא קיים — עבור אוטומטית לטקסט
   useEffect(() => {
@@ -46,6 +48,7 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
 
   // טען טקסט מ-Sefaria
   useEffect(() => {
+    if (!isActive) return;
     if (source !== "text") return;
     if (!isSefariaSupported(masechta)) {
       setError("המסכת לא נתמכת ב-Sefaria");
@@ -59,7 +62,7 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
       .catch((e: Error) => { if (!cancel) setError(e.message); })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
-  }, [source, masechta, daf, amud]);
+  }, [source, masechta, daf, amud, isActive]);
 
   const amudLabel = amud === 1 ? 'ע"א' : 'ע"ב';
   const dafLabel = `${toGematria(daf)}'`;
@@ -89,6 +92,8 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
+        {!isActive ? null : (
+          <>
         {source === "pdf" && pdfExists !== false && (
           <iframe
             src={pdfUrl}
@@ -113,6 +118,8 @@ export function GemaraViewer({ masechta, daf, amud, className }: Props) {
               </div>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

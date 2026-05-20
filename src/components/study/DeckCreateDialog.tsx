@@ -61,8 +61,47 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     () => [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt),
     [state.categories],
   );
-  const childrenOf = (pid: string | null) => categories.filter((c) => c.parentId === pid);
+  // Hebrew letter → numeric value for gematria sort
+  const HVAL: Record<string, number> = {
+    'א':1,'ב':2,'ג':3,'ד':4,'ה':5,'ו':6,'ז':7,'ח':8,'ט':9,
+    'י':10,'כ':20,'ך':20,'ל':30,'מ':40,'ם':40,'נ':50,'ן':50,'ס':60,'ע':70,'פ':80,'ף':80,'צ':90,'ץ':90,
+    'ק':100,'ר':200,'ש':300,'ת':400,
+  };
+  const hebrewToNum = (s: string) => [...s].reduce((sum, ch) => sum + (HVAL[ch] ?? 0), 0);
+  const childrenOf = (pid: string | null) => {
+    const kids = categories.filter((c) => c.parentId === pid);
+    return [...kids].sort((a, b) => {
+      const an = hebrewToNum(displayCategoryName(a.name));
+      const bn = hebrewToNum(displayCategoryName(b.name));
+      if (an !== 0 || bn !== 0) return an - bn;
+      return displayCategoryName(a.name).localeCompare(displayCategoryName(b.name), 'he');
+    });
+  };
   const validNames = useMemo(() => new Set(categories.map((c) => c.name)), [categories]);
+
+  // Recursive card count per category (including descendants)
+  const countsMap = useMemo(() => {
+    const direct = new Map<string, number>();
+    for (const card of state.cards ?? []) {
+      for (const tag of card.tags ?? []) {
+        if (tag.startsWith("cat:")) {
+          const n = tag.slice(4);
+          direct.set(n, (direct.get(n) ?? 0) + 1);
+        }
+      }
+    }
+    const total = new Map<string, number>();
+    const countFor = (cat: Category): number => {
+      if (total.has(cat.id)) return total.get(cat.id)!;
+      const d = direct.get(cat.name) ?? 0;
+      const kids = categories.filter((c) => c.parentId === cat.id);
+      const sum = d + kids.reduce((acc, k) => acc + countFor(k), 0);
+      total.set(cat.id, sum);
+      return sum;
+    };
+    for (const cat of categories) countFor(cat);
+    return total;
+  }, [state.cards, categories]);
   const pinnedExisting = useMemo(() => pinnedCats.filter((n) => validNames.has(n)), [pinnedCats, validNames]);
   const recentExisting = useMemo(() => {
     const seen = new Set<string>();
@@ -96,6 +135,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     const isSelected = selected.includes(cat.name);
     const isPinned = pinnedCats.includes(cat.name);
     const label = displayCategoryName(cat.name);
+    const count = countsMap.get(cat.id) ?? 0;
     return (
       <div key={cat.id}>
         <div
@@ -123,7 +163,13 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
             : <Folder className="h-3.5 w-3.5 text-gold/70 shrink-0" />}
 
           {/* name */}
-          <span className="flex-1 text-sm text-right truncate" title={cat.name}>{label}</span>
+          <span className={cn("flex-1 text-sm text-right truncate", count === 0 && "text-muted-foreground")} title={cat.name}>{label}</span>
+
+          {/* question count badge */}
+          {count > 0
+            ? <span className="text-[10px] font-semibold text-white bg-navy rounded px-1.5 py-0.5 shrink-0 tabular-nums leading-none">{count}</span>
+            : <span className="text-[10px] text-muted-foreground/40 shrink-0">–</span>
+          }
 
           {/* pin button */}
           <button

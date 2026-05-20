@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download } from "lucide-react";
+import { useState, useMemo, useRef, useEffect, memo } from "react";
+import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download, X } from "lucide-react";
 import { useMultiSelect } from "@/hooks/useMultiSelect";
 import { MultiSelectToolbar } from "@/components/study/MultiSelectToolbar";
 import {
@@ -144,7 +144,7 @@ function buildShasHierarchyChips(card: Pick<StudyCardType, "masechta" | "daf" | 
   return chips;
 }
 
-export function CardsManager() {
+function CardsManager() {
   const { state, addDeck, deleteDeck, deleteCard, moveCardToDeck, addCardToDeck, setCardCategories, setDeckCategories, duplicateCard, moveCategory, reorderCategories, duplicateCategoryUnder, setUiPref, setWidgetLayout } = useStudy();
   const [activeDeckId, setActiveDeckId] = useState<string | null>(state.decks[0]?.id ?? null);
   const [deckCreateOpen, setDeckCreateOpen] = useState(false);
@@ -239,6 +239,7 @@ export function CardsManager() {
   });
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
+  const [visibleCardsCount, setVisibleCardsCount] = useState(60);
   const copyDragRef = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -288,31 +289,6 @@ export function CardsManager() {
       );
     };
   }, [state.cards, state.cardDecks, state.categories]);
-
-  // ── DEBUG: log deck-card matching whenever cards/decks change ──────────────
-  useEffect(() => {
-    if (!state.decks.length) return;
-    console.groupCollapsed(
-      `%c[🔍 DECK-DEBUG CardsManager] ${state.cards.length} כרטיסים, ${state.decks.length} מערכות`,
-      'color: #4fc3f7; font-weight: bold',
-    );
-    state.decks.forEach((deck) => {
-      const cards = getCardsForDeck(deck);
-      const due = cards.filter(isDue).length;
-      const linkedSet = new Set((state.cardDecks ?? []).filter((l) => l.deckId === deck.id).map((l) => l.cardId));
-      const viaId   = cards.filter((c) => c.deckId === deck.id).length;
-      const viaLink = cards.filter((c) => linkedSet.has(c.id)).length;
-      const viaTag  = cards.filter((c) => c.deckId !== deck.id && !linkedSet.has(c.id)).length;
-      const sample  = cards.slice(0, 3).map((c) => `${c.id.slice(0,8)} | ${(c.question??'').slice(0,40)} | tags=${JSON.stringify(c.tags)} | deckId=${c.deckId??'null'}`);
-      console.debug(
-        `[🔍 CardsManager] מערכת "${deck.name}": סה"כ=${cards.length} לחזרה=${due} | via_deckId=${viaId} via_cardDecks=${viaLink} via_catTag=${viaTag}\n` +
-        `  categoryIds=${JSON.stringify(deck.categoryIds??[])} includeSubCats=${deck.includeSubCategories??true}\n` +
-        `  דוגמאות:\n  ${sample.join('\n  ')}`,
-      );
-    });
-    console.groupEnd();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.cards, state.decks, state.cardDecks, state.categories]);
 
   // Sorted decks for display
   const sortedDecks = useMemo(() => {
@@ -398,6 +374,15 @@ export function CardsManager() {
     return arr;
   }, [deckCards, cardSort, cardSortDir]);
 
+  useEffect(() => {
+    setVisibleCardsCount(60);
+  }, [activeDeckId, categoryFilter, typeFilter, dateFilter, cardSort, cardSortDir]);
+
+  const visibleDeckCards = useMemo(
+    () => sortedDeckCards.slice(0, visibleCardsCount),
+    [sortedDeckCards, visibleCardsCount],
+  );
+
   // ── Multi-select for cards ────────────────────────────────────────────
   const cardMs = useMultiSelect(sortedDeckCards, (c) => c.id);
   const [confirmBulkDeleteCards, setConfirmBulkDeleteCards] = useState(false);
@@ -433,13 +418,25 @@ export function CardsManager() {
 
   if (session) {
     return (
-      <div className="space-y-4">
-        <StudySession
-          deckId={session.deckId}
-          mode={session.mode}
-          cardIds={session.cardIds}
-          onExit={() => setSession(null)}
-        />
+      <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden md:static md:inset-auto md:z-auto md:flex-none md:overflow-visible">
+        {/* Mobile-only sticky header with exit button */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-gold/30 bg-background sticky top-0 z-10 md:hidden" dir="rtl">
+          <span className="font-semibold text-navy text-sm">
+            {session.mode === "srs" ? "חזרה ממוקדת" : "תרגול חופשי"}
+          </span>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setSession(null)}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        {/* Session content */}
+        <div className="flex-1 overflow-y-auto p-3 md:p-0 md:overflow-visible md:space-y-4">
+          <StudySession
+            deckId={session.deckId}
+            mode={session.mode}
+            cardIds={session.cardIds}
+            onExit={() => setSession(null)}
+          />
+        </div>
       </div>
     );
   }
@@ -892,6 +889,20 @@ export function CardsManager() {
                           <div className={cn("text-xs truncate", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
                             {cards.length} כרטיסים · {due} לחזרה
                           </div>
+                          {(state.deckCategories?.[deck.id] ?? []).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {(state.deckCategories?.[deck.id] ?? []).slice(0, 2).map((catLabel) => (
+                                <Badge key={catLabel} variant="outline" className={cn("text-[9px] px-1 py-0", isActive ? "border-gold/60 text-primary-foreground/80" : "border-gold/40")}>
+                                  {catLabel}
+                                </Badge>
+                              ))}
+                              {(state.deckCategories?.[deck.id] ?? []).length > 2 && (
+                                <Badge variant="outline" className={cn("text-[9px] px-1 py-0", isActive ? "border-gold/60 text-primary-foreground/80" : "border-gold/40")}>
+                                  +{(state.deckCategories?.[deck.id] ?? []).length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-0.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -1072,7 +1083,7 @@ export function CardsManager() {
                     ]}
                   />
 
-                  {sortedDeckCards.map((c) => {
+                  {visibleDeckCards.map((c) => {
                     const categoryTags = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
                     const shasChips = buildShasHierarchyChips(c);
                     const categoryChips = shasChips ?? buildCanonicalCategoryChips(categoryTags, state.categories ?? []);
@@ -1171,6 +1182,18 @@ export function CardsManager() {
                       </DraggableCardRow>
                     );
                   })}
+                  {sortedDeckCards.length > visibleDeckCards.length && (
+                    <div className="flex items-center justify-center pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-gold/40"
+                        onClick={() => setVisibleCardsCount((n) => n + 60)}
+                      >
+                        טען עוד ({sortedDeckCards.length - visibleDeckCards.length} נותרו)
+                      </Button>
+                    </div>
+                  )}
                   {deckCards.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       {categoryFilter
@@ -1296,3 +1319,6 @@ function DeckDropTarget({ deckId, isActive, onClick, children, isDraggingCard }:
     </div>
   );
 }
+
+const CardsManagerMemo = memo(CardsManager);
+export { CardsManagerMemo as CardsManager };

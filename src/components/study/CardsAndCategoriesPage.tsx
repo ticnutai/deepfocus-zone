@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { FolderTree, BookOpen } from "lucide-react";
 import { CardsManager } from "./CardsManager";
@@ -14,7 +14,7 @@ const STORAGE_VISITED_KEY = "cards-categories:visited-tabs";
  * internal sub-tabs. Both legacy components are reused as-is — no
  * logic duplication.
  */
-export function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
+function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
   const [tab, setTab] = useState<SubTab>(() => {
     if (initialTab) return initialTab;
     try {
@@ -77,3 +77,6 @@ export function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) 
     </div>
   );
 }
+
+const CardsAndCategoriesPageMemo = memo(CardsAndCategoriesPage);
+export { CardsAndCategoriesPageMemo as CardsAndCategoriesPage };

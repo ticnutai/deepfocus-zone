@@ -2,7 +2,7 @@
  * BackupRestorePage — full-page sophisticated backup & restore system
  * Available as a primary sidebar item.
  */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   buildSnapshot, buildSnapshotAsync, exportJson, exportTxt, exportCsv, exportXlsx,
   parseJsonBackup, autoSaveSnapshot, loadAutoSaveMeta,
@@ -1594,7 +1594,7 @@ function AutoBackupSection({
 
 // ─── Root component ───────────────────────────────────────────────────────
 
-export function BackupRestorePage() {
+function BackupRestorePage() {
   const { state, setTabConfig, setSidebarConfig, setWidgetLayout, setUiPref, getDeleteAuditHistory, addDeck, addCard } = useStudy();
   const { user } = useAuth();
   const { openRestore: openRestoreCtx } = useRestoreContext();
@@ -1954,3 +1954,6 @@ export function BackupRestorePage() {
     </div>
   );
 }
+
+const BackupRestorePageMemo = memo(BackupRestorePage);
+export { BackupRestorePageMemo as BackupRestorePage };
