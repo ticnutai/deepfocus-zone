@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from "react";
 import {
   Home, Gauge, Sun, Calendar, CheckSquare, Target, BookOpen, Timer,
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
@@ -11,31 +11,18 @@ import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closest
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { StudyTab } from "@/components/study/StudyTab";
-import { DafLearningTab } from "@/components/study/DafLearningTab";
 import { CardsManager } from "@/components/study/CardsManager";
 import { CardsAndCategoriesPage } from "@/components/study/CardsAndCategoriesPage";
 import { SmartSearch } from "@/components/study/SmartSearch";
-import { WeeklySummary } from "@/components/study/WeeklySummary";
-import { GoalsManager } from "@/components/study/GoalsManager";
-import { ShasTracker } from "@/components/study/ShasTracker";
 import { StudyPlansCard } from "@/components/study/StudyPlansCard";
 import { QuizPlansCard } from "@/components/study/QuizPlansCard";
 import { TodayReviewsCard } from "@/components/study/TodayReviewsCard";
 import { InsightsCard } from "@/components/study/InsightsCard";
-import { BackupRestorePage } from "@/components/study/BackupRestorePage";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
-import { ReminderSettings } from "@/components/study/ReminderSettings";
-import { KnowledgeAnalytics } from "@/components/study/KnowledgeAnalytics";
-import { SummaryDashboard } from "@/components/study/SummaryDashboard";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { TaskCard } from "@/components/study/TaskCard";
 import { HeatmapPanel } from "@/components/study/HeatmapPanel";
 import { ReviewCalendar } from "@/components/study/ReviewCalendar";
-import { AdminPanel } from "@/components/admin/AdminPanel";
-
-import { SupabaseInspectorPage } from "@/components/dev/SupabaseInspectorPage";
-import { PerformancePage } from "@/components/study/PerformancePage";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
@@ -52,10 +39,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { DedicationBanner } from "@/components/DedicationBanner";
-import { AiCardCapture } from "@/components/study/AiCardCapture";
-import { SystemRubric } from "@/components/study/SystemRubric";
-import { AIQuestionGenerator } from "@/components/ai/AIQuestionGenerator";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+
+// Lazy-loaded components — downloaded only when first rendered
+const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
+const KnowledgeAnalytics = lazy(() => import("@/components/study/KnowledgeAnalytics").then(m => ({ default: m.KnowledgeAnalytics })));
+const DafLearningTab = lazy(() => import("@/components/study/DafLearningTab").then(m => ({ default: m.DafLearningTab })));
+const WeeklySummary = lazy(() => import("@/components/study/WeeklySummary").then(m => ({ default: m.WeeklySummary })));
+const GoalsManager = lazy(() => import("@/components/study/GoalsManager").then(m => ({ default: m.GoalsManager })));
+const ShasTracker = lazy(() => import("@/components/study/ShasTracker").then(m => ({ default: m.ShasTracker })));
+const BackupRestorePage = lazy(() => import("@/components/study/BackupRestorePage").then(m => ({ default: m.BackupRestorePage })));
+const ReminderSettings = lazy(() => import("@/components/study/ReminderSettings").then(m => ({ default: m.ReminderSettings })));
+const AdminPanel = lazy(() => import("@/components/admin/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const SupabaseInspectorPage = lazy(() => import("@/components/dev/SupabaseInspectorPage").then(m => ({ default: m.SupabaseInspectorPage })));
+const PerformancePage = lazy(() => import("@/components/study/PerformancePage").then(m => ({ default: m.PerformancePage })));
+const SettingsPanel = lazy(() => import("@/components/settings/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
+const AiCardCapture = lazy(() => import("@/components/study/AiCardCapture").then(m => ({ default: m.AiCardCapture })));
+const SystemRubric = lazy(() => import("@/components/study/SystemRubric").then(m => ({ default: m.SystemRubric })));
+const AIQuestionGenerator = lazy(() => import("@/components/ai/AIQuestionGenerator").then(m => ({ default: m.AIQuestionGenerator })));
 
 const QUOTES = [
   { text: "הבחירה שלך, לא המזל שלך, קובעת את גורלך", author: "ג'ין ניד'" },
@@ -1069,7 +1070,9 @@ const Index = () => {
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
             {active === "settings" ? (
-              <SettingsPanel />
+              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                <SettingsPanel />
+              </Suspense>
             ) : active === "cards" || active === "categories" ? (
               <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
             ) : active === "search" ? (
@@ -1081,9 +1084,13 @@ const Index = () => {
                 <SmartSearch variant="page" />
               </div>
             ) : active === "admin" ? (
-              <AdminPanel />
+              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                <AdminPanel />
+              </Suspense>
             ) : active !== "home" ? (
-              renderSidebarPage(active)
+              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                {renderSidebarPage(active)}
+              </Suspense>
             ) : (
             <>
             <div className="text-center space-y-2 animate-fade-in">
@@ -1129,29 +1136,37 @@ const Index = () => {
               </Card>
 
               <TabsContent value="overview" className="mt-6">
-                {visitedTabs.has("overview") && <WidgetGrid
-                  tabId="overview"
-                  widgetMap={{
-                    "weekly-summary":  <WeeklySummary />,
-                    "study-plans":     <StudyPlansCard />,
-                    "quiz-plans":      <QuizPlansCard />,
-                    "today-reviews":   <TodayReviewsCard />,
-                    "insights":        <InsightsCard />,
-                    "goals-manager":   <GoalsManager />,
-                    "daily-trackers":  <DailyTrackers />,
-                    "quote-card":      <QuoteCard />,
-                    "ai-coach":        <AICoachCard />,
-                    "next-alarm":      <NextAlarmCard />,
-                    "pomodoro":        <PomodoroCard />,
-                    "task-card": <TaskCard />,
-                    "heatmap":         <HeatmapPanel days={35} />,
-                    "review-calendar": <ReviewCalendar />,
-                  }}
-                />}
+                {visitedTabs.has("overview") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <WidgetGrid
+                      tabId="overview"
+                      widgetMap={{
+                        "weekly-summary":  <WeeklySummary />,
+                        "study-plans":     <StudyPlansCard />,
+                        "quiz-plans":      <QuizPlansCard />,
+                        "today-reviews":   <TodayReviewsCard />,
+                        "insights":        <InsightsCard />,
+                        "goals-manager":   <GoalsManager />,
+                        "daily-trackers":  <DailyTrackers />,
+                        "quote-card":      <QuoteCard />,
+                        "ai-coach":        <AICoachCard />,
+                        "next-alarm":      <NextAlarmCard />,
+                        "pomodoro":        <PomodoroCard />,
+                        "task-card": <TaskCard />,
+                        "heatmap":         <HeatmapPanel days={35} />,
+                        "review-calendar": <ReviewCalendar />,
+                      }}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="summary" className="mt-6">
-                {visitedTabs.has("summary") && <SummaryDashboard />}
+                {visitedTabs.has("summary") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <SummaryDashboard />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="study" className="mt-6">
@@ -1159,7 +1174,11 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="daf" className="mt-6" forceMount>
-                {visitedTabs.has("daf") && <DafLearningTab isVisible={activeTab === "daf"} />}
+                {visitedTabs.has("daf") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <DafLearningTab isVisible={activeTab === "daf"} />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="cards" className="mt-6" forceMount>
@@ -1167,21 +1186,29 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="goals" className="mt-6">
-                {visitedTabs.has("goals") && <WidgetGrid
-                  tabId="goals"
-                  widgetMap={{
-                    "study-plans":       <StudyPlansCard />,
-                    "quiz-plans":        <QuizPlansCard />,
-                    "today-reviews":     <TodayReviewsCard />,
-                    "insights":          <InsightsCard />,
-                    "goals-manager":     <GoalsManager />,
-                    "reminder-settings": <ReminderSettings />,
-                  }}
-                />}
+                {visitedTabs.has("goals") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <WidgetGrid
+                      tabId="goals"
+                      widgetMap={{
+                        "study-plans":       <StudyPlansCard />,
+                        "quiz-plans":        <QuizPlansCard />,
+                        "today-reviews":     <TodayReviewsCard />,
+                        "insights":          <InsightsCard />,
+                        "goals-manager":     <GoalsManager />,
+                        "reminder-settings": <ReminderSettings />,
+                      }}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="analytics" className="mt-6">
-                {visitedTabs.has("analytics") && <KnowledgeAnalytics />}
+                {visitedTabs.has("analytics") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <KnowledgeAnalytics />
+                  </Suspense>
+                )}
               </TabsContent>
 
               <TabsContent value="categories" className="mt-6" forceMount>
@@ -1197,7 +1224,11 @@ const Index = () => {
               ))}
 
               <TabsContent value="backup" className="mt-6" forceMount>
-                {visitedTabs.has("backup") && <BackupRestorePage />}
+                {visitedTabs.has("backup") && (
+                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                    <BackupRestorePage />
+                  </Suspense>
+                )}
               </TabsContent>
             </Tabs>
             </>
@@ -1288,7 +1319,9 @@ const Index = () => {
           </div>
         </DialogContent>
       </Dialog>
-      <AiCardCapture />
+      <Suspense fallback={null}>
+        <AiCardCapture />
+      </Suspense>
     </div>
   );
 };

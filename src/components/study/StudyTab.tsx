@@ -1,14 +1,15 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, lazy, Suspense } from "react";
 import { Brain, Play, BookOpen, ChevronDown, ChevronUp, Filter, Eye, EyeOff, Zap } from "lucide-react";
 import { ReviewCalendar } from "./ReviewCalendar";
 import { HeatmapPanel } from "./HeatmapPanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useStudy } from "@/lib/study/store";
 import { isDue, buildStudyQueue } from "@/lib/study/srs";
 import { StudySession } from "./StudySession";
 import { StudyStats } from "./StudyStats";
-import { ForecastPanel } from "./ForecastPanel";
+const ForecastPanel = lazy(() => import("./ForecastPanel").then(m => ({ default: m.ForecastPanel })));
 import { CustomStudyDialog } from "./CustomStudyDialog";
 import { SrsAlgorithmSettings } from "./SrsAlgorithmSettings";
 import { WidgetGrid } from "./WidgetGrid";
@@ -274,5 +275,9 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     "study-settings": <SrsAlgorithmSettings />,
   };
 
-  return <WidgetGrid tabId="study" widgetMap={widgetMap} />;
+  return (
+    <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+      <WidgetGrid tabId="study" widgetMap={widgetMap} />
+    </Suspense>
+  );
 }
