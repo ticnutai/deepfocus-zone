@@ -264,7 +264,8 @@ export interface UiPrefs {
   heatmapPrefs?: { mode?: string; view?: string; source?: string; deckId?: string; cardType?: string; tag?: string };
   // WeeklySummary: filter preferences (synced across devices)
   weeklySummaryPrefs?: { deckFilter?: string; rangeDays?: string };
-  // StudySession: quiz typography, alignment, and custom theme (synced across devices)
+    // StudySession: quiz typography, alignment, custom theme, and timer state (synced across devices)
+    studyTimerRunning?: boolean;
   studyTypography?: Record<string, unknown>;
   studyAnswerTypography?: Record<string, unknown>;
   studyQuestionAlign?: string;

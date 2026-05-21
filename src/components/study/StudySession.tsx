@@ -458,6 +458,7 @@ export function StudySession({
     if (timerRunning) {
       pausedAtRef.current = Date.now();
       setTimerRunning(false);
+      try { setUiPref("studyTimerRunning", false); } catch { /* guest */ }
       return;
     }
     if (pausedAtRef.current) {
@@ -466,7 +467,8 @@ export function StudySession({
     }
     setTimerRunning(true);
     setElapsed(getElapsedSeconds());
-  }, [getElapsedSeconds, timerRunning]);
+    try { setUiPref("studyTimerRunning", true); } catch { /* guest */ }
+  }, [getElapsedSeconds, setUiPref, timerRunning]);
 
   // Lock body scroll on mobile while session is fullscreen
   useEffect(() => {
@@ -660,12 +662,12 @@ export function StudySession({
     }
   });
 
-  // ─── Cloud sync: one-time init of quiz typography / align / custom theme ──────
+  // ─── Cloud sync: one-time init of quiz typography / align / custom theme / timer ──────
   const quizPrefsCloudRef = useRef(false);
   useEffect(() => {
     if (quizPrefsCloudRef.current) return;
     const p = state.uiPrefs;
-    if (!p?.studyTypography && !p?.studyAnswerTypography && !p?.studyQuestionAlign && !p?.studyCustomTheme) return;
+    if (!p?.studyTypography && !p?.studyAnswerTypography && !p?.studyQuestionAlign && !p?.studyCustomTheme && p?.studyTimerRunning === undefined) return;
     quizPrefsCloudRef.current = true;
     if (p.studyTypography) {
       const t = { ...DEFAULT_QUIZ_TYPOGRAPHY, ...(p.studyTypography as Partial<QuizTypography>) };
@@ -683,8 +685,12 @@ export function StudySession({
     if (p.studyCustomTheme) {
       setCustomQuizTheme({ ...DEFAULT_CUSTOM_THEME, ...(p.studyCustomTheme as Partial<CustomQuizTheme>) });
     }
+    if (p.studyTimerRunning !== undefined) {
+      setTimerRunning(p.studyTimerRunning);
+      if (!p.studyTimerRunning) pausedAtRef.current = Date.now();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!(state.uiPrefs?.studyTypography ?? state.uiPrefs?.studyAnswerTypography ?? state.uiPrefs?.studyQuestionAlign ?? state.uiPrefs?.studyCustomTheme)]);
+  }, [!!(state.uiPrefs?.studyTypography ?? state.uiPrefs?.studyAnswerTypography ?? state.uiPrefs?.studyQuestionAlign ?? state.uiPrefs?.studyCustomTheme) || state.uiPrefs?.studyTimerRunning !== undefined]);
 
   // Custom next-due selection (per current card). Reset when card changes.
   const [nextInterval, setNextInterval] = useState<string>("auto");
