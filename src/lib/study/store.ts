@@ -41,7 +41,7 @@ let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if a
 
 const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
-const BROWSER_CACHE_RESET_VERSION = 2;
+const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
 const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — ensures cross-device changes appear promptly
 const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // keep first paint fast, then reconcile IDB against cloud shortly after
@@ -301,16 +301,18 @@ let lastCloudCategoryTombstones: Set<string> = new Set();
 // the cloud DELETE confirmed. Cleared only after cloud confirms the deletion.
 const deletedDeckIds: Set<string> = new Set();
 
-const mergeStudyStateLww = (local: StudyState, cloud: StudyState): StudyState => {
+const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSync = false): StudyState => {
   const localUiTs = typeof local.uiPrefs?.updatedAt === "number" ? local.uiPrefs.updatedAt : 0;
   const cloudUiTs = typeof cloud.uiPrefs?.updatedAt === "number" ? cloud.uiPrefs.updatedAt : 0;
 
   const tombstones = lastCloudCategoryTombstones;
   const cloudCategoryIds = new Set((cloud.categories ?? []).map((c) => c.id));
-  const mergedCategories = [
-    ...(cloud.categories ?? []),
-    ...(local.categories ?? []).filter((c) => !cloudCategoryIds.has(c.id)),
-  ];
+  const mergedCategories = isFullCloudSync
+    ? (cloud.categories ?? [])
+    : [
+        ...(cloud.categories ?? []),
+        ...(local.categories ?? []).filter((c) => !cloudCategoryIds.has(c.id)),
+      ];
   let filteredCategories: typeof mergedCategories;
   if (tombstones.size) {
     filteredCategories = mergedCategories.filter((c) => {
@@ -1799,7 +1801,7 @@ export function useStudy() {
                     phase2BackfillNeeded = mergedDelta.cards.length < delta.cloudCardsTotalCount;
                     const cloudBg = await loadAll(uid);
                     if (cancelled) return;
-                    const mergedFull = mergeStudyStateLww(mergedDelta, cloudBg);
+                    const mergedFull = mergeStudyStateLww(mergedDelta, cloudBg, true);
                     const localWlCacheFull = readWidgetLayoutCache(uid);
                     const storedCloudTsFull = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
                     const useLocalFull = localWlCacheFull?.layout && (localWlCacheFull.updatedAt ?? 0) > storedCloudTsFull;
@@ -1841,7 +1843,7 @@ export function useStudy() {
                 } else {
                   const cloudBg = await loadAll(uid);
                   if (cancelled) return;
-                  const mergedBg = mergeStudyStateLww(memState, cloudBg);
+                  const mergedBg = mergeStudyStateLww(memState, cloudBg, true);
                   const localWlCacheBg = readWidgetLayoutCache(uid);
                   const storedCloudTsBg = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
                   const useLocalBg = localWlCacheBg?.layout && (localWlCacheBg.updatedAt ?? 0) > storedCloudTsBg;
@@ -1892,7 +1894,7 @@ export function useStudy() {
         if (cancelled) return;
 
         const stopMerge = perf.startTimer("store:hydrate.merge_lww", "store", hydrateTraceId);
-        const merged = mergeStudyStateLww(memState, cloud);
+        const merged = mergeStudyStateLww(memState, cloud, true);
         stopMerge();
 
         memState = merged;

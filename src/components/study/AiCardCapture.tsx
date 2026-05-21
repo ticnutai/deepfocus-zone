@@ -275,221 +275,322 @@ export function AiCardCapture() {
       </button>
 
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-gold" />
-                חילוץ שאלות באמצעות AI
-              </div>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button size="icon" variant="ghost" title="הגדרות איקון"><Settings className="h-4 w-4" /></Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 space-y-3" dir="rtl">
-                  <div className="font-semibold text-sm">עיצוב האיקון הצף</div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">צבע רקע</Label>
-                    <input type="color" value={style.bg} onChange={(e) => setStyle({ ...style, bg: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0" dir="rtl">
+          {/* Header with gold gradient accent */}
+          <div className="bg-gradient-to-l from-gold/15 via-gold/8 to-transparent border-b border-gold/20 px-6 pt-5 pb-4">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gold/15 border border-gold/30">
+                    <Sparkles className="h-5 w-5 text-gold" />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">צבע איקון</Label>
-                    <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+                  <div>
+                    <div className="text-lg font-semibold leading-tight">חילוץ שאלות באמצעות AI</div>
+                    <div className="text-xs text-muted-foreground font-normal mt-0.5">הזן טקסט, קול או תמונה — ה-AI יחלץ כרטיסיות לימוד</div>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">גודל ({style.size}px)</Label>
-                    <Slider min={24} max={96} step={2} value={[style.size]} onValueChange={(v) => setStyle({ ...style, size: v[0] })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">איקון</Label>
-                    <div className="grid grid-cols-5 gap-1">
-                      {(Object.keys(ICON_MAP) as IconName[]).map((n) => {
-                        const I = ICON_MAP[n];
-                        return (
-                          <Button key={n} size="icon" variant={style.icon === n ? "default" : "outline"} className="h-9 w-9" onClick={() => setStyle({ ...style, icon: n })}>
-                            <I className="h-4 w-4" />
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button size="icon" variant="ghost" title="הגדרות איקון" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-gold/10">
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 space-y-3" dir="rtl">
+                    <div className="font-semibold text-sm text-gold">עיצוב האיקון הצף</div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">צבע רקע</Label>
+                      <input type="color" value={style.bg} onChange={(e) => setStyle({ ...style, bg: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">צבע איקון</Label>
+                      <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">גודל ({style.size}px)</Label>
+                      <Slider min={24} max={96} step={2} value={[style.size]} onValueChange={(v) => setStyle({ ...style, size: v[0] })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">איקון</Label>
+                      <div className="grid grid-cols-5 gap-1">
+                        {(Object.keys(ICON_MAP) as IconName[]).map((n) => {
+                          const I = ICON_MAP[n];
+                          return (
+                            <Button key={n} size="icon" variant={style.icon === n ? "default" : "outline"} className="h-9 w-9" onClick={() => setStyle({ ...style, icon: n })}>
+                              <I className="h-4 w-4" />
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">צורה</Label>
+                      <div className="flex gap-1">
+                        {(["circle", "rounded", "square"] as Shape[]).map((s) => (
+                          <Button key={s} size="sm" variant={style.shape === s ? "default" : "outline"} onClick={() => setStyle({ ...style, shape: s })}>
+                            {s === "circle" ? "עיגול" : s === "rounded" ? "מעוגל" : "ריבוע"}
                           </Button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">צורה</Label>
-                    <div className="flex gap-1">
-                      {(["circle", "rounded", "square"] as Shape[]).map((s) => (
-                        <Button key={s} size="sm" variant={style.shape === s ? "default" : "outline"} onClick={() => setStyle({ ...style, shape: s })}>
-                          {s === "circle" ? "עיגול" : s === "rounded" ? "מעוגל" : "ריבוע"}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  <Button size="sm" variant="ghost" className="w-full" onClick={() => setStyle(DEFAULT_STYLE)}>איפוס</Button>
-                </PopoverContent>
-              </Popover>
-            </DialogTitle>
-          </DialogHeader>
-
-          {drafts.length === 0 ? (
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <Button variant={mode === "text" ? "default" : "outline"} size="sm" onClick={() => setMode("text")}>
-                  <Type className="h-4 w-4 ml-1" /> טקסט
-                </Button>
-                <Button variant={mode === "voice" ? "default" : "outline"} size="sm" onClick={() => setMode("voice")}>
-                  <Mic className="h-4 w-4 ml-1" /> קול
-                </Button>
-                <Button variant={mode === "image" ? "default" : "outline"} size="sm" onClick={() => setMode("image")}>
-                  <ImageIcon className="h-4 w-4 ml-1" /> תמונה
-                </Button>
-              </div>
-
-              {mode === "text" && (
-                <div>
-                  <Label>הזן את השאלות והתשובות</Label>
-                  <Textarea
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    rows={6}
-                    placeholder='לדוג: השאלה היא X, האפשרויות הן: 1) א 2) ב 3) ג 4) ד, התשובה הנכונה היא 2'
-                  />
-                </div>
-              )}
-
-              {mode === "voice" && (
-                <div className="space-y-2">
-                  <Label>הקלט קולית את השאלות</Label>
-                  <div className="flex gap-2">
-                    {!recording ? (
-                      <Button onClick={startVoice} variant="outline"><Mic className="h-4 w-4 ml-1" /> התחל הקלטה</Button>
-                    ) : (
-                      <Button onClick={stopVoice} variant="destructive"><MicOff className="h-4 w-4 ml-1" /> עצור</Button>
-                    )}
-                  </div>
-                  <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder="הטקסט המתומלל יופיע כאן..." />
-                </div>
-              )}
-
-              {mode === "image" && (
-                <div className="space-y-2">
-                  <Label>העלה תמונה של שאלות ותשובות</Label>
-                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onPickImage(e.target.files[0])} />
-                  <Button onClick={() => fileRef.current?.click()} variant="outline">
-                    <ImageIcon className="h-4 w-4 ml-1" /> בחר תמונה
-                  </Button>
-                  {imageData && (
-                    <div className="relative">
-                      <img src={imageData.preview} alt="" className="max-h-64 rounded border" />
-                      <Button size="sm" variant="destructive" className="absolute top-2 left-2" onClick={() => setImageData(null)}>
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
-                  <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="הוראות נוספות (אופציונלי)" />
-                </div>
-              )}
-
-              <DialogFooter>
-                <Button onClick={extract} disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : <Sparkles className="h-4 w-4 ml-1" />}
-                  חלץ שאלות
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold">תצוגה מקדימה ({drafts.length})</h3>
-                <Button size="sm" variant="ghost" onClick={() => setDrafts([])}>חזור</Button>
-              </div>
-
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {drafts.map((d, idx) => (
-                  <div key={idx} className="border rounded p-3 space-y-2 bg-secondary/20">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline">{d.type === "flashcard" ? "פתוחה" : d.type === "multiple" ? "אמריקאית" : "נכון/לא נכון"}</Badge>
-                      <Button size="icon" variant="ghost" onClick={() => removeDraft(idx)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                    <Input value={d.question} onChange={(e) => updateDraft(idx, { question: e.target.value })} placeholder="שאלה" />
-
-                    {d.type === "flashcard" && (
-                      <Textarea value={d.answer ?? ""} onChange={(e) => updateDraft(idx, { answer: e.target.value })} rows={2} placeholder="תשובה" />
-                    )}
-
-                    {d.type === "multiple" && (
-                      <div className="space-y-1">
-                        {(d.options ?? []).map((opt, oi) => (
-                          <div key={oi} className="flex items-center gap-2">
-                            <Checkbox
-                              checked={(d.correctIndices ?? []).includes(oi)}
-                              onCheckedChange={(c) => {
-                                const cur = d.correctIndices ?? [];
-                                updateDraft(idx, { correctIndices: c ? [...cur, oi] : cur.filter((x) => x !== oi) });
-                              }}
-                            />
-                            <Input value={opt} onChange={(e) => {
-                              const newOpts = [...(d.options ?? [])];
-                              newOpts[oi] = e.target.value;
-                              updateDraft(idx, { options: newOpts });
-                            }} />
-                          </div>
                         ))}
                       </div>
-                    )}
+                    </div>
+                    <Button size="sm" variant="ghost" className="w-full" onClick={() => setStyle(DEFAULT_STYLE)}>איפוס</Button>
+                  </PopoverContent>
+                </Popover>
+              </DialogTitle>
+            </DialogHeader>
+          </div>
 
-                    {d.type === "boolean" && (
-                      <RadioGroup value={d.correct ? "true" : "false"} onValueChange={(v) => updateDraft(idx, { correct: v === "true" })}>
-                        <div className="flex gap-4">
-                          <div className="flex items-center gap-1"><RadioGroupItem value="true" id={`t-${idx}`} /><Label htmlFor={`t-${idx}`}>נכון</Label></div>
-                          <div className="flex items-center gap-1"><RadioGroupItem value="false" id={`f-${idx}`} /><Label htmlFor={`f-${idx}`}>לא נכון</Label></div>
-                        </div>
-                      </RadioGroup>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-2 border-t pt-3">
-                <Label>חפיסות יעד (לפחות אחת)</Label>
-                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                  {decks.map((d) => (
-                    <Badge
-                      key={d.id}
-                      variant={selectedDeckIds.includes(d.id) ? "default" : "outline"}
-                      className="cursor-pointer"
-                      onClick={() => toggleDeck(d.id)}
+          <div className="px-6 py-5">
+            {drafts.length === 0 ? (
+              <div className="space-y-5">
+                {/* Mode selector — pill tabs */}
+                <div className="inline-flex bg-muted rounded-xl p-1 gap-1">
+                  {([
+                    { id: "text" as Mode, icon: Type, label: "טקסט" },
+                    { id: "voice" as Mode, icon: Mic, label: "קול" },
+                    { id: "image" as Mode, icon: ImageIcon, label: "תמונה" },
+                  ] as const).map(({ id, icon: Icon, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => setMode(id)}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        mode === id
+                          ? "bg-gold text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      {selectedDeckIds.includes(d.id) && <Check className="h-3 w-3 ml-1" />}
-                      {d.name}
-                    </Badge>
+                      <Icon className="h-4 w-4" />
+                      {label}
+                    </button>
                   ))}
                 </div>
-              </div>
 
-              {categoryOptions.length > 0 && (
-                <div className="space-y-2">
-                  <Label>קטגוריות (אופציונלי)</Label>
-                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                    {categoryOptions.map((c) => (
-                      <Badge
-                        key={c.id}
-                        variant={selectedCategoryNames.includes(c.name) ? "default" : "outline"}
-                        className="cursor-pointer"
-                        onClick={() => toggleCategory(c.name)}
+                {/* Text mode */}
+                {mode === "text" && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-foreground">הזן את השאלות והתשובות</Label>
+                    <Textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      rows={7}
+                      className="resize-none border-border focus:border-gold focus:ring-1 focus:ring-gold/40 rounded-xl text-sm"
+                      placeholder='לדוג: השאלה היא X, האפשרויות הן: 1) א 2) ב 3) ג 4) ד, התשובה הנכונה היא 2'
+                    />
+                  </div>
+                )}
+
+                {/* Voice mode */}
+                {mode === "voice" && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold">הקלט קולית את השאלות</Label>
+                    <div className="flex gap-2 items-center">
+                      {!recording ? (
+                        <Button onClick={startVoice} variant="outline" className="border-gold/40 hover:border-gold hover:bg-gold/10 gap-2">
+                          <Mic className="h-4 w-4 text-gold" /> התחל הקלטה
+                        </Button>
+                      ) : (
+                        <Button onClick={stopVoice} variant="destructive" className="gap-2 animate-pulse">
+                          <MicOff className="h-4 w-4" /> עצור הקלטה
+                        </Button>
+                      )}
+                      {recording && <span className="text-xs text-muted-foreground">מקליט...</span>}
+                    </div>
+                    <Textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      rows={6}
+                      className="resize-none border-border focus:border-gold focus:ring-1 focus:ring-gold/40 rounded-xl text-sm"
+                      placeholder="הטקסט המתומלל יופיע כאן..."
+                    />
+                  </div>
+                )}
+
+                {/* Image mode */}
+                {mode === "image" && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold">העלה תמונה של שאלות ותשובות</Label>
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onPickImage(e.target.files[0])} />
+                    <Button
+                      onClick={() => fileRef.current?.click()}
+                      variant="outline"
+                      className="border-dashed border-gold/40 hover:border-gold hover:bg-gold/10 gap-2 h-20 w-full flex-col text-muted-foreground hover:text-foreground"
+                    >
+                      <ImageIcon className="h-6 w-6 text-gold" />
+                      <span className="text-sm">לחץ לבחירת תמונה</span>
+                    </Button>
+                    {imageData && (
+                      <div className="relative inline-block">
+                        <img src={imageData.preview} alt="" className="max-h-56 rounded-xl border border-gold/20 shadow-sm" />
+                        <Button size="sm" variant="destructive" className="absolute top-2 left-2 h-7 w-7 p-0 rounded-full" onClick={() => setImageData(null)}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                    <Textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      rows={2}
+                      className="resize-none border-border focus:border-gold focus:ring-1 focus:ring-gold/40 rounded-xl text-sm"
+                      placeholder="הוראות נוספות (אופציונלי)"
+                    />
+                  </div>
+                )}
+
+                <DialogFooter className="pt-1">
+                  <Button
+                    onClick={extract}
+                    disabled={loading}
+                    className="bg-gold hover:bg-gold/90 text-primary-foreground font-semibold gap-2 px-6 py-2.5 rounded-xl shadow-gold"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {loading ? "מחלץ..." : "חלץ שאלות"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Preview header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gold/20 text-gold text-xs font-bold">{drafts.length}</span>
+                    <h3 className="font-semibold text-base">שאלות חולצו — עיין ועדכן לפני שמירה</h3>
+                  </div>
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground gap-1" onClick={() => setDrafts([])}>
+                    ← חזור
+                  </Button>
+                </div>
+
+                {/* Draft cards */}
+                <div className="space-y-3 max-h-[40vh] overflow-y-auto pl-1">
+                  {drafts.map((d, idx) => (
+                    <div key={idx} className="border border-border rounded-xl p-4 space-y-3 bg-card hover:border-gold/30 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <Badge
+                          variant="outline"
+                          className="border-gold/40 text-gold bg-gold/5 text-xs font-medium"
+                        >
+                          {d.type === "flashcard" ? "פתוחה" : d.type === "multiple" ? "אמריקאית" : "נכון / לא נכון"}
+                        </Badge>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeDraft(idx)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <Input
+                        value={d.question}
+                        onChange={(e) => updateDraft(idx, { question: e.target.value })}
+                        placeholder="שאלה"
+                        className="font-medium focus:border-gold focus:ring-1 focus:ring-gold/40"
+                      />
+
+                      {d.type === "flashcard" && (
+                        <Textarea
+                          value={d.answer ?? ""}
+                          onChange={(e) => updateDraft(idx, { answer: e.target.value })}
+                          rows={2}
+                          placeholder="תשובה"
+                          className="resize-none text-sm focus:border-gold focus:ring-1 focus:ring-gold/40"
+                        />
+                      )}
+
+                      {d.type === "multiple" && (
+                        <div className="space-y-2">
+                          {(d.options ?? []).map((opt, oi) => (
+                            <div key={oi} className="flex items-center gap-2">
+                              <Checkbox
+                                checked={(d.correctIndices ?? []).includes(oi)}
+                                className="border-gold/50 data-[state=checked]:bg-gold data-[state=checked]:border-gold"
+                                onCheckedChange={(c) => {
+                                  const cur = d.correctIndices ?? [];
+                                  updateDraft(idx, { correctIndices: c ? [...cur, oi] : cur.filter((x) => x !== oi) });
+                                }}
+                              />
+                              <Input
+                                value={opt}
+                                className="text-sm focus:border-gold focus:ring-1 focus:ring-gold/40"
+                                onChange={(e) => {
+                                  const newOpts = [...(d.options ?? [])];
+                                  newOpts[oi] = e.target.value;
+                                  updateDraft(idx, { options: newOpts });
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {d.type === "boolean" && (
+                        <RadioGroup value={d.correct ? "true" : "false"} onValueChange={(v) => updateDraft(idx, { correct: v === "true" })}>
+                          <div className="flex gap-6">
+                            <div className="flex items-center gap-1.5">
+                              <RadioGroupItem value="true" id={`t-${idx}`} className="border-gold text-gold" />
+                              <Label htmlFor={`t-${idx}`} className="text-sm">נכון</Label>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <RadioGroupItem value="false" id={`f-${idx}`} />
+                              <Label htmlFor={`f-${idx}`} className="text-sm">לא נכון</Label>
+                            </div>
+                          </div>
+                        </RadioGroup>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Deck selector */}
+                <div className="space-y-2 border-t border-border pt-4">
+                  <Label className="text-sm font-semibold">חפיסות יעד <span className="text-muted-foreground font-normal">(לפחות אחת)</span></Label>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                    {decks.map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => toggleDeck(d.id)}
+                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                          selectedDeckIds.includes(d.id)
+                            ? "bg-gold border-gold text-primary-foreground shadow-sm"
+                            : "border-border text-muted-foreground hover:border-gold/50 hover:text-foreground"
+                        }`}
                       >
-                        {selectedCategoryNames.includes(c.name) && <Check className="h-3 w-3 ml-1" />}
-                        {c.label}
-                      </Badge>
+                        {selectedDeckIds.includes(d.id) && <Check className="h-3 w-3" />}
+                        {d.name}
+                      </button>
                     ))}
                   </div>
                 </div>
-              )}
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => handleClose(false)}>ביטול</Button>
-                <Button onClick={saveAll}><Check className="h-4 w-4 ml-1" /> שמור הכל</Button>
-              </DialogFooter>
-            </div>
-          )}
+                {/* Category selector */}
+                {categoryOptions.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">קטגוריות <span className="text-muted-foreground font-normal">(אופציונלי)</span></Label>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {categoryOptions.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => toggleCategory(c.name)}
+                          className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                            selectedCategoryNames.includes(c.name)
+                              ? "bg-gold/20 border-gold/60 text-gold"
+                              : "border-border text-muted-foreground hover:border-gold/40 hover:text-foreground"
+                          }`}
+                        >
+                          {selectedCategoryNames.includes(c.name) && <Check className="h-3 w-3" />}
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <DialogFooter className="pt-1 gap-2">
+                  <Button variant="outline" className="rounded-xl" onClick={() => handleClose(false)}>ביטול</Button>
+                  <Button
+                    onClick={saveAll}
+                    className="bg-gold hover:bg-gold/90 text-primary-foreground font-semibold gap-2 px-6 rounded-xl shadow-gold"
+                  >
+                    <Check className="h-4 w-4" /> שמור הכל
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>

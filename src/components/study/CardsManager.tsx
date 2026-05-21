@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DraggableResizablePanel } from "@/components/ui/DraggableResizablePanel";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
@@ -1210,38 +1211,33 @@ function CardsManager() {
         }}
       />
 
-      {/* Editor dialog */}
-      <Dialog open={editorOpen} onOpenChange={(o) => { setEditorOpen(o); if (!o) { setEditingCard(null); setPrefillCategoryName(null); } }}>
-        <DialogContent className="max-w-lg gold-frame max-h-[90vh] overflow-y-auto" dir="rtl">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-2">
-              <DialogTitle className="font-display text-right">
-                {editingCard
-                  ? "עריכת שאלה"
-                  : `שאלה חדשה${prefillCategoryName ? ` · 📁 ${prefillCategoryName}` : ""}`}
-              </DialogTitle>
-              {!editingCard && activeDeck && (
-                <button
-                  type="button"
-                  onClick={() => setBulkOpen(true)}
-                  title="ייבוא מרוכז"
-                  aria-label="ייבוא מרוכז"
-                  className="flex items-center justify-center h-8 w-8 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                >
-                  <Upload className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </DialogHeader>
-          <CardEditor
-            key={editingCard?.id ?? `new-${prefillCategoryName ?? "x"}`}
-            deckId={activeDeck?.id ?? null}
-            editCard={editingCard ?? undefined}
-            prefillCategories={prefillCategoryName ? [prefillCategoryName] : undefined}
-            onClose={() => { setEditorOpen(false); setEditingCard(null); setPrefillCategoryName(null); }}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Editor panel — floating draggable/resizable */}
+      <DraggableResizablePanel
+        open={editorOpen}
+        onClose={() => { setEditorOpen(false); setEditingCard(null); setPrefillCategoryName(null); }}
+        title={editingCard
+          ? "עריכת שאלה"
+          : `שאלה חדשה${prefillCategoryName ? ` · 📁 ${prefillCategoryName}` : ""}`}
+        titleExtra={!editingCard && activeDeck ? (
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            title="ייבוא מרוכז"
+            aria-label="ייבוא מרוכז"
+            className="flex items-center justify-center h-8 w-8 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+          >
+            <Upload className="h-4 w-4" />
+          </button>
+        ) : undefined}
+      >
+        <CardEditor
+          key={editingCard?.id ?? `new-${prefillCategoryName ?? "x"}`}
+          deckId={activeDeck?.id ?? null}
+          editCard={editingCard ?? undefined}
+          prefillCategories={prefillCategoryName ? [prefillCategoryName] : undefined}
+          onClose={() => { setEditorOpen(false); setEditingCard(null); setPrefillCategoryName(null); }}
+        />
+      </DraggableResizablePanel>
 
       {/* Bulk import dialog (opened from new-card dialog) */}
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>

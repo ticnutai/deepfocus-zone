@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DraggableResizablePanel } from "@/components/ui/DraggableResizablePanel";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
@@ -527,24 +528,23 @@ function CategoriesPage() {
         }}
       />
 
-      {/* Card editor dialog */}
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editingCard ? "עריכת שאלה" : "הוספת שאלה"}</DialogTitle>
-          </DialogHeader>
-          {editorOpen && (
-            <Suspense fallback={null}>
+      {/* Card editor — floating draggable/resizable panel */}
+      <DraggableResizablePanel
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title={editingCard ? "עריכת שאלה" : "הוספת שאלה"}
+      >
+        {editorOpen && (
+          <Suspense fallback={null}>
             <CardEditor
               deckId={editingCard?.deckId ?? defaultDeckId}
               editCard={editingCard ?? undefined}
               prefillCategories={!editingCard && selectedCategory ? [selectedCategory] : undefined}
               onClose={() => setEditorOpen(false)}
             />
-            </Suspense>
-          )}
-        </DialogContent>
-      </Dialog>
+          </Suspense>
+        )}
+      </DraggableResizablePanel>
 
       {/* Delete confirm */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>

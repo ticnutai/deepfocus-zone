@@ -1,13 +1,20 @@
 """
 import_shemesh_to_categories.py
-מחלץ שאלות אמריקאיות מ-output/shemesh_questions/ ומכניס לסופאבייס עם
-היררכיית קטגוריות: תלמוד בבלי → מסכת → דף
+מחלץ שאלות מ-output/shemesh_questions/ ומכניס לסופאבייס עם
+היררכיית קטגוריות: תלמוד בבלי → מסכת → דף (ברכות · ב.)
+
+שמות הקטגוריות תואמים yeshiva ו-shas_cat_utils — ניתן לייבא ממקורות מרובים לאותה היררכיה.
 
 שימוש:
   python scripts/import_shemesh_to_categories.py [--dry-run] [--masechet avodah_zarah]
 """
 import json, uuid, os, sys, argparse, time
 from datetime import datetime, timezone
+from pathlib import Path
+
+# shas_cat_utils is in export_yeshiva/scripts — shared across all connectors
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "export_yeshiva" / "scripts"))
+from shas_cat_utils import int_to_gematria, daf_category_name, PATH_SEP
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 SUPABASE_URL   = "https://hgjfpwdugvvtrfhycejv.supabase.co"
@@ -65,33 +72,7 @@ TRACTATE_HEBREW = {
 # Canonical order of tractates (for sort_order)
 TRACTATE_ORDER = list(TRACTATE_HEBREW.keys())
 
-# ─── Hebrew numeral helper ─────────────────────────────────────────────────────
-_HUNDREDS = ["", "ק", "ר", "ש", "ת", "תק", "תר", "תש", "תת", "תתק"]
-_TENS     = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"]
-_ONES     = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"]
-
-def to_hebrew_numeral(n: int) -> str:
-    """Convert positive integer to Hebrew numeral (standard gematria, no divine-name)."""
-    if n <= 0:
-        return str(n)
-    result = ""
-    h = n // 100
-    remainder = n % 100
-    result += _HUNDREDS[h]
-    # Special cases to avoid יה / יו
-    if remainder == 15:
-        result += "טו"
-    elif remainder == 16:
-        result += "טז"
-    else:
-        t = remainder // 10
-        o = remainder % 10
-        result += _TENS[t] + _ONES[o]
-    return result
-
-def daf_name(n: int) -> str:
-    """Return 'דף ב', 'דף ג', etc."""
-    return f"דף {to_hebrew_numeral(n)}"
+# ─── Hebrew numeral helper — via shas_cat_utils (int_to_gematria imported above) ─
 
 # ─── Auth + HTTP helpers ───────────────────────────────────────────────────────
 
@@ -144,6 +125,34 @@ def insert_rows(token: str, table: str, rows: list[dict]) -> list[dict]:
     if not r.ok:
         raise RuntimeError(f"[{table}] insert failed {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+def ensure_deck(token: str, user_id: str, dry_run: bool = False) -> str:
+    """מחזיר deck_id קיים או יוצר deck חדש 'ש\"ס'."""
+    if dry_run:
+        return "DRY_DECK_ID"
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/decks?user_id=eq.{user_id}&select=id,name",
+        headers=hdrs(token), timeout=10,
+    )
+    r.raise_for_status()
+    decks = r.json()
+    if decks:
+        for d in decks:
+            if d["name"] == 'ש"ס':
+                return d["id"]
+        print(f"  [deck] משתמש ב-deck קיים: {decks[0]['name']} ({decks[0]['id']})")
+        return decks[0]["id"]
+    # צור deck חדש
+    deck_id = str(uuid.uuid4())
+    r = requests.post(
+        f"{SUPABASE_URL}/rest/v1/decks",
+        json={"id": deck_id, "user_id": user_id, "name": 'ש"ס', "description": "ייבוא אוטומטי"},
+        headers=hdrs(token), timeout=10,
+    )
+    r.raise_for_status()
+    print(f"  [deck] נוצר deck חדש: ש\"ס (id={deck_id})")
+    return deck_id
 
 def load_existing_questions(token: str, user_id: str) -> set[str]:
     """Load all existing question texts for this user (trimmed, lowercased for comparison)."""
@@ -242,6 +251,7 @@ def load_json(path: str) -> list[dict]:
 def import_file(path: str, token: str, user_id: str,
                 cats: CatManager, root_id: str,
                 masechet_order: int, dry_run: bool,
+                deck_id: str = "DRY_DECK_ID",
                 existing_questions: set[str] | None = None,
                 batch_size: int = 200):
     data = load_json(path)
@@ -266,13 +276,14 @@ def import_file(path: str, token: str, user_id: str,
 
     for daf_num in sorted(by_daf.keys()):
         questions = by_daf[daf_num]
-        daf_label = daf_name(daf_num)
+        # שם מלא: 'ברכות · ב.' — תואם yeshiva ו-shas_cat_utils
+        daf_label = daf_category_name(masechet_heb, int_to_gematria(daf_num))
 
         # Ensure daf category
         daf_id = cats.ensure(daf_label, masechet_id, sort_order=daf_num)
 
-        # Build tags (cat: prefix for all 3 levels) + source marker
-        tags = [f"cat:{ROOT_CAT_NAME}", f"cat:{masechet_heb}", f"cat:{daf_label}", "source:shemesh"]
+        # תג יחיד לרמה העמוקה ביותר (deepest-level rule)
+        tags = [f"cat:{daf_label}", "source:shemesh"]
 
         cards = []
         for q in questions:
@@ -283,7 +294,7 @@ def import_file(path: str, token: str, user_id: str,
             cards.append({
                 "id":              str(uuid.uuid4()),
                 "user_id":         user_id,
-                "deck_id":         None,
+                "deck_id":         deck_id,
                 "type":            "multiple",
                 "question":        q["question"],
                 "answer":          None,
@@ -294,7 +305,6 @@ def import_file(path: str, token: str, user_id: str,
                 "tags":            tags,
                 "srs":             default_srs(),
                 "stats":           default_stats(),
-                "sort_order":      0,
                 "created_at":      now,
             })
 
@@ -354,6 +364,10 @@ def main():
     root_id = cats.ensure(ROOT_CAT_NAME, None, sort_order=0)
     print(f"root '{ROOT_CAT_NAME}' id: {root_id}")
 
+    # Find or create the import deck
+    deck_id = ensure_deck(token, user_id, args.dry_run)
+    print(f"deck_id: {deck_id}")
+
     # Pre-load existing question texts to skip duplicates efficiently
     existing_questions: set[str] | None = None
     if not args.dry_run:
@@ -364,6 +378,7 @@ def main():
         masechet_order = TRACTATE_ORDER.index(key) if key in TRACTATE_ORDER else 999
         d, c = import_file(path, token, user_id, cats, root_id,
                            masechet_order, args.dry_run,
+                           deck_id=deck_id,
                            existing_questions=existing_questions)
         total_dafs  += d
         total_cards += c

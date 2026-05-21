@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useDeferredValue } from "react";
 import { uiTimings } from "@/lib/debug/uiTimings";
 import { navBenchSignal, type BenchStepResult } from "@/lib/debug/navBenchSignal";
-import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
+import { DndContext, DragOverlay, PointerSensor, pointerWithin, useSensor, useSensors, useDroppable, useDndContext, useDraggable, type DragStartEvent, type DragEndEvent } from "@dnd-kit/core";
 import {
   Folder, FolderOpen, ChevronLeft, ChevronRight, ChevronDown, FileText, Plus, Home,
   LayoutGrid, List as ListIcon, Columns3, Edit3, Copy, Trash2, FolderPlus,
@@ -30,7 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useStudy } from "@/lib/study/store";
 import type { Category, Card as StudyCard } from "@/lib/study/types";
 import { cn, toHebrewDate } from "@/lib/utils";
-import { displayCategoryName } from "@/lib/study/shasGen";
+import { displayCategoryName, dafLabel, findMasechetByName } from "@/lib/study/shasGen";
 import { isUncategorized } from "@/lib/study/uncategorized";
 import { CategoryCardPickerDialog } from "./CategoryCardPickerDialog";
 import { toast } from "@/hooks/use-toast";
@@ -194,9 +194,14 @@ function SidebarRow({
             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
         ) : <span className="w-3.5" />}
-        {isOpen && hasKids
-          ? <FolderOpen className={cn("h-4 w-4", isSelected ? "text-gold" : "text-gold/80")} />
-          : <Folder className={cn("h-4 w-4", isSelected ? "text-gold" : "text-gold/70")} />}
+        <span className="relative">
+          {isOpen && hasKids
+            ? <FolderOpen className={cn("h-4 w-4", isSelected ? "text-gold" : "text-gold/80")} />
+            : <Folder className={cn("h-4 w-4", isSelected ? "text-gold" : "text-gold/70")} />}
+          {!isOpen && count > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_4px_rgba(251,191,36,0.9)]" />
+          )}
+        </span>
         {isRenaming ? (
           <Input
             ref={inputRef}
@@ -393,7 +398,11 @@ function FolderTileBase({
         <div className="relative">
           <Folder
             style={{ width: cfg.folder, height: cfg.folder }}
-            className="text-gold drop-shadow-sm" strokeWidth={1.4}
+            className={cn(
+              "text-gold drop-shadow-sm",
+              count > 0 && "drop-shadow-[0_0_10px_rgba(212,175,55,0.55)]"
+            )}
+            strokeWidth={1.4}
           />
         </div>
         {isRenaming ? (
@@ -510,7 +519,12 @@ function FolderListRowBase({
       ) : (
         isFavorite && <Star className="h-3 w-3 fill-gold text-gold shrink-0" />
       )}
-      <Folder className="h-5 w-5 text-gold shrink-0" />
+      <span className="relative shrink-0">
+        <Folder className="h-5 w-5 text-gold" />
+        {count > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_4px_rgba(251,191,36,0.9)]" />
+        )}
+      </span>
       {isRenaming ? (
         <Input
           ref={inputRef}
@@ -584,7 +598,7 @@ const FolderListRow = memo(FolderListRowBase, (p, n) =>
 
 function CardTileBase({
   card, query, onEdit, onDelete, selected, onToggleSelect, selectionMode,
-  decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen, pinned, onTogglePin,
+  decks, onAddToDeck, onCreateDeckWithCard, onStudyOne, onClassifyOpen, onMoveToCategoryOpen, pinned, onTogglePin,
 }: {
   card: StudyCard;
   query?: string;
@@ -598,10 +612,12 @@ function CardTileBase({
   onCreateDeckWithCard?: () => void;
   onStudyOne?: () => void;
   onClassifyOpen?: () => void;
+  onMoveToCategoryOpen?: () => void;
   pinned?: boolean;
   onTogglePin?: () => void;
 }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `card:${card.id}`, disabled: selectionMode });
+  const dragDisabled = !!selectionMode && !selected;
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: `card:${card.id}`, disabled: dragDisabled });
   const highlighted = useMemo(() => {
     if (!query?.trim()) return card.question;
     const q = query.trim();
@@ -617,7 +633,7 @@ function CardTileBase({
   }, [card.question, query]);
   const tile = (
     <div
-      ref={setNodeRef} {...(!selectionMode ? listeners : {})} {...attributes}
+      ref={setNodeRef} {...(!dragDisabled ? listeners : {})} {...attributes}
       onClick={(e) => {
         e.stopPropagation();
         if (selectionMode && onToggleSelect) { onToggleSelect(); }
@@ -687,7 +703,7 @@ function CardTileBase({
   );
 
   // Right-click context menu — only when we have any actions to offer
-  const hasMenu = !!(onEdit || onDelete || onToggleSelect || onStudyOne || onAddToDeck || onClassifyOpen || onTogglePin);
+  const hasMenu = !!(onEdit || onDelete || onToggleSelect || onStudyOne || onAddToDeck || onClassifyOpen || onMoveToCategoryOpen || onTogglePin);
   if (!hasMenu) return tile;
 
   return (
@@ -719,6 +735,11 @@ function CardTileBase({
             {pinned
               ? <><PinOff className="h-4 w-4 ml-2" /> בטל הצמדת שאלה</>
               : <><Pin className="h-4 w-4 ml-2" /> הצמד שאלה</>}
+          </ContextMenuItem>
+        )}
+        {onMoveToCategoryOpen && (
+          <ContextMenuItem onClick={onMoveToCategoryOpen}>
+            <ArrowRightLeft className="h-4 w-4 ml-2 text-gold" /> העבר לענף...
           </ContextMenuItem>
         )}
         {(decks || onCreateDeckWithCard || onClassifyOpen) && (
@@ -784,7 +805,7 @@ interface BenchState {
 
 /* ===================== MAIN ===================== */
 export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun, headerExtra }: Props) {
-  const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck, setUiPref } = useStudy();
+  const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck, setCardCategories, setUiPref } = useStudy();
 
   // === Persistent prefs ===
   const [prefs, setPrefsState] = useState<ExplorerPrefs>(() => loadPrefs());
@@ -961,6 +982,11 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [classifyDialogOpen, setClassifyDialogOpen] = useState(false);
   const [classifyDeckIds, setClassifyDeckIds] = useState<Set<string>>(new Set());
   const [newDeckNameForClassify, setNewDeckNameForClassify] = useState("");
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [moveCardsDialogOpen, setMoveCardsDialogOpen] = useState(false);
+  const [moveCardIdsDraft, setMoveCardIdsDraft] = useState<string[]>([]);
+  const [moveCardTargetCategoryId, setMoveCardTargetCategoryId] = useState<string | null>(null);
+  const [moveCardTargetSearch, setMoveCardTargetSearch] = useState("");
 
   // TextPromptDialog state (replaces window.prompt)
   const [promptOpen, setPromptOpen] = useState(false);
@@ -988,6 +1014,107 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   );
   const categoriesById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const categoriesByName = useMemo(() => new Map(categories.map((c) => [c.name, c])), [categories]);
+
+  const openMoveCardsDialog = useCallback((cardIds: string[]) => {
+    const valid = [...new Set(cardIds)].filter((id) => state.cards.some((c) => c.id === id));
+    if (valid.length === 0) {
+      toast({ title: "לא נבחרו שאלות", description: "בחר שאלה אחת או יותר להעברה." });
+      return;
+    }
+    setMoveCardIdsDraft(valid);
+    setMoveCardTargetCategoryId(null);
+    setMoveCardTargetSearch("");
+    setMoveCardsDialogOpen(true);
+  }, [state.cards]);
+
+  const moveCardTargetOptions = useMemo(() => {
+    const q = moveCardTargetSearch.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter((c) => {
+      const shown = displayCategoryName(c.name).toLowerCase();
+      return shown.includes(q) || c.name.toLowerCase().includes(q);
+    });
+  }, [categories, moveCardTargetSearch]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  const moveCardsToCategory = useCallback((cardIds: string[], targetCategoryId: string) => {
+    const target = categoriesById.get(targetCategoryId);
+    if (!target) return;
+    const ids = [...new Set(cardIds)].filter((id) => state.cards.some((c) => c.id === id));
+    if (!ids.length) return;
+    for (const cardId of ids) {
+      setCardCategories(cardId, [target.name]);
+    }
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+    toast({
+      title: "השאלות הועברו",
+      description: `${ids.length} שאלות → ${displayCategoryName(target.name)}`,
+    });
+  }, [categoriesById, setCardCategories, state.cards]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveDragId(null);
+    const activeId = String(event.active.id ?? "");
+    const overId = event.over ? String(event.over.id ?? "") : "";
+    if (!activeId || !overId) return;
+
+    if (activeId.startsWith("card:") && overId.startsWith("catparent:")) {
+      const cardId = activeId.slice(5);
+      const targetCategoryId = overId.slice(10);
+      const draggedSet = selectedCardIds.has(cardId) && selectedCardIds.size > 1
+        ? [...selectedCardIds]
+        : [cardId];
+      moveCardsToCategory(draggedSet, targetCategoryId);
+      return;
+    }
+
+    if (activeId.startsWith("catdrag:") && overId.startsWith("catparent:")) {
+      const draggedCatId = activeId.slice(8);
+      const targetParentId = overId.slice(10);
+      if (!draggedCatId || !targetParentId || draggedCatId === targetParentId) return;
+
+      let parent: string | null = targetParentId;
+      while (parent) {
+        if (parent === draggedCatId) return;
+        parent = categoriesById.get(parent)?.parentId ?? null;
+      }
+      moveCategory(draggedCatId, targetParentId);
+    }
+  }, [categoriesById, moveCardsToCategory, moveCategory, selectedCardIds]);
+
+  const dragOverlay = useMemo(() => {
+    if (!activeDragId) return null;
+    if (activeDragId.startsWith("card:")) {
+      const cardId = activeDragId.slice(5);
+      const card = state.cards.find((c) => c.id === cardId);
+      const selectedCount = selectedCardIds.has(cardId) && selectedCardIds.size > 1 ? selectedCardIds.size : 1;
+      return {
+        kind: "card" as const,
+        title: card?.question ?? "שאלה",
+        count: selectedCount,
+      };
+    }
+    if (activeDragId.startsWith("catdrag:")) {
+      const catId = activeDragId.slice(8);
+      const cat = categoriesById.get(catId);
+      return {
+        kind: "cat" as const,
+        title: cat ? displayCategoryName(cat.name) : "קטגוריה",
+      };
+    }
+    return null;
+  }, [activeDragId, categoriesById, selectedCardIds, state.cards]);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, Category[]>();
@@ -1018,18 +1145,58 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [childrenByParent]);
 
   const directCardsByName = useMemo(() => {
+    // Build reverse lookup from category full-path names: masechta|dafLabel|amudLabel → catName
+    const AMUD_RE = /^ע"[אב]$/;
+    const DAF_RE = /^[\u05D0-\u05EA]+\.$/;
+    const amudCatLookup = new Map<string, string>();
+    const dafCatLookup  = new Map<string, string>();
+    for (const cat of categories) {
+      const parts = cat.name.split(" · ");
+      let mName: string | null = null;
+      let dName: string | null = null;
+      let aName: string | null = null;
+      for (const p of parts) {
+        if (findMasechetByName(p)) mName = p;
+        else if (DAF_RE.test(p)) dName = p;
+        else if (AMUD_RE.test(p)) aName = p;
+      }
+      if (mName && dName && aName) amudCatLookup.set(`${mName}|${dName}|${aName}`, cat.name);
+      else if (mName && dName)    dafCatLookup.set(`${mName}|${dName}`, cat.name);
+    }
+
     const map = new Map<string, StudyCard[]>();
     for (const card of state.cards) {
+      // Resolve structured (masechta/daf/amud) assignment to the most specific category
+      let structuredCatName: string | null = null;
+      if (card.masechta && card.daf) {
+        const lbl  = dafLabel(card.daf);
+        const aLbl = card.amud === 1 ? 'ע"א' : card.amud === 2 ? 'ע"ב' : null;
+        if (aLbl) structuredCatName = amudCatLookup.get(`${card.masechta}|${lbl}|${aLbl}`) ?? null;
+        if (!structuredCatName) structuredCatName = dafCatLookup.get(`${card.masechta}|${lbl}`) ?? null;
+      }
+
+      const addedNames = new Set<string>();
       for (const tag of card.tags) {
         if (!tag.startsWith("cat:")) continue;
         const name = tag.slice(4);
+        // Skip ancestor-level tags when a more specific structured assignment exists,
+        // so the card only appears in its most specific branch (not at masechta/shas level)
+        if (structuredCatName && name !== structuredCatName &&
+            structuredCatName.startsWith(name + " · ")) continue;
+        addedNames.add(name);
         const arr = map.get(name) ?? [];
         arr.push(card);
         map.set(name, arr);
       }
+      // Add the structured assignment if not already present via a tag
+      if (structuredCatName && !addedNames.has(structuredCatName)) {
+        const arr = map.get(structuredCatName) ?? [];
+        arr.push(card);
+        map.set(structuredCatName, arr);
+      }
     }
     return map;
-  }, [state.cards]);
+  }, [state.cards, categories]);
 
   /* === Per-category aggregates === */
   const aggregates = useMemo(() => {
@@ -1167,9 +1334,24 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const cardsOfSelected = useMemo(() => {
     if (smartFolderCards) return smartFolderCards;
     if (!cardsSourceCategory) return [];
-    // Show cards only where they are directly classified.
-    return directCardsByName.get(cardsSourceCategory) ?? [];
-  }, [cardsSourceCategory, directCardsByName, smartFolderCards]);
+    const allCards = directCardsByName.get(cardsSourceCategory) ?? [];
+    // Only show cards that are at the DEEPEST (leaf) level for this category.
+    // If a card also has a tag for a descendant category, it belongs there — not here.
+    const sourceCat = categoriesByName.get(cardsSourceCategory);
+    if (!sourceCat) return allCards;
+    const descendantNames = new Set<string>();
+    const collectDescendants = (id: string) => {
+      for (const child of childrenByParent.get(id) ?? []) {
+        descendantNames.add(child.name);
+        collectDescendants(child.id);
+      }
+    };
+    collectDescendants(sourceCat.id);
+    if (descendantNames.size === 0) return allCards;
+    return allCards.filter(
+      (card) => !card.tags.some((t) => t.startsWith("cat:") && descendantNames.has(t.slice(4))),
+    );
+  }, [cardsSourceCategory, directCardsByName, categoriesByName, childrenByParent, smartFolderCards]);
   const deferredCardsOfSelected = useDeferredValue(cardsOfSelected);
 
   const toggleOpen = (id: string) => setOpenIds((s) => ({ ...s, [id]: !s[id] }));
@@ -1719,6 +1901,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [previewCategory, state.cards, categories]);
 
   return (
+    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
     <div dir="rtl" className="rounded-xl border-2 border-gold/30 bg-card overflow-hidden">
       {/* ── Everything below is zoomed ── */}
       <div ref={containerRef} tabIndex={-1} style={{ zoom: prefs.uiScale }} className="focus:outline-none">
@@ -2521,6 +2704,13 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       ? <><CheckSquare className="h-3.5 w-3.5 text-gold" /> בטל הכל</>
                       : <><Square className="h-3.5 w-3.5" /> בחר הכל</>}
                   </button>
+                  <button
+                    onClick={() => openMoveCardsDialog(cardsOfSelected.map((c) => c.id))}
+                    className="flex items-center gap-1 h-7 px-2 text-xs rounded-lg border border-gold/40 bg-card text-muted-foreground hover:text-foreground hover:border-gold/70 transition-colors"
+                    title="העבר את כל השאלות שמוצגות לענף אחר"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5 text-gold" /> העבר הכל
+                  </button>
                 </div>
                 <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                   {activeSmartId ? "תוצאות" : search.trim() ? "תוצאות חיפוש" : `שאלות ב"${cardsSourceCategory ?? ""}"`}
@@ -2547,6 +2737,15 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                     className={cn("h-7 px-2 text-xs gap-1 bg-gradient-navy text-primary-foreground", !onStudyCardIds && "mr-auto")}
                   >
                     <Layers className="h-3 w-3" /> סווג למערכת
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => openMoveCardsDialog([...selectedCardIds])}
+                    variant="outline"
+                    className="h-7 px-2 text-xs gap-1 border-gold/50 text-gold hover:bg-gold/10"
+                    title="העבר את השאלות הנבחרות לענף אחר"
+                  >
+                    <ArrowRightLeft className="h-3 w-3" /> העבר לענף
                   </Button>
                   <button
                     onClick={() => setSelectedCardIds(new Set())}
@@ -2593,6 +2792,10 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                       setClassifyDeckIds(new Set());
                       setNewDeckNameForClassify("");
                       setClassifyDialogOpen(true);
+                    }}
+                    onMoveToCategoryOpen={() => {
+                      const useSelection = selectedCardIds.has(card.id) && selectedCardIds.size > 1;
+                      openMoveCardsDialog(useSelection ? [...selectedCardIds] : [card.id]);
                     }}
                     onStudyOne={onStudyCardIds ? () => onStudyCardIds([card.id]) : undefined}
                   />
@@ -2666,6 +2869,81 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       <p className="text-[10px] text-muted-foreground text-right px-3 py-1.5 border-t border-gold/20 bg-secondary/20">
         💡 דאבל-קליק לפתיחה · קליק ימני לתפריט · Ctrl+קליק / Shift לבחירה מרובה · F2 שם · Del מחק · Backspace חזור · Alt+→/← היסטוריה
       </p>
+      {activeDragId?.startsWith("card:") && (
+        <div className="text-[10px] text-gold text-right px-3 py-1 border-t border-gold/20 bg-gold/5">
+          גרור ושחרר על ענף כדי להעביר שאלה
+        </div>
+      )}
+
+      {/* Move selected cards to one target category */}
+      <Dialog open={moveCardsDialogOpen} onOpenChange={setMoveCardsDialogOpen}>
+        <DialogContent className="max-w-md gold-frame" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4 text-gold" />
+              העבר שאלות לענף
+            </DialogTitle>
+            <DialogDescription className="text-right text-xs">
+              {moveCardIdsDraft.length} שאלות יועברו לענף אחד (הסיווג הנוכחי יוחלף).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Input
+              value={moveCardTargetSearch}
+              onChange={(e) => setMoveCardTargetSearch(e.target.value)}
+              placeholder="חיפוש תיקיות וענפים..."
+              className="text-right"
+              autoFocus
+            />
+
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-gold/25 bg-card p-1.5 space-y-1">
+              {moveCardTargetOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">לא נמצאו תוצאות</p>
+              )}
+              {moveCardTargetOptions.map((cat) => {
+                const active = moveCardTargetCategoryId === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setMoveCardTargetCategoryId(cat.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm text-right transition-colors",
+                      active ? "border-gold bg-gold/10" : "border-gold/20 hover:border-gold/50 hover:bg-secondary/40",
+                    )}
+                  >
+                    {active
+                      ? <CheckSquare className="h-4 w-4 text-gold shrink-0" />
+                      : <Square className="h-4 w-4 text-muted-foreground shrink-0" />}
+                    <span className="flex-1 truncate">{displayCategoryName(cat.name)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 flex-row-reverse sm:flex-row-reverse">
+            <Button
+              disabled={!moveCardTargetCategoryId || moveCardIdsDraft.length === 0}
+              onClick={() => {
+                if (!moveCardTargetCategoryId) return;
+                moveCardsToCategory(moveCardIdsDraft, moveCardTargetCategoryId);
+
+                setMoveCardsDialogOpen(false);
+                setMoveCardIdsDraft([]);
+                setMoveCardTargetCategoryId(null);
+                setMoveCardTargetSearch("");
+              }}
+              className="bg-gradient-navy text-primary-foreground gap-1.5"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              העבר לענף
+            </Button>
+            <Button variant="outline" onClick={() => setMoveCardsDialogOpen(false)}>בטל</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Classify selected cards to deck dialog */}
       <Dialog open={classifyDialogOpen} onOpenChange={(o) => { setClassifyDialogOpen(o); if (!o) setSelectedCardIds(new Set()); }}>
@@ -2979,7 +3257,25 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         </DialogContent>
       </Dialog>
       </div>{/* end zoom wrapper */}
+      <DragOverlay>
+        {dragOverlay?.kind === "card" && (
+          <div className="max-w-[340px] rounded-xl border-2 border-gold bg-card px-3 py-2 shadow-xl">
+            <div className="text-[11px] text-muted-foreground mb-0.5 text-right">
+              {dragOverlay.count > 1 ? `מעביר ${dragOverlay.count} שאלות` : "מעביר שאלה"}
+            </div>
+            <div className="text-sm font-semibold text-right line-clamp-2">
+              {dragOverlay.title}
+            </div>
+          </div>
+        )}
+        {dragOverlay?.kind === "cat" && (
+          <div className="rounded-xl border-2 border-gold bg-card px-3 py-2 shadow-xl text-sm font-semibold">
+            {dragOverlay.title}
+          </div>
+        )}
+      </DragOverlay>
     </div>
+    </DndContext>
   );
 }
 

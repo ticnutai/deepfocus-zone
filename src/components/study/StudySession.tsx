@@ -1091,18 +1091,92 @@ export function StudySession({
         dir="rtl"
       >
         <div
-          className={cn(
-            "w-24 h-24 rounded-full border-4 flex items-center justify-center bg-card shadow-lg mx-auto",
-            medal.border,
-          )}
+          className="w-24 h-24 rounded-full border-4 border-yellow-400 flex items-center justify-center shadow-xl mx-auto"
+          style={{ background: "hsl(220, 60%, 14%)" }}
         >
-          <Trophy className={cn("h-10 w-10", medal.color)} />
+          {/* כתר תורה — ספר פתוח עם כתר */}
+          <svg
+            viewBox="0 0 40 40"
+            fill="none"
+            stroke="#F5C518"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-12 w-12"
+          >
+            {/* כתר */}
+            <path d="M13 14 L15 9 L18 13 L20 8 L22 13 L25 9 L27 14" fill="#F5C518" fillOpacity="0.25" />
+            {/* ספר פתוח */}
+            <path d="M20 16 C20 16 13 14 7 16 L7 31 C13 29 20 31 20 31 C20 31 27 29 33 31 L33 16 C27 14 20 16 20 16Z" fill="#F5C518" fillOpacity="0.15" />
+            <line x1="20" y1="16" x2="20" y2="31" />
+            {/* שורות בעמוד השמאלי */}
+            <line x1="10" y1="20" x2="18" y2="19.5" strokeWidth="1.2" />
+            <line x1="10" y1="23" x2="18" y2="22.5" strokeWidth="1.2" />
+            <line x1="10" y1="26" x2="18" y2="25.5" strokeWidth="1.2" />
+            {/* שורות בעמוד הימני */}
+            <line x1="22" y1="19.5" x2="30" y2="20" strokeWidth="1.2" />
+            <line x1="22" y1="22.5" x2="30" y2="23" strokeWidth="1.2" />
+            <line x1="22" y1="25.5" x2="30" y2="26" strokeWidth="1.2" />
+          </svg>
         </div>
-        <h3 className="font-display text-3xl font-bold">סיימת את הסשן!</h3>
-        <div className={cn("text-6xl font-display font-bold", medal.color)}>
-          {pct}%
+        {/* כותרת */}
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-semibold">
+            תוצאות החזרה
+          </p>
+          <h3 className="font-display text-3xl font-bold tracking-tight">
+            סיימת את החזרה!
+          </h3>
         </div>
-        <p className="text-muted-foreground">{medal.label}</p>
+
+        {/* ציון — עיצוב יוקרתי */}
+        <div className="relative flex flex-col items-center gap-1 py-2">
+          <div className="flex items-center gap-px">
+            <div
+              className={cn(
+                "font-display font-bold leading-none tracking-tight",
+                medal.color,
+              )}
+              style={{ fontSize: "5.5rem" }}
+            >
+              {pct}
+            </div>
+            <span
+              className={cn(
+                "font-display font-bold self-start mt-3",
+                medal.color,
+              )}
+              style={{ fontSize: "2.2rem" }}
+            >
+              %
+            </span>
+          </div>
+          {/* קו קישוט זהב */}
+          <div className="flex items-center gap-3 w-48">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-yellow-500/60" />
+            <span className="text-yellow-500 text-xs">✦</span>
+            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-yellow-500/60" />
+          </div>
+          <p
+            className={cn(
+              "font-display text-lg font-semibold tracking-wide",
+              medal.color,
+            )}
+          >
+            {medal.label}
+          </p>
+        </div>
+
+        {/* עידוד */}
+        <p className="text-sm font-medium text-muted-foreground italic">
+          {pct >= 90
+            ? "מדהים! שליטה מלאה — כל הכבוד!"
+            : pct >= 75
+              ? "יפה מאוד! אתה בדרך הנכונה."
+              : pct >= 60
+                ? "עברת — עוד קצת ותגיע לשלמות!"
+                : "אל תתייאש, כל חזרה מקדמת אותך קדימה!"}
+        </p>
 
         {/* Stats grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-lg mx-auto pt-2">
@@ -1138,7 +1212,7 @@ export function StudySession({
         {prev && (
           <div className="max-w-md mx-auto rounded-xl border border-gold/30 bg-secondary/40 p-3 text-sm space-y-2 text-right">
             <div className="font-semibold text-foreground flex items-center justify-end gap-1">
-              <TrendingUp className="h-4 w-4 text-gold" /> השוואה לסשן הקודם (
+              <TrendingUp className="h-4 w-4 text-gold" /> השוואה לחזרה הקודמת (
               {prev.date})
             </div>
             <div className="flex justify-between text-xs gap-4">

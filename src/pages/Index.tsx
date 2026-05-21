@@ -949,49 +949,49 @@ const Index = () => {
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <SidebarContent items={visibleSidebarItems} active={active} onSelect={(id) => { setActive(id); if (!pinned) setSidebarHovered(false); }} badges={sidebarBadges} />
-          </div>
-          {/* Sidebar footer: compact icon row */}
-          <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
-            {/* User profile button */}
-            <button
-              onClick={() => setActive("settings")}
-              className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
-              title="הגדרות משתמש"
-            >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
-                {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
-                <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                  {isAdmin ? "👑 מנהל" : "משתמש"}
+            {/* Sidebar footer: compact icon row */}
+            <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
+              {/* User profile button */}
+              <button
+                onClick={() => setActive("settings")}
+                className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
+                title="הגדרות משתמש"
+              >
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
+                  {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                 </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
+                  <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
+                    {isAdmin ? "👑 מנהל" : "משתמש"}
+                  </div>
+                </div>
+                <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+              </button>
+              <div className="flex items-center justify-between gap-1">
+                <button
+                  onClick={() => signOut()}
+                  title={isGuest ? "יציאה" : "התנתקות"}
+                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setSidebarConfigOpen(true)}
+                  title="הגדרת סיידבר"
+                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                >
+                  <Sliders className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setTabConfigOpen(true)}
+                  title="הגדרת טאבים"
+                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                </button>
+                <ThemeSwitcher />
               </div>
-              <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            </button>
-            <div className="flex items-center justify-between gap-1">
-              <button
-                onClick={() => signOut()}
-                title={isGuest ? "יציאה" : "התנתקות"}
-                className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setSidebarConfigOpen(true)}
-                title="הגדרת סיידבר"
-                className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-              >
-                <Sliders className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setTabConfigOpen(true)}
-                title="הגדרת טאבים"
-                className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-              </button>
-              <ThemeSwitcher />
             </div>
           </div>
         </aside>
@@ -1002,7 +1002,7 @@ const Index = () => {
           style={!pinned ? { marginRight: sidebarVisible ? '16rem' : '0' } : undefined}
         >
           {/* Topbar */}
-          <header className="flex items-center justify-end gap-2 border-b-2 border-gold/40 bg-background px-2 h-[56px] sm:px-4 sm:gap-3 sm:h-[60px] lg:px-8" style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(56px + env(safe-area-inset-top))' }}>
+          <header className="[--topbar-h:56px] sm:[--topbar-h:60px] flex items-center justify-end gap-2 border-b-2 border-gold/40 bg-background px-2 h-[56px] sm:px-4 sm:gap-3 sm:h-[60px] lg:px-8" style={{ paddingTop: "env(safe-area-inset-top)", height: "calc(var(--topbar-h) + env(safe-area-inset-top))" }}>
             <div className="flex-1 min-w-0 px-1 sm:px-4">
               <DedicationBanner />
             </div>
@@ -1018,48 +1018,48 @@ const Index = () => {
                   <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
                   <div className="flex-1 overflow-y-auto no-scrollbar">
                     <SidebarContent items={visibleSidebarItems} active={active} onSelect={(id) => { setActive(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
-                  </div>
-                  <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
-                    {/* User profile button */}
-                    <button
-                      onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
-                      className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
-                      title="הגדרות משתמש"
-                    >
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
-                        {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
-                        <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                          {isAdmin ? "👑 מנהל" : "משתמש"}
+                    <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
+                      {/* User profile button */}
+                      <button
+                        onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
+                        className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
+                        title="הגדרות משתמש"
+                      >
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
+                          {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
+                          <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
+                            {isAdmin ? "👑 מנהל" : "משתמש"}
+                          </div>
+                        </div>
+                        <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                      </button>
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          onClick={() => signOut()}
+                          title={isGuest ? "יציאה" : "התנתקות"}
+                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                        >
+                          <LogOut className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setSidebarConfigOpen(true)}
+                          title="הגדרת סיידבר"
+                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                        >
+                          <Sliders className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setTabConfigOpen(true)}
+                          title="הגדרת טאבים"
+                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                        </button>
+                        <ThemeSwitcher />
                       </div>
-                      <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                    </button>
-                    <div className="flex items-center justify-between gap-1">
-                      <button
-                        onClick={() => signOut()}
-                        title={isGuest ? "יציאה" : "התנתקות"}
-                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                      >
-                        <LogOut className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setSidebarConfigOpen(true)}
-                        title="הגדרת סיידבר"
-                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                      >
-                        <Sliders className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setTabConfigOpen(true)}
-                        title="הגדרת טאבים"
-                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                      >
-                        <SlidersHorizontal className="h-4 w-4" />
-                      </button>
-                      <ThemeSwitcher />
                     </div>
                   </div>
                 </SheetContent>

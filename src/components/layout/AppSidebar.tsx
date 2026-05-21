@@ -251,14 +251,14 @@ export function AppShellSidebar() {
             onSelect={goSection}
             onNavigate={goRoute}
           />
+          <SidebarFooter
+            onOpenSettings={() => goSection("settings")}
+            onSignOut={() => signOut()}
+            userLabel={userLabel}
+            userInitial={userInitial}
+            isAdmin={isAdmin}
+          />
         </div>
-        <SidebarFooter
-          onOpenSettings={() => goSection("settings")}
-          onSignOut={() => signOut()}
-          userLabel={userLabel}
-          userInitial={userInitial}
-          isAdmin={isAdmin}
-        />
       </aside>
 
       {/* Mobile trigger + sheet */}
@@ -284,14 +284,14 @@ export function AppShellSidebar() {
               onSelect={goSection}
               onNavigate={goRoute}
             />
+            <SidebarFooter
+              onOpenSettings={() => goSection("settings")}
+              onSignOut={() => signOut()}
+              userLabel={userLabel}
+              userInitial={userInitial}
+              isAdmin={isAdmin}
+            />
           </div>
-          <SidebarFooter
-            onOpenSettings={() => goSection("settings")}
-            onSignOut={() => signOut()}
-            userLabel={userLabel}
-            userInitial={userInitial}
-            isAdmin={isAdmin}
-          />
         </SheetContent>
       </Sheet>
     </>
