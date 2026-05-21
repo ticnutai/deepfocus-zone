@@ -840,8 +840,6 @@ function AddPlanDialog({
   onClose,
   onAdd,
   onAddShas,
-  onEnsureShasCategories,
-  onEnsureTemplateCategories,
   onAddMasecthaReview,
   onAddDeckReview,
 }: {
@@ -849,8 +847,6 @@ function AddPlanDialog({
   onClose: () => void;
   onAdd: (planType: GeneralPlanType, title: string, units: string[], unitsPerDay: number, skipWeekdays?: number[], skipDates?: string[], shasUnit?: ShasUnit, anchorDate?: string, anchorPosition?: { unitIndex: number }, reviewPolicy?: PlanReviewPolicy, mishnaUnit?: MishnaUnit) => void;
   onAddShas: (selectedMasechtos: string[], pagesPerDay: number, unit: ShasUnit, skipWeekdays?: number[], skipDates?: string[], anchorDate?: string, anchorPosition?: { masechta: string; daf: number; amud: 1 | 2 }) => void;
-  onEnsureShasCategories: (selectedMasechtos: string[]) => void;
-  onEnsureTemplateCategories: (units: string[]) => void;
   onAddMasecthaReview: (title: string, units: string[], scheduleType: "srs" | "fixed_interval" | "manual", fixedIntervalDays?: number, manualReviewDates?: string[], linkedDeckId?: string) => void;
   onAddDeckReview: (title: string, deckIds: string[], reviewPolicy: PlanReviewPolicy) => void;
 }) {
@@ -1098,7 +1094,6 @@ function AddPlanDialog({
     if (tpl.id === "shas") {
       if (shasSelectedMasechtos.length === 0) return;
       const ordered = SHAS_BAVLI.filter((m) => shasSelectedMasechtos.includes(m.name)).map((m) => m.name);
-      onEnsureShasCategories(ordered);
       const paceNum = parseInt(shasPagesPerDay, 10) || 1;
       const flatUnits = generateShasUnitsFlat(ordered, shasUnit);
 
@@ -1188,12 +1183,10 @@ function AddPlanDialog({
     if (tpl.id === "custom") {
       const units = customText.split("\n").map((l) => l.trim()).filter(Boolean);
       if (!units.length || !title.trim()) return;
-      onEnsureTemplateCategories(units);
       onAdd("custom", title.trim(), units, pace, skipWeekdays.length ? skipWeekdays : undefined, skipDates.length ? skipDates : undefined, undefined, undefined, undefined, reviewPolicy);
     } else {
       if (!selectedUnits.length || !title.trim()) return;
       const ordered = allTemplateUnits.filter((u) => selectedUnitSet.has(u));
-      onEnsureTemplateCategories(ordered);
       onAdd(tpl.id as GeneralPlanType, title.trim(), ordered, pace, skipWeekdays.length ? skipWeekdays : undefined, skipDates.length ? skipDates : undefined, undefined, undefined, undefined, reviewPolicy);
     }
     handleClose();
@@ -2545,8 +2538,6 @@ export function StudyPlansCard() {
         onClose={() => setAddOpen(false)}
         onAdd={handleAdd}
         onAddShas={handleAddShas}
-        onEnsureShasCategories={ensureShasCategories}
-        onEnsureTemplateCategories={ensureTemplateCategories}
         onAddMasecthaReview={handleAddMasecthaReview}
         onAddDeckReview={handleAddDeckReview}
       />
