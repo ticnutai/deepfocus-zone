@@ -48,6 +48,7 @@ import {
   typographyToBgStyle,
   ANSWER_TYPOGRAPHY_KEY,
   loadAnswerTypography,
+  DEFAULT_QUIZ_TYPOGRAPHY,
 } from "./QuizTypographyPanel";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -634,7 +635,8 @@ export function StudySession({
     } catch {
       /* noop */
     }
-  }, []);
+    try { setUiPref("studyCustomTheme", t as unknown as Record<string, unknown>); } catch { /* guest */ }
+  }, [setUiPref]);
 
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -657,6 +659,32 @@ export function StudySession({
       return "right";
     }
   });
+
+  // ─── Cloud sync: one-time init of quiz typography / align / custom theme ──────
+  const quizPrefsCloudRef = useRef(false);
+  useEffect(() => {
+    if (quizPrefsCloudRef.current) return;
+    const p = state.uiPrefs;
+    if (!p?.studyTypography && !p?.studyAnswerTypography && !p?.studyQuestionAlign && !p?.studyCustomTheme) return;
+    quizPrefsCloudRef.current = true;
+    if (p.studyTypography) {
+      const t = { ...DEFAULT_QUIZ_TYPOGRAPHY, ...(p.studyTypography as Partial<QuizTypography>) };
+      setTypography(t);
+      storeTypography(t);
+    }
+    if (p.studyAnswerTypography) {
+      const t = { ...DEFAULT_QUIZ_TYPOGRAPHY, ...(p.studyAnswerTypography as Partial<QuizTypography>) };
+      setAnswerTypography(t);
+      storeTypography(t, ANSWER_TYPOGRAPHY_KEY);
+    }
+    if (p.studyQuestionAlign && (["right", "center", "left"] as string[]).includes(p.studyQuestionAlign)) {
+      setQuestionAlign(p.studyQuestionAlign as QuestionAlign);
+    }
+    if (p.studyCustomTheme) {
+      setCustomQuizTheme({ ...DEFAULT_CUSTOM_THEME, ...(p.studyCustomTheme as Partial<CustomQuizTheme>) });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!(state.uiPrefs?.studyTypography ?? state.uiPrefs?.studyAnswerTypography ?? state.uiPrefs?.studyQuestionAlign ?? state.uiPrefs?.studyCustomTheme)]);
 
   // Custom next-due selection (per current card). Reset when card changes.
   const [nextInterval, setNextInterval] = useState<string>("auto");
@@ -1588,16 +1616,12 @@ export function StudySession({
                     key={a}
                     onClick={() => {
                       setQuestionAlign(a);
-                      setTypography((prev) => {
-                        const t = { ...prev, align: a };
-                        storeTypography(t);
-                        return t;
-                      });
-                      try {
-                        localStorage.setItem(QUESTION_ALIGN_KEY, a);
-                      } catch {
-                        /* noop */
-                      }
+                      const t = { ...typography, align: a };
+                      setTypography(t);
+                      storeTypography(t);
+                      try { localStorage.setItem(QUESTION_ALIGN_KEY, a); } catch { /* noop */ }
+                      try { setUiPref("studyQuestionAlign", a); } catch { /* guest */ }
+                      try { setUiPref("studyTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ }
                     }}
                     className={cn(
                       questionAlign === a && "font-bold bg-secondary",
@@ -1829,16 +1853,12 @@ export function StudySession({
                     ? "left"
                     : "right";
               setQuestionAlign(next);
-              setTypography((prev) => {
-                const t = { ...prev, align: next };
-                storeTypography(t);
-                return t;
-              });
-              try {
-                localStorage.setItem(QUESTION_ALIGN_KEY, next);
-              } catch {
-                /* noop */
-              }
+              const tNext = { ...typography, align: next };
+              setTypography(tNext);
+              storeTypography(tNext);
+              try { localStorage.setItem(QUESTION_ALIGN_KEY, next); } catch { /* noop */ }
+              try { setUiPref("studyQuestionAlign", next); } catch { /* guest */ }
+              try { setUiPref("studyTypography", tNext as unknown as Record<string, unknown>); } catch { /* guest */ }
             }}
           >
             {typography.align === "right" && (
@@ -1852,11 +1872,11 @@ export function StudySession({
             )}
           </Button>
           {/* Typography (T) floating panel */}
-          <QuizTypographyPanel value={typography} onChange={setTypography} />
+          <QuizTypographyPanel value={typography} onChange={(t) => { setTypography(t); try { setUiPref("studyTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ } }} />
           {/* Answer typography (T) panel — separate styling for answers including justify */}
           <QuizTypographyPanel
             value={answerTypography}
-            onChange={setAnswerTypography}
+            onChange={(t) => { setAnswerTypography(t); try { setUiPref("studyAnswerTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ } }}
             storageKey={ANSWER_TYPOGRAPHY_KEY}
             title="עיצוב טקסט תשובות"
             buttonTitle="עיצוב טיפוגרפיה של תשובות"

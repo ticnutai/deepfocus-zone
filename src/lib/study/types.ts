@@ -264,6 +264,11 @@ export interface UiPrefs {
   heatmapPrefs?: { mode?: string; view?: string; source?: string; deckId?: string; cardType?: string; tag?: string };
   // WeeklySummary: filter preferences (synced across devices)
   weeklySummaryPrefs?: { deckFilter?: string; rangeDays?: string };
+  // StudySession: quiz typography, alignment, and custom theme (synced across devices)
+  studyTypography?: Record<string, unknown>;
+  studyAnswerTypography?: Record<string, unknown>;
+  studyQuestionAlign?: string;
+  studyCustomTheme?: Record<string, unknown>;
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
 }
