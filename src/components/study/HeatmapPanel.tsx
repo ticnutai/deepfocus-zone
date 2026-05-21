@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar as CalIcon, Activity, AlertTriangle, Clock } from "lucide-react";
 import { useStudy } from "@/lib/study/store";
@@ -54,7 +54,7 @@ function ymdToMs(ymd: string): number {
 }
 
 export function HeatmapPanel({ days = 35 }: Props) {
-  const { state } = useStudy();
+  const { state, setUiPref } = useStudy();
   const [mode, setMode] = useState<Mode>("activity");
   const [view, setView] = useState<ViewType>("calendar");
   const [source, setSource] = useState<Source>("all");
@@ -62,6 +62,34 @@ export function HeatmapPanel({ days = 35 }: Props) {
   const [cardType, setCardType] = useState<string>("all");
   const [tag, setTag] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // ─── Cloud sync: one-time init from cloud prefs ────────────────────────────
+  const cloudInitRef = useRef(false);
+  useEffect(() => {
+    if (cloudInitRef.current) return;
+    const p = state.uiPrefs?.heatmapPrefs;
+    if (!p) return;
+    cloudInitRef.current = true;
+    if (p.mode) setMode(p.mode as Mode);
+    if (p.view) setView(p.view as ViewType);
+    if (p.source) setSource(p.source as Source);
+    if (p.deckId) setDeckId(p.deckId);
+    if (p.cardType) setCardType(p.cardType);
+    if (p.tag) setTag(p.tag);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!state.uiPrefs?.heatmapPrefs]);
+
+  const syncToCloud = useCallback((prefs: { mode: string; view: string; source: string; deckId: string; cardType: string; tag: string }) => {
+    setUiPref("heatmapPrefs", prefs);
+  }, [setUiPref]);
+
+  // Wrapped setters that also sync to cloud
+  const handleSetMode = (v: Mode) => { cloudInitRef.current = true; setMode(v); syncToCloud({ mode: v, view, source, deckId, cardType, tag }); };
+  const handleSetView = (v: ViewType) => { cloudInitRef.current = true; setView(v); syncToCloud({ mode, view: v, source, deckId, cardType, tag }); };
+  const handleSetSource = (v: Source) => { cloudInitRef.current = true; setSource(v); syncToCloud({ mode, view, source: v, deckId, cardType, tag }); };
+  const handleSetDeckId = (v: string) => { cloudInitRef.current = true; setDeckId(v); syncToCloud({ mode, view, source, deckId: v, cardType, tag }); };
+  const handleSetCardType = (v: string) => { cloudInitRef.current = true; setCardType(v); syncToCloud({ mode, view, source, deckId, cardType: v, tag }); };
+  const handleSetTag = (v: string) => { cloudInitRef.current = true; setTag(v); syncToCloud({ mode, view, source, deckId, cardType, tag: v }); };
 
   const noteDates = useMemo(() => {
     return new Set((state.dayNotes ?? []).map((n) => n.date));
@@ -267,7 +295,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
 
       {/* Filters */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-        <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
+        <Select value={mode} onValueChange={(v) => handleSetMode(v as Mode)}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
@@ -276,7 +304,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
           </SelectContent>
         </Select>
 
-        <Select value={source} onValueChange={(v) => setSource(v as Source)}>
+        <Select value={source} onValueChange={(v) => handleSetSource(v as Source)}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             {(Object.keys(SOURCE_LABEL) as Source[]).map((s) => (
@@ -285,7 +313,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
           </SelectContent>
         </Select>
 
-        <Select value={view} onValueChange={(v) => setView(v as ViewType)}>
+        <Select value={view} onValueChange={(v) => handleSetView(v as ViewType)}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="calendar">תצוגת לוח שנה</SelectItem>
@@ -294,7 +322,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
           </SelectContent>
         </Select>
 
-        <Select value={deckId} onValueChange={setDeckId} disabled={!cardsOnly}>
+        <Select value={deckId} onValueChange={handleSetDeckId} disabled={!cardsOnly}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue placeholder="מערכת" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">כל המערכות</SelectItem>
@@ -302,7 +330,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
           </SelectContent>
         </Select>
 
-        <Select value={cardType} onValueChange={setCardType} disabled={!cardsOnly}>
+        <Select value={cardType} onValueChange={handleSetCardType} disabled={!cardsOnly}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue placeholder="סוג שאלה" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">כל הסוגים</SelectItem>
@@ -312,7 +340,7 @@ export function HeatmapPanel({ days = 35 }: Props) {
           </SelectContent>
         </Select>
 
-        <Select value={tag} onValueChange={setTag} disabled={!cardsOnly}>
+        <Select value={tag} onValueChange={handleSetTag} disabled={!cardsOnly}>
           <SelectTrigger className="border-2 border-gold/40 h-9 text-xs"><SelectValue placeholder="נושא/תגית" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">כל הנושאים</SelectItem>

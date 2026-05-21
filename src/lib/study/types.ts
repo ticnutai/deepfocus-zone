@@ -260,6 +260,10 @@ export interface UiPrefs {
   aiButtonStyle?: { color: string; bg: string; size: number; shape: string; icon: string };
   // CategoryExplorerView: display/layout preferences (synced across devices; sort is handled separately via categorySortMode)
   explorerViewPrefs?: Record<string, unknown>;
+  // HeatmapPanel: view/filter preferences (synced across devices)
+  heatmapPrefs?: { mode?: string; view?: string; source?: string; deckId?: string; cardType?: string; tag?: string };
+  // WeeklySummary: filter preferences (synced across devices)
+  weeklySummaryPrefs?: { deckFilter?: string; rangeDays?: string };
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
 }

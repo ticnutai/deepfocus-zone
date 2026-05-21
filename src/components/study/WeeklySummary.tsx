@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { GraduationCap, TrendingUp, CheckCircle2, BookOpen } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,9 +12,28 @@ const RANGE_OPTIONS = [
 ];
 
 export const WeeklySummary = () => {
-  const { state } = useStudy();
+  const { state, setUiPref } = useStudy();
   const [deckFilter, setDeckFilter] = useState<string>("all");
   const [rangeDays, setRangeDays] = useState<string>("7");
+
+  // ─── Cloud sync: one-time init from cloud prefs ────────────────────────────
+  const cloudInitRef = useRef(false);
+  useEffect(() => {
+    if (cloudInitRef.current) return;
+    const p = state.uiPrefs?.weeklySummaryPrefs;
+    if (!p) return;
+    cloudInitRef.current = true;
+    if (p.deckFilter) setDeckFilter(p.deckFilter);
+    if (p.rangeDays) setRangeDays(p.rangeDays);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!state.uiPrefs?.weeklySummaryPrefs]);
+
+  const syncToCloud = useCallback((df: string, rd: string) => {
+    setUiPref("weeklySummaryPrefs", { deckFilter: df, rangeDays: rd });
+  }, [setUiPref]);
+
+  const handleSetDeckFilter = (v: string) => { cloudInitRef.current = true; setDeckFilter(v); syncToCloud(v, rangeDays); };
+  const handleSetRangeDays = (v: string) => { cloudInitRef.current = true; setRangeDays(v); syncToCloud(deckFilter, v); };
 
   const data = useMemo(() => {
     const days = parseInt(rangeDays, 10);
@@ -84,7 +103,7 @@ export const WeeklySummary = () => {
           <h3 className="font-display text-lg font-semibold">סיכום</h3>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={rangeDays} onValueChange={setRangeDays}>
+          <Select value={rangeDays} onValueChange={handleSetRangeDays}>
             <SelectTrigger dir="ltr" className="w-[110px] h-9 rounded-full border-2 border-gold/60 bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -94,7 +113,7 @@ export const WeeklySummary = () => {
               ))}
             </SelectContent>
           </Select>
-          <Select value={deckFilter} onValueChange={setDeckFilter}>
+          <Select value={deckFilter} onValueChange={handleSetDeckFilter}>
             <SelectTrigger className="w-[160px] h-9 rounded-full border-2 border-gold/60 bg-card text-sm">
               <SelectValue placeholder="כל המערכות" />
             </SelectTrigger>
