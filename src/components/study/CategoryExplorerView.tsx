@@ -809,13 +809,37 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
   // === Persistent prefs ===
   const [prefs, setPrefsState] = useState<ExplorerPrefs>(() => loadPrefs());
-  const setPrefs = (patch: Partial<ExplorerPrefs>) => {
+
+  // Sync display prefs to cloud (sort fields are handled separately via categorySortMode)
+  const syncDisplayPrefsToCloud = useCallback((next: ExplorerPrefs) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { sortKey: _sk, sortDesc: _sd, favoritesFirst: _ff, ...displayPrefs } = next;
+    setUiPref("explorerViewPrefs", displayPrefs as Record<string, unknown>);
+  }, [setUiPref]);
+
+  const setPrefs = useCallback((patch: Partial<ExplorerPrefs>) => {
     setPrefsState((p) => {
       const next = { ...p, ...patch };
       savePrefs(next);
+      setTimeout(() => syncDisplayPrefsToCloud(next), 0);
       return next;
     });
-  };
+  }, [syncDisplayPrefsToCloud]);
+
+  // One-time: on first load, merge cloud-saved display prefs into local state
+  const cloudInitRef = useRef(false);
+  useEffect(() => {
+    const cloudPrefs = state.uiPrefs?.explorerViewPrefs;
+    if (cloudInitRef.current || !cloudPrefs) return;
+    cloudInitRef.current = true;
+    setPrefsState((p) => {
+      // Merge cloud prefs but keep sort fields from local (those are handled by categorySortMode)
+      const next = { ...p, ...(cloudPrefs as Partial<ExplorerPrefs>), sortKey: p.sortKey, sortDesc: p.sortDesc, favoritesFirst: p.favoritesFirst };
+      savePrefs(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!state.uiPrefs?.explorerViewPrefs]);
 
   // Pull global category sort mode (cloud-synced) into explorer view prefs.
   useEffect(() => {

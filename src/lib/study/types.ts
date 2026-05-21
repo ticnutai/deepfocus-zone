@@ -258,6 +258,8 @@ export interface UiPrefs {
   // CategoryExplorerView: the category id that opens by default on load
   explorerHomeCategoryId?: string | null;
   aiButtonStyle?: { color: string; bg: string; size: number; shape: string; icon: string };
+  // CategoryExplorerView: display/layout preferences (synced across devices; sort is handled separately via categorySortMode)
+  explorerViewPrefs?: Record<string, unknown>;
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
 }
