@@ -516,8 +516,13 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-5xl w-[min(95vw,1200px)]" dir="rtl">
+    <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
+      <DialogContent
+        showOverlay={false}
+        onEscapeKeyDown={() => onOpenChange?.(false)}
+        className="max-w-5xl w-[min(95vw,1200px)]"
+        dir="rtl"
+      >
         {pickerContent}
 
         <DialogFooter className="flex-row-reverse gap-2 sm:gap-2">
