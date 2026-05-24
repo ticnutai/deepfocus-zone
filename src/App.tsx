@@ -18,6 +18,7 @@ const Auth = lazy(() => import("./pages/Auth.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const PlanDetail = lazy(() => import("./pages/PlanDetail.tsx"));
 const SyncDiagnostics = lazy(() => import("./pages/SyncDiagnostics.tsx"));
+const SplitViewPage = lazy(() => import("./pages/SplitViewPage.tsx"));
 const AppLayout = lazy(() => import("./components/layout/AppLayout.tsx"));
 const PerfMonitor = lazy(() => import("@/components/dev/PerfMonitor").then((m) => ({ default: m.PerfMonitor })));
 
@@ -59,6 +60,7 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
+              <Route path="/split-view" element={<RequireAuth><SplitViewPage /></RequireAuth>} />
               <Route element={<AppLayout />}>
                 <Route path="/plan/:planId" element={<PlanDetail />} />
                 <Route path="/sync-diagnostics" element={<RequireAuth><SyncDiagnostics /></RequireAuth>} />

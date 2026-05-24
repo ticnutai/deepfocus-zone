@@ -3,6 +3,12 @@
   "generated_at": "2026-05-21T12:35:59.202646",
   "reports": [
     {
+      "id": "tanakh_joshua_50_mcq_report",
+      "label": "תנך - יהושע (50 אמריקאיות)",
+      "file": "/data/reports/tanakh_joshua_50_mcq_report.json",
+      "updated_at": "2026-05-24T16:47:01.3394031Z"
+    },
+    {
       "id": "orthodox_yeshiva_hidabroot_mcq_report",
       "label": "אורתודוקסי - ישיבה + הידברות (MCQ)",
       "file": "/data/reports/orthodox_yeshiva_hidabroot_mcq_report.json",
@@ -12,7 +18,7 @@
       "id": "neviim_extracted_questions",
       "label": "נביאים - שאלות לחילוץ (אישור)",
       "file": "/data/reports/neviim_extracted_questions.json",
-      "updated_at": "2026-05-24T12:00:00.000000"
+      "updated_at": "2026-05-24T12:00:00"
     },
     {
       "id": "full_shas_qna_report",

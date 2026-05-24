@@ -777,13 +777,13 @@ export function StudySession({
 
   const categoryBreadcrumb = useMemo(() => {
     const cats = state.categories ?? [];
-    const catNames =
+    const catPayloads =
       card?.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4)) ??
       [];
-    if (!catNames.length) return null;
-    const buildPath = (name: string): string[] => {
-      const cat = cats.find((c) => c.name === name);
-      if (!cat) return [name];
+    if (!catPayloads.length) return null;
+    const buildPath = (payload: string): string[] => {
+      const cat = cats.find((c) => c.name === payload) ?? cats.find((c) => c.id === payload);
+      if (!cat) return [];
       const path: string[] = [];
       let cur: typeof cat | undefined = cat;
       while (cur) {
@@ -794,11 +794,12 @@ export function StudySession({
       }
       return path;
     };
-    let bestPath = buildPath(catNames[0]);
-    for (const name of catNames.slice(1)) {
-      const p = buildPath(name);
+    let bestPath = buildPath(catPayloads[0]);
+    for (const payload of catPayloads.slice(1)) {
+      const p = buildPath(payload);
       if (p.length > bestPath.length) bestPath = p;
     }
+    if (!bestPath.length) return null;
     // Skip root level (e.g. "תלמוד בבלי") when there are deeper levels
     const displayPath = bestPath.length > 1 ? bestPath.slice(1) : bestPath;
     return displayPath.join(" ❯ ");
