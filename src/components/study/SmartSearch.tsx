@@ -71,77 +71,107 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Build searchable items
-  const items = useMemo<Hit[]>(() => {
-    const out: Hit[] = [];
-    // Cards
+  const deckById = useMemo(() => new Map(state.decks.map((d) => [d.id, d])), [state.decks]);
+
+  const searchModel = useMemo(() => {
+    const items: Hit[] = [];
+    const cardMetaByHitId = new Map<string, { totalReviews: number; correct: number; incorrect: number }>();
+    const deckCardCount = new Map<string, number>();
+    const deckDueCount = new Map<string, number>();
+    const categoryCardCount = new Map<string, number>();
+    const tagCount = new Map<string, number>();
+
     state.cards.forEach((c) => {
-      const deck = state.decks.find((d) => d.id === c.deckId);
+      const deck = deckById.get(c.deckId);
+      const due = isDue(c);
+
+      deckCardCount.set(c.deckId, (deckCardCount.get(c.deckId) ?? 0) + 1);
+      if (due) deckDueCount.set(c.deckId, (deckDueCount.get(c.deckId) ?? 0) + 1);
+
+      (c.tags ?? []).forEach((t) => {
+        tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
+        if (t.startsWith("cat:")) {
+          const catName = t.slice(4);
+          categoryCardCount.set(catName, (categoryCardCount.get(catName) ?? 0) + 1);
+        }
+      });
+
       let answerText = "";
       if (c.type === "flashcard" || c.type === "combo") answerText = c.answer ?? "";
       else if (c.type === "multiple") answerText = c.options?.join(" | ") ?? "";
       else if (c.type === "boolean") answerText = c.correct ? "נכון" : "לא נכון";
-      out.push({
-        id: `card:${c.id}`,
+
+      const hitId = `card:${c.id}`;
+      items.push({
+        id: hitId,
         kind: "card",
         title: c.question,
         subtitle: [deck?.name, answerText, (c as { explanation?: string }).explanation, c.tags?.join(" ")].filter(Boolean).join(" · "),
         badge: deck?.name,
         cardType: c.type,
-        due: isDue(c),
+        due,
+      });
+      cardMetaByHitId.set(hitId, {
+        totalReviews: c.stats.totalReviews,
+        correct: c.stats.correct,
+        incorrect: c.stats.incorrect,
       });
     });
-    // Categories
-    (state.categories ?? []).forEach((cat) => {
-      const cardCount = state.cards.filter((c) => c.tags?.includes(cat.name)).length;
-      out.push({ id: `cat:${cat.id}`, kind: "category", title: cat.name, subtitle: `${cardCount} שאלות` });
-    });
-    // Decks
-    state.decks.forEach((d) => {
-      const cards = state.cards.filter((c) => c.deckId === d.id);
-      const due = cards.filter(isDue).length;
-      out.push({ id: `deck:${d.id}`, kind: "deck", title: d.name, subtitle: `${cards.length} כרטיסים · ${due} לחזרה` });
-    });
-    // Tags (unique)
-    const tags = new Set<string>();
-    state.cards.forEach((c) => c.tags?.forEach((t) => tags.add(t)));
-    Array.from(tags).forEach((t) => {
-      const count = state.cards.filter((c) => c.tags?.includes(t)).length;
-      out.push({ id: `tag:${t}`, kind: "tag", title: t, subtitle: `${count} שאלות` });
-    });
-    return out;
-  }, [state.cards, state.categories, state.decks]);
 
-  const fuse = useMemo(() => new Fuse(items, {
-    keys: ["title", "subtitle", "badge"],
-    threshold: 0.4,
-    ignoreLocation: true,
-    minMatchCharLength: 1,
-    includeScore: true,
-  }), [items]);
+    (state.categories ?? []).forEach((cat) => {
+      const count = categoryCardCount.get(cat.name) ?? 0;
+      items.push({ id: `cat:${cat.id}`, kind: "category", title: cat.name, subtitle: `${count} שאלות` });
+    });
+
+    state.decks.forEach((d) => {
+      const cards = deckCardCount.get(d.id) ?? 0;
+      const due = deckDueCount.get(d.id) ?? 0;
+      items.push({ id: `deck:${d.id}`, kind: "deck", title: d.name, subtitle: `${cards} כרטיסים · ${due} לחזרה` });
+    });
+
+    tagCount.forEach((count, tag) => {
+      items.push({ id: `tag:${tag}`, kind: "tag", title: tag, subtitle: `${count} שאלות` });
+    });
+
+    return { items, cardMetaByHitId };
+  }, [state.cards, state.categories, state.decks, deckById]);
+
+  const items = searchModel.items;
+
+  // Building Fuse over a large dataset is expensive; delay it until user actually types.
+  const fuse = useMemo(() => {
+    if (!query.trim()) return null;
+    return new Fuse(items, {
+      keys: ["title", "subtitle", "badge"],
+      threshold: 0.4,
+      ignoreLocation: true,
+      minMatchCharLength: 1,
+      includeScore: true,
+    });
+  }, [items, query]);
 
   const results = useMemo(() => {
     let base: Hit[];
     if (!query.trim()) {
       base = items.slice(0, 80);
     } else {
-      base = fuse.search(query).map((r) => r.item);
+      base = (fuse?.search(query) ?? []).map((r) => r.item);
     }
     base = base.filter((h) => kindFilter.has(h.kind));
     if (statusFilter === "due") base = base.filter((h) => h.kind !== "card" || h.due);
     if (statusFilter === "new") base = base.filter((h) => {
       if (h.kind !== "card") return true;
-      const c = state.cards.find((x) => `card:${x.id}` === h.id);
-      return c?.stats.totalReviews === 0;
+      const meta = searchModel.cardMetaByHitId.get(h.id);
+      return (meta?.totalReviews ?? 0) === 0;
     });
     if (statusFilter === "failed") base = base.filter((h) => {
       if (h.kind !== "card") return true;
-      const c = state.cards.find((x) => `card:${x.id}` === h.id);
-      return (c?.stats.incorrect ?? 0) > (c?.stats.correct ?? 0);
+      const meta = searchModel.cardMetaByHitId.get(h.id);
+      return (meta?.incorrect ?? 0) > (meta?.correct ?? 0);
     });
     base = base.filter((h) => h.kind !== "card" || (h.cardType && typeFilter.has(h.cardType)));
     return base.slice(0, 200);
-  }, [query, fuse, kindFilter, typeFilter, statusFilter, items, state.cards]);
+  }, [query, fuse, kindFilter, typeFilter, statusFilter, items, searchModel.cardMetaByHitId]);
 
   const counts = useMemo(() => {
     const c: Record<Kind, number> = { card: 0, category: 0, deck: 0, tag: 0 };
