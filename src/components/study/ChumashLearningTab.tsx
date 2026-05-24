@@ -8,8 +8,10 @@ import { CHUMASH_CHAPTERS, CHUMASH_EN, chumashSefariaUrl } from "@/lib/study/sef
 import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
+import { CardDecksDialog } from "./CardDecksDialog";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
+import type { Card as StudyCardType } from "@/lib/study/types";
 
 const STORAGE_KEY = "chumash-learning-state";
 const SFARIM = ["בראשית", "שמות", "ויקרא", "במדבר", "דברים"] as const;
@@ -61,6 +63,7 @@ export function ChumashLearningTab() {
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("inline");
+  const [deckDialogCard, setDeckDialogCard] = useState<StudyCardType | null>(null);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -117,6 +120,10 @@ export function ChumashLearningTab() {
     [sefer, `פרק ${toGematria(perek)}`],
   ), [state.cards, state.categories, sefer, perek]);
   const cardIds = useMemo(() => cards.map((c) => c.id), [cards]);
+  const closePractice = () => {
+    setStudyOpen(false);
+    setLayoutMode("split");
+  };
 
   const externalUrl = chumashSefariaUrl(sefer, perek);
   const en = CHUMASH_EN[sefer];
@@ -180,6 +187,15 @@ export function ChumashLearningTab() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-foreground">{c.question}</div>
                   </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0"
+                    title="הוסף לערכות"
+                    onClick={() => setDeckDialogCard(c)}
+                  >
+                    <Layers className="h-4 w-4 text-gold" />
+                  </Button>
                 </div>
               </div>
             ))
@@ -196,7 +212,7 @@ export function ChumashLearningTab() {
           <h3 className="text-sm font-semibold flex items-center gap-1">
             <GraduationCap className="h-4 w-4 text-gold" /> תרגול · {cards.length} שאלות
           </h3>
-          <Button size="sm" variant="ghost" onClick={() => setStudyOpen(false)} className="h-7 gap-1">
+          <Button size="sm" variant="ghost" onClick={closePractice} className="h-7 gap-1">
             <X className="h-4 w-4" /> סגור תרגול
           </Button>
         </div>
@@ -206,7 +222,7 @@ export function ChumashLearningTab() {
             deckId={null}
             mode="practice"
             cardIds={cardIds}
-            onExit={() => setStudyOpen(false)}
+            onExit={closePractice}
             fillHeight
           />
         </div>
@@ -217,7 +233,7 @@ export function ChumashLearningTab() {
   const cardsContent = studyOpen && practiceMode === "inline" ? renderPracticePanel() : renderCardsPanel();
 
   if (studyOpen && practiceMode === "fullscreen" && cardIds.length > 0) {
-    return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={() => setStudyOpen(false)} />;
+    return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={closePractice} />;
   }
 
   return (
@@ -338,6 +354,14 @@ export function ChumashLearningTab() {
           </div>
         )}
       </div>
+
+      <CardDecksDialog
+        card={deckDialogCard}
+        open={!!deckDialogCard}
+        onOpenChange={(open) => {
+          if (!open) setDeckDialogCard(null);
+        }}
+      />
     </div>
   );
 }

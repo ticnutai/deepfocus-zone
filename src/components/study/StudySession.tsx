@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import {
   Eye,
+  EyeOff,
   Check,
   X,
   ChevronLeft,
@@ -19,6 +20,8 @@ import {
   Minus,
   List,
   Grid2x2,
+  Layers,
+  BookmarkPlus,
   Zap,
   Palette,
   Edit2,
@@ -50,6 +53,7 @@ import {
   loadAnswerTypography,
   DEFAULT_QUIZ_TYPOGRAPHY,
 } from "./QuizTypographyPanel";
+import { CardDecksDialog } from "./CardDecksDialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +72,7 @@ import { isDue, buildStudyQueue } from "@/lib/study/srs";
 import { parseCloze, hasCloze, renderCloze } from "@/lib/study/cloze";
 import type { Card as StudyCard, StudyMode } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
 // ===== Persistence keys =====
 const COMBO_PREF_KEY = "study-combo-pref-v1";
@@ -78,6 +83,7 @@ const QUIZ_THEME_KEY = "study-quiz-theme-v1"; // "classic" | "millionaire" | "na
 const CUSTOM_QUIZ_THEME_KEY = "study-quiz-custom-theme-v1";
 const QUESTION_ALIGN_KEY = "study-question-align-v1";
 const QUIZ_HISTORY_KEY = "study-quiz-history-v1";
+const LAST_QUICK_DECK_KEY = "study-last-quick-deck-id-v1";
 
 type ComboPref = "flash" | "multi" | "both";
 type ViewMode = "classic" | "flip" | "list" | "test";
@@ -387,7 +393,7 @@ export function StudySession({
   timeLimitSec,
   fillHeight = false,
 }: Props) {
-  const { state, reviewCard, setUiPref } = useStudy();
+  const { state, reviewCard, setUiPref, addCardToDeck } = useStudy();
   const isMobile = useIsMobile();
 
   const comboPrefForQueue =
@@ -677,6 +683,8 @@ export function StudySession({
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
   const [mobileSettingsDropdownOpen, setMobileSettingsDropdownOpen] =
     useState(false);
+  const [deckDialogOpen, setDeckDialogOpen] = useState(false);
+  const [desktopToolsOpen, setDesktopToolsOpen] = useState(true);
 
   const [typography, setTypography] = useState<QuizTypography>(loadTypography);
   const [answerTypography, setAnswerTypography] =
@@ -774,6 +782,85 @@ export function StudySession({
   }, [idx]);
 
   const card = queue[idx];
+
+  const quickAddToLastDeck = useCallback(() => {
+    if (!card) return;
+
+    const decks = state.decks ?? [];
+    if (decks.length === 0) {
+      toast({
+        title: "אין ערכות עדיין",
+        description: "צור ערכה חדשה ואז נוכל לשייך אליה את השאלה.",
+      });
+      return;
+    }
+
+    let targetDeckId = "";
+    try {
+      targetDeckId = localStorage.getItem(LAST_QUICK_DECK_KEY) ?? "";
+    } catch {
+      /* ignore */
+    }
+
+    const hasRemembered = targetDeckId && decks.some((d) => d.id === targetDeckId);
+    if (!hasRemembered) {
+      const linkedDeckId =
+        card.deckId && decks.some((d) => d.id === card.deckId)
+          ? card.deckId
+          : (state.cardDecks ?? []).find(
+                (l) => l.cardId === card.id && decks.some((d) => d.id === l.deckId),
+              )?.deckId ?? "";
+
+      if (linkedDeckId) {
+        targetDeckId = linkedDeckId;
+      } else if (deckId && decks.some((d) => d.id === deckId)) {
+        targetDeckId = deckId;
+      } else if (decks.length === 1) {
+        targetDeckId = decks[0].id;
+      } else {
+        setDeckDialogOpen(true);
+        toast({
+          title: "בחר ערכה בפעם הראשונה",
+          description: "אחר כך הכפתור המהיר יוסיף אוטומטית לערכה האחרונה.",
+        });
+        return;
+      }
+    }
+
+    const alreadyLinked =
+      card.deckId === targetDeckId ||
+      (state.cardDecks ?? []).some(
+        (l) => l.cardId === card.id && l.deckId === targetDeckId,
+      );
+
+    const targetDeckName =
+      decks.find((d) => d.id === targetDeckId)?.name ?? "הערכה שנבחרה";
+
+    if (alreadyLinked) {
+      toast({
+        title: "כבר משויך לערכה",
+        description: `השאלה כבר קיימת בערכה "${targetDeckName}".`,
+      });
+      try {
+        localStorage.setItem(LAST_QUICK_DECK_KEY, targetDeckId);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    addCardToDeck(card.id, targetDeckId);
+    try {
+      localStorage.setItem(LAST_QUICK_DECK_KEY, targetDeckId);
+    } catch {
+      /* ignore */
+    }
+
+    toast({
+      title: "נוסף לערכה",
+      description: `השאלה נוספה לערכה "${targetDeckName}".`,
+    });
+  }, [card, state.decks, state.cardDecks, addCardToDeck, deckId]);
 
   const categoryBreadcrumb = useMemo(() => {
     const cats = state.categories ?? [];
@@ -1561,6 +1648,26 @@ export function StudySession({
                 {String(elapsed % 60).padStart(2, "0")}
               </span>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              title="הוספה מהירה לערכה אחרונה"
+              onClick={quickAddToLastDeck}
+              disabled={!card}
+            >
+              <BookmarkPlus className="h-3.5 w-3.5 text-gold" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              title="הוסף את השאלה לערכות"
+              onClick={() => setDeckDialogOpen(true)}
+              disabled={!card}
+            >
+              <Layers className="h-3.5 w-3.5 text-gold" />
+            </Button>
             <DropdownMenu
               open={mobileSettingsDropdownOpen}
               onOpenChange={setMobileSettingsDropdownOpen}
@@ -1768,6 +1875,60 @@ export function StudySession({
           isMobile && "hidden",
         )}
       >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-muted-foreground hover:text-foreground gap-1"
+          title="סגור מצב שאלות וחזור לתצוגה מפוצלת (Esc)"
+          onClick={onExit}
+        >
+          <X className="h-3.5 w-3.5" />
+          <span className="text-xs">יציאה</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+          title="הוספה מהירה לערכה אחרונה"
+          onClick={quickAddToLastDeck}
+          disabled={!card}
+        >
+          <BookmarkPlus className="h-3.5 w-3.5 text-gold" />
+          <span className="text-xs">מהיר</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+          title="הוסף את השאלה לערכות"
+          onClick={() => setDeckDialogOpen(true)}
+          disabled={!card}
+        >
+          <Layers className="h-3.5 w-3.5 text-gold" />
+          <span className="text-xs">ערכות</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+          title={desktopToolsOpen ? "הסתר סרגל כלים" : "הצג סרגל כלים"}
+          onClick={() => setDesktopToolsOpen((prev) => !prev)}
+        >
+          {desktopToolsOpen ? (
+            <>
+              <EyeOff className="h-3.5 w-3.5 text-gold" />
+              <span className="text-xs">הסתר כלים</span>
+            </>
+          ) : (
+            <>
+              <Eye className="h-3.5 w-3.5 text-gold" />
+              <span className="text-xs">כלים</span>
+            </>
+          )}
+        </Button>
+
+        {desktopToolsOpen && (
+          <>
         {/* RIGHT edge (RTL start): quiz theme picker + edit btn */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {/* Quiz theme picker */}
@@ -2088,6 +2249,8 @@ export function StudySession({
             {mode === "srs" ? "חזרה ממוקדת" : "תרגול חופשי"}
           </span>
         </div>
+          </>
+        )}
       </div>
       <Progress
         value={progress}
@@ -3385,6 +3548,12 @@ export function StudySession({
         onSave={saveCustomTheme}
         onPreview={(t) => setCustomQuizTheme(t)}
         onClose={() => setThemeEditorOpen(false)}
+      />
+
+      <CardDecksDialog
+        card={card ?? null}
+        open={deckDialogOpen}
+        onOpenChange={setDeckDialogOpen}
       />
     </Card>
   );

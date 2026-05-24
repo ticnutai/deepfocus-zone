@@ -8,8 +8,10 @@ import { NACH_BOOK_VERSES, NACH_KETUVIM_BOOKS, NACH_NEVIIM_BOOKS } from "@/lib/s
 import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
+import { CardDecksDialog } from "./CardDecksDialog";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
+import type { Card as StudyCardType } from "@/lib/study/types";
 
 type NachMode = "neviim" | "ketuvim";
 type LayoutMode = "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
@@ -71,6 +73,7 @@ export function NeviimKetuvimLearningTab() {
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("inline");
+  const [deckDialogCard, setDeckDialogCard] = useState<StudyCardType | null>(null);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -133,6 +136,10 @@ export function NeviimKetuvimLearningTab() {
   const setLayoutMode = (value: string) => {
     if (value !== "split" && value !== "text-only" && value !== "cards-only" && value !== "double-text" && value !== "text-focus") return;
     setUiPref("neviimLayoutMode", value as LayoutMode);
+  };
+  const closePractice = () => {
+    setStudyOpen(false);
+    setLayoutMode("split");
   };
 
   const setSplitRatio = (value: number) => {
@@ -220,6 +227,15 @@ export function NeviimKetuvimLearningTab() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-foreground">{c.question}</div>
                   </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0"
+                    title="הוסף לערכות"
+                    onClick={() => setDeckDialogCard(c)}
+                  >
+                    <Layers className="h-4 w-4 text-gold" />
+                  </Button>
                 </div>
               </div>
             ))
@@ -236,7 +252,7 @@ export function NeviimKetuvimLearningTab() {
           <h3 className="text-sm font-semibold flex items-center gap-1">
             <GraduationCap className="h-4 w-4 text-gold" /> תרגול · {cards.length} שאלות
           </h3>
-          <Button size="sm" variant="ghost" onClick={() => setStudyOpen(false)} className="h-7 gap-1">
+          <Button size="sm" variant="ghost" onClick={closePractice} className="h-7 gap-1">
             <X className="h-4 w-4" /> סגור תרגול
           </Button>
         </div>
@@ -246,7 +262,7 @@ export function NeviimKetuvimLearningTab() {
             deckId={null}
             mode="practice"
             cardIds={cardIds}
-            onExit={() => setStudyOpen(false)}
+            onExit={closePractice}
             fillHeight
           />
         </div>
@@ -257,7 +273,7 @@ export function NeviimKetuvimLearningTab() {
   const cardsContent = studyOpen && practiceMode === "inline" ? renderPracticePanel() : renderCardsPanel();
 
   if (studyOpen && practiceMode === "fullscreen" && cardIds.length > 0) {
-    return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={() => setStudyOpen(false)} />;
+    return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={closePractice} />;
   }
 
   return (
@@ -395,6 +411,14 @@ export function NeviimKetuvimLearningTab() {
           </div>
         )}
       </div>
+
+      <CardDecksDialog
+        card={deckDialogCard}
+        open={!!deckDialogCard}
+        onOpenChange={(open) => {
+          if (!open) setDeckDialogCard(null);
+        }}
+      />
     </div>
   );
 }
