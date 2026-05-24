@@ -21,7 +21,8 @@
     "android:sync": "npx cap sync android",
     "android:run": "npm run build && npx cap sync android && npx cap run android",
     "update-browsers": "npm install caniuse-lite@latest --legacy-peer-deps",
-    "generate:joshua": "node scripts/generate-joshua-builtins.mjs --from 2 --to 11 --count 10"
+    "generate:joshua": "node scripts/generate-joshua-builtins.mjs --from 2 --to 11 --count 10",
+    "quiz:pipeline": "node scripts/run-community-quiz-pipeline.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.2",

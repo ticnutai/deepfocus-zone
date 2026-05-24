@@ -131,8 +131,8 @@ export function NeviimKetuvimLearningTab() {
     const onMove = (ev: MouseEvent) => {
       const rect = splitContainerRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return;
-      const ratioFromRight = ((rect.right - ev.clientX) / rect.width) * 100;
-      setSplitRatio(ratioFromRight);
+      const ratioFromLeft = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplitRatio(ratioFromLeft);
     };
 
     const onUp = () => setIsResizing(false);

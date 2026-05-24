@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, memo } from "react";
-import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers } from "lucide-react";
+import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 type Layout = "split-v" | "split-h" | "gemara" | "cards";
 type PracticeMode = "inline" | "fullscreen";
+type SplitSide = "gemara-right" | "gemara-left";
 
 const STORAGE_KEY = "daf-learning-state";
 
@@ -30,6 +31,7 @@ interface SavedState {
   daf?: number;
   amud?: 1 | 2;
   layout?: Layout;
+  splitSide?: SplitSide;
   practiceMode?: PracticeMode;
   practiceScale?: number;
 }
@@ -50,13 +52,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [daf, setDaf] = useState<number>(saved.daf ?? 2);
   const [amud, setAmud] = useState<1 | 2>(saved.amud ?? 1);
   const [layout, setLayout] = useState<Layout>(saved.layout ?? (window.innerWidth >= 1024 ? "split-v" : "cards"));
+  const [splitSide, setSplitSide] = useState<SplitSide>(saved.splitSide ?? "gemara-right");
   const [studyOpen, setStudyOpen] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
   const [countsReady, setCountsReady] = useState(false);
 
   // שמור בחירה
-  useEffect(() => { saveState({ seder, masechta, daf, amud, layout, practiceMode, practiceScale }); }, [seder, masechta, daf, amud, layout, practiceMode, practiceScale]);
+  useEffect(() => { saveState({ seder, masechta, daf, amud, layout, splitSide, practiceMode, practiceScale }); }, [seder, masechta, daf, amud, layout, splitSide, practiceMode, practiceScale]);
 
   // איפוס מסכת אם הסדר השתנה ולא תואם
   const masechtos = useMemo(() => SHAS_BAVLI.filter((m) => m.seder === seder), [seder]);
@@ -164,6 +167,25 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           <ToggleGroupItem value="gemara" title="גמרא בלבד"><BookOpen className="h-4 w-4" /></ToggleGroupItem>
           <ToggleGroupItem value="cards" title="שאלות בלבד"><ListChecks className="h-4 w-4" /></ToggleGroupItem>
         </ToggleGroup>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="w-full border-gold/40"
+          title={
+            splitSide === "gemara-right"
+              ? "החלף צדדים: גמרא לשמאל, שאלות לימין"
+              : "החלף צדדים: גמרא לימין, שאלות לשמאל"
+          }
+          onClick={() =>
+            setSplitSide((prev) =>
+              prev === "gemara-right" ? "gemara-left" : "gemara-right",
+            )
+          }
+        >
+          <ArrowLeftRight className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="flex items-center justify-between gap-2">
@@ -305,6 +327,30 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Card>
   );
 
+  const showGemara =
+    layout === "split-v" || layout === "split-h" || layout === "gemara";
+  const showCards =
+    layout === "split-v" || layout === "split-h" || layout === "cards";
+
+  const splitPanels =
+    splitSide === "gemara-right"
+      ? [
+          showGemara ? <div key="gemara" className="min-h-0">{gemara}</div> : null,
+          showCards ? (
+            <div key="cards" className="min-h-0">
+              {studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel}
+            </div>
+          ) : null,
+        ]
+      : [
+          showCards ? (
+            <div key="cards" className="min-h-0">
+              {studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel}
+            </div>
+          ) : null,
+          showGemara ? <div key="gemara" className="min-h-0">{gemara}</div> : null,
+        ];
+
   return (
     <div className="space-y-4" dir="rtl">
       {navigator}
@@ -318,12 +364,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         )}
         style={{ height: "calc(100vh - 280px)", minHeight: 500 }}
       >
-        {(layout === "split-v" || layout === "split-h" || layout === "gemara") && (
-          <div className="min-h-0">{gemara}</div>
-        )}
-        {(layout === "split-v" || layout === "split-h" || layout === "cards") && (
-          <div className="min-h-0">{studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel}</div>
-        )}
+        {splitPanels}
       </div>
     </div>
   );
