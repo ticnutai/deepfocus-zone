@@ -68,6 +68,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [isSplitFullscreen, setIsSplitFullscreen] = useState(false);
   const [studyOpen, setStudyOpen] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
@@ -113,6 +114,17 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       window.removeEventListener("mouseup", onUp);
     };
   }, [isResizing]);
+
+  const isFullscreenActive = isSplitFullscreen && layout === "split";
+
+  useEffect(() => {
+    if (!isFullscreenActive) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullscreenActive]);
 
   // איפוס מסכת אם הסדר השתנה ולא תואם
   const masechtos = useMemo(() => SHAS_BAVLI.filter((m) => m.seder === seder), [seder]);
@@ -224,11 +236,16 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
         {layout === "split" && (
           <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-3 py-2">
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-              <span>יחס גמרא/שאלות</span>
-              <span>{splitRatio}% / {100 - splitRatio}%</span>
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                className="h-6 w-6 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
+                title={isFullscreenActive ? "צא מתצוגה מלאה" : "פתח תצוגה מלאה"}
+                onClick={() => setIsSplitFullscreen((prev) => !prev)}
+              >
+                {isFullscreenActive ? <Minimize2 className="h-3.5 w-3.5 mx-auto" /> : <Maximize2 className="h-3.5 w-3.5 mx-auto" />}
+              </button>
             </div>
-            <Slider min={20} max={80} step={1} value={[splitRatio]} onValueChange={(v) => setSplitRatio(v[0] ?? 60)} />
           </div>
         )}
       </div>
@@ -379,7 +396,24 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   return (
     <div className="space-y-4" dir="rtl">
       {navigator}
-      <div style={{ height: "calc(100vh - 280px)", minHeight: 500 }}>
+      <div
+        className={cn(isFullscreenActive && "fixed inset-0 z-50 bg-background p-3 sm:p-4 lg:p-6")}
+        style={isFullscreenActive ? { height: "100vh", minHeight: 0 } : { height: "calc(100vh - 280px)", minHeight: 500 }}
+      >
+        {isFullscreenActive && (
+          <div className="absolute top-3 left-3 z-30">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 border-gold/50"
+              title="צא מתצוגה מלאה"
+              onClick={() => setIsSplitFullscreen(false)}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         {layout === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
@@ -415,8 +449,8 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
                 <div
                   className={cn(
-                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
-                    isResizing && "bg-gold/50",
+                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize opacity-0 group-hover/divider:opacity-100 transition-[opacity,background-color]",
+                    isResizing && "bg-gold/50 opacity-100",
                   )}
                   title="גרור לשינוי יחס"
                   onMouseDown={(e) => {

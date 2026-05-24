@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { useStudy } from "@/lib/study/store";
 import { MISHNAYOT_DATA } from "@/lib/study/mishnayotData";
 import { mishnaSefariaUrl, MISHNA_MASECHTA_EN } from "@/lib/study/sefariaExt";
@@ -62,6 +61,7 @@ export function MishnaLearningTab() {
   const [splitReversed, setSplitReversed] = useState<boolean>(!!saved.splitReversed);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [isSplitFullscreen, setIsSplitFullscreen] = useState(false);
 
   useEffect(() => {
     saveSt({
@@ -119,6 +119,17 @@ export function MishnaLearningTab() {
       window.removeEventListener("mouseup", onUp);
     };
   }, [isResizing]);
+
+  const isFullscreenActive = isSplitFullscreen && layoutMode === "split";
+
+  useEffect(() => {
+    if (!isFullscreenActive) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullscreenActive]);
 
   const cards = useMemo(() => filterCardsByCategoryChain(
     state.cards,
@@ -251,11 +262,16 @@ export function MishnaLearningTab() {
 
           {layoutMode === "split" && (
             <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-3 py-2">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                <span>יחס טקסט/שאלות</span>
-                <span>{splitRatio}% / {100 - splitRatio}%</span>
+              <div className="flex items-center justify-center">
+                <button
+                  type="button"
+                  className="h-6 w-6 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
+                  title={isFullscreenActive ? "צא מתצוגה מלאה" : "פתח תצוגה מלאה"}
+                  onClick={() => setIsSplitFullscreen((prev) => !prev)}
+                >
+                  {isFullscreenActive ? <Minimize2 className="h-3.5 w-3.5 mx-auto" /> : <Maximize2 className="h-3.5 w-3.5 mx-auto" />}
+                </button>
               </div>
-              <Slider min={20} max={80} step={1} value={[splitRatio]} onValueChange={(v) => setSplitRatio(v[0] ?? 60)} />
             </div>
           )}
         </div>
@@ -274,7 +290,24 @@ export function MishnaLearningTab() {
         </div>
       </Card>
 
-      <div style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
+      <div
+        className={cn(isFullscreenActive && "fixed inset-0 z-50 bg-background p-3 sm:p-4 lg:p-6")}
+        style={isFullscreenActive ? { height: "100vh", minHeight: 0 } : { height: "calc(100vh - 320px)", minHeight: 500 }}
+      >
+        {isFullscreenActive && (
+          <div className="absolute top-3 left-3 z-30">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 border-gold/50"
+              title="צא מתצוגה מלאה"
+              onClick={() => setIsSplitFullscreen(false)}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         {layoutMode === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
@@ -305,8 +338,8 @@ export function MishnaLearningTab() {
 
                 <div
                   className={cn(
-                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
-                    isResizing && "bg-gold/50",
+                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize opacity-0 group-hover/divider:opacity-100 transition-[opacity,background-color]",
+                    isResizing && "bg-gold/50 opacity-100",
                   )}
                   title="גרור לשינוי יחס"
                   onMouseDown={(e) => {

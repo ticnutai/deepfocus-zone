@@ -27,14 +27,20 @@ export function filterCardsByCategoryChain(
   };
 
   const matchingCatNames = new Set<string>();
+  const matchingCatIds = new Set<string>();
   for (const cat of cats) {
     const namesInPath = chainNamesInPath(cat);
     if (chain.every((name) => namesInPath.has(name))) {
       matchingCatNames.add(cat.name);
+      matchingCatIds.add(cat.id);
     }
   }
 
   return cards.filter((c) =>
-    c.tags?.some((t) => t.startsWith("cat:") && matchingCatNames.has(t.slice(4))),
+    c.tags?.some((t) => {
+      if (!t.startsWith("cat:")) return false;
+      const payload = t.slice(4);
+      return matchingCatNames.has(payload) || matchingCatIds.has(payload);
+    }),
   );
 }

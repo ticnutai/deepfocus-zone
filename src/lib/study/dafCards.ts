@@ -38,6 +38,7 @@ export function filterCardsByDafAmud(
 
   // קטגוריה רלוונטית = יש לה אב מסכת + אב דף + (אם amud נבחר) האב/עצמה הוא העמוד
   const matchingCatNames = new Set<string>();
+  const matchingCatIds = new Set<string>();
   for (const cat of cats) {
     const leaf = displayCategoryName(cat.name);
     const hasMasechta = isInChain(cat, (l) => l === masechta);
@@ -54,6 +55,7 @@ export function filterCardsByDafAmud(
     // Generic leaf labels like "ב." or "דף ב" can exist across many masechtot
     // and cause cross-tractate pollution in Daf Learning counts.
     matchingCatNames.add(cat.name);
+    matchingCatIds.add(cat.id);
   }
 
   return cards.filter((c) => {
@@ -62,7 +64,11 @@ export function filterCardsByDafAmud(
       if (!amud || !c.amud || c.amud === amud) return true;
     }
     // 2) תגיות קטגוריה ישנות
-    if (c.tags?.some((t) => t.startsWith("cat:") && matchingCatNames.has(t.slice(4)))) {
+    if (c.tags?.some((t) => {
+      if (!t.startsWith("cat:")) return false;
+      const payload = t.slice(4);
+      return matchingCatNames.has(payload) || matchingCatIds.has(payload);
+    })) {
       return true;
     }
     return false;

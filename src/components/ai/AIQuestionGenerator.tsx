@@ -340,7 +340,7 @@ export function AIQuestionGenerator() {
           options: q.options,
           correctIndices: [q.correctIndex],
           explanation: q.explanation,
-          tags: [`cat:${amudCat.id}`, "source:ai"],
+          tags: [`cat:${amudCat.name}`, "source:ai"],
           masechta: masechet,
           daf: daf,
           amud: amud === "a" ? 1 : 2,
@@ -414,7 +414,7 @@ export function AIQuestionGenerator() {
           const nextTags = Array.from(
             new Set([
               ...keptTags,
-              `cat:${rangeCat.id}`,
+              `cat:${rangeCat.name}`,
               "source:ai",
               "source:builtin_joshua",
               refTag,
@@ -438,7 +438,7 @@ export function AIQuestionGenerator() {
           correctIndices: [q.correctIndex],
           explanation: q.explanation,
           tags: [
-            `cat:${rangeCat.id}`,
+            `cat:${rangeCat.name}`,
             "source:ai",
             "source:builtin_joshua",
             refTag,
