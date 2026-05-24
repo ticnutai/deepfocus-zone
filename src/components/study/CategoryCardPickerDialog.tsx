@@ -20,9 +20,20 @@ interface Props {
   onOpenChange: (o: boolean) => void;
   category: Category | null;
   deckId: string | null;
+  defaultSelectMode?: "linked" | "unlinked-only";
+  autoCloseOnSave?: boolean;
+  onSaveComplete?: (payload: { selectedCount: number; allSelected: boolean }) => void;
 }
 
-export function CategoryCardPickerDialog({ open, onOpenChange, category, deckId }: Props) {
+export function CategoryCardPickerDialog({
+  open,
+  onOpenChange,
+  category,
+  deckId,
+  defaultSelectMode = "linked",
+  autoCloseOnSave = true,
+  onSaveComplete,
+}: Props) {
   const { state, addCardToDeck, removeCardFromDeck, updateDeckCategoryIds } = useStudy();
   const [search, setSearch] = useState("");
 
@@ -47,6 +58,11 @@ export function CategoryCardPickerDialog({ open, onOpenChange, category, deckId 
     return new Set((state.cardDecks ?? []).filter((l) => l.deckId === deckId).map((l) => l.cardId));
   }, [state.cardDecks, deckId]);
 
+  const unlinkedCategoryCardIds = useMemo(
+    () => categoryCards.filter((c) => !linkedCardIds.has(c.id)).map((c) => c.id),
+    [categoryCards, linkedCardIds],
+  );
+
   /** Is the whole category already linked to this deck? */
   const categoryLinked = useMemo(() => {
     if (!deck || !category) return false;
@@ -56,6 +72,7 @@ export function CategoryCardPickerDialog({ open, onOpenChange, category, deckId 
   // Local selection state — initialize from existing state
   const [selection, setSelection] = useState<Set<string>>(() => {
     if (categoryLinked) return new Set(categoryCards.map((c) => c.id));
+    if (defaultSelectMode === "unlinked-only") return new Set(unlinkedCategoryCardIds);
     return new Set(Array.from(linkedCardIds));
   });
 
@@ -65,11 +82,13 @@ export function CategoryCardPickerDialog({ open, onOpenChange, category, deckId 
       setSearch("");
       if (categoryLinked) {
         setSelection(new Set(categoryCards.map((c) => c.id)));
+      } else if (defaultSelectMode === "unlinked-only") {
+        setSelection(new Set(unlinkedCategoryCardIds));
       } else {
         setSelection(new Set(Array.from(linkedCardIds)));
       }
     }
-  }, [open]);
+  }, [open, categoryLinked, categoryCards, linkedCardIds, defaultSelectMode, unlinkedCategoryCardIds]);
 
   const toggle = (id: string) => {
     setSelection((s) => {
@@ -114,7 +133,8 @@ export function CategoryCardPickerDialog({ open, onOpenChange, category, deckId 
       }
     }
 
-    onOpenChange(false);
+    onSaveComplete?.({ selectedCount: selection.size, allSelected });
+    if (autoCloseOnSave) onOpenChange(false);
   };
 
   if (!category || !deck) return null;

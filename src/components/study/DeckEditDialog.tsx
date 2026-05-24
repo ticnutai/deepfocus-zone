@@ -1,15 +1,18 @@
-import { useState, useMemo } from "react";
-import { Pencil, Trash2, Plus, Search, X, Copy, FolderTree, List } from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
+import { Pencil, Trash2, Plus, Search, X, Copy } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStudy } from "@/lib/study/store";
-import type { Card as StudyCardType } from "@/lib/study/types";
-import { CategoryCardPickerDialog } from "./CategoryCardPickerDialog";
+import type { Card as StudyCardType, Category } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
+import { CategoryCardPickerDialog } from "./CategoryCardPickerDialog";
+import { CategoryPickerDialog } from "./CategoryPickerDialog";
+import { useToast } from "@/hooks/use-toast";
+
+const StudyPlansCard = lazy(() => import("./StudyPlansCard").then((m) => ({ default: m.StudyPlansCard })));
 
 interface Props {
   open: boolean;
@@ -29,52 +32,21 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function DeckEditDialog({ open, onOpenChange, deckId, onEditCard, onAddCard }: Props) {
-  const { state, deleteCard, duplicateCard, updateDeckCategoryIds, renameDeck } = useStudy();
+  const { state, deleteCard, duplicateCard, renameDeck } = useStudy();
+  const { toast } = useToast();
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [search, setSearch] = useState("");
-  const [catSearch, setCatSearch] = useState("");
-  const [showCatEditor, setShowCatEditor] = useState(false);
+  const [activeTab, setActiveTab] = useState<"questions" | "reviews">("questions");
+  const [classifyOpen, setClassifyOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerCatId, setPickerCatId] = useState<string | null>(null);
+  const [pickerCategoryQueue, setPickerCategoryQueue] = useState<string[]>([]);
+  const [pickerQueueIndex, setPickerQueueIndex] = useState(0);
+  const [classifiedCategoriesCount, setClassifiedCategoriesCount] = useState(0);
+  const [classifiedQuestionsCount, setClassifiedQuestionsCount] = useState(0);
+  const [reviewsCreateSignal, setReviewsCreateSignal] = useState(0);
 
   const deck = useMemo(() => state.decks.find((d) => d.id === deckId) ?? null, [state.decks, deckId]);
-
-  // Build category options
-  const categoryOptions = useMemo(() => {
-    const cats = state.categories ?? [];
-    const out: { id: string; name: string; path: string }[] = [];
-    const walk = (parentId: string | null, parentPath: string) => {
-      cats.filter((c) => c.parentId === parentId).forEach((c) => {
-        const path = parentPath ? `${parentPath} / ${c.name}` : c.name;
-        out.push({ id: c.id, name: c.name, path });
-        walk(c.id, path);
-      });
-    };
-    walk(null, "");
-    return out;
-  }, [state.categories]);
-
-  // Selected category IDs for this deck
-  const [selectedCatIds, setSelectedCatIds] = useState<string[]>(() => deck?.categoryIds ?? []);
-  // Sync when deck changes
-  useMemo(() => { if (deck) setSelectedCatIds(deck.categoryIds); }, [deck?.id]);
-
-  const filteredCats = useMemo(() => {
-    const q = catSearch.trim().toLowerCase();
-    if (!q) return categoryOptions;
-    return categoryOptions.filter((c) => c.path.toLowerCase().includes(q));
-  }, [categoryOptions, catSearch]);
-
-  const toggleCat = (id: string) => {
-    setSelectedCatIds((arr) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
-  };
-
-  const saveCategoryIds = () => {
-    if (!deckId) return;
-    updateDeckCategoryIds(deckId, selectedCatIds, true);
-    setShowCatEditor(false);
-  };
 
   const cards = useMemo(() => {
     if (!deckId || !deck) return [];
@@ -118,17 +90,72 @@ export function DeckEditDialog({ open, onOpenChange, deckId, onEditCard, onAddCa
   if (!deck) return null;
 
   const cats = state.deckCategories?.[deck.id] ?? [];
-  const catIdNames = categoryOptions.filter((c) => deck.categoryIds.includes(c.id)).map((c) => c.name);
-  const pickerCat = pickerCatId ? (state.categories ?? []).find((c) => c.id === pickerCatId) ?? null : null;
+  const catIdNames = (state.categories ?? []).filter((c) => deck.categoryIds.includes(c.id)).map((c) => c.name);
+  const pickerCat: Category | null = pickerCategoryQueue[pickerQueueIndex]
+    ? (state.categories ?? []).find((c) => c.id === pickerCategoryQueue[pickerQueueIndex]) ?? null
+    : null;
 
   return (
     <>
     <CategoryCardPickerDialog
       open={pickerOpen}
-      onOpenChange={setPickerOpen}
+      onOpenChange={(nextOpen) => {
+        setPickerOpen(nextOpen);
+        if (!nextOpen) {
+          setPickerCategoryQueue([]);
+          setPickerQueueIndex(0);
+        }
+      }}
       category={pickerCat}
       deckId={deckId}
+      defaultSelectMode="unlinked-only"
+      autoCloseOnSave={false}
+      onSaveComplete={({ selectedCount }) => {
+        const nextCategories = classifiedCategoriesCount + 1;
+        const nextQuestions = classifiedQuestionsCount + selectedCount;
+        setClassifiedCategoriesCount(nextCategories);
+        setClassifiedQuestionsCount(nextQuestions);
+
+        if (pickerQueueIndex < pickerCategoryQueue.length - 1) {
+          setPickerQueueIndex((i) => i + 1);
+          return;
+        }
+
+        setPickerOpen(false);
+        setPickerCategoryQueue([]);
+        setPickerQueueIndex(0);
+        toast({
+          title: "הסיווג עודכן",
+          description: `סווגו ${nextQuestions} שאלות ב-${nextCategories} קטגוריות למערכת זו.`,
+        });
+        setClassifiedCategoriesCount(0);
+        setClassifiedQuestionsCount(0);
+      }}
     />
+
+    <CategoryPickerDialog
+      open={classifyOpen}
+      onOpenChange={setClassifyOpen}
+      selected={[]}
+      onConfirm={(names) => {
+        const nextQueue = (state.categories ?? [])
+          .filter((c) => names.includes(c.name))
+          .map((c) => c.id);
+
+        if (nextQueue.length === 0) {
+          setClassifyOpen(false);
+          return;
+        }
+
+        setClassifiedCategoriesCount(0);
+        setClassifiedQuestionsCount(0);
+        setPickerCategoryQueue(nextQueue);
+        setPickerQueueIndex(0);
+        setClassifyOpen(false);
+        setPickerOpen(true);
+      }}
+    />
+
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-5xl w-[95vw] h-[85vh] flex flex-col p-0 gap-0"
@@ -211,151 +238,128 @@ export function DeckEditDialog({ open, onOpenChange, deckId, onEditCard, onAddCa
           </Button>
           <Button
             variant="outline"
-            size="sm"
-            className="border-2 border-gold/40 gap-1"
-            onClick={() => setShowCatEditor((v) => !v)}
+            className="border-gold/40"
+            onClick={() => {
+              setClassifyOpen(true);
+            }}
           >
-            <FolderTree className="h-3.5 w-3.5" /> קטגוריות
+            סווג שאלות
           </Button>
         </div>
 
-        {/* Category editor panel */}
-        {showCatEditor && (
-          <div className="border-b border-gold/30 bg-secondary/20 p-3 space-y-2" dir="rtl">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-1.5 text-sm">
-                <FolderTree className="h-4 w-4 text-gold" /> קטגוריות שהמערכת אוספת
-                <span className="text-xs text-muted-foreground">({selectedCatIds.length} נבחרו)</span>
-              </Label>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={saveCategoryIds} className="h-7 bg-gradient-navy text-primary-foreground">שמור</Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowCatEditor(false)} className="h-7">
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-            {categoryOptions.length > 6 && (
-              <div className="relative">
-                <Search className="h-3.5 w-3.5 absolute right-2 top-2 text-muted-foreground pointer-events-none" />
-                <Input value={catSearch} onChange={(e) => setCatSearch(e.target.value)} placeholder="חפש קטגוריה…" className="h-7 text-xs border-gold/30 pr-7" />
-              </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "questions" | "reviews")} className="flex-1 min-h-0 flex flex-col">
+          <div className="px-3 pt-2 flex items-center justify-between gap-2">
+            <TabsList className="grid grid-cols-2 w-full max-w-xs">
+              <TabsTrigger value="questions">שאלות</TabsTrigger>
+              <TabsTrigger value="reviews">חזרות</TabsTrigger>
+            </TabsList>
+            {activeTab === "reviews" && (
+              <Button
+                size="sm"
+                className="bg-gradient-navy text-primary-foreground rounded-xl gap-1"
+                onClick={() => setReviewsCreateSignal((v) => v + 1)}
+              >
+                <Plus className="h-3.5 w-3.5" /> הוסף תוכנית חזרות
+              </Button>
             )}
-            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 rounded-lg border border-gold/20 bg-card">
-              {filteredCats.map((c) => {
-                const active = selectedCatIds.includes(c.id);
-                return (
-                  <span key={c.id} className="inline-flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleCat(c.id)}
-                      className={cn(
-                        "px-2 py-0.5 rounded-full text-xs border-2 transition-all",
-                        active ? "border-navy bg-gradient-navy text-primary-foreground" : "border-gold/40 bg-secondary text-foreground hover:border-gold",
-                      )}
-                    >
-                      {c.path}
-                    </button>
-                    {active && (
-                      <button
-                        type="button"
-                        title="בחר שאלות ספציפיות"
-                        onClick={() => { setPickerCatId(c.id); setPickerOpen(true); }}
-                        className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
-                      >
-                        <List className="h-3 w-3" />
-                      </button>
-                    )}
-                  </span>
-                );
-              })}
-              {filteredCats.length === 0 && <p className="text-xs text-muted-foreground py-2 text-center w-full">לא נמצאו קטגוריות</p>}
-            </div>
           </div>
-        )}
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {filtered.length === 0 ? (
-            <div className="text-center text-muted-foreground py-12">
-              {cards.length === 0 ? "אין שאלות במערכת הזו עדיין." : "לא נמצאו שאלות התואמות לחיפוש."}
-            </div>
-          ) : (
-            filtered.map((c, idx) => {
-              const cardCats = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
-              return (
-                <div
-                  key={c.id}
-                  className={cn(
-                    "group flex items-start gap-3 rounded-lg border-2 border-gold/30 bg-card p-3 hover:border-gold hover:shadow-md transition-all cursor-pointer",
-                  )}
-                  onClick={() => onEditCard(c)}
-                >
-                  <div className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 pt-1 min-w-[2rem]">
-                    <span className="font-semibold">#{idx + 1}</span>
-                    <Badge variant="outline" className="text-[9px] mt-1 border-gold/40">
-                      {TYPE_LABEL[c.type] ?? c.type}
-                    </Badge>
-                  </div>
-                  <div className="flex-1 min-w-0 text-right">
-                    <div className="text-sm font-medium leading-tight line-clamp-2">{c.question}</div>
-                    {cardCats.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5 justify-end">
-                        {cardCats.slice(0, 5).map((cc) => (
-                          <Badge key={cc} variant="outline" className="text-[9px] border-gold/30">
-                            {cc}
-                          </Badge>
-                        ))}
-                        {cardCats.length > 5 && (
-                          <span className="text-[9px] text-muted-foreground">+{cardCats.length - 5}</span>
-                        )}
-                      </div>
+          <TabsContent value="questions" className="flex-1 overflow-y-auto p-3 space-y-2">
+            {filtered.length === 0 ? (
+              <div className="text-center text-muted-foreground py-12">
+                {cards.length === 0 ? "אין שאלות במערכת הזו עדיין." : "לא נמצאו שאלות התואמות לחיפוש."}
+              </div>
+            ) : (
+              filtered.map((c, idx) => {
+                const cardCats = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
+                return (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "group flex items-start gap-3 rounded-lg border-2 border-gold/30 bg-card p-3 hover:border-gold hover:shadow-md transition-all cursor-pointer",
                     )}
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      {c.stats.totalReviews > 0
-                        ? `${c.stats.totalReviews} חזרות · ${Math.round((c.stats.correct / c.stats.totalReviews) * 100)}% הצלחה`
-                        : "טרם נלמדה"}
+                    onClick={() => onEditCard(c)}
+                  >
+                    <div className="flex flex-col items-center text-[10px] text-muted-foreground shrink-0 pt-1 min-w-[2rem]">
+                      <span className="font-semibold">#{idx + 1}</span>
+                      <Badge variant="outline" className="text-[9px] mt-1 border-gold/40">
+                        {TYPE_LABEL[c.type] ?? c.type}
+                      </Badge>
+                    </div>
+                    <div className="flex-1 min-w-0 text-right">
+                      <div className="text-sm font-medium leading-tight line-clamp-2">{c.question}</div>
+                      {cardCats.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5 justify-end">
+                          {cardCats.slice(0, 5).map((cc) => (
+                            <Badge key={cc} variant="outline" className="text-[9px] border-gold/30">
+                              {cc}
+                            </Badge>
+                          ))}
+                          {cardCats.length > 5 && (
+                            <span className="text-[9px] text-muted-foreground">+{cardCats.length - 5}</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground mt-1">
+                        {c.stats.totalReviews > 0
+                          ? `${c.stats.totalReviews} חזרות · ${Math.round((c.stats.correct / c.stats.totalReviews) * 100)}% הצלחה`
+                          : "טרם נלמדה"}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                      <Button
+                        type="button" size="icon" variant="ghost"
+                        className="h-7 w-7 text-navy hover:bg-navy/10"
+                        onClick={(e) => { e.stopPropagation(); onEditCard(c); }}
+                        title="ערוך"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button" size="icon" variant="ghost"
+                        className="h-7 w-7 text-navy hover:bg-navy/10"
+                        onClick={(e) => { e.stopPropagation(); duplicateCard(c.id); }}
+                        title="שכפל"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button" size="icon" variant="ghost"
+                        className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`למחוק את השאלה "${c.question.slice(0, 60)}"?`)) deleteCard(c.id);
+                        }}
+                        title="מחק"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                    <Button
-                      type="button" size="icon" variant="ghost"
-                      className="h-7 w-7 text-navy hover:bg-navy/10"
-                      onClick={(e) => { e.stopPropagation(); onEditCard(c); }}
-                      title="ערוך"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button" size="icon" variant="ghost"
-                      className="h-7 w-7 text-navy hover:bg-navy/10"
-                      onClick={(e) => { e.stopPropagation(); duplicateCard(c.id); }}
-                      title="שכפל"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button" size="icon" variant="ghost"
-                      className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`למחוק את השאלה "${c.question.slice(0, 60)}"?`)) deleteCard(c.id);
-                      }}
-                      title="מחק"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                );
+              })
+            )}
+          </TabsContent>
+
+          <TabsContent value="reviews" className="flex-1 overflow-y-auto p-3">
+            <div className="rounded-lg border border-gold/30 p-2">
+              <Suspense fallback={<div className="text-sm text-muted-foreground p-4 text-center">טוען חזרות...</div>}>
+                <StudyPlansCard
+                  contextDeckId={deck.id}
+                  showOnlyContextDeckReview={true}
+                  createDeckReviewSignal={reviewsCreateSignal}
+                />
+              </Suspense>
+            </div>
+          </TabsContent>
+        </Tabs>
 
         <div className="p-3 border-t border-gold/20 flex items-center justify-between">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             <X className="h-4 w-4 ml-1" /> סגור
           </Button>
           <div className="text-xs text-muted-foreground">
-            {filtered.length} מתוך {cards.length} שאלות
+            {activeTab === "questions" ? `${filtered.length} מתוך ${cards.length} שאלות` : "חזרות על מערכות"}
           </div>
         </div>
       </DialogContent>

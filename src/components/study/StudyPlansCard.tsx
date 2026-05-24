@@ -842,6 +842,9 @@ function AddPlanDialog({
   onAddShas,
   onAddMasecthaReview,
   onAddDeckReview,
+  forceDeckReview = false,
+  preselectedDeckIds = [],
+  lockedDeckId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -849,6 +852,9 @@ function AddPlanDialog({
   onAddShas: (selectedMasechtos: string[], pagesPerDay: number, unit: ShasUnit, skipWeekdays?: number[], skipDates?: string[], anchorDate?: string, anchorPosition?: { masechta: string; daf: number; amud: 1 | 2 }) => void;
   onAddMasecthaReview: (title: string, units: string[], scheduleType: "srs" | "fixed_interval" | "manual", fixedIntervalDays?: number, manualReviewDates?: string[], linkedDeckId?: string) => void;
   onAddDeckReview: (title: string, deckIds: string[], reviewPolicy: PlanReviewPolicy) => void;
+  forceDeckReview?: boolean;
+  preselectedDeckIds?: string[];
+  lockedDeckId?: string;
 }) {
   const [step, setStep] = useState<"type" | "configure">("type");
   const [tpl, setTpl] = useState<TemplateDefinition | null>(null);
@@ -909,6 +915,20 @@ function AddPlanDialog({
   const { state: drState } = useStudy();
   const decks = drState.decks ?? [];
   const [drSelectedDeckIds, setDrSelectedDeckIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open || !forceDeckReview) return;
+    const template = TEMPLATES.find((t) => t.id === "deck_review");
+    if (!template) return;
+    setTpl(template);
+    setStep("configure");
+    const initialIds = Array.from(new Set([...(preselectedDeckIds ?? []), ...(lockedDeckId ? [lockedDeckId] : [])]));
+    setDrSelectedDeckIds(initialIds);
+    const names = initialIds
+      .map((id) => decks.find((d) => d.id === id)?.name)
+      .filter(Boolean);
+    setTitle(names.length > 0 ? `חזרה על ${names[0]}` : "חזרה על מערכות");
+  }, [open, forceDeckReview, preselectedDeckIds, lockedDeckId, decks]);
 
   const reset = useCallback(() => {
     setStep("type");
@@ -1175,8 +1195,9 @@ function AddPlanDialog({
       return;
     }
     if (tpl.id === "deck_review") {
-      if (drSelectedDeckIds.length === 0 || !title.trim()) return;
-      onAddDeckReview(title.trim(), drSelectedDeckIds, reviewPolicy);
+      const ids = Array.from(new Set([...drSelectedDeckIds, ...(lockedDeckId ? [lockedDeckId] : [])]));
+      if (ids.length === 0 || !title.trim()) return;
+      onAddDeckReview(title.trim(), ids, reviewPolicy);
       handleClose();
       return;
     }
@@ -1225,7 +1246,7 @@ function AddPlanDialog({
         <ReviewScheduleDialog open={reviewScheduleOpen} onOpenChange={setReviewScheduleOpen} />
 
         {/* Step 1: Choose type */}
-        {step === "type" && (
+        {step === "type" && !forceDeckReview && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
             {TEMPLATES.map((t) => (
               <button
@@ -1873,13 +1894,18 @@ function AddPlanDialog({
                       <Checkbox
                         id={`dr-deck-${deck.id}`}
                         checked={drSelectedDeckIds.includes(deck.id)}
+                        disabled={lockedDeckId === deck.id}
                         onCheckedChange={(checked) => {
+                          if (lockedDeckId === deck.id) return;
                           setDrSelectedDeckIds((prev) =>
                             checked ? [...prev, deck.id] : prev.filter((id) => id !== deck.id),
                           );
                         }}
                       />
                       <label htmlFor={`dr-deck-${deck.id}`} className="text-sm cursor-pointer flex-1">{deck.name}</label>
+                      {lockedDeckId === deck.id && (
+                        <span className="text-[10px] text-gold">ערכה נוכחית</span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2308,7 +2334,15 @@ function EditPlanDialog({
 
 // ─── Main Card ────────────────────────────────────────────────────────────────
 
-export function StudyPlansCard() {
+export function StudyPlansCard({
+  contextDeckId,
+  showOnlyContextDeckReview = false,
+  createDeckReviewSignal,
+}: {
+  contextDeckId?: string;
+  showOnlyContextDeckReview?: boolean;
+  createDeckReviewSignal?: number;
+} = {}) {
   const { state, addGeneralPlan, addCategoriesBulk, setShasPlan, deleteGeneralPlan, archiveGeneralPlan, unarchiveGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit, addMasecthaReviewPlan, addDeckReviewPlan } = useStudy();
   const navigate = useNavigate();
   const plans = state.generalPlans ?? [];
@@ -2324,6 +2358,7 @@ export function StudyPlansCard() {
   const [editingPlan, setEditingPlan] = useState<GeneralStudyPlan | null>(null);
   const [reviewScheduleOpen, setReviewScheduleOpen] = useState(false);
   const [scheduleOpenPlans, setScheduleOpenPlans] = useState<Set<string>>(new Set());
+  const [forceDeckReviewAdd, setForceDeckReviewAdd] = useState(false);
   const [planView, setPlanView] = useState<"classic" | "grid2" | "grid3" | "table" | "compact">(() => {
     try {
       const raw = localStorage.getItem(PLAN_VIEW_KEY);
@@ -2337,6 +2372,12 @@ export function StudyPlansCard() {
   useEffect(() => {
     try { localStorage.setItem(PLAN_VIEW_KEY, planView); } catch { /* ignore */ }
   }, [planView]);
+
+  useEffect(() => {
+    if (createDeckReviewSignal == null || contextDeckId == null) return;
+    setForceDeckReviewAdd(true);
+    setAddOpen(true);
+  }, [createDeckReviewSignal, contextDeckId]);
 
   const effectiveDeletePlanId = deleteDialogPlanId ?? pendingDeletePlanIdRef.current;
   const deleteDialogPlan = effectiveDeletePlanId ? plans.find((p) => p.id === effectiveDeletePlanId) ?? null : null;
@@ -2462,6 +2503,10 @@ export function StudyPlansCard() {
   }, []);
 
   const today = todayStr();
+  const contextActivePlans = useMemo(() => {
+    if (!showOnlyContextDeckReview || !contextDeckId) return activePlans;
+    return activePlans.filter((p) => p.planType === "deck_review" && (p.deckIds ?? []).includes(contextDeckId));
+  }, [activePlans, showOnlyContextDeckReview, contextDeckId]);
 
   return (
     <Card className="gold-frame p-6 space-y-4 animate-fade-in" dir="rtl">
@@ -2507,11 +2552,18 @@ export function StudyPlansCard() {
           </DropdownMenu>
           <Button
             size="sm"
-            onClick={() => setAddOpen(true)}
+            onClick={() => {
+              if (showOnlyContextDeckReview && contextDeckId) {
+                setForceDeckReviewAdd(true);
+              } else {
+                setForceDeckReviewAdd(false);
+              }
+              setAddOpen(true);
+            }}
             className="bg-gradient-navy text-primary-foreground rounded-xl gap-1"
           >
             <Plus className="h-3.5 w-3.5" />
-            הוסף תוכנית
+            {showOnlyContextDeckReview ? "הוסף תוכנית חזרות" : "הוסף תוכנית"}
           </Button>
           <button
             type="button"
@@ -2535,11 +2587,17 @@ export function StudyPlansCard() {
       {/* Add Dialog */}
       <AddPlanDialog
         open={addOpen}
-        onClose={() => setAddOpen(false)}
+        onClose={() => {
+          setAddOpen(false);
+          setForceDeckReviewAdd(false);
+        }}
         onAdd={handleAdd}
         onAddShas={handleAddShas}
         onAddMasecthaReview={handleAddMasecthaReview}
         onAddDeckReview={handleAddDeckReview}
+        forceDeckReview={forceDeckReviewAdd}
+        preselectedDeckIds={contextDeckId ? [contextDeckId] : []}
+        lockedDeckId={showOnlyContextDeckReview ? contextDeckId : undefined}
       />
 
       {/* Edit Dialog */}
@@ -2566,16 +2624,16 @@ export function StudyPlansCard() {
       })()}
 
       {/* Empty state */}
-      {activePlans.length === 0 && (
+      {contextActivePlans.length === 0 && (
         <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed border-gold/30 rounded-xl space-y-1">
           <BookOpen className="h-8 w-8 mx-auto text-gold/40 mb-2" />
-          <p>אין תוכניות לימוד פעילות</p>
-          <p className="text-[11px]">הוסף תוכנית לחומש, רמב&quot;ם, שו&quot;ע ועוד</p>
+          <p>{showOnlyContextDeckReview ? "אין תוכניות חזרה לערכה זו" : "אין תוכניות לימוד פעילות"}</p>
+          <p className="text-[11px]">{showOnlyContextDeckReview ? "הוסף תוכנית חזרות לערכה הנוכחית" : "הוסף תוכנית לחומש, רמב&quot;ם, שו&quot;ע ועוד"}</p>
         </div>
       )}
 
       {/* Plans list */}
-      {activePlans.length > 0 && (
+      {contextActivePlans.length > 0 && (
         planView === "table" ? (
           <div className="rounded-xl border border-gold/30 overflow-hidden">
             <div className="overflow-x-auto">
@@ -2590,7 +2648,7 @@ export function StudyPlansCard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activePlans.map((plan) => {
+                  {contextActivePlans.map((plan) => {
                     const completedSet = new Set(plan.completedUnits);
                     const nextUnit = plan.units.find((u) => !completedSet.has(u));
                     const done = plan.completedUnits.length;
@@ -2636,7 +2694,7 @@ export function StudyPlansCard() {
           planView === "compact" ? "space-y-2" : "space-y-3",
           planView !== "grid2" && planView !== "grid3" && "space-y-3",
         )}>
-          {activePlans.map((plan) => {
+          {contextActivePlans.map((plan) => {
             const completedSet = new Set(plan.completedUnits);
             const nextUnit = plan.units.find((u) => !completedSet.has(u));
             const todayCalUnit = getCalendarUnitForToday(plan);

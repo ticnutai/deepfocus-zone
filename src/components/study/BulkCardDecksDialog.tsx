@@ -1,0 +1,274 @@
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Layers, BookOpen } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useStudy } from "@/lib/study/store";
+import type { Card as StudyCardType } from "@/lib/study/types";
+import { toast } from "@/hooks/use-toast";
+
+const CardEditor = lazy(() => import("./CardEditor").then((m) => ({ default: m.CardEditor })));
+const DeckCreateDialog = lazy(() => import("./DeckCreateDialog").then((m) => ({ default: m.DeckCreateDialog })));
+const StudyPlansCard = lazy(() => import("./StudyPlansCard").then((m) => ({ default: m.StudyPlansCard })));
+
+type DialogTab = "existing" | "new-questions" | "new-deck" | "reviews";
+
+interface Props {
+  cards: StudyCardType[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
+  const { state, setCardDecks } = useStudy();
+  const [activeTab, setActiveTab] = useState<DialogTab>("existing");
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set());
+  const [deckCreateOpen, setDeckCreateOpen] = useState(false);
+  const [newQuestionBaseCardIds, setNewQuestionBaseCardIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab("existing");
+    setSelectedCardIds(new Set(cards.map((c) => c.id)));
+    setSelectedDeckIds(new Set());
+    setNewQuestionBaseCardIds(new Set(state.cards.map((c) => c.id)));
+  }, [open, cards, state.cards]);
+
+  useEffect(() => {
+    if (!open || activeTab !== "new-questions") return;
+    setNewQuestionBaseCardIds(new Set(state.cards.map((c) => c.id)));
+  }, [open, cards]);
+
+  const linkedDeckIdsByCard = useMemo(() => {
+    const out = new Map<string, Set<string>>();
+    for (const c of cards) {
+      out.set(c.id, new Set<string>());
+    }
+    for (const link of state.cardDecks ?? []) {
+      if (!out.has(link.cardId)) continue;
+      out.get(link.cardId)?.add(link.deckId);
+    }
+    return out;
+  }, [cards, state.cardDecks]);
+
+  const selectedCount = selectedCardIds.size;
+
+  const toggleCard = (cardId: string) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  };
+
+  const toggleDeck = (deckId: string) => {
+    setSelectedDeckIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(deckId)) next.delete(deckId);
+      else next.add(deckId);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedCardIds(new Set(cards.map((c) => c.id)));
+  const clearAll = () => setSelectedCardIds(new Set());
+
+  const applyClassification = () => {
+    if (selectedCardIds.size === 0) {
+      toast({
+        title: "לא נבחרו שאלות",
+        description: "בחר לפחות שאלה אחת לפני הסיווג.",
+      });
+      return;
+    }
+    if (selectedDeckIds.size === 0) {
+      toast({
+        title: "לא נבחרו ערכות",
+        description: "בחר לפחות ערכה אחת לסיווג.",
+      });
+      return;
+    }
+
+    const selectedCards = cards.filter((c) => selectedCardIds.has(c.id));
+    const deckIdsToAdd = Array.from(selectedDeckIds);
+
+    for (const card of selectedCards) {
+      const next = new Set(linkedDeckIdsByCard.get(card.id) ?? []);
+      for (const deckId of deckIdsToAdd) next.add(deckId);
+      if (card.deckId) next.delete(card.deckId);
+      setCardDecks(card.id, Array.from(next));
+    }
+
+    toast({
+      title: "הסיווג עודכן",
+      description: `נוספו ${deckIdsToAdd.length} ערכות ל-${selectedCards.length} שאלות נבחרות.`,
+    });
+    onOpenChange(false);
+  };
+
+  const handleNewQuestionClose = () => {
+    const created = state.cards.filter((c) => !newQuestionBaseCardIds.has(c.id));
+    if (created.length > 0) {
+      setSelectedCardIds((prev) => {
+        const next = new Set(prev);
+        created.forEach((c) => next.add(c.id));
+        return next;
+      });
+      setActiveTab("existing");
+      toast({
+        title: "שאלה חדשה נוספה",
+        description: "השאלה החדשה סומנה אוטומטית ועברת לטאב שאלות קיימות.",
+      });
+    }
+  };
+
+  const handleDeckCreated = (deckId: string) => {
+    setSelectedDeckIds((prev) => {
+      const next = new Set(prev);
+      next.add(deckId);
+      return next;
+    });
+    setDeckCreateOpen(false);
+    setActiveTab("existing");
+    toast({
+      title: "ערכה חדשה נוצרה",
+      description: "הערכה סומנה אוטומטית ועברת לטאב שאלות קיימות.",
+    });
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogContent className="max-w-4xl gold-frame" dir="rtl" showOverlay={false}>
+        <DialogHeader>
+          <DialogTitle className="font-display text-right flex items-center gap-2 justify-end">
+            <Layers className="h-5 w-5" /> בחירה מהירה וסיווג
+          </DialogTitle>
+        </DialogHeader>
+
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DialogTab)}>
+          <TabsList className="grid grid-cols-4 w-full">
+            <TabsTrigger value="existing">שאלות קיימות</TabsTrigger>
+            <TabsTrigger value="new-questions">שאלות חדשות</TabsTrigger>
+            <TabsTrigger value="new-deck">הוספת ערכה</TabsTrigger>
+            <TabsTrigger value="reviews">חזרות</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="existing" className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">
+                בחר שאלות קיימות לסיווג. נבחרו {selectedCount} מתוך {cards.length}.
+              </div>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="outline" className="h-7" onClick={selectAll}>בחר הכל</Button>
+                <Button size="sm" variant="outline" className="h-7" onClick={clearAll}>נקה הכל</Button>
+              </div>
+            </div>
+
+            <div className="max-h-[34vh] overflow-y-auto space-y-1 pr-1">
+              {cards.map((card, i) => {
+                const checked = selectedCardIds.has(card.id);
+                return (
+                  <label
+                    key={card.id}
+                    className="flex items-start gap-2 p-2 rounded-lg border-2 border-gold/30 hover:bg-secondary cursor-pointer"
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => toggleCard(card.id)} />
+                    <span className="text-xs text-gold font-bold mt-0.5">{i + 1}.</span>
+                    <span className="flex-1 text-sm text-right">{card.question}</span>
+                  </label>
+                );
+              })}
+              {cards.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">אין שאלות בעמוד הזה</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs text-muted-foreground text-right">
+                בחר ערכות להוספה עבור השאלות הנבחרות.
+              </div>
+              <div className="max-h-[24vh] overflow-y-auto space-y-1">
+                {state.decks.map((d) => {
+                  const checked = selectedDeckIds.has(d.id);
+                  return (
+                    <label
+                      key={d.id}
+                      className="flex items-center gap-2 p-2 rounded-lg border-2 border-gold/30 hover:bg-secondary cursor-pointer"
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggleDeck(d.id)} />
+                      <BookOpen className="h-4 w-4 text-navy" />
+                      <span className="flex-1 text-right text-sm">{d.name}</span>
+                    </label>
+                  );
+                })}
+                {state.decks.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">אין ערכות</p>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="new-questions" className="mt-3">
+            <div className="text-xs text-muted-foreground mb-2 text-right">
+              יצירת שאלה חדשה באמצעות המערכת הקיימת. לאחר שמירה, תעבור אוטומטית לטאב שאלות קיימות.
+            </div>
+            <div className="max-h-[58vh] overflow-y-auto rounded-lg border border-gold/30 p-2">
+              <Suspense fallback={<div className="text-sm text-muted-foreground p-4 text-center">טוען עורך שאלות...</div>}>
+                <CardEditor deckId={null} onClose={handleNewQuestionClose} />
+              </Suspense>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="new-deck" className="space-y-3">
+            <div className="text-xs text-muted-foreground text-right">
+              יצירת ערכה חדשה באמצעות הדיאלוג הקיים. לאחר יצירה, הערכה תסומן אוטומטית.
+            </div>
+            <div className="rounded-lg border border-gold/30 p-4 bg-secondary/20">
+              <Button className="bg-gradient-navy text-primary-foreground" onClick={() => setDeckCreateOpen(true)}>
+                פתח יצירת ערכה חדשה
+              </Button>
+              <div className="text-xs text-muted-foreground mt-2">
+                הערכות הקיימות: {state.decks.length}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="reviews" className="space-y-3">
+            <div className="text-xs text-muted-foreground text-right">
+              טאב זה מחובר לקוד הקיים של תוכניות חזרות, כולל "חזרה על מערכות".
+            </div>
+            <div className="max-h-[58vh] overflow-y-auto rounded-lg border border-gold/30 p-2">
+              <Suspense fallback={<div className="text-sm text-muted-foreground p-4 text-center">טוען תוכניות חזרות...</div>}>
+                <StudyPlansCard />
+              </Suspense>
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>סגור</Button>
+          <Button
+            className="bg-gradient-navy text-primary-foreground"
+            disabled={activeTab !== "existing"}
+            onClick={applyClassification}
+          >
+            סווג את הנבחרות
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+      </Dialog>
+
+      <Suspense fallback={null}>
+        <DeckCreateDialog
+          open={deckCreateOpen}
+          onOpenChange={setDeckCreateOpen}
+          onCreated={handleDeckCreated}
+        />
+      </Suspense>
+    </>
+  );
+}

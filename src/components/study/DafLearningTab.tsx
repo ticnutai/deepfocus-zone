@@ -18,6 +18,7 @@ import { filterCardsByDafAmud, countCardsPerDaf } from "@/lib/study/dafCards";
 import { GemaraViewer } from "./GemaraViewer";
 import { StudySession } from "./StudySession";
 import { CardDecksDialog } from "./CardDecksDialog";
+import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
 import { FitToContainer } from "./FitToContainer";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -80,6 +81,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
   const [countsReady, setCountsReady] = useState(false);
   const [deckDialogCard, setDeckDialogCard] = useState<StudyCardType | null>(null);
+  const [bulkDeckDialogOpen, setBulkDeckDialogOpen] = useState(false);
   const [navDialogOpen, setNavDialogOpen] = useState(false);
   const [navStep, setNavStep] = useState<NavStep>("seder");
   const [navSeder, setNavSeder] = useState<string>(saved.seder ?? "מועד");
@@ -496,6 +498,15 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         </h3>
         {cards.length > 0 && (
           <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 border-gold/50"
+              title="בחירה מהירה וסיווג"
+              onClick={() => setBulkDeckDialogOpen(true)}
+            >
+              <Layers className="h-4 w-4 text-gold" />
+            </Button>
             {practiceModeMenu}
             <Button onClick={startPractice} size="sm" className="bg-gradient-navy text-primary-foreground">
               <GraduationCap className="h-4 w-4" /> תרגול
@@ -523,15 +534,6 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     {c.type === "combo" && "משולבת"}
                   </div>
                 </div>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-6 w-6 shrink-0 border-gold/40 hover:bg-gold/10"
-                  title="הוסף לערכות"
-                  onClick={() => setDeckDialogCard(c)}
-                >
-                  <Layers className="h-3.5 w-3.5 text-gold" />
-                </Button>
               </div>
             </div>
           ))
@@ -620,6 +622,12 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         onOpenChange={(open) => {
           if (!open) setDeckDialogCard(null);
         }}
+      />
+
+      <BulkCardDecksDialog
+        cards={cards}
+        open={bulkDeckDialogOpen}
+        onOpenChange={setBulkDeckDialogOpen}
       />
 
       <Dialog open={navDialogOpen} onOpenChange={setNavDialogOpen} modal={false}>
