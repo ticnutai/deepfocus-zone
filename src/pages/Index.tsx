@@ -46,6 +46,7 @@ const SettingsPanel = lazy(() => import("@/components/settings/SettingsPanel").t
 const AiCardCapture = lazy(() => import("@/components/study/AiCardCapture").then(m => ({ default: m.AiCardCapture })));
 const SystemRubric = lazy(() => import("@/components/study/SystemRubric").then(m => ({ default: m.SystemRubric })));
 const AIQuestionGenerator = lazy(() => import("@/components/ai/AIQuestionGenerator").then(m => ({ default: m.AIQuestionGenerator })));
+const QuestionLabPage = lazy(() => import("@/components/study/QuestionLabPage").then(m => ({ default: m.QuestionLabPage })));
 const StudyTab = lazy(() => import("@/components/study/StudyTab").then(m => ({ default: m.StudyTab })));
 const CardsManager = lazy(() => import("@/components/study/CardsManager").then(m => ({ default: m.CardsManager })));
 const CardsAndCategoriesPage = lazy(() => import("@/components/study/CardsAndCategoriesPage").then(m => ({ default: m.CardsAndCategoriesPage })));
@@ -834,6 +835,8 @@ const Index = () => {
         return <PerformancePage />;
       case "ai-generator":
         return <AIQuestionGenerator />;
+      case "question-lab":
+        return <QuestionLabPage />;
       case "system-rubric":
         return <SystemRubric />;
       default:

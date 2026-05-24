@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     mode === "development" && componentTagger(),
-    process.env.BUILD_TARGET !== "electron" && VitePWA({
+    process.env.BUILD_TARGET !== "electron" && mode === "production" && VitePWA({
       registerType: "autoUpdate",
       workbox: {
         globPatterns: ["**/*.{js,css,html,woff2}"],

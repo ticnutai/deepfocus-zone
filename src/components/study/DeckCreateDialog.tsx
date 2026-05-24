@@ -1,18 +1,18 @@
-import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, X, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, Folder, FolderOpen } from "lucide-react";
+import { lazy, Suspense, useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { Plus, Search, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, Folder, FolderOpen, LayoutGrid, Maximize2, Minimize2, ChevronsDown, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useStudy } from "@/lib/study/store";
 import type { Category } from "@/lib/study/types";
-import { UNCATEGORIZED_NAME } from "@/lib/study/uncategorized";
 import { cn } from "@/lib/utils";
 import { displayCategoryName } from "@/lib/study/shasGen";
 
 const RECENT_KEY = "deck-create:recent-cats";
 const MAX_RECENT = 6;
+const CardEditor = lazy(() => import("./CardEditor").then((m) => ({ default: m.CardEditor })));
 
 interface Props {
   open: boolean;
@@ -20,12 +20,22 @@ interface Props {
   onCreated?: (deckId: string) => void;
 }
 
+type ClassificationViewMode = "tree" | "cards";
+
 export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
-  const { state, addDeck, updateDeckCategoryIds, setUiPref, ensureUncategorized } = useStudy();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const wasOpenRef = useRef(false);
+  const { state, addDeck, updateDeckCategoryIds, setUiPref } = useStudy();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [noClassification, setNoClassification] = useState(false);
-  const [showTree, setShowTree] = useState(false);
+  const [classificationView, setClassificationView] = useState<ClassificationViewMode>(
+    state.uiPrefs?.deckCreateClassificationView === "cards" ? "cards" : "tree",
+  );
+  const [cardsPath, setCardsPath] = useState<string[]>(state.uiPrefs?.deckCreateCategoryPathIds ?? []);
+  const [isExpanded, setIsExpanded] = useState<boolean>(!!state.uiPrefs?.deckCreateDialogExpanded);
+  const [mobileClassifyOpen, setMobileClassifyOpen] = useState(false);
+  const [addQuestionOpen, setAddQuestionOpen] = useState(false);
+  const [cardsCountAtOpen, setCardsCountAtOpen] = useState(0);
   const [treeSearch, setTreeSearch] = useState("");
   const [treeExpanded, setTreeExpanded] = useState<Record<string, boolean>>({});
 
@@ -51,15 +61,224 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
   };
 
   useEffect(() => {
-    if (open) {
-      setName(""); setSelected([]); setNoClassification(false);
-      setShowTree(false); setTreeSearch(""); setTreeExpanded({});
+    if (open && !wasOpenRef.current) {
+      wasOpenRef.current = true;
+      setName(""); setSelected([]);
+      const nextView: ClassificationViewMode = state.uiPrefs?.deckCreateClassificationView === "cards" ? "cards" : "tree";
+      const nextExpanded = !!state.uiPrefs?.deckCreateDialogExpanded;
+      const expandedIds = state.uiPrefs?.deckCreateExpandedCategoryIds ?? [];
+      const nextPath = state.uiPrefs?.deckCreateCategoryPathIds ?? [];
+      setClassificationView(nextView);
+      setCardsPath(nextPath);
+      setIsExpanded(nextExpanded);
+      setTreeSearch("");
+      setTreeExpanded(Object.fromEntries(expandedIds.map((id) => [id, true])));
+
+      const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+      const minW = 360;
+      const minH = 280;
+      const maxW = Math.min(window.innerWidth * 0.96, 1400);
+      const maxH = window.innerHeight * 0.88;
+      const saved = state.uiPrefs?.deckCreateDialogGeometry;
+
+      // Restore previously saved geometry (local + cloud). Fallback: centered default.
+      const el = dialogRef.current;
+      if (el) {
+        if (nextExpanded) {
+          const width = Math.max(minW, Math.min(maxW, window.innerWidth * 0.96));
+          const height = Math.max(minH, Math.min(window.innerHeight * 0.92, window.innerHeight - 16));
+          const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
+          const top = Math.max(8, Math.round((window.innerHeight - height) / 2));
+          el.style.left = `${left}px`;
+          el.style.top = `${top}px`;
+          el.style.width = `${Math.round(width)}px`;
+          el.style.height = `${Math.round(height)}px`;
+          el.style.transform = "none";
+        } else if (saved && Number.isFinite(saved.width) && Number.isFinite(saved.height) && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+          const width = clamp(saved.width, minW, maxW);
+          const height = clamp(saved.height, minH, maxH);
+          const left = clamp(saved.left, 8, Math.max(8, window.innerWidth - width - 8));
+          const top = clamp(saved.top, 8, Math.max(8, window.innerHeight - height - 8));
+          el.style.left = `${left}px`;
+          el.style.top = `${top}px`;
+          el.style.width = `${width}px`;
+          el.style.height = `${height}px`;
+          el.style.transform = "none";
+        } else {
+          el.style.left = "50%";
+          el.style.top = "50%";
+          el.style.width = "";
+          el.style.height = "";
+          el.style.transform = "translate(-50%, -50%)";
+        }
+      }
+      return;
     }
-  }, [open]);
+
+    if (!open) {
+      wasOpenRef.current = false;
+      setMobileClassifyOpen(false);
+    }
+  }, [open, state.uiPrefs?.deckCreateDialogGeometry, state.uiPrefs?.deckCreateClassificationView, state.uiPrefs?.deckCreateExpandedCategoryIds, state.uiPrefs?.deckCreateDialogExpanded]);
+
+  const setViewMode = useCallback((mode: ClassificationViewMode) => {
+    setClassificationView(mode);
+    setUiPref("deckCreateClassificationView", mode);
+    if (mode === "tree") {
+      setCardsPath([]);
+      setUiPref("deckCreateCategoryPathIds", []);
+    }
+  }, [setUiPref]);
+
+  const setExpandedState = useCallback((next: Record<string, boolean>) => {
+    setTreeExpanded(next);
+    const ids = Object.keys(next).filter((id) => next[id]);
+    setUiPref("deckCreateExpandedCategoryIds", ids);
+  }, [setUiPref]);
+
+  const toggleBranch = useCallback((id: string) => {
+    setExpandedState({ ...treeExpanded, [id]: !treeExpanded[id] });
+  }, [setExpandedState, treeExpanded]);
+
+  const toggleExpanded = useCallback(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const nextExpanded = !isExpanded;
+    setIsExpanded(nextExpanded);
+    setUiPref("deckCreateDialogExpanded", nextExpanded);
+
+    const minW = 360;
+    const minH = 280;
+    const maxW = Math.min(window.innerWidth * 0.96, 1400);
+
+    if (nextExpanded) {
+      const width = Math.max(minW, Math.min(maxW, window.innerWidth * 0.96));
+      const height = Math.max(minH, Math.min(window.innerHeight * 0.92, window.innerHeight - 16));
+      const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
+      const top = Math.max(8, Math.round((window.innerHeight - height) / 2));
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.width = `${Math.round(width)}px`;
+      el.style.height = `${Math.round(height)}px`;
+      el.style.transform = "none";
+      return;
+    }
+
+    const saved = state.uiPrefs?.deckCreateDialogGeometry;
+    if (saved && Number.isFinite(saved.width) && Number.isFinite(saved.height) && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      const width = Math.max(minW, Math.min(maxW, saved.width));
+      const height = Math.max(minH, Math.min(window.innerHeight * 0.88, saved.height));
+      const left = Math.max(8, Math.min(saved.left, window.innerWidth - width - 8));
+      const top = Math.max(8, Math.min(saved.top, window.innerHeight - height - 8));
+      el.style.left = `${Math.round(left)}px`;
+      el.style.top = `${Math.round(top)}px`;
+      el.style.width = `${Math.round(width)}px`;
+      el.style.height = `${Math.round(height)}px`;
+      el.style.transform = "none";
+      return;
+    }
+
+    el.style.left = "50%";
+    el.style.top = "50%";
+    el.style.width = "";
+    el.style.height = "";
+    el.style.transform = "translate(-50%, -50%)";
+  }, [isExpanded, setUiPref, state.uiPrefs?.deckCreateDialogGeometry]);
+
+  const persistDialogGeometry = useCallback((el: HTMLDivElement) => {
+    const rect = el.getBoundingClientRect();
+    const next = {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+    };
+    const prev = state.uiPrefs?.deckCreateDialogGeometry;
+    if (prev && prev.width === next.width && prev.height === next.height && prev.left === next.left && prev.top === next.top) {
+      return;
+    }
+    setUiPref("deckCreateDialogGeometry", next);
+  }, [setUiPref, state.uiPrefs?.deckCreateDialogGeometry]);
+
+  const startResize = useCallback((dir: "n" | "s" | "e" | "w", e: React.MouseEvent) => {
+    const el = dialogRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = el.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = rect.width;
+    const startH = rect.height;
+    const startL = rect.left;
+    const startT = rect.top;
+    const minW = 360;
+    const minH = 280;
+    const maxW = Math.min(window.innerWidth * 0.96, 1400);
+    const maxH = window.innerHeight * 0.88;
+
+    el.style.left = `${startL}px`;
+    el.style.top = `${startT}px`;
+    el.style.width = `${startW}px`;
+    el.style.height = `${startH}px`;
+    el.style.transform = "none";
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      if (dir === "e") {
+        const nextW = Math.max(minW, Math.min(maxW, startW + dx));
+        el.style.width = `${nextW}px`;
+      }
+      if (dir === "w") {
+        const nextW = Math.max(minW, Math.min(maxW, startW - dx));
+        const usedDx = startW - nextW;
+        el.style.width = `${nextW}px`;
+        el.style.left = `${startL + usedDx}px`;
+      }
+      if (dir === "s") {
+        const nextH = Math.max(minH, Math.min(maxH, startH + dy));
+        el.style.height = `${nextH}px`;
+      }
+      if (dir === "n") {
+        const nextH = Math.max(minH, Math.min(maxH, startH - dy));
+        const usedDy = startH - nextH;
+        el.style.height = `${nextH}px`;
+        el.style.top = `${startT + usedDy}px`;
+      }
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      persistDialogGeometry(el);
+    };
+
+    document.body.style.cursor = dir === "n" || dir === "s" ? "ns-resize" : "ew-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [persistDialogGeometry]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onOpenChange(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onOpenChange]);
 
   const categories = useMemo(
-    () => [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt),
-    [state.categories],
+    () => (open ? [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt) : []),
+    [open, state.categories],
   );
   // Hebrew letter → numeric value for gematria sort
   const HVAL: Record<string, number> = {
@@ -81,6 +300,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
 
   // Recursive card count per category (including descendants)
   const countsMap = useMemo(() => {
+    if (!open) return new Map<string, number>();
     const direct = new Map<string, number>();
     for (const card of state.cards ?? []) {
       for (const tag of card.tags ?? []) {
@@ -101,8 +321,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     };
     for (const cat of categories) countFor(cat);
     return total;
-  }, [state.cards, categories]);
-  const pinnedExisting = useMemo(() => pinnedCats.filter((n) => validNames.has(n)), [pinnedCats, validNames]);
+  }, [open, state.cards, categories]);
   const recentExisting = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -116,7 +335,6 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
 
   const toggle = (catName: string) => {
     setSelected((arr) => arr.includes(catName) ? arr.filter((x) => x !== catName) : [...arr, catName]);
-    setNoClassification(false);
   };
 
   // Does this category or any descendant match the search?
@@ -131,7 +349,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     if (q && !matchesSearch(cat, q)) return null;
     const allKids = childrenOf(cat.id);
     const hasKids = allKids.length > 0;
-    const isExpanded = q ? true : !!treeExpanded[cat.id];
+    const isExpanded = !!treeExpanded[cat.id];
     const isSelected = selected.includes(cat.name);
     const isPinned = pinnedCats.includes(cat.name);
     const label = displayCategoryName(cat.name);
@@ -150,7 +368,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
           {hasKids ? (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setTreeExpanded((p) => ({ ...p, [cat.id]: !p[cat.id] })); }}
+              onClick={(e) => { e.stopPropagation(); toggleBranch(cat.id); }}
               className="h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
             >
               {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
@@ -198,39 +416,110 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     );
   };
 
-  const canSave = name.trim().length > 0 && (noClassification || selected.length > 0);
+  const topLevelCategories = useMemo(() => {
+    const q = treeSearch.trim().toLowerCase();
+    return childrenOf(null).filter((cat) => !q || matchesSearch(cat, q));
+  }, [categories, treeSearch]);
+
+  const categoryById = useMemo(() => {
+    const map = new Map<string, Category>();
+    for (const c of categories) map.set(c.id, c);
+    return map;
+  }, [categories]);
+
+  const normalizedCardsPath = useMemo(() => {
+    const out: string[] = [];
+    let expectedParent: string | null = null;
+    for (const id of cardsPath) {
+      const cat = categoryById.get(id);
+      if (!cat || cat.parentId !== expectedParent) break;
+      out.push(id);
+      expectedParent = id;
+    }
+    return out;
+  }, [cardsPath, categoryById]);
+
+  useEffect(() => {
+    if (normalizedCardsPath.length !== cardsPath.length) {
+      setCardsPath(normalizedCardsPath);
+      setUiPref("deckCreateCategoryPathIds", normalizedCardsPath);
+    }
+  }, [normalizedCardsPath, cardsPath, setUiPref]);
+
+  const cardsParentId = normalizedCardsPath.length > 0 ? normalizedCardsPath[normalizedCardsPath.length - 1] : null;
+  const cardsLevelCategories = useMemo(() => {
+    const q = treeSearch.trim().toLowerCase();
+    const level = childrenOf(cardsParentId);
+    return q ? level.filter((cat) => matchesSearch(cat, q)) : level;
+  }, [cardsParentId, categories, treeSearch]);
+
+  const cardsBreadcrumb = useMemo(
+    () => normalizedCardsPath.map((id) => categoryById.get(id)).filter((c): c is Category => !!c),
+    [normalizedCardsPath, categoryById],
+  );
+
+  const setCardsPathAndPersist = useCallback((nextPath: string[]) => {
+    setCardsPath(nextPath);
+    setUiPref("deckCreateCategoryPathIds", nextPath);
+  }, [setUiPref]);
+
+  const enterCardsCategory = useCallback((cat: Category) => {
+    if (childrenOf(cat.id).length === 0) return;
+    setCardsPathAndPersist([...normalizedCardsPath, cat.id]);
+  }, [childrenOf, normalizedCardsPath, setCardsPathAndPersist]);
+
+  const expandFirstLevel = useCallback(() => {
+    const next = Object.fromEntries(topLevelCategories.map((cat) => [cat.id, true]));
+    setExpandedState(next);
+    setCardsPathAndPersist([]);
+  }, [setExpandedState, topLevelCategories]);
+
+  const hasExpandedBranches = useMemo(() => Object.values(treeExpanded).some(Boolean), [treeExpanded]);
+
+  const canSave = name.trim().length > 0 && selected.length > 0;
 
   const handleSave = () => {
     if (!canSave) return;
-    let cats: string[];
-    let catIds: string[] = [];
-    if (noClassification) {
-      ensureUncategorized();
-      cats = [UNCATEGORIZED_NAME];
-      const uncatId = (state.categories ?? []).find((c) => c.parentId === null && c.name === UNCATEGORIZED_NAME)?.id;
-      if (uncatId) catIds = [uncatId];
-    } else {
-      cats = selected;
-      catIds = categories.filter((c) => selected.includes(c.name)).map((c) => c.id);
-    }
+    const cats = selected;
+    const catIds = categories.filter((c) => selected.includes(c.name)).map((c) => c.id);
     const deck = addDeck(name.trim(), undefined, cats);
     if (catIds.length > 0) updateDeckCategoryIds(deck.id, catIds, true);
-    if (!noClassification && selected.length > 0) pushRecent(selected);
+    if (selected.length > 0) pushRecent(selected);
     onCreated?.(deck.id);
     onOpenChange(false);
   };
 
+  const openAddQuestion = () => {
+    setCardsCountAtOpen(state.cards.length);
+    setAddQuestionOpen(true);
+  };
+
+  const closeAddQuestion = () => {
+    setAddQuestionOpen(false);
+    if (state.cards.length > cardsCountAtOpen) {
+      setTreeSearch("");
+      setCardsPathAndPersist([]);
+      setExpandedState({});
+    }
+  };
+
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" dir="rtl">
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogContent
+        ref={dialogRef}
+        showOverlay={false}
+        onEscapeKeyDown={() => onOpenChange(false)}
+        className="max-w-[1400px] w-[min(92vw,680px)] min-w-[360px] min-h-[280px] max-h-[92vh] overflow-hidden gap-5 transition-[width,height] duration-100 ease-out"
+        dir="rtl"
+      >
         <DialogHeader>
           <DialogTitle className="text-right">מערכת חדשה</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 space-y-8 overflow-y-auto pr-1">
           {/* Deck name */}
-          <div className="space-y-2">
+          <div className="space-y-4">
             <Label className="block text-right">שם המערכת</Label>
             <Input
               value={name}
@@ -243,157 +532,328 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
           </div>
 
           {/* Classification */}
-          <div className="space-y-2">
+          <div className="space-y-5">
             {/* Header row */}
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                type="button" size="icon" variant="outline"
-                className={cn(
-                  "h-7 w-7 rounded-full border-2 transition-all",
-                  showTree ? "border-navy bg-navy/10 text-navy" : "border-gold/40",
-                )}
-                onClick={() => setShowTree((v) => !v)}
-                title="בחר קטגוריה מהעץ"
-              >
-                <Plus className={cn("h-3.5 w-3.5 transition-transform duration-200", showTree && "rotate-45")} />
-              </Button>
+            <div className="group/classification flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 opacity-0 pointer-events-none translate-y-0.5 transition-all duration-150 group-hover/classification:opacity-100 group-hover/classification:pointer-events-auto group-hover/classification:translate-y-0 focus-within:opacity-100 focus-within:pointer-events-auto">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 gap-1 rounded-full border-2 border-gold/50 px-2"
+                      title="תצוגות ופריסות סיווג"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[180px]">
+                    <DropdownMenuItem className="gap-2" onClick={() => setViewMode("cards")}>
+                      <LayoutGrid className="h-4 w-4" /> כרטיסיות ענפים {classificationView === "cards" ? "✓" : ""}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="gap-2" onClick={() => setViewMode("tree")}>
+                      <FolderTree className="h-4 w-4" /> עץ קומפקטי {classificationView === "tree" ? "✓" : ""}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 rounded-full border-2 border-gold/50"
+                  onClick={toggleExpanded}
+                  title={isExpanded ? "בטל הרחבה" : "הרחב דיאלוג"}
+                >
+                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="h-7 w-7 rounded-full border-2 border-gold/40"
+                  onClick={expandFirstLevel}
+                  title="פתח רמה ראשונה בלבד"
+                >
+                  <ChevronsDown className="h-3.5 w-3.5" />
+                </Button>
+
+                <Button
+                  type="button" size="icon" variant="outline"
+                  className={cn(
+                    "h-7 w-7 rounded-full border-2 transition-all",
+                    hasExpandedBranches ? "border-navy bg-navy/10 text-navy" : "border-gold/40",
+                  )}
+                  onClick={() => {
+                    setExpandedState({});
+                  }}
+                  title="כווץ את כל הענפים"
+                >
+                  <Plus className={cn("h-3.5 w-3.5 transition-transform duration-200", hasExpandedBranches && "rotate-45")} />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-full border-2 border-gold/50 px-3"
+                  title="הוסף שאלה"
+                  onClick={openAddQuestion}
+                >
+                  <Plus className="h-3.5 w-3.5 ml-1" /> הוסף שאלה
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-full border-2 border-gold/50 px-3 md:hidden"
+                  onClick={() => setMobileClassifyOpen(true)}
+                  title="פתח מסך סיווג מלא"
+                >
+                  מסך מלא
+                </Button>
+              </div>
               <Label className="text-right flex items-center gap-2">
                 <FolderTree className="h-4 w-4 text-gold" />
                 סיווג {selected.length > 0 && <span className="text-xs text-muted-foreground">({selected.length} נבחרו)</span>}
               </Label>
             </div>
 
-            {/* Pinned row */}
-            {pinnedExisting.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border-2 border-navy/40 bg-secondary/20 p-1.5">
-                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <Pin className="h-3 w-3 text-navy" /> נעוצים:
-                </span>
-                {pinnedExisting.map((n) => {
-                  const active = selected.includes(n);
-                  return (
-                    <span key={n} className="inline-flex items-center group">
-                      <button
-                        type="button"
-                        onClick={() => toggle(n)}
-                        className={cn(
-                          "px-2 py-0.5 rounded-full text-[11px] border-2 transition-all",
-                          active ? "border-navy bg-gradient-navy text-primary-foreground" : "border-navy/40 bg-card hover:border-navy",
-                        )}
-                      >
-                        {n}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => togglePinCategory(n)}
-                        title="בטל נעיצה"
-                        className="opacity-0 group-hover:opacity-100 -mr-1 p-0.5 rounded hover:bg-secondary"
-                      >
-                        <PinOff className="h-3 w-3" />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Recent row (hidden when tree is open) */}
-            {recentExisting.length > 0 && !showTree && (
-              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gold/30 bg-card p-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">לאחרונה:</span>
-                {recentExisting.map((n) => {
-                  const active = selected.includes(n);
-                  const isPinned = pinnedCats.includes(n);
-                  return (
-                    <span key={n} className="inline-flex items-center group">
-                      <button
-                        type="button"
-                        onClick={() => toggle(n)}
-                        className={cn(
-                          "px-2 py-0.5 rounded-full text-[11px] border-2 transition-all",
-                          active ? "border-navy bg-gradient-navy text-primary-foreground" : "border-gold/40 bg-secondary hover:border-gold",
-                        )}
-                      >
-                        {n}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => togglePinCategory(n)}
-                        title={isPinned ? "בטל נעיצה" : "נעץ"}
-                        className="opacity-0 group-hover:opacity-100 -mr-1 p-0.5 rounded hover:bg-secondary"
-                      >
-                        {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Tree picker panel */}
-            {showTree && (
-              <div className="rounded-lg border-2 border-gold/30 bg-card overflow-hidden">
-                {/* Search bar */}
-                <div className="relative border-b border-gold/20 p-2">
-                  <Search className="h-3.5 w-3.5 absolute right-4 top-3.5 text-muted-foreground pointer-events-none" />
-                  <Input
-                    value={treeSearch}
-                    onChange={(e) => setTreeSearch(e.target.value)}
-                    placeholder="חפש קטגוריה..."
-                    className="h-7 text-xs border-gold/30 pr-7"
-                    autoFocus
-                  />
+            <div
+              className={cn(
+                "space-y-3",
+                mobileClassifyOpen && "fixed inset-0 z-[95] bg-background p-4 overflow-y-auto",
+              )}
+            >
+              {mobileClassifyOpen && (
+                <div className="sticky top-0 z-10 -mx-4 px-4 pb-3 pt-2 bg-background/95 backdrop-blur-sm border-b border-gold/20 flex items-center justify-between">
+                  <span className="text-sm font-semibold">סיווג מערכת</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setMobileClassifyOpen(false)}>
+                    סגור
+                  </Button>
                 </div>
-                {/* Tree */}
-                <div className="max-h-56 overflow-y-auto p-1.5">
-                  {categories.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">אין קטגוריות עדיין</p>
-                  ) : (
-                    childrenOf(null).map((cat) => renderTreeNode(cat, 0))
+              )}
+
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 absolute right-3 top-2.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={treeSearch}
+                  onChange={(e) => setTreeSearch(e.target.value)}
+                  placeholder="חפש בסיווג..."
+                  className="h-8 text-xs border-gold/30 pr-7"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-3">
+                <aside className="space-y-3 rounded-xl border-2 border-gold/25 bg-card p-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">מוצמדים</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pinnedCats.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">אין נעיצות</span>
+                      ) : (
+                        pinnedCats.map((catName) => (
+                          <button
+                            key={catName}
+                            type="button"
+                            onClick={() => toggle(catName)}
+                            className={cn(
+                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                              selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                            )}
+                          >
+                            <Pin className="h-3 w-3" />
+                            <span className="truncate max-w-[120px]">{catName}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">נבחרו לאחרונה</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {recentExisting.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">אין היסטוריה</span>
+                      ) : (
+                        recentExisting.map((catName) => (
+                          <button
+                            key={catName}
+                            type="button"
+                            onClick={() => toggle(catName)}
+                            className={cn(
+                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                              selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                            )}
+                          >
+                            <Clock3 className="h-3 w-3" />
+                            <span className="truncate max-w-[120px]">{catName}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">שורשים</div>
+                    <div className="space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCardsPathAndPersist([])}
+                        className="w-full text-right text-xs rounded border border-gold/30 px-2 py-1 hover:border-gold"
+                      >
+                        סיווג ראשי
+                      </button>
+                      {childrenOf(null).slice(0, 10).map((root) => (
+                        <button
+                          key={root.id}
+                          type="button"
+                          onClick={() => setCardsPathAndPersist([root.id])}
+                          className="w-full text-right text-xs rounded border border-gold/30 px-2 py-1 hover:border-gold"
+                        >
+                          {displayCategoryName(root.name)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </aside>
+
+                <section className="space-y-3">
+                  <div className="text-xs text-muted-foreground border border-gold/20 rounded-md px-2 py-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button type="button" className="hover:underline" onClick={() => setCardsPathAndPersist([])}>סיווג</button>
+                      <span>/</span>
+                      <button type="button" className="hover:underline" onClick={() => setCardsPathAndPersist([])}>ראשי</button>
+                      {cardsBreadcrumb.map((cat, idx) => (
+                        <span key={cat.id} className="inline-flex items-center gap-1.5">
+                          <span>/</span>
+                          <button type="button" className="hover:underline" onClick={() => setCardsPathAndPersist(normalizedCardsPath.slice(0, idx + 1))}>
+                            {displayCategoryName(cat.name)}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {classificationView === "cards" && (
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3 max-h-[52vh] overflow-y-auto pr-0.5">
+                      {cardsLevelCategories.map((root) => {
+                        const isSelected = selected.includes(root.name);
+                        const count = countsMap.get(root.id) ?? 0;
+                        const hasChildren = childrenOf(root.id).length > 0;
+                        const isPinned = pinnedCats.includes(root.name);
+                        return (
+                          <div key={root.id} className="group/card relative rounded-xl border-2 border-gold/30 bg-card overflow-hidden">
+                            <div className="absolute top-2 left-2 z-20 flex items-center gap-1 opacity-0 pointer-events-none transition-opacity duration-150 group-hover/card:opacity-100 group-hover/card:pointer-events-auto group-focus-within/card:opacity-100 group-focus-within/card:pointer-events-auto">
+                              <button
+                                type="button"
+                                title={isSelected ? "הסר בחירה" : "בחר קטגוריה"}
+                                className={cn(
+                                  "h-7 w-7 rounded-full border flex items-center justify-center bg-background/95 backdrop-blur-sm transition-colors",
+                                  isSelected ? "border-navy text-navy" : "border-gold/50 text-muted-foreground hover:text-foreground hover:border-gold",
+                                )}
+                                onClick={(e) => { e.stopPropagation(); toggle(root.name); }}
+                              >
+                                <Check className={cn("h-3.5 w-3.5", isSelected && "fill-navy text-navy")} />
+                              </button>
+                              <button
+                                type="button"
+                                title={isPinned ? "בטל נעיצה" : "נעץ קטגוריה"}
+                                className={cn(
+                                  "h-7 w-7 rounded-full border flex items-center justify-center bg-background/95 backdrop-blur-sm transition-colors",
+                                  isPinned ? "border-navy text-navy" : "border-gold/50 text-muted-foreground hover:text-foreground hover:border-gold",
+                                )}
+                                onClick={(e) => { e.stopPropagation(); togglePinCategory(root.name); }}
+                              >
+                                {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              className={cn(
+                                "w-full p-3 text-right transition-colors hover:bg-secondary/30",
+                                isSelected && "bg-navy/10",
+                              )}
+                              onClick={() => enterCardsCategory(root)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="h-7 w-7 rounded-full border border-gold/50 flex items-center justify-center shrink-0">
+                                  {hasChildren ? <ChevronLeft className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                                </span>
+                                <Folder className="h-4 w-4 text-gold shrink-0" />
+                                <span className="flex-1 font-semibold truncate">{displayCategoryName(root.name)}</span>
+                                {count > 0 ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-navy text-white">{count}</span> : null}
+                              </div>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                </div>
+
+                  {classificationView === "tree" && (
+                    <div className="rounded-lg border-2 border-gold/30 bg-card overflow-hidden">
+                      <div className="max-h-[52vh] overflow-y-auto p-1.5">
+                        {categories.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">אין קטגוריות עדיין</p>
+                        ) : (
+                          childrenOf(null).map((cat) => renderTreeNode(cat, 0))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </section>
+
               </div>
-            )}
 
-            {/* Selected chips */}
-            {selected.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground self-center">נבחרו:</span>
-                {selected.map((n) => (
-                  <span key={n} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border-2 border-navy bg-gradient-navy text-primary-foreground">
-                    {n}
-                    <button type="button" onClick={() => toggle(n)} className="hover:opacity-70">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* ללא סיווג */}
-            <label className={cn(
-              "flex items-center gap-2 cursor-pointer rounded-lg border-2 px-3 py-2 transition-all",
-              noClassification ? "border-gold bg-gold/10" : "border-gold/30 hover:border-gold/60",
-            )}>
-              <Checkbox
-                checked={noClassification}
-                onCheckedChange={(c) => { const next = !!c; setNoClassification(next); if (next) setSelected([]); }}
-              />
-              <span className="text-sm">ללא סיווג <span className="text-[10px] text-muted-foreground">(הוסף את הקטגוריה המיוחדת "ללא סיווג")</span></span>
-            </label>
-
-            {!canSave && name.trim() && (
-              <p className="text-xs text-destructive text-right">יש לבחור לפחות קטגוריה אחת או לסמן "ללא סיווג"</p>
-            )}
+              {!canSave && name.trim() && (
+                <p className="text-xs text-destructive text-right">יש לבחור לפחות קטגוריה אחת</p>
+              )}
+            </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2 flex-row-reverse">
+        <DialogFooter className="mt-auto pt-2 gap-2 sm:gap-2 flex-row-reverse">
           <Button onClick={handleSave} disabled={!canSave} className="bg-gradient-navy text-primary-foreground">
             <Check className="h-4 w-4 ml-1" /> צור מערכת
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
         </DialogFooter>
+
+        <div
+          className="absolute inset-y-2 right-0 z-10 w-2 cursor-ew-resize border-r border-gold/20 hover:border-gold/50 transition-colors"
+          onMouseDown={(e) => startResize("e", e)}
+        />
+        <div
+          className="absolute inset-y-2 left-0 z-10 w-2 cursor-ew-resize border-l border-gold/20 hover:border-gold/50 transition-colors"
+          onMouseDown={(e) => startResize("w", e)}
+        />
+        <div
+          className="absolute inset-x-2 top-0 z-10 h-2 cursor-ns-resize border-t border-gold/20 hover:border-gold/50 transition-colors"
+          onMouseDown={(e) => startResize("n", e)}
+        />
+        <div
+          className="absolute inset-x-2 bottom-0 z-10 h-2 cursor-ns-resize border-b border-gold/20 hover:border-gold/50 transition-colors"
+          onMouseDown={(e) => startResize("s", e)}
+        />
+
+        <Dialog open={addQuestionOpen} onOpenChange={(o) => { if (!o) closeAddQuestion(); }}>
+          <DialogContent dir="rtl" className="max-w-[min(96vw,900px)] max-h-[92vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-right">הוספת שאלה חדשה</DialogTitle>
+            </DialogHeader>
+            <Suspense fallback={<div className="text-xs text-muted-foreground text-right">טוען עורך שאלה...</div>}>
+              <CardEditor
+                deckId={null}
+                onClose={closeAddQuestion}
+                prefillCategories={undefined}
+              />
+            </Suspense>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

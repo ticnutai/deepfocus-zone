@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,19 @@ interface Props {
 
 const MIN_W = 380;
 const MIN_H = 320;
+const VIEWPORT_MARGIN = 8;
+
+const clampPanelToViewport = (nextPos: { x: number; y: number }, nextSize: { w: number; h: number }) => {
+  const maxW = Math.max(MIN_W, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const maxH = Math.max(MIN_H, window.innerHeight - VIEWPORT_MARGIN * 2);
+  const w = Math.min(nextSize.w, maxW);
+  const h = Math.min(nextSize.h, maxH);
+  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - w - VIEWPORT_MARGIN);
+  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - h - VIEWPORT_MARGIN);
+  const x = Math.min(Math.max(nextPos.x, VIEWPORT_MARGIN), maxX);
+  const y = Math.min(Math.max(nextPos.y, VIEWPORT_MARGIN), maxY);
+  return { pos: { x, y }, size: { w, h } };
+};
 
 export function DraggableResizablePanel({
   open,
@@ -41,15 +55,33 @@ export function DraggableResizablePanel({
   // Center on first open
   useEffect(() => {
     if (open && !initialized) {
-      setPos({
-        x: Math.max(8, (window.innerWidth - defaultWidth) / 2),
-        y: Math.max(8, (window.innerHeight - defaultHeight) / 4),
-      });
-      setSize({ w: defaultWidth, h: defaultHeight });
+      const centered = clampPanelToViewport(
+        {
+          x: (window.innerWidth - defaultWidth) / 2,
+          y: (window.innerHeight - defaultHeight) / 4,
+        },
+        { w: defaultWidth, h: defaultHeight },
+      );
+      setPos(centered.pos);
+      setSize(centered.size);
       setInitialized(true);
     }
     if (!open) setInitialized(false);
   }, [open, initialized, defaultWidth, defaultHeight]);
+
+  // Keep panel visible when viewport changes (resize / zoom / orientation changes).
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => {
+      setPos((prevPos) => {
+        const clamped = clampPanelToViewport(prevPos, size);
+        setSize((prevSize) => (prevSize.w !== clamped.size.w || prevSize.h !== clamped.size.h ? clamped.size : prevSize));
+        return clamped.pos;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [open, size]);
 
   // Escape key to close
   useEffect(() => {
@@ -59,6 +91,30 @@ export function DraggableResizablePanel({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  useEffect(() => {
+    const w = window as Window & {
+      __panelLifecycleTrace?: Array<{
+        at: number;
+        iso: string;
+        open: boolean;
+        title: string;
+        event: "render-open" | "render-closed";
+      }>;
+    };
+    const titleText = typeof title === "string" ? title : "[non-string-title]";
+    const prev = Array.isArray(w.__panelLifecycleTrace) ? w.__panelLifecycleTrace : [];
+    w.__panelLifecycleTrace = [
+      ...prev,
+      {
+        at: performance.now(),
+        iso: new Date().toISOString(),
+        open,
+        title: titleText,
+        event: open ? "render-open" : "render-closed",
+      },
+    ].slice(-80);
+  }, [open, title]);
+
   // Drag from header
   const onDragMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -67,7 +123,11 @@ export function DraggableResizablePanel({
     const onMove = (ev: MouseEvent) => {
       const dx = ev.clientX - snapshot.startX;
       const dy = ev.clientY - snapshot.startY;
-      setPos({ x: snapshot.posX + dx, y: snapshot.posY + dy });
+      const clamped = clampPanelToViewport(
+        { x: snapshot.posX + dx, y: snapshot.posY + dy },
+        size,
+      );
+      setPos(clamped.pos);
     };
     const onUp = () => {
       dragRef.current = null;
@@ -95,8 +155,12 @@ export function DraggableResizablePanel({
       if (dir.includes("w")) { newW = Math.max(MIN_W, snapshot.startW - dx); newX = snapshot.startPosX + snapshot.startW - newW; }
       if (dir.includes("s")) newH = Math.max(MIN_H, snapshot.startH + dy);
       if (dir.includes("n")) { newH = Math.max(MIN_H, snapshot.startH - dy); newY = snapshot.startPosY + snapshot.startH - newH; }
-      setSize({ w: newW, h: newH });
-      setPos({ x: newX, y: newY });
+      const clamped = clampPanelToViewport(
+        { x: newX, y: newY },
+        { w: newW, h: newH },
+      );
+      setSize(clamped.size);
+      setPos(clamped.pos);
     };
     const onUp = () => {
       resizeRef.current = null;
@@ -105,7 +169,7 @@ export function DraggableResizablePanel({
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [pos.x, pos.y, size.w, size.h]);
+  }, [pos.x, pos.y, size]);
 
   if (!open) return null;
 
@@ -122,7 +186,7 @@ export function DraggableResizablePanel({
     { dir: "sw", style: { bottom: 0, left: 0, width: HANDLE_SIZE, height: HANDLE_SIZE }, cursor: "sw-resize" },
   ];
 
-  return (
+  const panelNode = (
     <div
       className={cn(
         "fixed z-50 flex flex-col rounded-xl border-2 border-gold/40 bg-card shadow-2xl",
@@ -163,4 +227,6 @@ export function DraggableResizablePanel({
       ))}
     </div>
   );
+
+  return createPortal(panelNode, document.body);
 }

@@ -3,6 +3,7 @@ import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Go
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
 import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./srs";
+import { toHebrewNum } from "./shasFormat";
 import { SHAS_BAVLI } from "./shasData";
 import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
 import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
@@ -27,6 +28,9 @@ let currentUserId: string | null = null;
 let loadedFor: string | null = null;
 const listeners = new Set<() => void>();
 let cachePersistTimer: number | null = null;
+let uiPrefsSyncTimer: number | null = null;
+let uiPrefsSyncUserId: string | null = null;
+let uiPrefsSyncPayload: UiPrefs | null = null;
 let cloudSyncInFlight = false;
 let cloudSyncPendingJobs = 0;
 let isHydrated = false;
@@ -45,6 +49,7 @@ const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
 const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — ensures cross-device changes appear promptly
 const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // keep first paint fast, then reconcile IDB against cloud shortly after
+const UI_PREFS_SYNC_DEBOUNCE_MS = 800;
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
   const ric = (window as typeof window & {
@@ -232,6 +237,94 @@ const mergeByKeyLww = <T>(
 };
 
 const normalizeName = (v: string | null | undefined): string => (v ?? "").trim().toLowerCase();
+const normalizeQuestionKey = (v: string | null | undefined): string => normalizeName(v).replace(/\s+/g, " ");
+
+const formatHebRef = (book: string, chapter: number, verse: number, verseEnd?: number) => {
+  const c = toHebrewNum(chapter) || String(chapter);
+  const v = toHebrewNum(verse) || String(verse);
+  const ve = verseEnd && verseEnd !== verse ? `-${toHebrewNum(verseEnd) || String(verseEnd)}` : "";
+  return `${book.trim()} ${c}:${v}${ve}`;
+};
+
+const normalizeReferenceText = (input: string): string => {
+  const s = input.trim();
+  if (!s) return input;
+
+  const bookRef = s.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/u);
+  if (bookRef) {
+    const [, book, ch, vs, ve] = bookRef;
+    return formatHebRef(book, Number(ch), Number(vs), ve ? Number(ve) : undefined);
+  }
+
+  return s
+    .replace(/\b(פרק|פסוק|דף)\s+(\d+)\b/gu, (_m, word: string, num: string) => `${word} ${toHebrewNum(Number(num)) || num}`)
+    .replace(/\bעמוד\s+([12])\b/gu, (_m, amud: string) => `עמוד ${amud === "1" ? "א" : "ב"}`);
+};
+
+const normalizeReferenceTag = (tag: string): string => {
+  if (!tag.startsWith("ref:")) return tag;
+  const raw = tag.slice(4).trim();
+
+  const dottedColon = raw.match(/^(.+?)\.(\d+):(\d+)(?:-(\d+))?$/u);
+  if (dottedColon) {
+    const [, book, ch, vs, ve] = dottedColon;
+    const c = toHebrewNum(Number(ch)) || ch;
+    const v = toHebrewNum(Number(vs)) || vs;
+    const end = ve ? `-${toHebrewNum(Number(ve)) || ve}` : "";
+    return `ref:${book.trim()}.${c}:${v}${end}`;
+  }
+
+  const dottedDot = raw.match(/^(.+?)\.(\d+)\.(\d+)(?:-(\d+))?$/u);
+  if (dottedDot) {
+    const [, book, ch, vs, ve] = dottedDot;
+    const c = toHebrewNum(Number(ch)) || ch;
+    const v = toHebrewNum(Number(vs)) || vs;
+    const end = ve ? `-${toHebrewNum(Number(ve)) || ve}` : "";
+    return `ref:${book.trim()}.${c}.${v}${end}`;
+  }
+
+  const spaced = raw.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/u);
+  if (spaced) {
+    const [, book, ch, vs, ve] = spaced;
+    return `ref:${formatHebRef(book, Number(ch), Number(vs), ve ? Number(ve) : undefined)}`;
+  }
+
+  return tag;
+};
+
+const normalizeReferenceNotationInState = (state: StudyState): StudyState => {
+  let changed = false;
+
+  const categories = (state.categories ?? []).map((c) => {
+    const normalizedName = normalizeReferenceText(c.name);
+    if (normalizedName !== c.name) {
+      changed = true;
+      return { ...c, name: normalizedName };
+    }
+    return c;
+  });
+
+  const cards = (state.cards ?? []).map((card) => {
+    const tags = (card.tags ?? []).map((tag) => {
+      if (tag.startsWith("ref:")) return normalizeReferenceTag(tag);
+      if (tag.startsWith("cat:")) {
+        const payload = tag.slice(4);
+        const nextPayload = normalizeReferenceText(payload);
+        return nextPayload === payload ? tag : `cat:${nextPayload}`;
+      }
+      return tag;
+    });
+    const tagsChanged = tags.length !== (card.tags ?? []).length || tags.some((t, i) => t !== (card.tags ?? [])[i]);
+    if (tagsChanged) {
+      changed = true;
+      return { ...card, tags };
+    }
+    return card;
+  });
+
+  if (!changed) return state;
+  return { ...state, categories, cards };
+};
 
 function dedupeBySemanticKeyLww<T>(
   rows: T[] | undefined,
@@ -253,9 +346,10 @@ function dedupeBySemanticKeyLww<T>(
 const DEPRECATED_FLASHCARD_TWIN_DECK_ID = "b5e2f1a3-7c9d-4e8f-a012-3b4c5d6e7f8a";
 
 function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
-  const categories = dedupeBySemanticKeyLww(state.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
+  const normalized = normalizeReferenceNotationInState(state);
+  const categories = dedupeBySemanticKeyLww(normalized.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
   const decks = dedupeBySemanticKeyLww(
-    (state.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID && !deletedDeckIds.has(d.id)),
+    (normalized.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID && !deletedDeckIds.has(d.id)),
     (d) => normalizeName(d.name),
   );
   // Upgrade legacy "multiple" cards to "combo" so dual-mode study works regardless of
@@ -267,10 +361,10 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
     return { ...c, type: "combo", answer, options: mc.options, correctIndices: mc.correctIndices } as Card;
   };
   const cards = dedupeBySemanticKeyLww(
-    (state.cards ?? [])
+    (normalized.cards ?? [])
       .filter((c) => c.deckId !== DEPRECATED_FLASHCARD_TWIN_DECK_ID)
       .map(upgradeCard),
-    (c) => `${c.deckId ?? "none"}::${c.type ?? "flashcard"}::${normalizeName(c.question)}`,
+    (c) => normalizeQuestionKey(c.question),
   );
 
   const categoryIds = new Set(categories.map((c) => c.id));
@@ -278,15 +372,15 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
   const cardIds = new Set(cards.map((c) => c.id));
 
   return {
-    ...state,
+    ...normalized,
     categories,
     decks,
     cards,
-    cardDecks: (state.cardDecks ?? []).filter((l) => cardIds.has(l.cardId) && deckIds.has(l.deckId)),
+    cardDecks: (normalized.cardDecks ?? []).filter((l) => cardIds.has(l.cardId) && deckIds.has(l.deckId)),
     deckCategories: Object.fromEntries(
-      Object.entries(state.deckCategories ?? {}).filter(([deckId]) => deckIds.has(deckId)),
+      Object.entries(normalized.deckCategories ?? {}).filter(([deckId]) => deckIds.has(deckId)),
     ),
-    goals: state.goals ?? [],
+    goals: normalized.goals ?? [],
   };
 }
 
@@ -689,6 +783,32 @@ const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
       });
     }
   });
+};
+
+const flushUiPrefsCloudSync = () => {
+  uiPrefsSyncTimer = null;
+  const userId = uiPrefsSyncUserId;
+  const payload = uiPrefsSyncPayload;
+  uiPrefsSyncUserId = null;
+  uiPrefsSyncPayload = null;
+  if (!userId || userId === GUEST_ID || !payload) return;
+  if (currentUserId !== userId) return;
+  bg(
+    supabase.from("user_settings").upsert(
+      { user_id: userId, ui_prefs: payload as unknown as Json },
+      { onConflict: "user_id" },
+    ),
+    "user_settings.ui_prefs",
+  );
+};
+
+const scheduleUiPrefsCloudSync = (userId: string, payload: UiPrefs) => {
+  uiPrefsSyncUserId = userId;
+  uiPrefsSyncPayload = payload;
+  if (uiPrefsSyncTimer !== null) window.clearTimeout(uiPrefsSyncTimer);
+  uiPrefsSyncTimer = window.setTimeout(() => {
+    flushUiPrefsCloudSync();
+  }, UI_PREFS_SYNC_DEBOUNCE_MS);
 };
 
 /**
@@ -1677,7 +1797,7 @@ export function useStudy() {
     if (uid === GUEST_ID) {
       const saved = localStorage.getItem(GUEST_STATE_KEY);
       if (saved) {
-        try { memState = JSON.parse(saved) as StudyState; } catch { memState = emptyState(); }
+        try { memState = applyBidirectionalDedupeGuards(JSON.parse(saved) as StudyState); } catch { memState = emptyState(); }
       } else {
         memState = emptyState();
       }
@@ -1795,13 +1915,14 @@ export function useStudy() {
                   stopDelta();
                   if (cancelled) return;
                   const mergedDelta = applyDeltaToState(memState, delta);
-                  const cloudCardGap = delta.cloudCardsTotalCount > 0 && mergedDelta.cards.length !== delta.cloudCardsTotalCount;
+                  const normalizedDelta = applyBidirectionalDedupeGuards(mergedDelta);
+                  const cloudCardGap = delta.cloudCardsTotalCount > 0 && normalizedDelta.cards.length !== delta.cloudCardsTotalCount;
                   if (cloudCardGap) {
                     phase2TotalCount = delta.cloudCardsTotalCount;
-                    phase2BackfillNeeded = mergedDelta.cards.length < delta.cloudCardsTotalCount;
+                    phase2BackfillNeeded = normalizedDelta.cards.length < delta.cloudCardsTotalCount;
                     const cloudBg = await loadAll(uid);
                     if (cancelled) return;
-                    const mergedFull = mergeStudyStateLww(mergedDelta, cloudBg, true);
+                    const mergedFull = mergeStudyStateLww(normalizedDelta, cloudBg, true);
                     const localWlCacheFull = readWidgetLayoutCache(uid);
                     const storedCloudTsFull = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
                     const useLocalFull = localWlCacheFull?.layout && (localWlCacheFull.updatedAt ?? 0) > storedCloudTsFull;
@@ -1823,10 +1944,10 @@ export function useStudy() {
                   const localWlCacheDelta = readWidgetLayoutCache(uid);
                   const storedCloudTsDelta = Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uid)) ?? "0");
                   const useLocalDelta = localWlCacheDelta?.layout && (localWlCacheDelta.updatedAt ?? 0) > storedCloudTsDelta;
-                  const mergedDeltaWithLayout = useLocalDelta ? { ...mergedDelta, widgetLayout: localWlCacheDelta.layout } : mergedDelta;
+                  const mergedDeltaWithLayout = useLocalDelta ? { ...normalizedDelta, widgetLayout: localWlCacheDelta.layout } : normalizedDelta;
                   const changed = mergedDeltaWithLayout !== memState;
                   memState = mergedDeltaWithLayout;
-                  if (typeof mergedDelta.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedDelta.uiPrefs.syncEnabled);
+                  if (typeof normalizedDelta.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(normalizedDelta.uiPrefs.syncEnabled);
                   if (changed) {
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
                     performance.mark("pashash:notify:bg-delta");
@@ -1834,7 +1955,7 @@ export function useStudy() {
                     performance.measure("pashash:react-render:bg-delta", "pashash:notify:bg-delta");
                     // Persist in background; do not block interaction thread on IDB write.
                     window.setTimeout(() => {
-                      void saveStudyStateCache(uid, mergedDelta);
+                      void saveStudyStateCache(uid, normalizedDelta);
                     }, 0);
                   }
                   localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(Date.now()));
@@ -1999,7 +2120,8 @@ export function useStudy() {
     options?: { force?: boolean; prefetch?: boolean; reason?: "initial" | "user" | "prefetch" },
   ) => {
     const force = options?.force ?? false;
-    const prefetch = options?.prefetch ?? true;
+    // Strict lazy-load mode: never prefetch additional branches.
+    const prefetch = false;
     const reason = options?.reason ?? "user";
     const userId = requireUser();
     ensureCategoryLocalState(userId);
@@ -2101,9 +2223,12 @@ export function useStudy() {
     const controller = new AbortController();
     categoryAbortControllersByParent.set(key, controller);
 
+    const hadInFlightBefore = loadingCategoryParents.size > 0;
     loadingCategoryParents.add(key);
-    // Non-urgent: show loading indicator when React has a chance, don't block the click handler.
-    startTransition(notify);
+    // Notify only on idle->busy transition to avoid transition storms during rapid navigation.
+    if (!hadInFlightBefore) {
+      startTransition(notify);
+    }
     try {
       const startedAt = performance.now();
       let loadedRows: CategoryChildRow[] = [];
@@ -2156,8 +2281,11 @@ export function useStudy() {
       if (categoryAbortControllersByParent.get(key) === controller) {
         categoryAbortControllersByParent.delete(key);
         loadingCategoryParents.delete(key);
-        // Defer React render to a new macrotask; startTransition lets React yield mid-render.
-        setTimeout(() => startTransition(notify), 0);
+        // Notify only when queue becomes empty (busy->idle), coalescing multiple child loads.
+        if (loadingCategoryParents.size === 0) {
+          // Defer React render to a new macrotask; startTransition lets React yield mid-render.
+          setTimeout(() => startTransition(notify), 0);
+        }
       }
     }
   }, []);
@@ -2264,6 +2392,9 @@ export function useStudy() {
 
   const addCard = useCallback((card: Omit<Card, "id" | "createdAt" | "srs" | "stats">) => {
     const userId = requireUser();
+    const questionKey = normalizeQuestionKey(card.question);
+    const existing = memState.cards.find((c) => normalizeQuestionKey(c.question) === questionKey);
+    if (existing) return existing;
     // Enforce: every card must have ≥1 cat: tag. If none → auto-tag "ללא סיווג".
     const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
     if (!tags.some((t) => t.startsWith("cat:"))) {
@@ -2303,9 +2434,19 @@ export function useStudy() {
   ): Card[] => {
     const userId = requireUser();
     if (!cards.length) return [];
+    const existingQuestionKeys = new Set(memState.cards.map((c) => normalizeQuestionKey(c.question)));
+    const seenInBatch = new Set<string>();
+    const filteredInput = cards.filter((card) => {
+      const key = normalizeQuestionKey(card.question);
+      if (!key) return false;
+      if (existingQuestionKeys.has(key) || seenInBatch.has(key)) return false;
+      seenInBatch.add(key);
+      return true;
+    });
+    if (!filteredInput.length) return [];
     ensureUncategorized();
     const now = Date.now();
-    const full: Card[] = cards.map((card) => {
+    const full: Card[] = filteredInput.map((card) => {
       const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
       if (!tags.some((t) => t.startsWith("cat:"))) tags.push(UNCATEGORIZED_TAG);
       return {
@@ -2385,6 +2526,9 @@ export function useStudy() {
     setState((s) => {
       const orig = s.cards.find((c) => c.id === id);
       if (!orig) return s;
+      const questionKey = normalizeQuestionKey(orig.question);
+      const duplicateExists = s.cards.some((c) => c.id !== id && normalizeQuestionKey(c.question) === questionKey);
+      if (duplicateExists) return s;
       copy = {
         ...orig, id: uid(), deckId: targetDeckId ?? orig.deckId,
         createdAt: Date.now(), srs: defaultSrs(),
@@ -3550,10 +3694,7 @@ export function useStudy() {
     const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };
     setState((s) => ({ ...s, uiPrefs: next }));
     writeUiPrefsCache(userId, next);
-    bg(supabase.from("user_settings").upsert(
-      { user_id: userId, ui_prefs: next as unknown as Json },
-      { onConflict: "user_id" },
-    ), "user_settings.ui_prefs");
+    scheduleUiPrefsCloudSync(userId, next);
   }, []);
 
   // === Masechta Review Plans ===

@@ -5,6 +5,7 @@ import { SHAS_BAVLI, SEDARIM } from "./shasData";
 import { fullDafNamesForMasechet, fullAmudNamesForDaf } from "./shasGen";
 import { MISHNAYOT_DATA } from "./mishnayotData";
 import { TORAH_VERSES } from "./torahVerses";
+import { NACH_BOOK_VERSES, NACH_KETUVIM_BOOKS, NACH_NEVIIM_BOOKS } from "./nachVerses";
 
 // === המרת מספר לגמטריה ===
 const ONES = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
@@ -92,6 +93,21 @@ export interface CategoryTemplate {
   emoji: string;
   /** מבנה היררכי. שורות שורש מתווספות כקטגוריות-על. */
   roots: CategoryTemplateNode[];
+}
+
+function buildBookChaptersAndVersesNode(bookName: string): CategoryTemplateNode {
+  const book = NACH_BOOK_VERSES[bookName];
+  if (!book) return { name: bookName };
+
+  return {
+    name: bookName,
+    children: book.chapters.map((versesCount, perekIdx) => ({
+      name: `פרק ${toGematria(perekIdx + 1)}`,
+      children: Array.from({ length: versesCount }, (_, verseIdx) => ({
+        name: `פסוק ${toGematria(verseIdx + 1)}`,
+      })),
+    })),
+  };
 }
 
 // === חמשת חומשי תורה + פרשות ===
@@ -740,6 +756,25 @@ export const CATEGORY_TEMPLATES: CategoryTemplate[] = [
         { name: "תורה",   children: NACH.torah.map((n) => ({ name: n })) },
         { name: "נביאים", children: NACH.neviim.map((n) => ({ name: n })) },
         { name: "כתובים", children: NACH.ketuvim.map((n) => ({ name: n })) },
+      ],
+    }],
+  },
+  {
+    id: "neviim_ketuvim_pesukim",
+    title: "נביאים וכתובים — פרקים ופסוקים",
+    description: "כל ספרי נביאים וכתובים עם ענפים אוטומטיים של פרק → פסוק",
+    emoji: "📘",
+    roots: [{
+      name: "נביאים וכתובים (פרקים ופסוקים)",
+      children: [
+        {
+          name: "נביאים",
+          children: NACH_NEVIIM_BOOKS.map(buildBookChaptersAndVersesNode),
+        },
+        {
+          name: "כתובים",
+          children: NACH_KETUVIM_BOOKS.map(buildBookChaptersAndVersesNode),
+        },
       ],
     }],
   },

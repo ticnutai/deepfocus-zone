@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-21T12:35:59.202646",
+  "reports": [
+    {
+      "id": "neviim_extracted_questions",
+      "label": "נביאים - שאלות לחילוץ (אישור)",
+      "file": "/data/reports/neviim_extracted_questions.json",
+      "updated_at": "2026-05-24T12:00:00.000000"
+    },
+    {
+      "id": "full_shas_qna_report",
+      "label": "full shas",
+      "file": "/data/reports/full_shas_qna_report.json",
+      "updated_at": "2026-05-21T12:35:57.327264"
+    },
+    {
+      "id": "pilot_docx_qna_report",
+      "label": "docx",
+      "file": "/data/reports/pilot_docx_qna_report.json",
+      "updated_at": "2026-05-21T12:30:44.705866"
+    }
+  ]
+}

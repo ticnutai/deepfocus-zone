@@ -427,15 +427,8 @@ export function CategoryBrowseView({ selectedCategory, onSelectCategory, onAddCa
 
   // Load children when path changes
   useEffect(() => {
-    void loadCategoryChildren(currentParentId, { reason: "user" });
+    void loadCategoryChildren(currentParentId, { reason: "user", prefetch: false });
   }, [currentParentId, loadCategoryChildren]);
-
-  // When we enter a folder, also load its children for the next level
-  useEffect(() => {
-    if (activeCatId) {
-      void loadCategoryChildren(activeCatId, { reason: "user" });
-    }
-  }, [activeCatId, loadCategoryChildren]);
 
   // Breadcrumb categories
   const breadcrumbs = useMemo(() => {

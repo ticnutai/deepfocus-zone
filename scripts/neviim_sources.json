@@ -1,0 +1,44 @@
+[
+  {
+    "id": "moe_pop_tanach",
+    "type": "official",
+    "name": "משרד החינוך - מרחב פדגוגי תנ\"ך",
+    "url": "https://pop.education.gov.il/programmes-study/bible/middle-school/learning-materials/"
+  },
+  {
+    "id": "herzog_tanach",
+    "type": "professional",
+    "name": "מכללת הרצוג - תנ\"ך",
+    "url": "https://www.herzog.ac.il/tanach/"
+  },
+  {
+    "id": "daat_tanach",
+    "type": "professional",
+    "name": "דעת - מאגר תנ\"ך",
+    "url": "https://www.daat.ac.il/daat/tanach/"
+  },
+  {
+    "id": "yeshiva_tanach_search",
+    "type": "professional",
+    "name": "ישיבה - חיפוש תנ\"ך",
+    "url": "https://www.yeshiva.org.il/search?subject=tanach"
+  },
+  {
+    "id": "machon_mamre_neviim",
+    "type": "reference",
+    "name": "מכון ממרא - נביאים",
+    "url": "https://mechon-mamre.org/i/t/t0.htm"
+  },
+  {
+    "id": "sefaria_tanakh",
+    "type": "reference",
+    "name": "ספריא - תנ\"ך",
+    "url": "https://www.sefaria.org.il/texts/Tanakh"
+  },
+  {
+    "id": "fxp_tanach_forum",
+    "type": "forum",
+    "name": "פורום לימודים ובגרויות (FXP)",
+    "url": "https://www.fxp.co.il/forumdisplay.php?f=464"
+  }
+]

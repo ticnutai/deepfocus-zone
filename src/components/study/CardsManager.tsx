@@ -42,6 +42,9 @@ import { DeckCreateDialog } from "./DeckCreateDialog";
 import { DeckEditDialog } from "./DeckEditDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
 import { PATH_SEP, dafLabel } from "@/lib/study/shasGen";
+import { toHebrewNum } from "@/lib/study/shasFormat";
+
+const IS_DEV = import.meta.env.DEV;
 
 // helper: collect a category id and all its descendant ids
 function collectDescendants(rootId: string, cats: { id: string; parentId: string | null }[]): Set<string> {
@@ -69,6 +72,14 @@ function normalizeCategorySegment(seg: string): string {
   const s = seg.trim();
   if (!s) return s;
   const noPrefix = s.replace(/^דף\s+/, "").trim();
+  const bookRefMatch = noPrefix.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/u);
+  if (bookRefMatch) {
+    const [, book, chapter, verse, verseEnd] = bookRefMatch;
+    const c = toHebrewNum(Number(chapter)) || chapter;
+    const v = toHebrewNum(Number(verse)) || verse;
+    const ve = verseEnd ? `-${toHebrewNum(Number(verseEnd)) || verseEnd}` : "";
+    return `${book.trim()} ${c}:${v}${ve}`;
+  }
   if (/^ע["׳']?[אב]$/u.test(noPrefix)) {
     return noPrefix.includes('"') ? noPrefix : (noPrefix.includes("׳") ? noPrefix : noPrefix.replace(/^ע([אב])$/u, 'ע"$1'));
   }
@@ -77,6 +88,30 @@ function normalizeCategorySegment(seg: string): string {
     return `${base}'`;
   }
   return noPrefix;
+}
+
+function formatRefTagLabel(tag: string): string {
+  if (!tag.startsWith("ref:")) return tag;
+  const raw = tag.slice(4).trim();
+  const dotted = raw.match(/^(.+?)\.(\d+):(\d+)(?:-(\d+))?$/u);
+  if (dotted) {
+    const [, book, chapter, verse, verseEnd] = dotted;
+    const c = toHebrewNum(Number(chapter)) || chapter;
+    const v = toHebrewNum(Number(verse)) || verse;
+    const ve = verseEnd ? `-${toHebrewNum(Number(verseEnd)) || verseEnd}` : "";
+    return `${book.trim()} ${c}:${v}${ve}`;
+  }
+
+  const spaced = raw.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/u);
+  if (spaced) {
+    const [, book, chapter, verse, verseEnd] = spaced;
+    const c = toHebrewNum(Number(chapter)) || chapter;
+    const v = toHebrewNum(Number(verse)) || verse;
+    const ve = verseEnd ? `-${toHebrewNum(Number(verseEnd)) || verseEnd}` : "";
+    return `${book.trim()} ${c}:${v}${ve}`;
+  }
+
+  return raw;
 }
 
 function buildCanonicalCategoryChips(
@@ -228,6 +263,38 @@ function CardsManager() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<StudyCardType | null>(null);
   const [prefillCategoryName, setPrefillCategoryName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!IS_DEV) return;
+    const w = window as Window & {
+      __addQuestionTrace?: {
+        id: string;
+        catName: string;
+        clickedAt: number;
+      };
+      __cardsManagerEditorOpenTrace?: Array<{
+        at: number;
+        iso: string;
+        editorOpen: boolean;
+        editingCardId: string | null;
+        prefillCategoryName: string | null;
+        traceId: string | null;
+      }>;
+      __lastEditorOwner?: string;
+    };
+    const trace = w.__addQuestionTrace;
+    const item = {
+      at: performance.now(),
+      iso: new Date().toISOString(),
+      editorOpen,
+      editingCardId: editingCard?.id ?? null,
+      prefillCategoryName,
+      traceId: trace?.id ?? null,
+    };
+    const prev = Array.isArray(w.__cardsManagerEditorOpenTrace) ? w.__cardsManagerEditorOpenTrace : [];
+    w.__cardsManagerEditorOpenTrace = [...prev, item].slice(-50);
+    w.__lastEditorOwner = "CardsManager";
+    console.info("[trace][cards-manager] editorOpen changed", item);
+  }, [editorOpen, editingCard?.id, prefillCategoryName]);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [session, setSession] = useState<{ deckId: string; mode: StudyMode; cardIds?: string[] } | null>(null);
   const [historyCard, setHistoryCard] = useState<StudyCardType | null>(null);
@@ -291,6 +358,19 @@ function CardsManager() {
     };
   }, [state.cards, state.cardDecks, state.categories]);
 
+  const deckStatsById = useMemo(() => {
+    const stats = new Map<string, { size: number; due: number }>();
+    state.decks.forEach((deck) => {
+      const cards = getCardsForDeck(deck);
+      let due = 0;
+      for (const card of cards) {
+        if (isDue(card)) due += 1;
+      }
+      stats.set(deck.id, { size: cards.length, due });
+    });
+    return stats;
+  }, [state.decks, getCardsForDeck]);
+
   // Sorted decks for display
   const sortedDecks = useMemo(() => {
     if (deckSort === "manual") return state.decks;
@@ -299,16 +379,16 @@ function CardsManager() {
       let cmp = 0;
       if (deckSort === "name") cmp = (a.name || "").localeCompare(b.name || "", "he");
       else if (deckSort === "size") {
-        cmp = getCardsForDeck(a).length - getCardsForDeck(b).length;
+        cmp = (deckStatsById.get(a.id)?.size ?? 0) - (deckStatsById.get(b.id)?.size ?? 0);
       } else if (deckSort === "due") {
-        cmp = getCardsForDeck(a).filter(isDue).length - getCardsForDeck(b).filter(isDue).length;
+        cmp = (deckStatsById.get(a.id)?.due ?? 0) - (deckStatsById.get(b.id)?.due ?? 0);
       } else if (deckSort === "recent") {
         cmp = ((a as { createdAt?: number }).createdAt ?? 0) - ((b as { createdAt?: number }).createdAt ?? 0);
       }
       return deckSortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [state.decks, getCardsForDeck, deckSort, deckSortDir]);
+  }, [state.decks, deckStatsById, deckSort, deckSortDir]);
   const linkedCardIds = useMemo(() => {
     if (!activeDeckId) return new Set<string>();
     return new Set(
@@ -332,7 +412,13 @@ function CardsManager() {
     result = applyDateFilter(result, dateFilter);
     return result;
   }, [allDeckCards, categoryFilter, typeFilter, dateFilter]);
-  const dueCount = deckCards.filter(isDue).length;
+  const dueCount = useMemo(() => {
+    let total = 0;
+    for (const card of deckCards) {
+      if (isDue(card)) total += 1;
+    }
+    return total;
+  }, [deckCards]);
   const isDateFilterActive = dateFilter.from !== null || dateFilter.to !== null;
   const isTypeFilterActive = typeFilter.size > 0;
 
@@ -444,6 +530,7 @@ function CardsManager() {
 
   const openNewCard = () => { setEditingCard(null); setPrefillCategoryName(null); setEditorOpen(true); };
   const openNewCardForCategory = (catName: string) => {
+    if (IS_DEV) console.info("[trace][cards-manager] openNewCardForCategory called", { catName });
     setEditingCard(null);
     setPrefillCategoryName(catName);
     setEditorOpen(true);
@@ -749,8 +836,7 @@ function CardsManager() {
                 )}
               >
                 {sortedDecks.map((deck) => {
-                  const cards = getCardsForDeck(deck);
-                  const due = cards.filter(isDue).length;
+                  const deckStats = deckStatsById.get(deck.id) ?? { size: 0, due: 0 };
                   const isActive = deck.id === activeDeckId;
 
                   if (deckView === "grid") {
@@ -773,17 +859,34 @@ function CardsManager() {
                             {deck.name}
                           </div>
                           <div className={cn("text-[10px]", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                            {cards.length} · {due} לחזרה
+                            {deckStats.size} · {deckStats.due} לחזרה
                           </div>
                           {(state.deckCategories?.[deck.id] ?? []).length > 0 && (
                             <div className="flex flex-wrap gap-1 justify-center">
                               {(state.deckCategories?.[deck.id] ?? []).slice(0, 3).map((cn2) => (
-                                <Badge key={cn2} variant="outline" className="text-[9px] border-gold/40 px-1 py-0">
+                                <Badge
+                                  key={cn2}
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[9px] px-1 py-0",
+                                    isActive
+                                      ? "bg-transparent text-primary-foreground border-gold/50"
+                                      : "bg-transparent text-navy border-navy/45",
+                                  )}
+                                >
                                   {cn2}
                                 </Badge>
                               ))}
                               {(state.deckCategories?.[deck.id] ?? []).length > 3 && (
-                                <Badge variant="outline" className="text-[9px] border-gold/40 px-1 py-0">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[9px] px-1 py-0",
+                                    isActive
+                                      ? "bg-transparent text-primary-foreground border-gold/50"
+                                      : "bg-transparent text-navy border-navy/45",
+                                  )}
+                                >
                                   +{(state.deckCategories?.[deck.id] ?? []).length - 3}
                                 </Badge>
                               )}
@@ -836,7 +939,7 @@ function CardsManager() {
                           <BookOpen className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-gold" : "text-navy")} />
                           <span className="text-xs font-medium truncate flex-1 text-right">{deck.name}</span>
                           <span className={cn("text-[10px] shrink-0", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                            {cards.length}/{due}
+                            {deckStats.size}/{deckStats.due}
                           </span>
                         </div>
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -888,17 +991,34 @@ function CardsManager() {
                         <div className="text-right min-w-0 flex-1">
                           <div className="font-medium text-sm truncate">{deck.name}</div>
                           <div className={cn("text-xs truncate", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                            {cards.length} כרטיסים · {due} לחזרה
+                            {deckStats.size} כרטיסים · {deckStats.due} לחזרה
                           </div>
                           {(state.deckCategories?.[deck.id] ?? []).length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-0.5">
                               {(state.deckCategories?.[deck.id] ?? []).slice(0, 2).map((catLabel) => (
-                                <Badge key={catLabel} variant="outline" className={cn("text-[9px] px-1 py-0", isActive ? "border-gold/60 text-primary-foreground/80" : "border-gold/40")}>
+                                <Badge
+                                  key={catLabel}
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[9px] px-1 py-0",
+                                    isActive
+                                      ? "bg-transparent text-primary-foreground border-gold/50"
+                                      : "bg-transparent text-navy border-navy/45",
+                                  )}
+                                >
                                   {catLabel}
                                 </Badge>
                               ))}
                               {(state.deckCategories?.[deck.id] ?? []).length > 2 && (
-                                <Badge variant="outline" className={cn("text-[9px] px-1 py-0", isActive ? "border-gold/60 text-primary-foreground/80" : "border-gold/40")}>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[9px] px-1 py-0",
+                                    isActive
+                                      ? "bg-transparent text-primary-foreground border-gold/50"
+                                      : "bg-transparent text-navy border-navy/45",
+                                  )}
+                                >
                                   +{(state.deckCategories?.[deck.id] ?? []).length - 2}
                                 </Badge>
                               )}
@@ -1162,6 +1282,8 @@ function CardsManager() {
                                 >
                                   c
                                 </span>
+                              ) : t.startsWith("ref:") ? (
+                                <Badge key={t} variant="secondary" className="text-xs">{formatRefTagLabel(t)}</Badge>
                               ) : (
                                 <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
                               )

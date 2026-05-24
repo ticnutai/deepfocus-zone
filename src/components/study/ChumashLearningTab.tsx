@@ -105,6 +105,9 @@ export function ChumashLearningTab() {
               externalUrl={externalUrl}
               title={`${sefer} · פרק ${toGematria(perek)}`}
               className="h-full"
+              breadcrumbItems={["חומש", sefer, `פרק ${toGematria(perek)}`]}
+              lineLabel="פסוק"
+              lineStartIndex={1}
             />
           ) : (
             <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">

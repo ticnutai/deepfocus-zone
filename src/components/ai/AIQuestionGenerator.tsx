@@ -8,7 +8,103 @@ import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI } from "@/lib/study/shasData";
 import { fetchSefariaText, toHebrewNumeral, type TextMode } from "@/lib/ai/sefariaClient";
 import { generateQuestionsWithClaude, type GeneratedQuestion } from "@/lib/ai/claudeClient";
-import type { Category, MultipleChoiceCard } from "@/lib/study/types";
+import { GENERATED_JOSHUA_CHAPTERS } from "@/lib/ai/joshuaBuiltins.generated";
+import type { Card, Category, MultipleChoiceCard } from "@/lib/study/types";
+
+type BuiltinJoshuaQuestion = GeneratedQuestion & {
+  verseStart: number;
+  verseEnd?: number;
+};
+
+type BuiltinJoshuaChapter = {
+  chapter: number;
+  verseRangeLabel: string;
+  questions: BuiltinJoshuaQuestion[];
+};
+
+const BUILTIN_JOSHUA_1_1_20: BuiltinJoshuaQuestion[] = [
+  {
+    question: "לפי יהושע א:א, מי מדבר אל יהושע לאחר מות משה?",
+    options: ["אהרן", "יהוה", "כלב בן יפונה", "פנחס"],
+    correctIndex: 1,
+    explanation: "הפסוק אומר במפורש שיהוה דיבר אל יהושע בן-נון.",
+    verseStart: 1,
+  },
+  {
+    question: "על פי יהושע א:ב, מהו הציווי המרכזי ליהושע?",
+    options: ["להישאר בעבר הירדן", "לעבור את הירדן עם העם", "לבנות את המשכן", "למנות שופטים"],
+    correctIndex: 1,
+    explanation: "יהושע מצווה לקום ולעבור את הירדן עם העם אל הארץ.",
+    verseStart: 2,
+  },
+  {
+    question: "מה מובטח ביהושע א:ג לגבי הארץ?",
+    options: ["רק אזור יריחו יינתן", "הארץ תינתן לעתיד לבוא", "כל מקום שתדרוך כף רגלכם ניתן לכם", "הארץ תישאר בידי הכנעני"],
+    correctIndex: 2,
+    explanation: "הפסוק מדגיש שכל מקום שתדרוך בו כף רגלם יינתן לישראל.",
+    verseStart: 3,
+  },
+  {
+    question: "לפי יהושע א:ה, איזה עיקרון חוזר מהנהגת משה להנהגת יהושע?",
+    options: ["חובת צומות", "כוח צבאי גדול", "נוכחות ה' עם המנהיג", "החלפת כל העם"],
+    correctIndex: 2,
+    explanation: "העיקרון המודגש הוא שכמו שה' היה עם משה כך יהיה עם יהושע.",
+    verseStart: 5,
+  },
+  {
+    question: "מה מודגש ביהושע א:ו-ז כתנאי להצלחה?",
+    options: ["להיות עשיר", "חיזוק ואומץ ושמירת התורה", "להישען על העמים סביב", "להימנע ממלחמה"],
+    correctIndex: 1,
+    explanation: "הפסוקים קושרים אומץ ושמירה מדויקת של התורה להצלחה.",
+    verseStart: 6,
+    verseEnd: 7,
+  },
+  {
+    question: "מהו הציווי ביהושע א:ח לגבי ספר התורה?",
+    options: ["להסתירו בארון", "לקרוא בו רק בחגים", "לא ימוש מפיך והגית בו יומם ולילה", "למסור אותו לכהנים בלבד"],
+    correctIndex: 2,
+    explanation: "הפסוק מחייב עיסוק רציף בתורה ביום ובלילה.",
+    verseStart: 8,
+  },
+  {
+    question: "איזו הבטחה מופיעה ביהושע א:ט לצד הציווי 'חזק ואמץ'?",
+    options: ["ירידת מן", "ה' אלוהיך עמך בכל אשר תלך", "בניין בית המקדש", "שלום מיידי עם כל העמים"],
+    correctIndex: 1,
+    explanation: "הפסוק מסיים בהבטחת ליווי אלוהי בכל דרך.",
+    verseStart: 9,
+  },
+  {
+    question: "מה מצווה יהושע את שוטרי העם ביהושע א:יא?",
+    options: ["לספור את העם", "להכין צידה כי עוברים את הירדן בעוד שלושה ימים", "לבנות מזבחות", "למנות מלך"],
+    correctIndex: 1,
+    explanation: "ההכנה המעשית היא צידה לקראת מעבר הירדן בעוד שלושה ימים.",
+    verseStart: 11,
+  },
+  {
+    question: "מה נדרש מהשבטים ראובן, גד וחצי מנשה ביהושע א:יד?",
+    options: ["להישאר כולם בעבר הירדן", "לעבור חלוצים לפני אחיהם ולעזור להם", "להחזיר את הארץ למשה", "לבטל את השבועה"],
+    correctIndex: 1,
+    explanation: "לוחמי השבטים נדרשים לעבור חלוצים לפני אחיהם עד שינחלו.",
+    verseStart: 14,
+  },
+  {
+    question: "כיצד מגיב העם ליהושע ביהושע א:טז-יח?",
+    options: ["מסרב לשמוע לו", "מסכים לשמוע ומחזק אותו: 'רק חזק ואמץ'", "מבקש לחזור למצרים", "ממליך כהן גדול"],
+    correctIndex: 1,
+    explanation: "העם מצהיר על ציות ליהושע ומסיים בקריאה 'רק חזק ואמץ'.",
+    verseStart: 16,
+    verseEnd: 18,
+  },
+];
+
+const BUILTIN_JOSHUA_CHAPTERS: BuiltinJoshuaChapter[] = [
+  {
+    chapter: 1,
+    verseRangeLabel: "פסוקים א-כ",
+    questions: BUILTIN_JOSHUA_1_1_20,
+  },
+  ...GENERATED_JOSHUA_CHAPTERS,
+];
 
 const AMUD_LABELS = { a: "עמוד א", b: "עמוד ב" };
 const TEXT_MODE_LABELS: Record<TextMode, string> = {
@@ -18,7 +114,7 @@ const TEXT_MODE_LABELS: Record<TextMode, string> = {
 };
 
 export function AIQuestionGenerator() {
-  const { state, setUiPref, addCategory, bulkAddCards } = useStudy();
+  const { state, setUiPref, addCategory, bulkAddCards, updateCard } = useStudy();
   const apiKey = state.uiPrefs?.anthropicApiKey ?? "";
 
   // Form state
@@ -41,6 +137,22 @@ export function AIQuestionGenerator() {
   // Import
   const [importing, setImporting] = useState(false);
   const [importDone, setImportDone] = useState(false);
+  const [selectedJoshuaChapter, setSelectedJoshuaChapter] = useState<number>(BUILTIN_JOSHUA_CHAPTERS[0]?.chapter ?? 1);
+  const activeJoshuaChapter = BUILTIN_JOSHUA_CHAPTERS.find((c) => c.chapter === selectedJoshuaChapter) ?? BUILTIN_JOSHUA_CHAPTERS[0] ?? null;
+  const activeJoshuaQuestions = activeJoshuaChapter?.questions ?? [];
+  const [joshuaSelected, setJoshuaSelected] = useState<Record<number, boolean>>(() => {
+    const initial: Record<number, boolean> = {};
+    for (let i = 0; i < activeJoshuaQuestions.length; i++) initial[i] = true;
+    return initial;
+  });
+  const [importingJoshua, setImportingJoshua] = useState(false);
+  const [importJoshuaDone, setImportJoshuaDone] = useState<number>(0);
+
+  useEffect(() => {
+    const next: Record<number, boolean> = {};
+    for (let i = 0; i < activeJoshuaQuestions.length; i++) next[i] = true;
+    setJoshuaSelected(next);
+  }, [selectedJoshuaChapter, activeJoshuaQuestions.length]);
 
   useEffect(() => { document.title = "יצירת שאלות AI | מעקב למידה"; }, []);
 
@@ -140,6 +252,89 @@ export function AIQuestionGenerator() {
       setQuestions([]);
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function importSelectedJoshuaQuestions() {
+    if (!activeJoshuaChapter) return;
+    const selected = activeJoshuaQuestions.filter((_, i) => !!joshuaSelected[i]);
+    if (!selected.length) return;
+    setImportingJoshua(true);
+    setImportJoshuaDone(0);
+    try {
+      const root = findOrCreate('תנ"ך', null);
+      const neviimCat = findOrCreate("נביאים", root.id);
+      const bookCat = findOrCreate("יהושע", neviimCat.id);
+      const chapterCat = findOrCreate(`פרק ${toHebrewNumeral(activeJoshuaChapter.chapter)}`, bookCat.id);
+      const rangeCat = findOrCreate(activeJoshuaChapter.verseRangeLabel, chapterCat.id);
+
+      const normalizeQuestion = (value: string) => value.trim();
+      const chapterRefPrefix = `ref:יהושע.${toHebrewNumeral(activeJoshuaChapter.chapter)}.`;
+      const selectedByQuestion = new Map<string, BuiltinJoshuaQuestion>();
+      for (const q of selected) {
+        const key = normalizeQuestion(q.question);
+        if (!selectedByQuestion.has(key)) selectedByQuestion.set(key, q);
+      }
+
+      const existingByQuestion = new Map<string, Card>();
+      for (const card of state.cards) {
+        if (card.deckId !== null) continue;
+        const key = normalizeQuestion(card.question ?? "");
+        if (!key || !selectedByQuestion.has(key) || existingByQuestion.has(key)) continue;
+        const tags = card.tags ?? [];
+        const isJoshuaBuiltin = tags.includes("source:builtin_joshua") || tags.some((t) => t.startsWith(chapterRefPrefix));
+        if (isJoshuaBuiltin) existingByQuestion.set(key, card);
+      }
+
+      let updatedCount = 0;
+      const cardsToInsert: Array<Omit<MultipleChoiceCard, "id" | "createdAt" | "srs" | "stats">> = [];
+
+      for (const q of selected) {
+        const key = normalizeQuestion(q.question);
+        const refTag = `ref:יהושע.${toHebrewNumeral(activeJoshuaChapter.chapter)}.${toHebrewNumeral(q.verseStart)}${q.verseEnd ? `-${toHebrewNumeral(q.verseEnd)}` : ""}`;
+        const existing = existingByQuestion.get(key);
+
+        if (existing) {
+          const keptTags = (existing.tags ?? []).filter((tag) => !tag.startsWith("cat:") && !tag.startsWith("ref:יהושע."));
+          const nextTags = Array.from(new Set([
+            ...keptTags,
+            `cat:${rangeCat.id}`,
+            "source:ai",
+            "source:builtin_joshua",
+            refTag,
+          ]));
+          updateCard(existing.id, {
+            tags: nextTags,
+            options: q.options,
+            correctIndices: [q.correctIndex],
+            explanation: q.explanation,
+          });
+          updatedCount += 1;
+          continue;
+        }
+
+        cardsToInsert.push({
+          type: "multiple",
+          deckId: null,
+          question: q.question,
+          options: q.options,
+          correctIndices: [q.correctIndex],
+          explanation: q.explanation,
+          tags: [
+            `cat:${rangeCat.id}`,
+            "source:ai",
+            "source:builtin_joshua",
+            refTag,
+          ],
+        });
+      }
+
+      if (cardsToInsert.length) {
+        bulkAddCards(cardsToInsert);
+      }
+      setImportJoshuaDone(cardsToInsert.length + updatedCount);
+    } finally {
+      setImportingJoshua(false);
     }
   }
 
@@ -275,6 +470,115 @@ export function AIQuestionGenerator() {
           {textLoading ? "טוען מ-Sefaria..." : `טען טקסט — ${masechet} דף ${dafLabel} ${AMUD_LABELS[amud]}`}
         </Button>
         {textError && <p className="text-xs text-red-400">{textError}</p>}
+      </Card>
+
+      <Card className="gold-frame p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-foreground">שאלות אמריקאיות מוכנות: יהושע פרקים א׳-י״א</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              מוצגות אוטומטית בטאב AI. אפשר לסמן ולייבא רק מה שמאשרים.
+            </p>
+          </div>
+          <Badge variant="outline" className="text-[10px] border-gold/50">{activeJoshuaQuestions.length} שאלות</Badge>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">פרק</label>
+          <div className="relative">
+            <select
+              value={selectedJoshuaChapter}
+              onChange={(e) => setSelectedJoshuaChapter(Number(e.target.value))}
+              className="w-full appearance-none rounded-lg border border-gold/40 bg-background px-3 py-2 text-sm text-foreground pr-8 focus:outline-none focus:border-gold"
+            >
+              {BUILTIN_JOSHUA_CHAPTERS.map((chapter) => (
+                <option key={chapter.chapter} value={chapter.chapter}>
+                  {`יהושע ${toHebrewNumeral(chapter.chapter)} (${chapter.verseRangeLabel})`}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-gold/40"
+            onClick={() => {
+              const next: Record<number, boolean> = {};
+              for (let i = 0; i < activeJoshuaQuestions.length; i++) next[i] = true;
+              setJoshuaSelected(next);
+            }}
+          >
+            סמן הכל
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-gold/40"
+            onClick={() => {
+              const next: Record<number, boolean> = {};
+              for (let i = 0; i < activeJoshuaQuestions.length; i++) next[i] = false;
+              setJoshuaSelected(next);
+            }}
+          >
+            נקה הכל
+          </Button>
+        </div>
+
+        <div className="space-y-2 max-h-[360px] overflow-y-auto">
+          {activeJoshuaQuestions.map((q, idx) => {
+            const checked = !!joshuaSelected[idx];
+            const ref = `יהושע ${toHebrewNumeral(selectedJoshuaChapter)}:${toHebrewNumeral(q.verseStart)}${q.verseEnd ? `-${toHebrewNumeral(q.verseEnd)}` : ""}`;
+            return (
+              <div key={idx} className={cn("rounded-xl border p-3 space-y-2", checked ? "border-emerald-400/60 bg-emerald-500/5" : "border-gold/20 bg-card") }>
+                <div className="flex items-start justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJoshuaSelected((prev) => ({ ...prev, [idx]: !checked }))}
+                    className={cn("text-xs rounded-md border px-2 py-1 transition", checked ? "border-emerald-400/50 text-emerald-300" : "border-gold/30 text-muted-foreground")}
+                  >
+                    {checked ? "מאושר" : "לא מאושר"}
+                  </button>
+                  <Badge variant="outline" className="text-[10px]">{ref}</Badge>
+                </div>
+                <p className="text-sm font-medium text-foreground">
+                  <span className="text-muted-foreground text-xs ml-1">{idx + 1}.</span>
+                  {q.question}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                  {q.options.map((opt, oi) => (
+                    <div
+                      key={oi}
+                      className={cn(
+                        "rounded-lg px-2.5 py-1.5 text-xs border",
+                        oi === q.correctIndex
+                          ? "border-green-400/50 bg-green-500/10 text-green-400"
+                          : "border-gold/20 text-muted-foreground",
+                      )}
+                    >
+                      <span className="font-bold ml-1">{["א", "ב", "ג", "ד"][oi]}.</span>
+                      {opt}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <Button
+          onClick={importSelectedJoshuaQuestions}
+          disabled={importingJoshua || !Object.values(joshuaSelected).some(Boolean)}
+          className="w-full gap-2 bg-gradient-navy text-primary-foreground"
+        >
+          {importingJoshua ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {importingJoshua
+            ? "מכניס שאלות מאושרות..."
+            : `הכנס מסומנות לקטגוריה אמיתית (תנ"ך → נביאים → יהושע → פרק ${toHebrewNumeral(selectedJoshuaChapter)} → ${activeJoshuaChapter?.verseRangeLabel ?? "פסוקים"})`}
+        </Button>
       </Card>
 
       {/* Text preview */}
@@ -423,6 +727,18 @@ export function AIQuestionGenerator() {
             <p className="text-sm font-semibold text-green-400">הייבוא הצליח!</p>
             <p className="text-xs text-muted-foreground">
               השאלות נשמרו תחת: תלמוד בבלי → {masechet} → {toHebrewNumeral(daf)} → {amud === "a" ? "א" : "ב"}
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {importJoshuaDone > 0 && (
+        <Card className="gold-frame p-4 flex items-center gap-3 bg-green-500/5 border-green-400/30">
+          <CheckCircle2 className="h-5 w-5 text-green-400" />
+          <div>
+            <p className="text-sm font-semibold text-green-400">הכנסה הצליחה: {importJoshuaDone} שאלות</p>
+            <p className="text-xs text-muted-foreground">
+              נשמר תחת: תנ"ך → נביאים → יהושע → פרק {toHebrewNumeral(selectedJoshuaChapter)} → {activeJoshuaChapter?.verseRangeLabel ?? "פסוקים"}
             </p>
           </div>
         </Card>

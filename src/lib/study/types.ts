@@ -232,17 +232,41 @@ export interface UiPrefs {
   studyQuizTheme?: "classic" | "millionaire" | "navy" | "dark" | "colorful" | "custom";
   // CardEditor: pinned category names (synced)
   pinnedCats?: string[];
+  // CardEditor: last selected create-mode question types (synced)
+  cardEditorLastCreateTypes?: CardType[];
   // CardsManager: deck list view mode (synced)
   cardsDeckView?: "list" | "grid" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)
   pinnedCategoryNames?: string[];
   // Pinned question ids for Pinned widget (synced)
   pinnedCardIds?: string[];
+  // PinnedCategoriesWidget: display mode for pinned items (synced)
+  pinnedDisplayMode?: "grid2" | "grid4" | "horizontal";
+  // Reader prefs for Sefaria-based tabs (synced across devices)
+  sefariaReaderPrefs?: {
+    fontFamily?: "heebo" | "assistant" | "frank" | "arial" | "david";
+    fontSize?: number;
+    lineHeight?: number;
+    textAlign?: "justify" | "right";
+    boldText?: boolean;
+    // Legacy flag kept for compatibility with older saved prefs.
+    removeNikkud?: boolean;
+    removeVowels?: boolean;
+    removeCantillation?: boolean;
+    compactParagraphs?: boolean;
+  };
+  // Neviim/Ketuvim tab layout preference
+  neviimLayoutMode?: "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
+  // Text-to-cards width ratio for split layouts (percent for text pane)
+  neviimSplitRatio?: number;
   // CategoryManager: selected view mode (synced across devices)
   categoryViewMode?: "browse" | "explorer" | "list" | "cards" | "mindmap";
   // Dev tools toggles (admin only) — default false (off)
   devShowPerfMonitor?: boolean;
   devShowSyncIndicator?: boolean;
+  devShowDeepRefreshFab?: boolean;
+  devDeepRefreshPos?: { x: number; y: number };
+  devDeepRefreshSize?: number;
   // CategoriesPage: per-category sort mode for the cards list
   categorySortOrders?: Record<string, "name" | "createdNew" | "createdOld" | "favorites" | "manual">;
   // CategoriesPage: global sort mode for cards list (applies to all categories)
@@ -264,6 +288,13 @@ export interface UiPrefs {
   heatmapPrefs?: { mode?: string; view?: string; source?: string; deckId?: string; cardType?: string; tag?: string };
   // WeeklySummary: filter preferences (synced across devices)
   weeklySummaryPrefs?: { deckFilter?: string; rangeDays?: string };
+  // DeckCreateDialog: last custom geometry (synced across devices)
+  deckCreateDialogGeometry?: { width: number; height: number; left: number; top: number };
+  // DeckCreateDialog: classification view mode and expanded branch state (synced across devices)
+  deckCreateClassificationView?: "tree" | "cards";
+  deckCreateExpandedCategoryIds?: string[];
+  deckCreateCategoryPathIds?: string[];
+  deckCreateDialogExpanded?: boolean;
     // StudySession: quiz typography, alignment, custom theme, and timer state (synced across devices)
     studyTimerRunning?: boolean;
   studyTypography?: Record<string, unknown>;

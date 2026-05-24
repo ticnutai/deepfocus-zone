@@ -51,6 +51,16 @@ interface Props {
   headerExtra?: React.ReactNode;
 }
 
+type AddQuestionTrace = {
+  id: string;
+  source: "category-explorer";
+  catName: string;
+  clickedAt: number;
+  unexpectedCategoryDialogAt?: number;
+  questionDialogOpenedAt?: number;
+  questionDialogPaintAt?: number;
+};
+
 type LayoutMode = "grid" | "list" | "columns";
 type IconSize = "sm" | "md" | "lg";
 type SortKey = "manual" | "name" | "created" | "count" | "mastery";
@@ -213,7 +223,12 @@ function SidebarRow({
               if (e.key === "Enter") onRenameSubmit?.(val);
               if (e.key === "Escape") onCancelRename?.();
             }}
-            onBlur={() => { if (blurReadyRef.current) onRenameSubmit?.(val); }}
+            onBlur={() => {
+              if (!blurReadyRef.current) return;
+              const next = val.trim();
+              if (!next || next === cat.name) return;
+              onRenameSubmit?.(next);
+            }}
             className="h-6 text-sm flex-1 text-right px-1"
           />
         ) : (
@@ -314,8 +329,8 @@ function FolderTileBase({
       ref={setRefs}
       {...(!isRenaming ? listeners : {})}
       {...(!isRenaming ? attributes : {})}
-      onClick={onSelect}
-      onDoubleClick={(e) => { e.stopPropagation(); onOpen(e); }}
+      onClick={!isRenaming ? onSelect : undefined}
+      onDoubleClick={!isRenaming ? ((e) => { e.stopPropagation(); onOpen(e); }) : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       dir="rtl"
@@ -398,10 +413,7 @@ function FolderTileBase({
         <div className="relative">
           <Folder
             style={{ width: cfg.folder, height: cfg.folder }}
-            className={cn(
-              "text-gold drop-shadow-sm",
-              count > 0 && "drop-shadow-[0_0_10px_rgba(212,175,55,0.55)]"
-            )}
+            className="text-gold drop-shadow-sm"
             strokeWidth={1.4}
           />
         </div>
@@ -410,13 +422,19 @@ function FolderTileBase({
             ref={inputRef}
             value={val}
             onChange={(e) => setVal(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Enter") onRenameSubmit(val);
               if (e.key === "Escape") onCancelRename();
             }}
-            onBlur={() => { if (blurReadyRef.current) onRenameSubmit(val); }}
+            onBlur={() => {
+              if (!blurReadyRef.current) return;
+              const next = val.trim();
+              if (!next || next === cat.name) return;
+              onRenameSubmit(next);
+            }}
             className="h-7 text-xs text-center border-gold"
           />
         ) : (
@@ -490,8 +508,8 @@ function FolderListRowBase({
       ref={setRefs}
       {...(!isRenaming ? listeners : {})}
       {...(!isRenaming ? attributes : {})}
-      onClick={onSelect}
-      onDoubleClick={(e) => { e.stopPropagation(); onOpen(e); }}
+      onClick={!isRenaming ? onSelect : undefined}
+      onDoubleClick={!isRenaming ? ((e) => { e.stopPropagation(); onOpen(e); }) : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
@@ -530,13 +548,19 @@ function FolderListRowBase({
           ref={inputRef}
           value={val}
           onChange={(e) => setVal(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === "Enter") onRenameSubmit(val);
             if (e.key === "Escape") onCancelRename();
           }}
-          onBlur={() => { if (blurReadyRef.current) onRenameSubmit(val); }}
+          onBlur={() => {
+            if (!blurReadyRef.current) return;
+            const next = val.trim();
+            if (!next || next === cat.name) return;
+            onRenameSubmit(next);
+          }}
           className="h-7 text-sm flex-1 text-right"
         />
       ) : (
@@ -992,9 +1016,37 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [addQSingleQ, setAddQSingleQ] = useState("");
   const [addQSingleA, setAddQSingleA] = useState("");
   const [addQBulkText, setAddQBulkText] = useState("");
+  const addQuestionTraceRef = useRef<AddQuestionTrace | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [multiSummaryOpen, setMultiSummaryOpen] = useState(false);
+
+  useEffect(() => {
+    const trace = addQuestionTraceRef.current;
+    if (!trace || !addDialogOpen) return;
+    const now = performance.now();
+    trace.unexpectedCategoryDialogAt = now;
+    const w = window as Window & { __addQuestionTrace?: AddQuestionTrace };
+    w.__addQuestionTrace = trace;
+    console.warn(
+      `[trace][add-question:${trace.id}] Unexpected category dialog opened ${(
+        now - trace.clickedAt
+      ).toFixed(1)}ms after clicking add-question`,
+      { catName: trace.catName },
+    );
+  }, [addDialogOpen]);
+
+  useEffect(() => {
+    const trace = addQuestionTraceRef.current;
+    if (!trace || !addQOpen) return;
+    const now = performance.now();
+    console.info(
+      `[trace][add-question:${trace.id}] Quick add-questions dialog opened ${(
+        now - trace.clickedAt
+      ).toFixed(1)}ms after click`,
+      { catName: trace.catName },
+    );
+  }, [addQOpen]);
 
   // Card picker dialog (selective card → deck assignment)
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1507,6 +1559,26 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   };
 
   const openAddQuestions = (catName: string) => {
+    const clickedAt = performance.now();
+    const trace: AddQuestionTrace = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      source: "category-explorer",
+      catName,
+      clickedAt,
+    };
+    addQuestionTraceRef.current = trace;
+    const w = window as Window & {
+      __addQuestionTrace?: AddQuestionTrace;
+      __cardEditorOpenRequestedAt?: number;
+    };
+    w.__addQuestionTrace = trace;
+    w.__cardEditorOpenRequestedAt = clickedAt;
+    console.info(`[trace][add-question:${trace.id}] Clicked add-question`, { catName });
+
+    // Guard against overlapping dialogs when quickly switching actions.
+    setAddDialogOpen(false);
+    setAddQOpen(false);
+    setAddDialogText("");
     // Open the full card editor directly (default behavior).
     onAddCardToCategory(catName);
   };
@@ -1708,6 +1780,115 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addDeck, updateDeckCategoryIds]);
 
+  const buildAutoDeckNameFromCategories = useCallback((cats: Category[]) => {
+    const shown = cats.map((c) => displayCategoryName(c.name));
+    if (shown.length <= 3) return shown.join(" + ");
+    return `${shown.slice(0, 3).join(" + ")} +${shown.length - 3}`;
+  }, []);
+
+  const normalizeQuestionKey = useCallback((question: string) => {
+    return question.trim().replace(/\s+/g, " ").toLowerCase();
+  }, []);
+
+  const collectCategoryAndDescendants = useCallback((rootId: string) => {
+    const ids = new Set<string>();
+    const queue: string[] = [rootId];
+    while (queue.length) {
+      const id = queue.shift();
+      if (!id || ids.has(id)) continue;
+      ids.add(id);
+      for (const child of childrenByParent.get(id) ?? []) queue.push(child.id);
+    }
+    return ids;
+  }, [childrenByParent]);
+
+  const createDeckFromSelectedCategories = useCallback(() => {
+    const selectedCats = categories.filter((c) => multiSelected.has(c.id));
+    if (!selectedCats.length) {
+      toast({ title: "לא נבחרו קטגוריות", description: "בחר קטגוריה אחת או יותר." });
+      return;
+    }
+
+    const includeDescendants = confirm(
+      "להוסיף גם שאלות מתתי-קטגוריות?\nכן = כל העץ, לא = רק קטגוריות שנבחרו ישירות.",
+    );
+
+    const sourceCategoryIds = new Set<string>();
+    for (const cat of selectedCats) {
+      if (includeDescendants) {
+        for (const id of collectCategoryAndDescendants(cat.id)) sourceCategoryIds.add(id);
+      } else {
+        sourceCategoryIds.add(cat.id);
+      }
+    }
+
+    const sourceCategoryNames = new Set<string>();
+    for (const catId of sourceCategoryIds) {
+      const cat = categoriesById.get(catId);
+      if (cat) sourceCategoryNames.add(cat.name);
+    }
+
+    const candidateCards: StudyCard[] = [];
+    const candidateCardIds = new Set<string>();
+    for (const catName of sourceCategoryNames) {
+      for (const card of directCardsByName.get(catName) ?? []) {
+        if (candidateCardIds.has(card.id)) continue;
+        candidateCardIds.add(card.id);
+        candidateCards.push(card);
+      }
+    }
+
+    if (!candidateCards.length) {
+      toast({ title: "לא נמצאו שאלות", description: "אין שאלות בטווח שבחרת." });
+      return;
+    }
+
+    const autoName = buildAutoDeckNameFromCategories(selectedCats);
+    const deck = addDeck(autoName, undefined, []);
+    updateDeckCategoryIds(deck.id, selectedCats.map((c) => c.id), includeDescendants);
+
+    const existingQuestionKeys = new Set<string>();
+    for (const link of state.cardDecks ?? []) {
+      if (link.deckId !== deck.id) continue;
+      const linkedCard = state.cards.find((c) => c.id === link.cardId);
+      if (!linkedCard) continue;
+      const key = normalizeQuestionKey(linkedCard.question);
+      if (key) existingQuestionKeys.add(key);
+    }
+
+    let added = 0;
+    let skippedDuplicates = 0;
+    for (const card of candidateCards) {
+      const key = normalizeQuestionKey(card.question);
+      if (!key) continue;
+      if (existingQuestionKeys.has(key)) {
+        skippedDuplicates++;
+        continue;
+      }
+      addCardToDeck(card.id, deck.id);
+      existingQuestionKeys.add(key);
+      added++;
+    }
+
+    toast({
+      title: "הערכה נוצרה",
+      description: `${autoName} · נוספו ${added} שאלות${skippedDuplicates ? ` · דולגו ${skippedDuplicates} כפולות` : ""}`,
+    });
+  }, [
+    addCardToDeck,
+    addDeck,
+    buildAutoDeckNameFromCategories,
+    categories,
+    categoriesById,
+    collectCategoryAndDescendants,
+    directCardsByName,
+    multiSelected,
+    normalizeQuestionKey,
+    state.cardDecks,
+    state.cards,
+    updateDeckCategoryIds,
+  ]);
+
   /* === Folder context menu === */
   const FolderContextMenu = ({ cat }: { cat: Category }) => {
     const locked = isUncategorized(cat);
@@ -1834,6 +2015,10 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
             <ContextMenuSeparator />
           </>
         )}
+        <ContextMenuItem onClick={createDeckFromSelectedCategories}>
+          <Layers className="h-4 w-4 ml-2 text-gold" /> צור ערכה מהנבחרים
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuSub>
           <ContextMenuSubTrigger><ArrowRightLeft className="h-4 w-4 ml-2" /> העבר ({multiSelected.size})</ContextMenuSubTrigger>
           <ContextMenuSubContent className="max-h-72 overflow-y-auto">
@@ -2147,11 +2332,11 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Add category (single / bulk) */}
+        {/* Add category (single / bulk) + add question only in category context */}
         {!activeSmartId && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" className="h-9 w-9 bg-gradient-navy text-primary-foreground" title="הוסף קטגוריה / שאלה">
+              <Button size="icon" className="h-9 w-9 bg-gradient-navy text-primary-foreground" title="הוספה">
                 <Plus className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -2293,7 +2478,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         {/* Sidebar */}
         {prefs.layout !== "columns" && (
           <aside className={cn(
-            "border-l border-gold/20 bg-secondary/20 p-2 overflow-y-auto space-y-2",
+            "relative z-0 border-l border-gold/20 bg-secondary/20 p-2 overflow-y-auto space-y-2",
             "max-h-[300px] md:max-h-[640px]",
             mobileSidebarOpen ? "block" : "hidden md:block",
           )}>
@@ -2367,7 +2552,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         )}
 
         {/* Main pane */}
-        <main className="p-3 overflow-y-auto max-h-[640px] space-y-3" onClick={() => setMultiSelected(new Set())}>
+        <main className="relative z-10 p-3 overflow-y-auto max-h-[640px] space-y-3" onClick={() => setMultiSelected(new Set())}>
           {/* Smart folder banner */}
           {activeSmartId && (
             <div className="flex items-center gap-2 bg-gold/10 border border-gold/40 rounded-lg px-3 py-2">
@@ -2451,9 +2636,12 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                 onBlur={(e) => {
                                   if (!renameBlurReady.current.get(cat.id)) return;
                                   const v = e.target.value;
-                                  if (v.trim() && v !== cat.name) renameCategory(cat.id, v);
-                                  renameBlurReady.current.delete(cat.id);
-                                  setRenamingId(null);
+                                  const next = v.trim();
+                                  if (next && next !== cat.name) {
+                                    renameCategory(cat.id, next);
+                                    renameBlurReady.current.delete(cat.id);
+                                    setRenamingId(null);
+                                  }
                                 }}
                                 className="h-6 text-sm flex-1 text-right px-1"
                               />

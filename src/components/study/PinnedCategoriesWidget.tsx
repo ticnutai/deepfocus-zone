@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pin, PinOff, FolderTree, ChevronLeft, GripVertical, Search, FileText, Pencil } from "lucide-react";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { Pin, PinOff, FolderTree, Search, FileText, Pencil, LayoutGrid, Rows3 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useStudy } from "@/lib/study/store";
 import type { Card as StudyCard } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
@@ -17,71 +20,17 @@ interface Props {
   onEditCard?: (card: StudyCard) => void;
 }
 
-interface SortablePinnedRowProps {
-  id: string;
-  name: string;
-  isSubCategory: boolean;
-  count: number;
-  onSelectCategory: (name: string) => void;
-  onUnpin: (name: string) => void;
-}
-
-function SortablePinnedRow({ id, name, isSubCategory, count, onSelectCategory, onUnpin }: SortablePinnedRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="rounded-xl border border-gold/30 bg-card px-3 py-2.5 flex items-center gap-2 hover:border-gold/60 transition-colors"
-    >
-      <button
-        type="button"
-        onClick={() => onSelectCategory(name)}
-        className="flex-1 min-w-0 text-right"
-      >
-        <p className="text-sm font-medium truncate">{name}</p>
-        <p className="text-[11px] text-muted-foreground truncate">
-          {isSubCategory ? "תת-קטגוריה" : "קטגוריה ראשית"}
-        </p>
-      </button>
-      <Badge variant="outline" className={cn("text-[10px]", count > 0 && "border-gold/50 text-gold")}>
-        {count} שאלות
-      </Badge>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-        onClick={() => onUnpin(name)}
-        title="בטל הצמדה"
-      >
-        <PinOff className="h-3.5 w-3.5" />
-      </Button>
-      <button
-        type="button"
-        className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-        title="גרור לסידור"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-    </div>
-  );
-}
+type PinnedDisplayMode = "grid2" | "grid4" | "horizontal";
 
 export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) {
   const { state, setUiPref } = useStudy();
   const [query, setQuery] = useState("");
+  const displayMode = (() => {
+    const mode = state.uiPrefs?.pinnedDisplayMode;
+    return mode === "grid2" || mode === "grid4" || mode === "horizontal" ? mode : "grid2";
+  })();
   const pinned = useMemo(() => state.uiPrefs?.pinnedCategoryNames ?? [], [state.uiPrefs?.pinnedCategoryNames]);
   const pinnedCardIds = useMemo(() => state.uiPrefs?.pinnedCardIds ?? [], [state.uiPrefs?.pinnedCardIds]);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
     if (!pinned.length) return;
@@ -154,15 +103,86 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
     setUiPref("pinnedCardIds", next);
   };
 
-  const onDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const from = pinned.indexOf(String(active.id));
-    const to = pinned.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    setUiPref("pinnedCategoryNames", arrayMove(pinned, from, to));
+  const setDisplayMode = (value: string) => {
+    if (value !== "grid2" && value !== "grid4" && value !== "horizontal") return;
+    setUiPref("pinnedDisplayMode", value as PinnedDisplayMode);
   };
+
+  const renderGridLikeItem = (
+    item: {
+      id: string;
+      title: string;
+      subtitle: string;
+      countLabel?: string;
+      isCard: boolean;
+      onOpen: () => void;
+      onUnpin: () => void;
+      onEdit?: () => void;
+    },
+    compact = false,
+  ) => (
+    <div key={item.id} className={cn("rounded-xl border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors", compact && "min-w-[240px] max-w-[280px] shrink-0")}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 text-right">
+          <button type="button" onClick={item.onOpen} className="w-full text-right">
+            <p className="text-sm font-semibold truncate">{item.title}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{item.subtitle}</p>
+          </button>
+          {item.countLabel && <p className="text-[11px] text-gold mt-1">{item.countLabel}</p>}
+        </div>
+        <div className="flex items-center gap-1">
+          {item.isCard && item.onEdit && (
+            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={item.onEdit} title="ערוך שאלה">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={item.onUnpin} title="בטל הצמדה">
+            <PinOff className="h-3.5 w-3.5" />
+          </Button>
+          {item.isCard ? <FileText className="h-4 w-4 text-gold/70" /> : <Pin className="h-4 w-4 text-gold/70" />}
+        </div>
+      </div>
+    </div>
+  );
+
+  const gridItems = [
+    ...filtered.map((cat) => ({
+      id: `cat:${cat.name}`,
+      title: cat.name,
+      subtitle: cat.parentId ? "תת-קטגוריה" : "קטגוריה ראשית",
+      countLabel: `${counts.get(cat.name) ?? 0} שאלות`,
+      isCard: false,
+      onOpen: () => onSelectCategory(cat.name),
+      onUnpin: () => unpin(cat.name),
+      onEdit: undefined,
+    })),
+    ...filteredCards.map((card) => {
+      const firstTag = (card.tags ?? []).find((t) => t.startsWith("cat:"));
+      const catName = firstTag ? firstTag.slice(4) : "ללא קטגוריה";
+      return {
+        id: `card:${card.id}`,
+        title: card.question,
+        subtitle: catName,
+        countLabel: "שאלה מוצמדת",
+        isCard: true,
+        onOpen: () => onSelectCategory(catName),
+        onUnpin: () => unpinCard(card.id),
+        onEdit: onEditCard ? () => onEditCard(card) : undefined,
+      };
+    }),
+  ];
+
+  const renderGrid = (cols: 2 | 4) => (
+    <div className={cn("grid gap-2", cols === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4")}>
+      {gridItems.map((item) => renderGridLikeItem(item))}
+    </div>
+  );
+
+  const renderHorizontal = () => (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {gridItems.map((item) => renderGridLikeItem(item, true))}
+    </div>
+  );
 
   return (
     <Card className="gold-frame p-4 space-y-3 h-full">
@@ -173,7 +193,31 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
           </span>
           <h3 className="font-display text-base font-semibold">קטגוריות מוצמדות</h3>
         </div>
-        <span className="text-xs text-muted-foreground">{categories.length + pinnedCards.length} מוצמדים</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 border-gold/40 text-gold hover:bg-gold/10"
+              title="תצוגת מוצמדים"
+              aria-label="תצוגת מוצמדים"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40 text-right" dir="rtl">
+            <DropdownMenuRadioGroup value={displayMode} onValueChange={setDisplayMode}>
+              <DropdownMenuRadioItem value="grid2">רשת 2</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="grid4">רשת 4</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="horizontal">
+                <span className="inline-flex items-center gap-1">
+                  <Rows3 className="h-3.5 w-3.5" />
+                  אופקי
+                </span>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="relative">
@@ -199,74 +243,9 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
         </div>
       ) : (
         <div className="space-y-3 max-h-[420px] overflow-y-auto">
-          {filtered.length > 0 && (
-            <>
-              <div className="text-[11px] font-bold text-muted-foreground">קטגוריות מוצמדות</div>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                <SortableContext items={filtered.map((c) => c.name)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-2">
-                    {filtered.map((cat) => (
-                      <SortablePinnedRow
-                        key={cat.name}
-                        id={cat.name}
-                        name={cat.name}
-                        isSubCategory={!!cat.parentId}
-                        count={counts.get(cat.name) ?? 0}
-                        onSelectCategory={onSelectCategory}
-                        onUnpin={unpin}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            </>
-          )}
-
-          {filteredCards.length > 0 && (
-            <>
-              <div className="text-[11px] font-bold text-muted-foreground">שאלות מוצמדות</div>
-              <div className="space-y-2">
-                {filteredCards.map((card) => {
-                  const firstTag = (card.tags ?? []).find((t) => t.startsWith("cat:"));
-                  const catName = firstTag ? firstTag.slice(4) : "ללא קטגוריה";
-                  return (
-                    <div key={card.id} className="rounded-xl border border-gold/30 bg-card px-3 py-2.5 flex items-start gap-2 hover:border-gold/60 transition-colors">
-                      <button
-                        type="button"
-                        onClick={() => onSelectCategory(catName)}
-                        className="flex-1 min-w-0 text-right"
-                        title={card.question}
-                      >
-                        <p className="text-sm font-medium truncate">{card.question}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{catName}</p>
-                      </button>
-                      {onEditCard && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => onEditCard(card)}
-                          title="ערוך שאלה"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => unpinCard(card.id)}
-                        title="בטל הצמדה"
-                      >
-                        <PinOff className="h-3.5 w-3.5" />
-                      </Button>
-                      <FileText className="h-4 w-4 text-gold/70 mt-1" />
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+          {displayMode === "grid2" && renderGrid(2)}
+          {displayMode === "grid4" && renderGrid(4)}
+          {displayMode === "horizontal" && renderHorizontal()}
         </div>
       )}
     </Card>

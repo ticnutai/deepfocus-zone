@@ -10,13 +10,16 @@
  *   mindmap  → CategoryMindmapView  (radial hierarchy)
  * Collapsing to a single-view stub silently discards working views.
  */
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { CategoryViewSwitcher, type CategoryViewMode } from "./CategoryViewSwitcher";
-import { CategoryExplorerView } from "./CategoryExplorerView";
-import { CategoryBrowseView } from "./CategoryBrowseView";
-import { CategoryListView, CategoryCardsView, CategoryMindmapView } from "./CategoryViews";
 import { useStudy } from "@/lib/study/store";
 import type { Card as StudyCard } from "@/lib/study/types";
+
+const CategoryExplorerView = lazy(() => import("./CategoryExplorerView").then((m) => ({ default: m.CategoryExplorerView })));
+const CategoryBrowseView = lazy(() => import("./CategoryBrowseView").then((m) => ({ default: m.CategoryBrowseView })));
+const CategoryListView = lazy(() => import("./CategoryViews").then((m) => ({ default: m.CategoryListView })));
+const CategoryCardsView = lazy(() => import("./CategoryViews").then((m) => ({ default: m.CategoryCardsView })));
+const CategoryMindmapView = lazy(() => import("./CategoryViews").then((m) => ({ default: m.CategoryMindmapView })));
 
 interface Props {
   selectedCategory: string | null;
@@ -74,47 +77,57 @@ export function CategoryManager({
       )}
 
       {viewMode === "explorer" && (
-        <CategoryExplorerView
-          selectedCategory={selectedCategory}
-          onSelectCategory={onSelectCategory}
-          onAddCardToCategory={addCard}
-          onEditCard={onEditCard}
-          activeDeckId={activeDeckId}
-          onStudyCategory={onStudyCategory}
-          onStudyMultipleCategories={onStudyMultipleCategories}
-          onStudyCardIds={onStudyCardIds}
-          onQuickRun={onQuickRun}
-          headerExtra={<CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />}
-        />
+        <Suspense fallback={<div className="rounded-lg border border-gold/25 bg-card/60 px-3 py-2 text-xs text-muted-foreground text-right">טוען תצוגת סייר...</div>}>
+          <CategoryExplorerView
+            selectedCategory={selectedCategory}
+            onSelectCategory={onSelectCategory}
+            onAddCardToCategory={addCard}
+            onEditCard={onEditCard}
+            activeDeckId={activeDeckId}
+            onStudyCategory={onStudyCategory}
+            onStudyMultipleCategories={onStudyMultipleCategories}
+            onStudyCardIds={onStudyCardIds}
+            onQuickRun={onQuickRun}
+            headerExtra={<CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />}
+          />
+        </Suspense>
       )}
       {viewMode === "browse" && (
-        <CategoryBrowseView
-          selectedCategory={selectedCategory}
-          onSelectCategory={onSelectCategory}
-          onAddCardToCategory={addCard}
-          onEditCard={onEditCard}
-        />
+        <Suspense fallback={<div className="rounded-lg border border-gold/25 bg-card/60 px-3 py-2 text-xs text-muted-foreground text-right">טוען תצוגת עיון...</div>}>
+          <CategoryBrowseView
+            selectedCategory={selectedCategory}
+            onSelectCategory={onSelectCategory}
+            onAddCardToCategory={addCard}
+            onEditCard={onEditCard}
+          />
+        </Suspense>
       )}
       {viewMode === "list" && (
-        <CategoryListView
-          selectedCategory={selectedCategory}
-          onSelectCategory={onSelectCategory}
-          onAddCardToCategory={addCard}
-        />
+        <Suspense fallback={<div className="rounded-lg border border-gold/25 bg-card/60 px-3 py-2 text-xs text-muted-foreground text-right">טוען תצוגת רשימה...</div>}>
+          <CategoryListView
+            selectedCategory={selectedCategory}
+            onSelectCategory={onSelectCategory}
+            onAddCardToCategory={addCard}
+          />
+        </Suspense>
       )}
       {viewMode === "cards" && (
-        <CategoryCardsView
-          selectedCategory={selectedCategory}
-          onSelectCategory={onSelectCategory}
-          onAddCardToCategory={addCard}
-        />
+        <Suspense fallback={<div className="rounded-lg border border-gold/25 bg-card/60 px-3 py-2 text-xs text-muted-foreground text-right">טוען תצוגת כרטיסיות...</div>}>
+          <CategoryCardsView
+            selectedCategory={selectedCategory}
+            onSelectCategory={onSelectCategory}
+            onAddCardToCategory={addCard}
+          />
+        </Suspense>
       )}
       {viewMode === "mindmap" && (
-        <CategoryMindmapView
-          selectedCategory={selectedCategory}
-          onSelectCategory={onSelectCategory}
-          onAddCardToCategory={addCard}
-        />
+        <Suspense fallback={<div className="rounded-lg border border-gold/25 bg-card/60 px-3 py-2 text-xs text-muted-foreground text-right">טוען מפת חשיבה...</div>}>
+          <CategoryMindmapView
+            selectedCategory={selectedCategory}
+            onSelectCategory={onSelectCategory}
+            onAddCardToCategory={addCard}
+          />
+        </Suspense>
       )}
     </div>
   );

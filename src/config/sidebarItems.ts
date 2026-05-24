@@ -31,6 +31,7 @@ export const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
   { id: "pdf",            label: "צפיין PDF",           icon: FileText },
   { id: "ai",             label: "מאמן AI",             icon: MessageCircle },
   { id: "ai-generator",   label: "יצירת שאלות AI",     icon: BrainCircuit },
+  { id: "question-lab",   label: "מעבדת שאלות",         icon: BrainCircuit },
   { id: "achievements",   label: "הישגים",              icon: Trophy },
   { id: "archive",        label: "ארכיון",              icon: Archive },
   { id: "backup-restore", label: "גיבוי ושחזור",        icon: HardDrive },

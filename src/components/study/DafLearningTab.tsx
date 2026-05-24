@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, memo } from "react";
 import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
+import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -254,6 +255,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             mode="practice"
             cardIds={cardIds}
             onExit={() => setStudyOpen(false)}
+            fillHeight={practiceScale !== 1}
           />
         </FitToContainer>
       </div>
@@ -327,7 +329,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   );
 }
 
-type LearnMode = "shas" | "mishna" | "chumash";
+type LearnMode = "shas" | "mishna" | "chumash" | "neviim-ketuvim";
 const MODE_STORAGE_KEY = "daf-learning-mode";
 
 function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
@@ -335,7 +337,7 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
     try {
       const stored = localStorage.getItem(MODE_STORAGE_KEY);
       if (stored === "daf") return "shas";
-      if (stored === "shas" || stored === "mishna" || stored === "chumash") return stored;
+      if (stored === "shas" || stored === "mishna" || stored === "chumash" || stored === "neviim-ketuvim") return stored;
       return "shas";
     }
     catch { return "shas"; }
@@ -345,9 +347,10 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
   }, [mode]);
 
   const tabs: { id: LearnMode; label: string; icon: typeof BookText }[] = [
-    { id: "shas",    label: "ש\"ס", icon: Layers },
-    { id: "mishna",  label: "משנה",      icon: BookText },
-    { id: "chumash", label: "חומש",      icon: Scroll },
+    { id: "shas",           label: "ש\"ס",            icon: Layers },
+    { id: "mishna",         label: "משנה",            icon: BookText },
+    { id: "chumash",        label: "חומש",            icon: Scroll },
+    { id: "neviim-ketuvim", label: "נביאים וכתובים", icon: BookOpen },
   ];
 
   return (
@@ -375,6 +378,7 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
       {mode === "shas"    && <DafLearningTabInner isVisible={isVisible} />}
       {mode === "mishna"  && <MishnaLearningTab />}
       {mode === "chumash" && <ChumashLearningTab />}
+      {mode === "neviim-ketuvim" && <NeviimKetuvimLearningTab />}
     </div>
   );
 }

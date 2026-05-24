@@ -9,6 +9,7 @@ const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:8080";
 let mainWindow = null;
 
 function createWindow() {
+  const appIconPath = path.join(__dirname, "build", "icon.png");
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -18,6 +19,7 @@ function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: "#0b0b0f",
     title: "פשש",
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

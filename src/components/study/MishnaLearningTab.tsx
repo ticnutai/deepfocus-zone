@@ -152,6 +152,9 @@ export function MishnaLearningTab() {
               externalUrl={externalUrl}
               title={`${masechta} · פרק ${toGematria(perek)} · משנה ${toGematria(mishna)}`}
               className="h-full"
+              breadcrumbItems={["משנה", masechta, `פרק ${toGematria(perek)}`, `משנה ${toGematria(mishna)}`]}
+              lineLabel="משנה"
+              lineStartIndex={1}
             />
           ) : (
             <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">

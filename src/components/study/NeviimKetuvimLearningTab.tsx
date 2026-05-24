@@ -1,0 +1,325 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, ChevronLeft, ListChecks, GraduationCap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { useStudy } from "@/lib/study/store";
+import { NACH_BOOK_VERSES, NACH_KETUVIM_BOOKS, NACH_NEVIIM_BOOKS } from "@/lib/study/nachVerses";
+import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
+import { SefariaTextViewer } from "./SefariaTextViewer";
+import { StudySession } from "./StudySession";
+import { cn } from "@/lib/utils";
+
+type NachMode = "neviim" | "ketuvim";
+type LayoutMode = "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
+
+const STORAGE_KEY = "neviim-ketuvim-learning-state";
+
+interface SavedState {
+  mode?: NachMode;
+  sefer?: string;
+  perek?: number;
+}
+
+function loadSaved(): SavedState {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+
+function saveSt(s: SavedState) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+}
+
+const ONES = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
+const TENS = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"];
+function toGematria(n: number): string {
+  if (n <= 0) return "";
+  let s = "";
+  if (n >= 100) { s += "ק"; n -= 100; }
+  if (n === 15) return s + "טו";
+  if (n === 16) return s + "טז";
+  const t = Math.floor(n / 10);
+  const o = n % 10;
+  if (t > 0) s += TENS[t];
+  if (o > 0) s += ONES[o];
+  return s;
+}
+
+const MODE_LABEL: Record<NachMode, string> = {
+  neviim: "נביאים",
+  ketuvim: "כתובים",
+};
+
+function nachSefariaUrl(bookName: string, perek: number): string {
+  const en = NACH_BOOK_VERSES[bookName]?.en;
+  if (!en) return "https://www.sefaria.org.il/texts/Tanakh";
+  return `https://www.sefaria.org.il/${en.replace(/\s+/g, "_")}.${perek}?lang=he`;
+}
+
+export function NeviimKetuvimLearningTab() {
+  const { state, setUiPref } = useStudy();
+  const saved = useMemo(() => loadSaved(), []);
+
+  const [mode, setMode] = useState<NachMode>(saved.mode ?? "neviim");
+  const [sefer, setSefer] = useState<string>(saved.sefer ?? "יהושע");
+  const [perek, setPerek] = useState<number>(saved.perek ?? 1);
+  const [studyOpen, setStudyOpen] = useState(false);
+  const layoutMode = (state.uiPrefs?.neviimLayoutMode ?? "split") as LayoutMode;
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const splitRatio = Math.max(20, Math.min(80, state.uiPrefs?.neviimSplitRatio ?? (layoutMode === "text-focus" ? 72 : 60)));
+
+  useEffect(() => { saveSt({ mode, sefer, perek }); }, [mode, sefer, perek]);
+
+  const books = useMemo(() => {
+    return mode === "neviim" ? NACH_NEVIIM_BOOKS : NACH_KETUVIM_BOOKS;
+  }, [mode]);
+
+  useEffect(() => {
+    if (!books.includes(sefer)) {
+      setSefer(books[0] ?? "");
+      setPerek(1);
+    }
+  }, [books, sefer]);
+
+  const totalChapters = NACH_BOOK_VERSES[sefer]?.chapters.length ?? 1;
+
+  useEffect(() => {
+    if (perek > totalChapters) setPerek(1);
+  }, [perek, totalChapters]);
+
+  const cards = useMemo(() => {
+    const chapterLabel = `פרק ${toGematria(perek)}`;
+
+    const byBook = filterCardsByCategoryChain(
+      state.cards,
+      state.categories,
+      [sefer, chapterLabel],
+    );
+
+    const byMode = filterCardsByCategoryChain(
+      state.cards,
+      state.categories,
+      [MODE_LABEL[mode], sefer, chapterLabel],
+    );
+
+    const merged = new Map<string, (typeof byBook)[number]>();
+    for (const c of byBook) merged.set(c.id, c);
+    for (const c of byMode) merged.set(c.id, c);
+    return [...merged.values()];
+  }, [state.cards, state.categories, sefer, perek, mode]);
+
+  const cardIds = useMemo(() => cards.map((c) => c.id), [cards]);
+
+  const externalUrl = nachSefariaUrl(sefer, perek);
+  const en = NACH_BOOK_VERSES[sefer]?.en;
+  const sefariaRef = en ? `${en.replace(/\s+/g, "_")}.${perek}` : "";
+
+  const setLayoutMode = (value: string) => {
+    if (value !== "split" && value !== "text-only" && value !== "cards-only" && value !== "double-text" && value !== "text-focus") return;
+    setUiPref("neviimLayoutMode", value as LayoutMode);
+  };
+
+  const setSplitRatio = (value: number) => {
+    const next = Math.max(20, Math.min(80, Math.round(value)));
+    setUiPref("neviimSplitRatio", next);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const onMove = (ev: MouseEvent) => {
+      const rect = splitContainerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+      const ratioFromRight = ((rect.right - ev.clientX) / rect.width) * 100;
+      setSplitRatio(ratioFromRight);
+    };
+
+    const onUp = () => setIsResizing(false);
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizing]);
+
+  const renderTextPanel = () => (
+    <div className="min-h-0">
+      {en ? (
+        <SefariaTextViewer
+          sefariaRef={sefariaRef}
+          externalUrl={externalUrl}
+          title={`${MODE_LABEL[mode]} · ${sefer} · פרק ${toGematria(perek)}`}
+          className="h-full"
+          columns={layoutMode === "double-text" ? 2 : 1}
+          breadcrumbItems={[MODE_LABEL[mode], sefer, `פרק ${toGematria(perek)}`]}
+          lineLabel="פסוק"
+          lineStartIndex={1}
+        />
+      ) : (
+        <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">
+          ספר לא נתמך
+        </Card>
+      )}
+    </div>
+  );
+
+  const renderCardsPanel = () => (
+    <div className="min-h-0">
+      <Card className="gold-frame p-4 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-1">
+            <ListChecks className="h-4 w-4 text-gold" /> שאלות לפרק זה ({cards.length})
+          </h3>
+          {cards.length > 0 && (
+            <Button onClick={() => setStudyOpen(true)} size="sm" className="bg-gradient-navy text-primary-foreground">
+              <GraduationCap className="h-4 w-4" /> תרגול
+            </Button>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {cards.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-12">
+              אין שאלות משויכות.<br />
+              <span className="text-xs">שייך שאלות לקטגוריית "{sefer} › פרק {toGematria(perek)}" (או "{MODE_LABEL[mode]} › {sefer} › פרק {toGematria(perek)}").</span>
+            </div>
+          ) : (
+            cards.map((c, i) => (
+              <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">{c.question}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+
+  if (studyOpen && cardIds.length > 0) {
+    return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={() => setStudyOpen(false)} />;
+  }
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      <Card className="gold-frame p-3 space-y-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+          <Select value={mode} onValueChange={(v) => { setMode(v as NachMode); setPerek(1); }}>
+            <SelectTrigger><SelectValue placeholder="חלק" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="neviim">נביאים</SelectItem>
+              <SelectItem value="ketuvim">כתובים</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={sefer} onValueChange={(v) => { setSefer(v); setPerek(1); }}>
+            <SelectTrigger><SelectValue placeholder="ספר" /></SelectTrigger>
+            <SelectContent className="max-h-72">
+              {books.map((book) => <SelectItem key={book} value={book}>{book}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <Select value={String(perek)} onValueChange={(v) => setPerek(Number(v))}>
+            <SelectTrigger><SelectValue placeholder="פרק" /></SelectTrigger>
+            <SelectContent className="max-h-72">
+              {Array.from({ length: totalChapters }, (_, i) => i + 1).map((p) => (
+                <SelectItem key={p} value={String(p)}>פרק {toGematria(p)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={layoutMode} onValueChange={setLayoutMode}>
+            <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="split">טקסט + שאלות</SelectItem>
+              <SelectItem value="text-only">טקסט בלבד</SelectItem>
+              <SelectItem value="double-text">טקסט שתי עמודות</SelectItem>
+              <SelectItem value="text-focus">פוקוס טקסט</SelectItem>
+              <SelectItem value="cards-only">שאלות בלבד</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {(layoutMode === "split" || layoutMode === "text-focus") && (
+            <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-3 py-2">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span>יחס טקסט/שאלות</span>
+                <span>{splitRatio}% / {100 - splitRatio}%</span>
+              </div>
+              <Slider min={20} max={80} step={1} value={[splitRatio]} onValueChange={(v) => setSplitRatio(v[0] ?? 60)} />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <Button onClick={() => setPerek(Math.max(1, perek - 1))} disabled={perek === 1} variant="outline" size="sm" className="gap-1">
+            <ChevronRight className="h-4 w-4" /> הקודם
+          </Button>
+          <div className="text-sm text-muted-foreground">
+            {MODE_LABEL[mode]} · {sefer} · פרק {toGematria(perek)} · <span className="text-gold font-semibold">{cards.length} שאלות</span>
+          </div>
+          <Button onClick={() => setPerek(Math.min(totalChapters, perek + 1))} disabled={perek === totalChapters} variant="outline" size="sm" className="gap-1">
+            הבא <ChevronLeft className="h-4 w-4" />
+          </Button>
+        </div>
+      </Card>
+
+      <div style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
+        {(layoutMode === "split" || layoutMode === "text-focus") && (
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
+              {renderTextPanel()}
+              {renderCardsPanel()}
+            </div>
+
+            <div ref={splitContainerRef} className="hidden lg:flex h-full min-h-0 flex-row-reverse">
+              <div className="h-full min-h-0" style={{ width: `${splitRatio}%` }}>
+                {renderTextPanel()}
+              </div>
+
+              <div
+                className={cn(
+                  "w-2 mx-1 rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
+                  isResizing && "bg-gold/50",
+                )}
+                title="גרור לשינוי יחס"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsResizing(true);
+                }}
+              />
+
+              <div className="h-full min-h-0" style={{ width: `${100 - splitRatio}%` }}>
+                {renderCardsPanel()}
+              </div>
+            </div>
+          </>
+        )}
+
+        {layoutMode === "double-text" && (
+          <div className="grid grid-cols-1 h-full">
+            {renderTextPanel()}
+          </div>
+        )}
+
+        {layoutMode === "text-only" && (
+          <div className="grid grid-cols-1 h-full">
+            {renderTextPanel()}
+          </div>
+        )}
+
+        {layoutMode === "cards-only" && (
+          <div className="grid grid-cols-1 h-full">
+            {renderCardsPanel()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

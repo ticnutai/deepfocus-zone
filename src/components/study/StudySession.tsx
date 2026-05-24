@@ -360,6 +360,8 @@ interface Props {
   onExit: () => void;
   /** When set, session auto-ends after this many seconds (used by Quick Review). */
   timeLimitSec?: number;
+  /** When true, the card stretches to fill its container height (used in scaled preview). */
+  fillHeight?: boolean;
 }
 
 export function StudySession({
@@ -368,6 +370,7 @@ export function StudySession({
   cardIds,
   onExit,
   timeLimitSec,
+  fillHeight = false,
 }: Props) {
   const { state, reviewCard, setUiPref } = useStudy();
   const isMobile = useIsMobile();
@@ -1446,7 +1449,9 @@ export function StudySession({
         "animate-fade-in",
         isMobile
           ? "fixed inset-0 z-50 rounded-none border-none bg-background flex flex-col gap-2 p-3 overflow-hidden"
-          : "gold-frame p-6 space-y-5",
+          : fillHeight
+            ? "gold-frame p-6 flex flex-col h-full gap-5"
+            : "gold-frame p-6 space-y-5",
       )}
       dir="rtl"
     >
@@ -1968,13 +1973,13 @@ export function StudySession({
       </div>
       <Progress
         value={progress}
-        className={cn("h-2", isMobile && "shrink-0")}
+        className={cn("h-2", (isMobile || fillHeight) && "shrink-0")}
       />
 
       <div
         className={cn(
           "relative flex items-center justify-center rounded-2xl border-2",
-          isMobile ? "p-3 pt-8 overflow-y-auto" : "min-h-[200px] p-6 pt-10",
+          isMobile ? "p-3 pt-8 overflow-y-auto" : fillHeight ? "flex-1 min-h-[100px] p-6 pt-10" : "min-h-[200px] p-6 pt-10",
           questionAreaCls,
         )}
         style={questionAreaStyle}
@@ -2064,7 +2069,7 @@ export function StudySession({
         </div>
       </div>
 
-      <div className={cn(isMobile ? "flex-1 min-h-0" : "shrink-0")}>
+      <div className={cn((isMobile || fillHeight) ? "flex-1 min-h-0" : "shrink-0")}>
         {/* Flashcard */}
         {card.type === "flashcard" && (
           <div className="space-y-3" dir="rtl">
@@ -2173,9 +2178,9 @@ export function StudySession({
                   ? { backgroundColor: customQuizTheme.optionWrapperBg }
                   : {};
               const mobileWrapperCls =
-                isMobile && isGrid
+                (isMobile || fillHeight) && isGrid
                   ? "flex-1 min-h-0 auto-rows-fr"
-                  : isMobile
+                  : (isMobile || fillHeight)
                     ? "flex-1 min-h-0 flex flex-col"
                     : "";
               return (
@@ -2483,7 +2488,7 @@ export function StudySession({
                         onClick={handleClick}
                         className={cn(
                           btnCls,
-                          isMobile &&
+                          (isMobile || fillHeight) &&
                             (isGrid ? "h-full min-h-0" : "flex-1 min-h-0"),
                         )}
                         style={btnStyle}
@@ -2552,20 +2557,6 @@ export function StudySession({
                   selected.every((s) => card.correctIndices.includes(s));
                 return (
                   <>
-                    {quizAnswerMode === "instant" && (
-                      <div
-                        className={cn(
-                          "p-3 rounded-xl border-2 text-center text-sm font-semibold",
-                          correct
-                            ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300"
-                            : "border-destructive bg-destructive/10 text-destructive",
-                        )}
-                      >
-                        {correct
-                          ? "נכון! ממשיך לשאלה הבאה..."
-                          : "טעות. התשובה הנכונה מסומנת בירוק..."}
-                      </div>
-                    )}
                     {quizAnswerMode === "button" && (
                       <NextReviewTabs
                         value={nextInterval}
@@ -2574,20 +2565,22 @@ export function StudySession({
                         onCustomDate={setCustomDate}
                       />
                     )}
-                    <Button
-                      onClick={() => {
-                        setInstantPendingSubmit(null);
-                        submit(correct, correct ? 5 : 1);
-                      }}
-                      className={cn(
-                        "w-full rounded-xl py-6 text-primary-foreground",
-                        correct
-                          ? "bg-green-600 hover:bg-green-700"
-                          : "bg-destructive hover:bg-destructive/90",
-                      )}
-                    >
-                      {correct ? "נכון! המשך" : "לא נכון - המשך"}
-                    </Button>
+                    {quizAnswerMode === "button" && (
+                      <Button
+                        onClick={() => {
+                          setInstantPendingSubmit(null);
+                          submit(correct, correct ? 5 : 1);
+                        }}
+                        className={cn(
+                          "w-full rounded-xl py-6 text-primary-foreground",
+                          correct
+                            ? "bg-green-600 hover:bg-green-700"
+                            : "bg-destructive hover:bg-destructive/90",
+                        )}
+                      >
+                        {correct ? "נכון! המשך" : "לא נכון - המשך"}
+                      </Button>
+                    )}
                   </>
                 );
               })()
@@ -3217,20 +3210,6 @@ export function StudySession({
                       selected.every((s) => card.correctIndices!.includes(s));
                     return (
                       <>
-                        {quizAnswerMode === "instant" && (
-                          <div
-                            className={cn(
-                              "p-3 rounded-xl border-2 text-center text-sm font-semibold",
-                              correct
-                                ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300"
-                                : "border-destructive bg-destructive/10 text-destructive",
-                            )}
-                          >
-                            {correct
-                              ? "נכון! ממשיך לשאלה הבאה..."
-                              : "טעות. התשובה הנכונה מסומנת בירוק..."}
-                          </div>
-                        )}
                         {quizAnswerMode === "button" && (
                           <NextReviewTabs
                             value={nextInterval}
@@ -3239,17 +3218,19 @@ export function StudySession({
                             onCustomDate={setCustomDate}
                           />
                         )}
-                        <Button
-                          onClick={() => submit(correct, correct ? 5 : 1)}
-                          className={cn(
-                            "w-full rounded-xl py-6 text-primary-foreground",
-                            correct
-                              ? "bg-green-600 hover:bg-green-700"
-                              : "bg-destructive hover:bg-destructive/90",
-                          )}
-                        >
-                          {correct ? "נכון! המשך" : "לא נכון - המשך"}
-                        </Button>
+                        {quizAnswerMode === "button" && (
+                          <Button
+                            onClick={() => submit(correct, correct ? 5 : 1)}
+                            className={cn(
+                              "w-full rounded-xl py-6 text-primary-foreground",
+                              correct
+                                ? "bg-green-600 hover:bg-green-700"
+                                : "bg-destructive hover:bg-destructive/90",
+                            )}
+                          >
+                            {correct ? "נכון! המשך" : "לא נכון - המשך"}
+                          </Button>
+                        )}
                         {hasFlash && (
                           <Button
                             variant="ghost"

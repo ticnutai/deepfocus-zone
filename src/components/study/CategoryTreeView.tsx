@@ -237,7 +237,7 @@ export function CategoryTreeView({
     });
 
     ancestorsToOpen.forEach((id) => {
-      void loadCategoryChildren(id, { reason: "user" });
+      void loadCategoryChildren(id, { reason: "user", prefetch: false });
     });
   }, [selectedCategory, categories, categoriesById, collapsed, loadCategoryChildren]);
 
@@ -359,7 +359,7 @@ export function CategoryTreeView({
                             e.stopPropagation();
                             const nextOpen = !!collapsed[cat.id];
                             setCollapsed((c) => ({ ...c, [cat.id]: !c[cat.id] }));
-                            if (nextOpen) void loadCategoryChildren(cat.id, { reason: "user" });
+                            if (nextOpen) void loadCategoryChildren(cat.id, { reason: "user", prefetch: false });
                           }}
                           className="opacity-60 hover:opacity-100"
                         >

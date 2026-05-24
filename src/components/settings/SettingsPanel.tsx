@@ -14,6 +14,7 @@ import { useStudy } from "@/lib/study/store";
 
 export function SettingsPanel() {
   const { isAdmin } = usePermissions();
+  const showDevTools = isAdmin && !import.meta.env.PROD;
   const { state, setUiPref } = useStudy();
   const [keyInput, setKeyInput] = useState("");
   const [keyVisible, setKeyVisible] = useState(false);
@@ -56,7 +57,7 @@ export function SettingsPanel() {
             <TabsTrigger value="api-keys" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מפתחות API</span><KeyRound className="h-4 w-4" />
             </TabsTrigger>
-            {isAdmin && (
+            {showDevTools && (
               <TabsTrigger value="dev" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
                 <span>מערכת פיתוח</span><Code2 className="h-4 w-4" />
               </TabsTrigger>
@@ -132,7 +133,7 @@ export function SettingsPanel() {
             </div>
           </Card>
         </TabsContent>
-        {isAdmin && (
+        {showDevTools && (
           <TabsContent value="dev" className="mt-4 space-y-4">
             <DevIconsSettings />
             <MigrationRunner />

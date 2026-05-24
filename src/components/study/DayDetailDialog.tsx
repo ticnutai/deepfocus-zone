@@ -23,6 +23,7 @@ interface Props {
 export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
   const {
     state, toggleGoalDate, setDayNote,
+    completeGeneralPlanUnit, uncompleteSpecificUnit,
     markShasReviewDone, unmarkShasReviewDone,
     rescheduleShasReview, setShasReviewNote, deleteShasReview,
     addLearningSession, deleteLearningSession,
@@ -192,6 +193,30 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
     }
     return Array.from(new Set(labels));
   }, [dateKeyStr, state.generalPlans, activeShasPlan]);
+
+  const plannedPlanUnitsToday = useMemo(() => {
+    if (!dateKeyStr) return [] as Array<{ planId: string; planTitle: string; unit: string; done: boolean }>;
+    const d = new Date(`${dateKeyStr}T00:00:00`);
+    const rows: Array<{ planId: string; planTitle: string; unit: string; done: boolean }> = [];
+
+    (state.generalPlans ?? []).forEach((plan) => {
+      if (plan.planType === "masechta_review") return;
+      const map = buildPlanScheduleMap(plan, d, d);
+      const dayUnits = map.get(dateKeyStr) ?? [];
+      if (dayUnits.length === 0) return;
+      const doneSet = new Set(plan.completedUnits ?? []);
+      dayUnits.forEach((unit) => {
+        rows.push({
+          planId: plan.id,
+          planTitle: plan.title,
+          unit,
+          done: doneSet.has(unit),
+        });
+      });
+    });
+
+    return rows;
+  }, [dateKeyStr, state.generalPlans]);
 
   const plannedReviewsToday = useMemo(() => {
     if (!dateKeyStr) return [] as string[];
@@ -416,6 +441,52 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Planned plan-units toggle (synced with PlanDetail units table) */}
+          {plannedPlanUnitsToday.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+                יחידות מתוכננות ליום זה <BookOpen className="h-4 w-4 text-gold" />
+              </h4>
+              <p className="text-[11px] text-muted-foreground text-right">
+                אפשר לסמן כנלמד או להסיר סימון. המצב מסונכרן אוטומטית עם טבלת היחידות בתוכנית.
+              </p>
+              <div className="space-y-1.5">
+                {plannedPlanUnitsToday.map((row) => (
+                  <button
+                    key={`${row.planId}:${row.unit}`}
+                    type="button"
+                    onClick={() => {
+                      if (row.done) uncompleteSpecificUnit(row.planId, row.unit);
+                      else completeGeneralPlanUnit(row.planId, row.unit);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-2 rounded-lg border-2 p-2.5 transition-colors",
+                      row.done
+                        ? "border-emerald-500/60 bg-emerald-500/10"
+                        : "border-gold/30 bg-card hover:border-gold/60"
+                    )}
+                    title={row.done ? "הסר סימון" : "סמן כנלמד"}
+                  >
+                    <div
+                      className={cn(
+                        "h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0",
+                        row.done
+                          ? "border-emerald-600 bg-emerald-600 text-primary-foreground"
+                          : "border-gold/40"
+                      )}
+                    >
+                      {row.done && <Check className="h-4 w-4" />}
+                    </div>
+                    <div className="flex-1 text-right min-w-0">
+                      <div className={cn("text-sm font-semibold truncate", row.done && "line-through text-muted-foreground")}>{row.unit}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{row.planTitle}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           )}

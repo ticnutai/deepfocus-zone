@@ -15,7 +15,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CategoryManager } from "./CategoryManager";
-const CardEditor = lazy(() => import("./CardEditor").then(m => ({ default: m.CardEditor })));
+const loadCardEditor = () => import("./CardEditor");
+const CardEditor = lazy(() => loadCardEditor().then(m => ({ default: m.CardEditor })));
 const StudySession = lazy(() => import("./StudySession").then(m => ({ default: m.StudySession })));
 import { WidgetGrid } from "./WidgetGrid";
 import { CategoryStudyPickerDialog } from "./CategoryStudyPickerDialog";
@@ -52,6 +53,28 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 function CategoriesPage() {
+    useEffect(() => {
+      const ric = (window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      }).requestIdleCallback;
+
+      if (typeof ric === "function") {
+        const id = ric(() => {
+          void loadCardEditor();
+        }, { timeout: 1200 });
+        return () => {
+          const cic = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+          if (typeof cic === "function") cic(id);
+        };
+      }
+
+      const t = window.setTimeout(() => {
+        void loadCardEditor();
+      }, 250);
+      return () => window.clearTimeout(t);
+    }, []);
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
 
@@ -106,6 +129,46 @@ function CategoriesPage() {
   // editor state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<StudyCardType | null>(null);
+  const [prefillCategoryName, setPrefillCategoryName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const w = window as Window & {
+      __addQuestionTrace?: {
+        id: string;
+        catName: string;
+        clickedAt: number;
+        questionDialogOpenedAt?: number;
+        questionDialogPaintAt?: number;
+      };
+      __editorOpenTrace?: Array<{
+        at: number;
+        iso: string;
+        editorOpen: boolean;
+        editingCardId: string | null;
+        prefillCategoryName: string | null;
+        traceId: string | null;
+      }>;
+    };
+    const trace = w.__addQuestionTrace;
+    const item = {
+      at: performance.now(),
+      iso: new Date().toISOString(),
+      editorOpen,
+      editingCardId: editingCard?.id ?? null,
+      prefillCategoryName,
+      traceId: trace?.id ?? null,
+    };
+    const prev = Array.isArray(w.__editorOpenTrace) ? w.__editorOpenTrace : [];
+    w.__editorOpenTrace = [...prev, item].slice(-50);
+    console.info("[trace][categories-page] editorOpen changed", {
+      editorOpen,
+      editingCardId: editingCard?.id ?? null,
+      prefillCategoryName,
+      traceId: trace?.id ?? null,
+      traceCat: trace?.catName ?? null,
+      sinceClickMs: trace ? Number((performance.now() - trace.clickedAt).toFixed(1)) : null,
+    });
+  }, [editorOpen, editingCard?.id, prefillCategoryName]);
 
   // delete confirm state
   const [deleteTarget, setDeleteTarget] = useState<StudyCardType | null>(null);
@@ -178,8 +241,18 @@ function CategoriesPage() {
   const defaultDeckId = state.decks[0]?.id ?? null;
   const getDeck = (deckId: string) => state.decks.find((d) => d.id === deckId);
 
-  const openNew = () => { setEditingCard(null); setEditorOpen(true); };
-  const openEdit = (card: StudyCardType) => { setEditingCard(card); setEditorOpen(true); };
+  const openNew = (catName?: string | null) => {
+    (window as Window & { __cardEditorOpenRequestedAt?: number }).__cardEditorOpenRequestedAt = performance.now();
+    setEditingCard(null);
+    setPrefillCategoryName(catName ?? selectedCategory ?? null);
+    setEditorOpen(true);
+  };
+  const openEdit = (card: StudyCardType) => {
+    (window as Window & { __cardEditorOpenRequestedAt?: number }).__cardEditorOpenRequestedAt = performance.now();
+    setPrefillCategoryName(null);
+    setEditingCard(card);
+    setEditorOpen(true);
+  };
 
   const handleDelete = () => {
     if (!deleteTarget) return;
@@ -218,6 +291,10 @@ function CategoriesPage() {
     <CategoryManager
       selectedCategory={selectedCategory}
       onSelectCategory={setSelectedCategory}
+      onAddCardToCategory={(catName) => {
+        setSelectedCategory(catName);
+        openNew(catName);
+      }}
       onEditCard={openEdit}
       expanded
       onStudyCategory={(catName) => {
@@ -531,7 +608,7 @@ function CategoriesPage() {
       {/* Card editor — floating draggable/resizable panel */}
       <DraggableResizablePanel
         open={editorOpen}
-        onClose={() => setEditorOpen(false)}
+        onClose={() => { setEditorOpen(false); setPrefillCategoryName(null); }}
         title={editingCard ? "עריכת שאלה" : "הוספת שאלה"}
       >
         {editorOpen && (
@@ -539,8 +616,10 @@ function CategoriesPage() {
             <CardEditor
               deckId={editingCard?.deckId ?? defaultDeckId}
               editCard={editingCard ?? undefined}
-              prefillCategories={!editingCard && selectedCategory ? [selectedCategory] : undefined}
-              onClose={() => setEditorOpen(false)}
+              prefillCategories={!editingCard && (prefillCategoryName ?? selectedCategory)
+                ? [prefillCategoryName ?? selectedCategory]
+                : undefined}
+              onClose={() => { setEditorOpen(false); setPrefillCategoryName(null); }}
             />
           </Suspense>
         )}
