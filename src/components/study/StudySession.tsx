@@ -151,6 +151,9 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
     optionsLayout: "list",
     optionsBorderRadius: "md",
     optionWrapperBg: "",
+    badgeBorderColor: "#c9a84c",
+    badgeTextColor: "#0c1831",
+    breadcrumbColor: "#64748b",
     optionColors: Array(6).fill({
       bg: "#ffffff",
       text: "#0c1831",
@@ -170,6 +173,9 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
     optionsLayout: "grid",
     optionsBorderRadius: "full",
     optionWrapperBg: "#061022",
+    badgeBorderColor: "#ca8a04",
+    badgeTextColor: "#ffffff",
+    breadcrumbColor: "#94a3b8",
     optionColors: Array(6).fill({
       bg: "#0d2040",
       text: "#ffffff",
@@ -189,6 +195,9 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
     optionsLayout: "list",
     optionsBorderRadius: "md",
     optionWrapperBg: "",
+    badgeBorderColor: "#14225c",
+    badgeTextColor: "#14225c",
+    breadcrumbColor: "#64748b",
     optionColors: Array(6).fill({
       bg: "#14225c",
       text: "#ffffff",
@@ -208,6 +217,9 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
     optionsLayout: "list",
     optionsBorderRadius: "md",
     optionWrapperBg: "#111827",
+    badgeBorderColor: "#ca8a04",
+    badgeTextColor: "#ffffff",
+    breadcrumbColor: "#9ca3af",
     optionColors: Array(6).fill({
       bg: "#1f2937",
       text: "#ffffff",
@@ -227,6 +239,9 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
     optionsLayout: "grid",
     optionsBorderRadius: "lg",
     optionWrapperBg: "",
+    badgeBorderColor: "#e5e7eb",
+    badgeTextColor: "#1a1a2e",
+    breadcrumbColor: "#64748b",
     optionColors: [
       { bg: "#2563eb", text: "#ffffff", border: "#60a5fa" },
       { bg: "#059669", text: "#ffffff", border: "#34d399" },
@@ -461,7 +476,11 @@ export function StudySession({
     if (timerRunning) {
       pausedAtRef.current = Date.now();
       setTimerRunning(false);
-      try { setUiPref("studyTimerRunning", false); } catch { /* guest */ }
+      try {
+        setUiPref("studyTimerRunning", false);
+      } catch {
+        /* guest */
+      }
       return;
     }
     if (pausedAtRef.current) {
@@ -470,7 +489,11 @@ export function StudySession({
     }
     setTimerRunning(true);
     setElapsed(getElapsedSeconds());
-    try { setUiPref("studyTimerRunning", true); } catch { /* guest */ }
+    try {
+      setUiPref("studyTimerRunning", true);
+    } catch {
+      /* guest */
+    }
   }, [getElapsedSeconds, setUiPref, timerRunning]);
 
   // Lock body scroll on mobile while session is fullscreen
@@ -633,15 +656,22 @@ export function StudySession({
       }
     },
   );
-  const saveCustomTheme = useCallback((t: CustomQuizTheme) => {
-    setCustomQuizTheme(t);
-    try {
-      localStorage.setItem(CUSTOM_QUIZ_THEME_KEY, JSON.stringify(t));
-    } catch {
-      /* noop */
-    }
-    try { setUiPref("studyCustomTheme", t as unknown as Record<string, unknown>); } catch { /* guest */ }
-  }, [setUiPref]);
+  const saveCustomTheme = useCallback(
+    (t: CustomQuizTheme) => {
+      setCustomQuizTheme(t);
+      try {
+        localStorage.setItem(CUSTOM_QUIZ_THEME_KEY, JSON.stringify(t));
+      } catch {
+        /* noop */
+      }
+      try {
+        setUiPref("studyCustomTheme", t as unknown as Record<string, unknown>);
+      } catch {
+        /* guest */
+      }
+    },
+    [setUiPref],
+  );
 
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -670,30 +700,56 @@ export function StudySession({
   useEffect(() => {
     if (quizPrefsCloudRef.current) return;
     const p = state.uiPrefs;
-    if (!p?.studyTypography && !p?.studyAnswerTypography && !p?.studyQuestionAlign && !p?.studyCustomTheme && p?.studyTimerRunning === undefined) return;
+    if (
+      !p?.studyTypography &&
+      !p?.studyAnswerTypography &&
+      !p?.studyQuestionAlign &&
+      !p?.studyCustomTheme &&
+      p?.studyTimerRunning === undefined
+    )
+      return;
     quizPrefsCloudRef.current = true;
     if (p.studyTypography) {
-      const t = { ...DEFAULT_QUIZ_TYPOGRAPHY, ...(p.studyTypography as Partial<QuizTypography>) };
+      const t = {
+        ...DEFAULT_QUIZ_TYPOGRAPHY,
+        ...(p.studyTypography as Partial<QuizTypography>),
+      };
       setTypography(t);
       storeTypography(t);
     }
     if (p.studyAnswerTypography) {
-      const t = { ...DEFAULT_QUIZ_TYPOGRAPHY, ...(p.studyAnswerTypography as Partial<QuizTypography>) };
+      const t = {
+        ...DEFAULT_QUIZ_TYPOGRAPHY,
+        ...(p.studyAnswerTypography as Partial<QuizTypography>),
+      };
       setAnswerTypography(t);
       storeTypography(t, ANSWER_TYPOGRAPHY_KEY);
     }
-    if (p.studyQuestionAlign && (["right", "center", "left"] as string[]).includes(p.studyQuestionAlign)) {
+    if (
+      p.studyQuestionAlign &&
+      (["right", "center", "left"] as string[]).includes(p.studyQuestionAlign)
+    ) {
       setQuestionAlign(p.studyQuestionAlign as QuestionAlign);
     }
     if (p.studyCustomTheme) {
-      setCustomQuizTheme({ ...DEFAULT_CUSTOM_THEME, ...(p.studyCustomTheme as Partial<CustomQuizTheme>) });
+      setCustomQuizTheme({
+        ...DEFAULT_CUSTOM_THEME,
+        ...(p.studyCustomTheme as Partial<CustomQuizTheme>),
+      });
     }
     if (p.studyTimerRunning !== undefined) {
       setTimerRunning(p.studyTimerRunning);
       if (!p.studyTimerRunning) pausedAtRef.current = Date.now();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!(state.uiPrefs?.studyTypography ?? state.uiPrefs?.studyAnswerTypography ?? state.uiPrefs?.studyQuestionAlign ?? state.uiPrefs?.studyCustomTheme) || state.uiPrefs?.studyTimerRunning !== undefined]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    !!(
+      state.uiPrefs?.studyTypography ??
+      state.uiPrefs?.studyAnswerTypography ??
+      state.uiPrefs?.studyQuestionAlign ??
+      state.uiPrefs?.studyCustomTheme
+    ) || state.uiPrefs?.studyTimerRunning !== undefined,
+  ]);
 
   // Custom next-due selection (per current card). Reset when card changes.
   const [nextInterval, setNextInterval] = useState<string>("auto");
@@ -1142,9 +1198,17 @@ export function StudySession({
             className="h-12 w-12"
           >
             {/* כתר */}
-            <path d="M13 14 L15 9 L18 13 L20 8 L22 13 L25 9 L27 14" fill="#F5C518" fillOpacity="0.25" />
+            <path
+              d="M13 14 L15 9 L18 13 L20 8 L22 13 L25 9 L27 14"
+              fill="#F5C518"
+              fillOpacity="0.25"
+            />
             {/* ספר פתוח */}
-            <path d="M20 16 C20 16 13 14 7 16 L7 31 C13 29 20 31 20 31 C20 31 27 29 33 31 L33 16 C27 14 20 16 20 16Z" fill="#F5C518" fillOpacity="0.15" />
+            <path
+              d="M20 16 C20 16 13 14 7 16 L7 31 C13 29 20 31 20 31 C20 31 27 29 33 31 L33 16 C27 14 20 16 20 16Z"
+              fill="#F5C518"
+              fillOpacity="0.15"
+            />
             <line x1="20" y1="16" x2="20" y2="31" />
             {/* שורות בעמוד השמאלי */}
             <line x1="10" y1="20" x2="18" y2="19.5" strokeWidth="1.2" />
@@ -1630,9 +1694,24 @@ export function StudySession({
                       const t = { ...typography, align: a };
                       setTypography(t);
                       storeTypography(t);
-                      try { localStorage.setItem(QUESTION_ALIGN_KEY, a); } catch { /* noop */ }
-                      try { setUiPref("studyQuestionAlign", a); } catch { /* guest */ }
-                      try { setUiPref("studyTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ }
+                      try {
+                        localStorage.setItem(QUESTION_ALIGN_KEY, a);
+                      } catch {
+                        /* noop */
+                      }
+                      try {
+                        setUiPref("studyQuestionAlign", a);
+                      } catch {
+                        /* guest */
+                      }
+                      try {
+                        setUiPref(
+                          "studyTypography",
+                          t as unknown as Record<string, unknown>,
+                        );
+                      } catch {
+                        /* guest */
+                      }
                     }}
                     className={cn(
                       questionAlign === a && "font-bold bg-secondary",
@@ -1867,9 +1946,24 @@ export function StudySession({
               const tNext = { ...typography, align: next };
               setTypography(tNext);
               storeTypography(tNext);
-              try { localStorage.setItem(QUESTION_ALIGN_KEY, next); } catch { /* noop */ }
-              try { setUiPref("studyQuestionAlign", next); } catch { /* guest */ }
-              try { setUiPref("studyTypography", tNext as unknown as Record<string, unknown>); } catch { /* guest */ }
+              try {
+                localStorage.setItem(QUESTION_ALIGN_KEY, next);
+              } catch {
+                /* noop */
+              }
+              try {
+                setUiPref("studyQuestionAlign", next);
+              } catch {
+                /* guest */
+              }
+              try {
+                setUiPref(
+                  "studyTypography",
+                  tNext as unknown as Record<string, unknown>,
+                );
+              } catch {
+                /* guest */
+              }
             }}
           >
             {typography.align === "right" && (
@@ -1883,11 +1977,34 @@ export function StudySession({
             )}
           </Button>
           {/* Typography (T) floating panel */}
-          <QuizTypographyPanel value={typography} onChange={(t) => { setTypography(t); try { setUiPref("studyTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ } }} />
+          <QuizTypographyPanel
+            value={typography}
+            onChange={(t) => {
+              setTypography(t);
+              try {
+                setUiPref(
+                  "studyTypography",
+                  t as unknown as Record<string, unknown>,
+                );
+              } catch {
+                /* guest */
+              }
+            }}
+          />
           {/* Answer typography (T) panel — separate styling for answers including justify */}
           <QuizTypographyPanel
             value={answerTypography}
-            onChange={(t) => { setAnswerTypography(t); try { setUiPref("studyAnswerTypography", t as unknown as Record<string, unknown>); } catch { /* guest */ } }}
+            onChange={(t) => {
+              setAnswerTypography(t);
+              try {
+                setUiPref(
+                  "studyAnswerTypography",
+                  t as unknown as Record<string, unknown>,
+                );
+              } catch {
+                /* guest */
+              }
+            }}
             storageKey={ANSWER_TYPOGRAPHY_KEY}
             title="עיצוב טקסט תשובות"
             buttonTitle="עיצוב טיפוגרפיה של תשובות"
@@ -1979,7 +2096,11 @@ export function StudySession({
       <div
         className={cn(
           "relative flex items-center justify-center rounded-2xl border-2",
-          isMobile ? "p-3 pt-8 overflow-y-auto" : fillHeight ? "flex-1 min-h-[100px] p-6 pt-10" : "min-h-[200px] p-6 pt-10",
+          isMobile
+            ? "p-3 pt-8 overflow-y-auto"
+            : fillHeight
+              ? "flex-1 min-h-[100px] p-6 pt-10"
+              : "min-h-[200px] p-6 pt-10",
           questionAreaCls,
         )}
         style={questionAreaStyle}
@@ -2069,7 +2190,9 @@ export function StudySession({
         </div>
       </div>
 
-      <div className={cn((isMobile || fillHeight) ? "flex-1 min-h-0" : "shrink-0")}>
+      <div
+        className={cn(isMobile || fillHeight ? "flex-1 min-h-0" : "shrink-0")}
+      >
         {/* Flashcard */}
         {card.type === "flashcard" && (
           <div className="space-y-3" dir="rtl">
@@ -2180,7 +2303,7 @@ export function StudySession({
               const mobileWrapperCls =
                 (isMobile || fillHeight) && isGrid
                   ? "flex-1 min-h-0 auto-rows-fr"
-                  : (isMobile || fillHeight)
+                  : isMobile || fillHeight
                     ? "flex-1 min-h-0 flex flex-col"
                     : "";
               return (

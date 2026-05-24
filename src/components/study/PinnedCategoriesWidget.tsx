@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pin, PinOff, FolderTree, Search, FileText, Pencil, LayoutGrid, Rows3 } from "lucide-react";
+import {
+  Pin,
+  PinOff,
+  FolderTree,
+  Search,
+  FileText,
+  Pencil,
+  LayoutGrid,
+  Rows3,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,15 +31,26 @@ interface Props {
 
 type PinnedDisplayMode = "grid2" | "grid4" | "horizontal";
 
-export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) {
+export function PinnedCategoriesWidget({
+  onSelectCategory,
+  onEditCard,
+}: Props) {
   const { state, setUiPref } = useStudy();
   const [query, setQuery] = useState("");
   const displayMode = (() => {
     const mode = state.uiPrefs?.pinnedDisplayMode;
-    return mode === "grid2" || mode === "grid4" || mode === "horizontal" ? mode : "grid2";
+    return mode === "grid2" || mode === "grid4" || mode === "horizontal"
+      ? mode
+      : "grid2";
   })();
-  const pinned = useMemo(() => state.uiPrefs?.pinnedCategoryNames ?? [], [state.uiPrefs?.pinnedCategoryNames]);
-  const pinnedCardIds = useMemo(() => state.uiPrefs?.pinnedCardIds ?? [], [state.uiPrefs?.pinnedCardIds]);
+  const pinned = useMemo(
+    () => state.uiPrefs?.pinnedCategoryNames ?? [],
+    [state.uiPrefs?.pinnedCategoryNames],
+  );
+  const pinnedCardIds = useMemo(
+    () => state.uiPrefs?.pinnedCardIds ?? [],
+    [state.uiPrefs?.pinnedCardIds],
+  );
 
   useEffect(() => {
     if (!pinned.length) return;
@@ -59,7 +79,9 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
   }, [pinnedCardIds, setUiPref, state.cards]);
 
   const categories = useMemo(() => {
-    const byName = new Map((state.categories ?? []).map((c) => [c.name, c] as const));
+    const byName = new Map(
+      (state.categories ?? []).map((c) => [c.name, c] as const),
+    );
     return pinned
       .map((name) => byName.get(name))
       .filter((c): c is NonNullable<typeof c> => !!c);
@@ -104,7 +126,8 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
   };
 
   const setDisplayMode = (value: string) => {
-    if (value !== "grid2" && value !== "grid4" && value !== "horizontal") return;
+    if (value !== "grid2" && value !== "grid4" && value !== "horizontal")
+      return;
     setUiPref("pinnedDisplayMode", value as PinnedDisplayMode);
   };
 
@@ -121,25 +144,55 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
     },
     compact = false,
   ) => (
-    <div key={item.id} className={cn("rounded-xl border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors", compact && "min-w-[240px] max-w-[280px] shrink-0")}>
+    <div
+      key={item.id}
+      className={cn(
+        "rounded-xl border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors",
+        compact && "min-w-[240px] max-w-[280px] shrink-0",
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 text-right">
-          <button type="button" onClick={item.onOpen} className="w-full text-right">
+          <button
+            type="button"
+            onClick={item.onOpen}
+            className="w-full text-right"
+          >
             <p className="text-sm font-semibold truncate">{item.title}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{item.subtitle}</p>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {item.subtitle}
+            </p>
           </button>
-          {item.countLabel && <p className="text-[11px] text-gold mt-1">{item.countLabel}</p>}
+          {item.countLabel && (
+            <p className="text-[11px] text-gold mt-1">{item.countLabel}</p>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {item.isCard && item.onEdit && (
-            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={item.onEdit} title="ערוך שאלה">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={item.onEdit}
+              title="ערוך שאלה"
+            >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={item.onUnpin} title="בטל הצמדה">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            onClick={item.onUnpin}
+            title="בטל הצמדה"
+          >
             <PinOff className="h-3.5 w-3.5" />
           </Button>
-          {item.isCard ? <FileText className="h-4 w-4 text-gold/70" /> : <Pin className="h-4 w-4 text-gold/70" />}
+          {item.isCard ? (
+            <FileText className="h-4 w-4 text-gold/70" />
+          ) : (
+            <Pin className="h-4 w-4 text-gold/70" />
+          )}
         </div>
       </div>
     </div>
@@ -173,7 +226,14 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
   ];
 
   const renderGrid = (cols: 2 | 4) => (
-    <div className={cn("grid gap-2", cols === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4")}>
+    <div
+      className={cn(
+        "grid gap-2",
+        cols === 2
+          ? "grid-cols-1 sm:grid-cols-2"
+          : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4",
+      )}
+    >
       {gridItems.map((item) => renderGridLikeItem(item))}
     </div>
   );
@@ -191,7 +251,9 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
           <span className="gold-icon-circle h-7 w-7">
             <Pin className="h-3.5 w-3.5" />
           </span>
-          <h3 className="font-display text-base font-semibold">קטגוריות מוצמדות</h3>
+          <h3 className="font-display text-base font-semibold">
+            קטגוריות מוצמדות
+          </h3>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -205,8 +267,15 @@ export function PinnedCategoriesWidget({ onSelectCategory, onEditCard }: Props) 
               <LayoutGrid className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40 text-right" dir="rtl">
-            <DropdownMenuRadioGroup value={displayMode} onValueChange={setDisplayMode}>
+          <DropdownMenuContent
+            align="end"
+            className="w-40 text-right"
+            style={{ direction: "rtl" }}
+          >
+            <DropdownMenuRadioGroup
+              value={displayMode}
+              onValueChange={setDisplayMode}
+            >
               <DropdownMenuRadioItem value="grid2">רשת 2</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="grid4">רשת 4</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="horizontal">

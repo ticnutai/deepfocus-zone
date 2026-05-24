@@ -3,11 +3,27 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, CheckCircle2, AlertTriangle, FlaskConical, Upload, ClipboardCheck, CheckSquare, Square } from "lucide-react";
+import {
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  FlaskConical,
+  Upload,
+  ClipboardCheck,
+  CheckSquare,
+  Square,
+} from "lucide-react";
 import { useStudy } from "@/lib/study/store";
 import { toHebrewNum } from "@/lib/study/shasFormat";
+import type { Card as StudyCard } from "@/lib/study/types";
 
 type SamplePair = {
   key: string;
@@ -96,15 +112,27 @@ const ROOT_CATEGORY_NAME = "תלמוד בבלי";
 const NEVIIM_ROOT_CATEGORY_NAME = "נביאים וכתובים - מאגר שאלות";
 
 function isPilotPayload(x: unknown): x is PilotPayload {
-  return !!x && typeof x === "object" && "summary" in (x as Record<string, unknown>) && "results" in (x as Record<string, unknown>);
+  return (
+    !!x &&
+    typeof x === "object" &&
+    "summary" in (x as Record<string, unknown>) &&
+    "results" in (x as Record<string, unknown>)
+  );
 }
 
 function toExtractedPayload(x: unknown): ExtractedQuestionsPayload | null {
   if (Array.isArray(x)) {
     return { kind: "neviim_extracted", rows: x as ExtractedQuestionRow[] };
   }
-  if (x && typeof x === "object" && Array.isArray((x as { rows?: unknown[] }).rows)) {
-    return { kind: "neviim_extracted", rows: (x as { rows: ExtractedQuestionRow[] }).rows };
+  if (
+    x &&
+    typeof x === "object" &&
+    Array.isArray((x as { rows?: unknown[] }).rows)
+  ) {
+    return {
+      kind: "neviim_extracted",
+      rows: (x as { rows: ExtractedQuestionRow[] }).rows,
+    };
   }
   return null;
 }
@@ -126,18 +154,30 @@ function neviimRowKey(row: ExtractedQuestionRow): string {
   return `${b}::${c}::${v}::${q}`;
 }
 
-function formatKodeshRef(book: string, chapter: number, verse: number, verseEnd?: number): string {
+function formatKodeshRef(
+  book: string,
+  chapter: number,
+  verse: number,
+  verseEnd?: number,
+): string {
   const c = toHebrewNum(chapter) || String(chapter);
   const v = toHebrewNum(verse) || String(verse);
-  const ve = verseEnd && verseEnd !== verse ? `-${toHebrewNum(verseEnd) || String(verseEnd)}` : "";
+  const ve =
+    verseEnd && verseEnd !== verse
+      ? `-${toHebrewNum(verseEnd) || String(verseEnd)}`
+      : "";
   return `${book} ${c}:${v}${ve}`;
 }
 
 export function QuestionLabPage() {
   const { state, addCategory, addCard } = useStudy();
+  type AddCardInput = Omit<StudyCard, "id" | "createdAt" | "srs" | "stats">;
   const [index, setIndex] = useState<ReportIndex | null>(null);
-  const [selectedReportFile, setSelectedReportFile] = useState<string>(FALLBACK_REPORT_URL);
-  const [data, setData] = useState<PilotPayload | ExtractedQuestionsPayload | null>(null);
+  const [selectedReportFile, setSelectedReportFile] =
+    useState<string>(FALLBACK_REPORT_URL);
+  const [data, setData] = useState<
+    PilotPayload | ExtractedQuestionsPayload | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +194,9 @@ export function QuestionLabPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(reportFile ?? selectedReportFile, { cache: "no-store" });
+      const res = await fetch(reportFile ?? selectedReportFile, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (isPilotPayload(json)) {
@@ -212,15 +254,23 @@ export function QuestionLabPage() {
   const unmatchedTotal = useMemo(() => {
     if (!data || !isPilotPayload(data)) return 0;
     return data.results.reduce(
-      (acc, r) => acc + r.unmatched_question_keys.length + r.unmatched_answer_keys.length,
+      (acc, r) =>
+        acc + r.unmatched_question_keys.length + r.unmatched_answer_keys.length,
       0,
     );
   }, [data]);
 
   const pairsPreview = useMemo(() => {
-    if (!data || !isPilotPayload(data)) return [] as Array<SamplePair & { masechet: string; range_label: string }>;
+    if (!data || !isPilotPayload(data))
+      return [] as Array<
+        SamplePair & { masechet: string; range_label: string }
+      >;
     return data.results.flatMap((r) =>
-      r.sample_pairs.map((p) => ({ ...p, masechet: r.masechet, range_label: r.range_label })),
+      r.sample_pairs.map((p) => ({
+        ...p,
+        masechet: r.masechet,
+        range_label: r.range_label,
+      })),
     );
   }, [data]);
 
@@ -235,9 +285,10 @@ export function QuestionLabPage() {
           const ch = typeof r.chapter === "number" ? r.chapter : undefined;
           const vs = typeof r.verse === "number" ? r.verse : undefined;
           const ve = typeof r.verse_end === "number" ? r.verse_end : undefined;
-          const refText = book && ch && vs
-            ? formatKodeshRef(book, ch, vs, ve)
-            : "מיקום לא מזוהה";
+          const refText =
+            book && ch && vs
+              ? formatKodeshRef(book, ch, vs, ve)
+              : "מיקום לא מזוהה";
 
           return {
             masechet: "נביאים וכתובים",
@@ -253,7 +304,13 @@ export function QuestionLabPage() {
             confidence: r.reference_confidence,
           } satisfies ImportRow;
         })
-        .filter((r) => r.question && !!r.canonicalBook && typeof r.chapter === "number" && typeof r.verse === "number");
+        .filter(
+          (r) =>
+            r.question &&
+            !!r.canonicalBook &&
+            typeof r.chapter === "number" &&
+            typeof r.verse === "number",
+        );
     }
 
     const rows: ImportRow[] = [];
@@ -273,7 +330,12 @@ export function QuestionLabPage() {
 
   const runDryRun = () => {
     const candidateRows = !isPilotPayload(data)
-      ? importRows.filter((r) => approvedMap[`${r.canonicalBook ?? ""}::${r.chapter ?? ""}::${r.verse ?? ""}::${r.question.replace(/\s+/g, " ").trim()}`])
+      ? importRows.filter(
+          (r) =>
+            approvedMap[
+              `${r.canonicalBook ?? ""}::${r.chapter ?? ""}::${r.verse ?? ""}::${r.question.replace(/\s+/g, " ").trim()}`
+            ],
+        )
       : importRows;
 
     const normalized = candidateRows.map((r) => ({
@@ -289,7 +351,8 @@ export function QuestionLabPage() {
       state.cards.map((c) => {
         const q = (c.question ?? "").replace(/\s+/g, " ").trim();
         const tags = c.tags ?? [];
-        const m = tags.find((t) => t.startsWith("cat:") && t.length > 4) ?? "cat:";
+        const m =
+          tags.find((t) => t.startsWith("cat:") && t.length > 4) ?? "cat:";
         return `${m}::${q}`;
       }),
     );
@@ -323,11 +386,15 @@ export function QuestionLabPage() {
     setImporting(true);
     try {
       const categories = [...(state.categories ?? [])];
-      const keyOf = (name: string, parentId: string | null) => `${parentId ?? "root"}::${name}`;
+      const keyOf = (name: string, parentId: string | null) =>
+        `${parentId ?? "root"}::${name}`;
       const byKey = new Map<string, string>();
       for (const c of categories) byKey.set(keyOf(c.name, c.parentId), c.id);
 
-      const ensureCategory = (name: string, parentId: string | null): string => {
+      const ensureCategory = (
+        name: string,
+        parentId: string | null,
+      ): string => {
         const k = keyOf(name, parentId);
         const existing = byKey.get(k);
         if (existing) return existing;
@@ -336,22 +403,38 @@ export function QuestionLabPage() {
         return created.id;
       };
 
-      const rootId = ensureCategory(isPilotPayload(data) ? ROOT_CATEGORY_NAME : NEVIIM_ROOT_CATEGORY_NAME, null);
+      const rootId = ensureCategory(
+        isPilotPayload(data) ? ROOT_CATEGORY_NAME : NEVIIM_ROOT_CATEGORY_NAME,
+        null,
+      );
       const existingCardKeys = new Set(
-        state.cards.map((c) => `${(c.tags ?? []).join("|")}::${(c.question ?? "").replace(/\s+/g, " ").trim()}`),
+        state.cards.map(
+          (c) =>
+            `${(c.tags ?? []).join("|")}::${(c.question ?? "").replace(/\s+/g, " ").trim()}`,
+        ),
       );
 
       let inserted = 0;
       const rowsToCommit = !isPilotPayload(data)
-        ? importRows.filter((r) => approvedMap[`${r.canonicalBook ?? ""}::${r.chapter ?? ""}::${r.verse ?? ""}::${r.question.replace(/\s+/g, " ").trim()}`])
+        ? importRows.filter(
+            (r) =>
+              approvedMap[
+                `${r.canonicalBook ?? ""}::${r.chapter ?? ""}::${r.verse ?? ""}::${r.question.replace(/\s+/g, " ").trim()}`
+              ],
+          )
         : importRows;
 
       for (const row of rowsToCommit) {
         if (!row.question || !row.answer) continue;
         ensureCategory(row.masechet, rootId);
-        ensureCategory(row.rangeLabel, byKey.get(keyOf(row.masechet, rootId)) ?? null);
+        ensureCategory(
+          row.rangeLabel,
+          byKey.get(keyOf(row.masechet, rootId)) ?? null,
+        );
 
-        const rootName = isPilotPayload(data) ? ROOT_CATEGORY_NAME : NEVIIM_ROOT_CATEGORY_NAME;
+        const rootName = isPilotPayload(data)
+          ? ROOT_CATEGORY_NAME
+          : NEVIIM_ROOT_CATEGORY_NAME;
         const tags = [
           `cat:${rootName}`,
           `cat:${row.masechet}`,
@@ -360,8 +443,12 @@ export function QuestionLabPage() {
 
         if (row.isNeviim && row.canonicalBook) {
           tags.push(`cat:${row.canonicalBook}`);
-          const chapterHeb = row.chapter ? (toHebrewNum(row.chapter) || String(row.chapter)) : "";
-          const verseHeb = row.verse ? (toHebrewNum(row.verse) || String(row.verse)) : "";
+          const chapterHeb = row.chapter
+            ? toHebrewNum(row.chapter) || String(row.chapter)
+            : "";
+          const verseHeb = row.verse
+            ? toHebrewNum(row.verse) || String(row.verse)
+            : "";
           if (chapterHeb && verseHeb) {
             tags.push(`ref:${row.canonicalBook}.${chapterHeb}:${verseHeb}`);
           }
@@ -379,7 +466,7 @@ export function QuestionLabPage() {
             answer: row.answer,
             options: row.options,
             tags,
-          });
+          } as AddCardInput);
         } else {
           addCard({
             deckId: null,
@@ -387,7 +474,7 @@ export function QuestionLabPage() {
             question: row.question,
             answer: row.answer,
             tags,
-          });
+          } as AddCardInput);
         }
         inserted++;
       }
@@ -411,10 +498,16 @@ export function QuestionLabPage() {
               מעבדת יצירה וניתוח שאלות
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              מרכז בדיקה לפני הכנסה למאגר: חילוץ, התאמה שאלה-תשובה, ואיכות נתונים.
+              מרכז בדיקה לפני הכנסה למאגר: חילוץ, התאמה שאלה-תשובה, ואיכות
+              נתונים.
             </p>
           </div>
-          <Button variant="outline" className="border-gold/50" onClick={() => void loadIndex()} disabled={loading}>
+          <Button
+            variant="outline"
+            className="border-gold/50"
+            onClick={() => void loadIndex()}
+            disabled={loading}
+          >
             <RefreshCw className="h-4 w-4" />
             רענון דוחות
           </Button>
@@ -425,7 +518,13 @@ export function QuestionLabPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div className="md:col-span-2">
             <div className="text-xs text-muted-foreground mb-1">דוח פעיל</div>
-            <Select value={selectedReportFile} onValueChange={(v) => { setSelectedReportFile(v); void load(v); }}>
+            <Select
+              value={selectedReportFile}
+              onValueChange={(v) => {
+                setSelectedReportFile(v);
+                void load(v);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="בחר דוח" />
               </SelectTrigger>
@@ -434,7 +533,9 @@ export function QuestionLabPage() {
                   ? index.reports
                   : [{ id: "pilot", label: "pilot", file: FALLBACK_REPORT_URL }]
                 ).map((r) => (
-                  <SelectItem key={r.id} value={r.file}>{r.label}</SelectItem>
+                  <SelectItem key={r.id} value={r.file}>
+                    {r.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -456,11 +557,20 @@ export function QuestionLabPage() {
                 אשר הכל
               </Button>
             )}
-            <Button variant="outline" className="flex-1 border-gold/50" onClick={runDryRun} disabled={!data || loading}>
+            <Button
+              variant="outline"
+              className="flex-1 border-gold/50"
+              onClick={runDryRun}
+              disabled={!data || loading}
+            >
               <ClipboardCheck className="h-4 w-4" />
               Dry-run
             </Button>
-            <Button className="flex-1 bg-gradient-navy text-primary-foreground" onClick={commitImport} disabled={!data || loading || importing || !dryRunSummary}>
+            <Button
+              className="flex-1 bg-gradient-navy text-primary-foreground"
+              onClick={commitImport}
+              disabled={!data || loading || importing || !dryRunSummary}
+            >
               <Upload className="h-4 w-4" />
               Commit
             </Button>
@@ -472,21 +582,37 @@ export function QuestionLabPage() {
         <Card className="gold-frame p-4">
           <div className="text-sm font-semibold mb-2">סיכום Dry-run</div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
-            <div className="rounded-md border border-gold/30 p-2">שורות: <b>{dryRunSummary.rows}</b></div>
-            <div className="rounded-md border border-gold/30 p-2">ייחודיות: <b>{dryRunSummary.uniqueRows}</b></div>
-            <div className="rounded-md border border-gold/30 p-2">חדשים: <b>{dryRunSummary.newCards}</b></div>
-            <div className="rounded-md border border-gold/30 p-2">כפולים: <b>{dryRunSummary.duplicateCards}</b></div>
-            <div className="rounded-md border border-gold/30 p-2">ללא תשובה: <b>{dryRunSummary.missingAnswers}</b></div>
+            <div className="rounded-md border border-gold/30 p-2">
+              שורות: <b>{dryRunSummary.rows}</b>
+            </div>
+            <div className="rounded-md border border-gold/30 p-2">
+              ייחודיות: <b>{dryRunSummary.uniqueRows}</b>
+            </div>
+            <div className="rounded-md border border-gold/30 p-2">
+              חדשים: <b>{dryRunSummary.newCards}</b>
+            </div>
+            <div className="rounded-md border border-gold/30 p-2">
+              כפולים: <b>{dryRunSummary.duplicateCards}</b>
+            </div>
+            <div className="rounded-md border border-gold/30 p-2">
+              ללא תשובה: <b>{dryRunSummary.missingAnswers}</b>
+            </div>
           </div>
         </Card>
       )}
 
-      {loading && <Card className="gold-frame p-5 text-sm text-muted-foreground">טוען דוח חילוץ...</Card>}
+      {loading && (
+        <Card className="gold-frame p-5 text-sm text-muted-foreground">
+          טוען דוח חילוץ...
+        </Card>
+      )}
 
       {!loading && error && (
         <Card className="gold-frame p-5 text-sm text-destructive">
           שגיאה בטעינת הדוח: {error}
-          <div className="text-muted-foreground mt-2">ודא שקיים קובץ דוח תחת data/reports או דוח פיילוט.</div>
+          <div className="text-muted-foreground mt-2">
+            ודא שקיים קובץ דוח תחת data/reports או דוח פיילוט.
+          </div>
         </Card>
       )}
 
@@ -495,19 +621,38 @@ export function QuestionLabPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Card className="gold-frame p-4">
               <div className="text-xs text-muted-foreground">מסמכים</div>
-              <div className="text-2xl font-bold">{isPilotPayload(data) ? data.summary.files : 1}</div>
+              <div className="text-2xl font-bold">
+                {isPilotPayload(data) ? data.summary.files : 1}
+              </div>
             </Card>
             <Card className="gold-frame p-4">
               <div className="text-xs text-muted-foreground">שאלות שחולצו</div>
-              <div className="text-2xl font-bold">{isPilotPayload(data) ? data.summary.total_questions : data.rows.length}</div>
+              <div className="text-2xl font-bold">
+                {isPilotPayload(data)
+                  ? data.summary.total_questions
+                  : data.rows.length}
+              </div>
             </Card>
             <Card className="gold-frame p-4">
               <div className="text-xs text-muted-foreground">מוכנות לאישור</div>
-              <div className="text-2xl font-bold">{isPilotPayload(data) ? data.summary.total_answers : data.rows.filter((r) => approvedMap[neviimRowKey(r)]).length}</div>
+              <div className="text-2xl font-bold">
+                {isPilotPayload(data)
+                  ? data.summary.total_answers
+                  : data.rows.filter((r) => approvedMap[neviimRowKey(r)])
+                      .length}
+              </div>
             </Card>
             <Card className="gold-frame p-4">
-              <div className="text-xs text-muted-foreground">התאמות מוצלחות</div>
-              <div className="text-2xl font-bold">{isPilotPayload(data) ? data.summary.total_matched_pairs : data.rows.filter((r) => !!r.canonical_book && !!r.chapter && !!r.verse).length}</div>
+              <div className="text-xs text-muted-foreground">
+                התאמות מוצלחות
+              </div>
+              <div className="text-2xl font-bold">
+                {isPilotPayload(data)
+                  ? data.summary.total_matched_pairs
+                  : data.rows.filter(
+                      (r) => !!r.canonical_book && !!r.chapter && !!r.verse,
+                    ).length}
+              </div>
             </Card>
           </div>
 
@@ -529,28 +674,48 @@ export function QuestionLabPage() {
 
           {!isPilotPayload(data) && (
             <Card className="gold-frame p-4 space-y-3">
-              <div className="text-sm font-semibold">אישור שאלות לפני העברה לקטגוריות</div>
+              <div className="text-sm font-semibold">
+                אישור שאלות לפני העברה לקטגוריות
+              </div>
               <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
                 {data.rows.map((row, idx) => {
                   const key = neviimRowKey(row);
                   const checked = !!approvedMap[key];
-                  const ref = row.canonical_book && row.chapter && row.verse
-                    ? formatKodeshRef(row.canonical_book, row.chapter, row.verse, row.verse_end ?? undefined)
-                    : "מיקום לא מזוהה";
+                  const ref =
+                    row.canonical_book && row.chapter && row.verse
+                      ? formatKodeshRef(
+                          row.canonical_book,
+                          row.chapter,
+                          row.verse,
+                          row.verse_end ?? undefined,
+                        )
+                      : "מיקום לא מזוהה";
                   return (
                     <button
                       key={`${key}-${idx}`}
                       type="button"
                       className={`w-full text-right rounded-md border p-3 transition ${checked ? "border-emerald-500/50 bg-emerald-500/5" : "border-gold/30"}`}
-                      onClick={() => setApprovedMap((prev) => ({ ...prev, [key]: !checked }))}
+                      onClick={() =>
+                        setApprovedMap((prev) => ({ ...prev, [key]: !checked }))
+                      }
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="text-sm leading-relaxed">{row.question_text}</div>
-                        <div className="shrink-0 mt-0.5">{checked ? <CheckSquare className="h-4 w-4 text-emerald-600" /> : <Square className="h-4 w-4 text-muted-foreground" />}</div>
+                        <div className="text-sm leading-relaxed">
+                          {row.question_text}
+                        </div>
+                        <div className="shrink-0 mt-0.5">
+                          {checked ? (
+                            <CheckSquare className="h-4 w-4 text-emerald-600" />
+                          ) : (
+                            <Square className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
                       </div>
                       <div className="mt-2 text-xs text-muted-foreground flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{ref}</Badge>
-                        <Badge variant="outline">בטחון: {(row.reference_confidence ?? 0).toFixed(2)}</Badge>
+                        <Badge variant="outline">
+                          בטחון: {(row.reference_confidence ?? 0).toFixed(2)}
+                        </Badge>
                       </div>
                     </button>
                   );
@@ -559,43 +724,68 @@ export function QuestionLabPage() {
             </Card>
           )}
 
-          <Tabs defaultValue="by-file" className="w-full" dir="rtl">
-            <TabsList className="w-full justify-start gap-2 flex-wrap h-auto bg-transparent p-0">
-              <TabsTrigger value="by-file" className="border border-gold/40">לפי מסמך</TabsTrigger>
-              <TabsTrigger value="pairs" className="border border-gold/40">תצוגת שאלות/תשובות</TabsTrigger>
-            </TabsList>
+          {isPilotPayload(data) && (
+            <Tabs defaultValue="by-file" className="w-full" dir="rtl">
+              <TabsList className="w-full justify-start gap-2 flex-wrap h-auto bg-transparent p-0">
+                <TabsTrigger value="by-file" className="border border-gold/40">
+                  לפי מסמך
+                </TabsTrigger>
+                <TabsTrigger value="pairs" className="border border-gold/40">
+                  תצוגת שאלות/תשובות
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="by-file" className="space-y-3 mt-3">
-              {data.results.map((r) => (
-                <Card key={r.file} className="gold-frame p-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="font-semibold">{r.masechet} | {r.range_label}</div>
-                      <div className="text-xs text-muted-foreground break-all">{r.file}</div>
+              <TabsContent value="by-file" className="space-y-3 mt-3">
+                {data.results.map((r) => (
+                  <Card key={r.file} className="gold-frame p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="font-semibold">
+                          {r.masechet} | {r.range_label}
+                        </div>
+                        <div className="text-xs text-muted-foreground break-all">
+                          {r.file}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <Badge variant="outline">
+                          שאלות: {r.total_questions}
+                        </Badge>
+                        <Badge variant="outline">
+                          תשובות: {r.total_answers}
+                        </Badge>
+                        <Badge variant="outline">
+                          התאמות: {r.matched_pairs}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge variant="outline">שאלות: {r.total_questions}</Badge>
-                      <Badge variant="outline">תשובות: {r.total_answers}</Badge>
-                      <Badge variant="outline">התאמות: {r.matched_pairs}</Badge>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </TabsContent>
+                  </Card>
+                ))}
+              </TabsContent>
 
-            <TabsContent value="pairs" className="space-y-3 mt-3">
-              {pairsPreview.map((p, idx) => (
-                <Card key={`${p.masechet}-${p.range_label}-${p.key}-${idx}`} className="gold-frame p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>{p.masechet} | {p.range_label}</span>
-                    <Badge variant="outline">אות {p.key}</Badge>
-                  </div>
-                  <div className="text-sm"><span className="font-semibold">שאלה:</span> {p.question}</div>
-                  <div className="text-sm"><span className="font-semibold">תשובה:</span> {p.answer}</div>
-                </Card>
-              ))}
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="pairs" className="space-y-3 mt-3">
+                {pairsPreview.map((p, idx) => (
+                  <Card
+                    key={`${p.masechet}-${p.range_label}-${p.key}-${idx}`}
+                    className="gold-frame p-4 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {p.masechet} | {p.range_label}
+                      </span>
+                      <Badge variant="outline">אות {p.key}</Badge>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-semibold">שאלה:</span> {p.question}
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-semibold">תשובה:</span> {p.answer}
+                    </div>
+                  </Card>
+                ))}
+              </TabsContent>
+            </Tabs>
+          )}
         </>
       )}
     </div>

@@ -1,11 +1,39 @@
 import { useEffect, useMemo, useState, lazy, Suspense, memo } from "react";
-import { FolderTree, BookOpen, Tag, Plus, Pencil, Trash2, Play, ArrowDownAZ, Calendar, Star, Pin, Hand, ArrowUpDown } from "lucide-react";
+import {
+  FolderTree,
+  BookOpen,
+  Tag,
+  Plus,
+  Pencil,
+  Trash2,
+  Play,
+  ArrowDownAZ,
+  Calendar,
+  Star,
+  Pin,
+  Hand,
+  ArrowUpDown,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DraggableResizablePanel } from "@/components/ui/DraggableResizablePanel";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,8 +44,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CategoryManager } from "./CategoryManager";
 const loadCardEditor = () => import("./CardEditor");
-const CardEditor = lazy(() => loadCardEditor().then(m => ({ default: m.CardEditor })));
-const StudySession = lazy(() => import("./StudySession").then(m => ({ default: m.StudySession })));
+const CardEditor = lazy(() =>
+  loadCardEditor().then((m) => ({ default: m.CardEditor })),
+);
+const StudySession = lazy(() =>
+  import("./StudySession").then((m) => ({ default: m.StudySession })),
+);
 import { WidgetGrid } from "./WidgetGrid";
 import { CategoryStudyPickerDialog } from "./CategoryStudyPickerDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
@@ -28,7 +60,12 @@ import { displayCategoryName, PATH_SEP } from "@/lib/study/shasGen";
 import { toast } from "@/hooks/use-toast";
 import type { Card as StudyCardType } from "@/lib/study/types";
 
-type CategorySortMode = "name" | "createdNew" | "createdOld" | "favorites" | "manual";
+type CategorySortMode =
+  | "name"
+  | "createdNew"
+  | "createdOld"
+  | "favorites"
+  | "manual";
 
 const SORT_LABELS: Record<CategorySortMode, string> = {
   name: "לפי שם",
@@ -43,7 +80,10 @@ const PIN_TAG = "sys:pin";
 
 // Hebrew-aware collator with natural numeric ordering so "דף ב." < "דף ג." < "דף ד."
 // and "דף 2" < "דף 10". Compares natural order in both Hebrew & Latin.
-const heCollator = new Intl.Collator(["he", "en"], { numeric: true, sensitivity: "base" });
+const heCollator = new Intl.Collator(["he", "en"], {
+  numeric: true,
+  sensitivity: "base",
+});
 
 const TYPE_LABEL: Record<string, string> = {
   flashcard: "כרטיסיה",
@@ -53,37 +93,56 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 function CategoriesPage() {
-    useEffect(() => {
-      const ric = (window as Window & {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+  useEffect(() => {
+    const ric = (
+      window as Window & {
+        requestIdleCallback?: (
+          cb: () => void,
+          opts?: { timeout?: number },
+        ) => number;
         cancelIdleCallback?: (id: number) => void;
-      }).requestIdleCallback;
-
-      if (typeof ric === "function") {
-        const id = ric(() => {
-          void loadCardEditor();
-        }, { timeout: 1200 });
-        return () => {
-          const cic = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
-          if (typeof cic === "function") cic(id);
-        };
       }
+    ).requestIdleCallback;
 
-      const t = window.setTimeout(() => {
-        void loadCardEditor();
-      }, 250);
-      return () => window.clearTimeout(t);
-    }, []);
+    if (typeof ric === "function") {
+      const id = ric(
+        () => {
+          void loadCardEditor();
+        },
+        { timeout: 1200 },
+      );
+      return () => {
+        const cic = (
+          window as Window & { cancelIdleCallback?: (id: number) => void }
+        ).cancelIdleCallback;
+        if (typeof cic === "function") cic(id);
+      };
+    }
+
+    const t = window.setTimeout(() => {
+      void loadCardEditor();
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const { state, deleteCard, setWidgetLayout, updateCard, setUiPref, addDeck, addCardToDeck } = useStudy();
+  const {
+    state,
+    deleteCard,
+    setWidgetLayout,
+    updateCard,
+    setUiPref,
+    addDeck,
+    addCardToDeck,
+  } = useStudy();
 
   // Global sort mode (persisted in uiPrefs, synced to cloud).
   // Legacy fallback keeps existing users' behavior until they pick a new mode.
   const legacySortMode: CategorySortMode | undefined = selectedCategory
     ? state.uiPrefs?.categorySortOrders?.[selectedCategory]
     : undefined;
-  const sortMode: CategorySortMode = state.uiPrefs?.categorySortMode ?? legacySortMode ?? "name";
+  const sortMode: CategorySortMode =
+    state.uiPrefs?.categorySortMode ?? legacySortMode ?? "name";
 
   const setSortMode = (mode: CategorySortMode) => {
     setUiPref("categorySortMode", mode);
@@ -95,7 +154,14 @@ function CategoriesPage() {
     updateCard(card.id, { tags: next });
   };
 
-  const DIFF_COLORS = ["", "#94a3b8", "#4ade80", "#fbbf24", "#f97316", "#ef4444"];
+  const DIFF_COLORS = [
+    "",
+    "#94a3b8",
+    "#4ade80",
+    "#fbbf24",
+    "#f97316",
+    "#ef4444",
+  ];
   const DIFF_TITLES = ["", "קל מאוד", "קל", "בינוני", "קשה", "קשה מאוד"];
 
   const setDifficulty = (card: StudyCardType, level: number) => {
@@ -129,7 +195,9 @@ function CategoriesPage() {
   // editor state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<StudyCardType | null>(null);
-  const [prefillCategoryName, setPrefillCategoryName] = useState<string | null>(null);
+  const [prefillCategoryName, setPrefillCategoryName] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const w = window as Window & {
@@ -166,7 +234,9 @@ function CategoriesPage() {
       prefillCategoryName,
       traceId: trace?.id ?? null,
       traceCat: trace?.catName ?? null,
-      sinceClickMs: trace ? Number((performance.now() - trace.clickedAt).toFixed(1)) : null,
+      sinceClickMs: trace
+        ? Number((performance.now() - trace.clickedAt).toFixed(1))
+        : null,
     });
   }, [editorOpen, editingCard?.id, prefillCategoryName]);
 
@@ -174,18 +244,28 @@ function CategoriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<StudyCardType | null>(null);
 
   // study session
-  const [studyMode, setStudyMode] = useState<"flashcard" | "multiple" | null>(null);
+  const [studyMode, setStudyMode] = useState<"flashcard" | "multiple" | null>(
+    null,
+  );
   const [studyCardIds, setStudyCardIds] = useState<string[] | null>(null);
 
   // study picker dialog
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerCategoryName, setPickerCategoryName] = useState<string | null>(null);
+  const [pickerCategoryName, setPickerCategoryName] = useState<string | null>(
+    null,
+  );
 
   // Quick-run dialog state
   const [quickRunOpen, setQuickRunOpen] = useState(false);
-  const [quickRunCat, setQuickRunCat] = useState<{ id: string; name: string } | null>(null);
+  const [quickRunCat, setQuickRunCat] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   // After session ends — offer to save as deck
-  const [postSessionPrompt, setPostSessionPrompt] = useState<{ cardIds: string[]; categoryName: string } | null>(null);
+  const [postSessionPrompt, setPostSessionPrompt] = useState<{
+    cardIds: string[];
+    categoryName: string;
+  } | null>(null);
 
   const directCardCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -199,13 +279,17 @@ function CategoriesPage() {
     return map;
   }, [state.cards]);
 
-  const isClassificationPoint = !!(selectedCategory && (directCardCounts.get(selectedCategory) ?? 0) > 0);
+  const isClassificationPoint = !!(
+    selectedCategory && (directCardCounts.get(selectedCategory) ?? 0) > 0
+  );
 
-  const rawCategoryCards = useMemo(() => (
-    selectedCategory && isClassificationPoint
-      ? state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`))
-      : []
-  ), [selectedCategory, state.cards, isClassificationPoint]);
+  const rawCategoryCards = useMemo(
+    () =>
+      selectedCategory && isClassificationPoint
+        ? state.cards.filter((c) => c.tags.includes(`cat:${selectedCategory}`))
+        : [],
+    [selectedCategory, state.cards, isClassificationPoint],
+  );
 
   // Sort + pinned-on-top
   const filteredCards = useMemo(() => {
@@ -242,13 +326,17 @@ function CategoriesPage() {
   const getDeck = (deckId: string) => state.decks.find((d) => d.id === deckId);
 
   const openNew = (catName?: string | null) => {
-    (window as Window & { __cardEditorOpenRequestedAt?: number }).__cardEditorOpenRequestedAt = performance.now();
+    (
+      window as Window & { __cardEditorOpenRequestedAt?: number }
+    ).__cardEditorOpenRequestedAt = performance.now();
     setEditingCard(null);
     setPrefillCategoryName(catName ?? selectedCategory ?? null);
     setEditorOpen(true);
   };
   const openEdit = (card: StudyCardType) => {
-    (window as Window & { __cardEditorOpenRequestedAt?: number }).__cardEditorOpenRequestedAt = performance.now();
+    (
+      window as Window & { __cardEditorOpenRequestedAt?: number }
+    ).__cardEditorOpenRequestedAt = performance.now();
     setPrefillCategoryName(null);
     setEditingCard(card);
     setEditorOpen(true);
@@ -263,25 +351,29 @@ function CategoriesPage() {
 
   // If a study session is active, render it fullscreen
   if (studyMode && studyCardIds && studyCardIds.length > 0) {
-    const firstDeckId = state.cards.find((c) => studyCardIds.includes(c.id))?.deckId ?? null;
+    const firstDeckId =
+      state.cards.find((c) => studyCardIds.includes(c.id))?.deckId ?? null;
     const sessionIds = [...studyCardIds];
     const sessionCatName = quickRunCat?.name ?? "";
     return (
       <Suspense fallback={null}>
-      <StudySession
-        deckId={firstDeckId}
-        mode={studyMode as never}
-        cardIds={studyCardIds}
-        onExit={() => {
-          // If session came from QuickRun, offer save-as-deck
-          if (quickRunCat) {
-            setPostSessionPrompt({ cardIds: sessionIds, categoryName: sessionCatName });
-            setQuickRunCat(null);
-          }
-          setStudyMode(null);
-          setStudyCardIds(null);
-        }}
-      />
+        <StudySession
+          deckId={firstDeckId}
+          mode={studyMode as never}
+          cardIds={studyCardIds}
+          onExit={() => {
+            // If session came from QuickRun, offer save-as-deck
+            if (quickRunCat) {
+              setPostSessionPrompt({
+                cardIds: sessionIds,
+                categoryName: sessionCatName,
+              });
+              setQuickRunCat(null);
+            }
+            setStudyMode(null);
+            setStudyCardIds(null);
+          }}
+        />
       </Suspense>
     );
   }
@@ -305,14 +397,18 @@ function CategoriesPage() {
         const getAllDescendantCards = (catName: string): string[] => {
           const cat = state.categories.find((c) => c.name === catName);
           if (!cat) return [];
-          const direct = state.cards.filter((c) => c.tags.includes(`cat:${cat.name}`));
+          const direct = state.cards.filter((c) =>
+            c.tags.includes(`cat:${cat.name}`),
+          );
           const kids = state.categories.filter((c) => c.parentId === cat.id);
           const directIds = direct.map((c) => c.id);
           const childIds = kids.flatMap((k) => getAllDescendantCards(k.name));
           return [...directIds, ...childIds];
         };
         const seen = new Set<string>();
-        let allIds = catNames.flatMap((n) => getAllDescendantCards(n)).filter((id) => !seen.has(id) && seen.add(id));
+        let allIds = catNames
+          .flatMap((n) => getAllDescendantCards(n))
+          .filter((id) => !seen.has(id) && seen.add(id));
         if (filter === "due") {
           const now = Date.now();
           allIds = allIds.filter((id) => {
@@ -339,255 +435,348 @@ function CategoriesPage() {
   // ── widget: cards of selected category ────────────────────────────────────
   const catCardsWidget = (
     <Card className="gold-frame p-4 space-y-3 h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {selectedCategory && isClassificationPoint && (
-                <Button size="sm" onClick={openNew}
-                  className="bg-gradient-navy text-primary-foreground h-7 px-2 text-xs gap-1">
-                  <Plus className="h-3.5 w-3.5" /> הוסף שאלה
-                </Button>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {selectedCategory && isClassificationPoint ? `${filteredCards.length} שאלות` : ""}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-display text-base font-semibold">
-                {selectedCategory ? (
-                  <span className="flex items-center gap-1 flex-wrap justify-end">
-                    {selectedCategory.split(PATH_SEP).map((part, i, arr) => (
-                      <span key={i} className={cn(i === arr.length - 1 ? "" : "text-xs text-muted-foreground font-normal")}>
-                        {i > 0 && <span className="text-muted-foreground mx-1">›</span>}
-                        {part}
-                      </span>
-                    ))}
-                  </span>
-                ) : "בחר קטגוריה"}
-              </h3>
-              <span className="gold-icon-circle h-7 w-7">
-                <BookOpen className="h-3.5 w-3.5" />
-              </span>
-            </div>
-          </div>
-
-          {/* Practice buttons + sort menu */}
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
           {selectedCategory && isClassificationPoint && (
-            <div className="flex gap-2 justify-end items-center flex-wrap">
-              {filteredCards.length > 0 && (
-                <Button size="sm" variant="outline"
-                  onClick={() => { setPickerCategoryName(selectedCategory); setPickerOpen(true); }}
-                  className="border-gold/50 text-xs gap-1 h-7">
-                  <Play className="h-3 w-3" /> תרגול עם בחירה
-                </Button>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" className="border-gold/50 text-xs gap-1 h-7" title="סיווג השאלות">
-                    <ArrowUpDown className="h-3 w-3" />
-                    {SORT_LABELS[sortMode]}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="text-right" style={{ direction: "rtl" }}>
-                  <DropdownMenuLabel>סיווג השאלות</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setSortMode("name")}>
-                    <ArrowDownAZ className="h-3.5 w-3.5 ml-2" /> לפי שם (טבעי — ב. ג. ד.)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortMode("createdNew")}>
-                    <Calendar className="h-3.5 w-3.5 ml-2" /> תאריך — חדש קודם
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortMode("createdOld")}>
-                    <Calendar className="h-3.5 w-3.5 ml-2" /> תאריך — ישן קודם
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortMode("favorites")}>
-                    <Star className="h-3.5 w-3.5 ml-2" /> מועדפים תחילה
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortMode("manual")}>
-                    <Hand className="h-3.5 w-3.5 ml-2" /> ידני (ללא מיון)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
-                    כרטיסים מוצמדים מופיעים תמיד למעלה
-                  </DropdownMenuLabel>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <Button
+              size="sm"
+              onClick={() => openNew()}
+              className="bg-gradient-navy text-primary-foreground h-7 px-2 text-xs gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" /> הוסף שאלה
+            </Button>
           )}
-
-          {/* Empty: no category selected */}
-          {!selectedCategory && (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <FolderTree className="h-14 w-14 mb-3 opacity-20" />
-              <p className="text-sm">בחר קטגוריה מהעץ כדי לראות את השאלות שלה</p>
-            </div>
-          )}
-
-          {/* Intermediate category: navigation only */}
-          {selectedCategory && !isClassificationPoint && (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
-              <FolderTree className="h-14 w-14 opacity-20" />
-              <p className="text-sm">בקטגוריה זו מוצג ניווט בלבד. שאלות מוצגות רק בנקודת הסיווג בפועל.</p>
-            </div>
-          )}
-
-          {/* Empty: classification category has no cards */}
-          {selectedCategory && isClassificationPoint && filteredCards.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
-              <BookOpen className="h-14 w-14 opacity-20" />
-              <p className="text-sm">אין שאלות בקטגוריה זו עדיין</p>
-              <Button size="sm" onClick={openNew}
-                className="bg-gradient-navy text-primary-foreground gap-1">
-                <Plus className="h-3.5 w-3.5" /> הוסף שאלה ראשונה
-              </Button>
-            </div>
-          )}
-
-          {/* Card list */}
-          {isClassificationPoint && filteredCards.length > 0 && (
-            <div className="space-y-2 max-h-[560px] overflow-y-auto">
-              {filteredCards.map((card) => {
-                const deck = getDeck(card.deckId);
-                const diffTag = card.tags.find((t) => t.startsWith("diff:"));
-                const diffLevel = diffTag ? parseInt(diffTag.split(":")[1]) : 0;
-                const nonCatTags = card.tags.filter((t) => !t.startsWith("cat:") && !t.startsWith("sys:") && !t.startsWith("diff:"));
-                const isFav = card.tags.includes(FAV_TAG);
-                const isPinned = card.tags.includes(PIN_TAG);
-                return (
-                  <div
-                    key={card.id}
+          <span className="text-xs text-muted-foreground">
+            {selectedCategory && isClassificationPoint
+              ? `${filteredCards.length} שאלות`
+              : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <h3 className="font-display text-base font-semibold">
+            {selectedCategory ? (
+              <span className="flex items-center gap-1 flex-wrap justify-end">
+                {selectedCategory.split(PATH_SEP).map((part, i, arr) => (
+                  <span
+                    key={i}
                     className={cn(
-                      "rounded-xl border-2 bg-card p-3 space-y-1.5 hover:border-gold/60 transition-colors",
-                      isPinned ? "border-gold/80 bg-gold/5" : "border-gold/30",
+                      i === arr.length - 1
+                        ? ""
+                        : "text-xs text-muted-foreground font-normal",
                     )}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      {/* action buttons */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button size="icon" variant="ghost" className={cn("h-6 w-6", isPinned ? "text-gold" : "hover:text-gold")}
-                          title={isPinned ? "בטל הצמדה" : "הצמד למעלה"}
-                          onClick={() => toggleCardTag(card, PIN_TAG)}>
-                          <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
-                        </Button>
-                        <Button size="icon" variant="ghost" className={cn("h-6 w-6", isFav ? "text-amber-500" : "hover:text-amber-500")}
-                          title={isFav ? "הסר ממועדפים" : "סמן כמועדף"}
-                          onClick={() => toggleCardTag(card, FAV_TAG)}>
-                          <Star className={cn("h-3.5 w-3.5", isFav && "fill-current")} />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-gold"
-                          onClick={() => openEdit(card)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-destructive"
-                          onClick={() => setDeleteTarget(card)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                      <div className="flex items-start gap-2 flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground text-right leading-snug flex-1">
-                          {card.question}
-                        </p>
-                        <Badge variant="outline" className="text-[10px] border-gold/50 shrink-0">
-                          {TYPE_LABEL[card.type] ?? card.type}
-                        </Badge>
-                      </div>
-                    </div>
-                    {/* Difficulty stars */}
-                    <div className="flex items-center gap-0.5" title={diffLevel ? DIFF_TITLES[diffLevel] : "הגדר רמת קושי"}>
-                      {[1, 2, 3, 4, 5].map((lvl) => (
-                        <button
-                          key={lvl}
-                          type="button"
-                          onClick={() => setDifficulty(card, diffLevel === lvl ? 0 : lvl)}
-                          className="text-[13px] leading-none transition-transform hover:scale-125 focus:outline-none"
-                          style={{
-                            color: lvl <= diffLevel ? DIFF_COLORS[diffLevel] : "#ffffff22",
-                            textShadow: lvl <= diffLevel ? `0 0 6px ${DIFF_COLORS[diffLevel]}` : "none",
-                          }}
-                          title={DIFF_TITLES[lvl]}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {nonCatTags.map((t) =>
-                          t === "source:yeshiva" ? (
-                            <span
-                              key={t}
-                              title="yeshiva.org.il"
-                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
-                              style={{
-                                color: "#60b4ff",
-                                boxShadow: "0 0 5px 1px #3b9eff66",
-                                border: "1px solid #3b9eff88",
-                                background: "transparent",
-                              }}
-                            >
-                              y
-                            </span>
-                          ) : t === "source:shemesh" ? (
-                            <span
-                              key={t}
-                              title="שמש בגבעון"
-                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
-                              style={{
-                                color: "#4ade80",
-                                boxShadow: "0 0 5px 1px #22c55e66",
-                                border: "1px solid #22c55e88",
-                                background: "transparent",
-                              }}
-                            >
-                              s
-                            </span>
-                          ) : t === "source:ai" ? (
-                            <span
-                              key={t}
-                              title="נוצר על ידי AI"
-                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
-                              style={{
-                                color: "#f87171",
-                                boxShadow: "0 0 5px 1px #ef444466",
-                                border: "1px solid #ef444488",
-                                background: "transparent",
-                              }}
-                            >
-                              a
-                            </span>
-                          ) : t === "source:custom" ? (
-                            <span
-                              key={t}
-                              title="כרטיס מותאם אישית"
-                              className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
-                              style={{
-                                color: "#fde047",
-                                boxShadow: "0 0 5px 1px #eab30866",
-                                border: "1px solid #eab30888",
-                                background: "transparent",
-                              }}
-                            >
-                              c
-                            </span>
-                          ) : (
-                            <span key={t} className={cn("inline-flex items-center gap-0.5 text-[10px] text-muted-foreground")}>
-                              <Tag className="h-2.5 w-2.5" />{t}
-                            </span>
-                          )
-                        )}
-                      </div>
-                      {deck && (
-                        <span className="text-[10px] text-muted-foreground border border-gold/30 rounded px-1.5 py-0.5">
-                          {deck.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    {i > 0 && (
+                      <span className="text-muted-foreground mx-1">›</span>
+                    )}
+                    {part}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              "בחר קטגוריה"
+            )}
+          </h3>
+          <span className="gold-icon-circle h-7 w-7">
+            <BookOpen className="h-3.5 w-3.5" />
+          </span>
+        </div>
+      </div>
+
+      {/* Practice buttons + sort menu */}
+      {selectedCategory && isClassificationPoint && (
+        <div className="flex gap-2 justify-end items-center flex-wrap">
+          {filteredCards.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setPickerCategoryName(selectedCategory);
+                setPickerOpen(true);
+              }}
+              className="border-gold/50 text-xs gap-1 h-7"
+            >
+              <Play className="h-3 w-3" /> תרגול עם בחירה
+            </Button>
           )}
-        </Card>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-gold/50 text-xs gap-1 h-7"
+                title="סיווג השאלות"
+              >
+                <ArrowUpDown className="h-3 w-3" />
+                {SORT_LABELS[sortMode]}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="text-right"
+              style={{ direction: "rtl" }}
+            >
+              <DropdownMenuLabel>סיווג השאלות</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setSortMode("name")}>
+                <ArrowDownAZ className="h-3.5 w-3.5 ml-2" /> לפי שם (טבעי — ב.
+                ג. ד.)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortMode("createdNew")}>
+                <Calendar className="h-3.5 w-3.5 ml-2" /> תאריך — חדש קודם
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortMode("createdOld")}>
+                <Calendar className="h-3.5 w-3.5 ml-2" /> תאריך — ישן קודם
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortMode("favorites")}>
+                <Star className="h-3.5 w-3.5 ml-2" /> מועדפים תחילה
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortMode("manual")}>
+                <Hand className="h-3.5 w-3.5 ml-2" /> ידני (ללא מיון)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
+                כרטיסים מוצמדים מופיעים תמיד למעלה
+              </DropdownMenuLabel>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+
+      {/* Empty: no category selected */}
+      {!selectedCategory && (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <FolderTree className="h-14 w-14 mb-3 opacity-20" />
+          <p className="text-sm">בחר קטגוריה מהעץ כדי לראות את השאלות שלה</p>
+        </div>
+      )}
+
+      {/* Intermediate category: navigation only */}
+      {selectedCategory && !isClassificationPoint && (
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+          <FolderTree className="h-14 w-14 opacity-20" />
+          <p className="text-sm">
+            בקטגוריה זו מוצג ניווט בלבד. שאלות מוצגות רק בנקודת הסיווג בפועל.
+          </p>
+        </div>
+      )}
+
+      {/* Empty: classification category has no cards */}
+      {selectedCategory &&
+        isClassificationPoint &&
+        filteredCards.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+            <BookOpen className="h-14 w-14 opacity-20" />
+            <p className="text-sm">אין שאלות בקטגוריה זו עדיין</p>
+            <Button
+              size="sm"
+              onClick={() => openNew()}
+              className="bg-gradient-navy text-primary-foreground gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" /> הוסף שאלה ראשונה
+            </Button>
+          </div>
+        )}
+
+      {/* Card list */}
+      {isClassificationPoint && filteredCards.length > 0 && (
+        <div className="space-y-2 max-h-[560px] overflow-y-auto">
+          {filteredCards.map((card) => {
+            const deck = getDeck(card.deckId);
+            const diffTag = card.tags.find((t) => t.startsWith("diff:"));
+            const diffLevel = diffTag ? parseInt(diffTag.split(":")[1]) : 0;
+            const nonCatTags = card.tags.filter(
+              (t) =>
+                !t.startsWith("cat:") &&
+                !t.startsWith("sys:") &&
+                !t.startsWith("diff:"),
+            );
+            const isFav = card.tags.includes(FAV_TAG);
+            const isPinned = card.tags.includes(PIN_TAG);
+            return (
+              <div
+                key={card.id}
+                className={cn(
+                  "rounded-xl border-2 bg-card p-3 space-y-1.5 hover:border-gold/60 transition-colors",
+                  isPinned ? "border-gold/80 bg-gold/5" : "border-gold/30",
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  {/* action buttons */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className={cn(
+                        "h-6 w-6",
+                        isPinned ? "text-gold" : "hover:text-gold",
+                      )}
+                      title={isPinned ? "בטל הצמדה" : "הצמד למעלה"}
+                      onClick={() => toggleCardTag(card, PIN_TAG)}
+                    >
+                      <Pin
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          isPinned && "fill-current",
+                        )}
+                      />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className={cn(
+                        "h-6 w-6",
+                        isFav ? "text-amber-500" : "hover:text-amber-500",
+                      )}
+                      title={isFav ? "הסר ממועדפים" : "סמן כמועדף"}
+                      onClick={() => toggleCardTag(card, FAV_TAG)}
+                    >
+                      <Star
+                        className={cn("h-3.5 w-3.5", isFav && "fill-current")}
+                      />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 hover:text-gold"
+                      onClick={() => openEdit(card)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 hover:text-destructive"
+                      onClick={() => setDeleteTarget(card)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground text-right leading-snug flex-1">
+                      {card.question}
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] border-gold/50 shrink-0"
+                    >
+                      {TYPE_LABEL[card.type] ?? card.type}
+                    </Badge>
+                  </div>
+                </div>
+                {/* Difficulty stars */}
+                <div
+                  className="flex items-center gap-0.5"
+                  title={diffLevel ? DIFF_TITLES[diffLevel] : "הגדר רמת קושי"}
+                >
+                  {[1, 2, 3, 4, 5].map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() =>
+                        setDifficulty(card, diffLevel === lvl ? 0 : lvl)
+                      }
+                      className="text-[13px] leading-none transition-transform hover:scale-125 focus:outline-none"
+                      style={{
+                        color:
+                          lvl <= diffLevel
+                            ? DIFF_COLORS[diffLevel]
+                            : "#ffffff22",
+                        textShadow:
+                          lvl <= diffLevel
+                            ? `0 0 6px ${DIFF_COLORS[diffLevel]}`
+                            : "none",
+                      }}
+                      title={DIFF_TITLES[lvl]}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {nonCatTags.map((t) =>
+                      t === "source:yeshiva" ? (
+                        <span
+                          key={t}
+                          title="yeshiva.org.il"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                          style={{
+                            color: "#60b4ff",
+                            boxShadow: "0 0 5px 1px #3b9eff66",
+                            border: "1px solid #3b9eff88",
+                            background: "transparent",
+                          }}
+                        >
+                          y
+                        </span>
+                      ) : t === "source:shemesh" ? (
+                        <span
+                          key={t}
+                          title="שמש בגבעון"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                          style={{
+                            color: "#4ade80",
+                            boxShadow: "0 0 5px 1px #22c55e66",
+                            border: "1px solid #22c55e88",
+                            background: "transparent",
+                          }}
+                        >
+                          s
+                        </span>
+                      ) : t === "source:ai" ? (
+                        <span
+                          key={t}
+                          title="נוצר על ידי AI"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                          style={{
+                            color: "#f87171",
+                            boxShadow: "0 0 5px 1px #ef444466",
+                            border: "1px solid #ef444488",
+                            background: "transparent",
+                          }}
+                        >
+                          a
+                        </span>
+                      ) : t === "source:custom" ? (
+                        <span
+                          key={t}
+                          title="כרטיס מותאם אישית"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold"
+                          style={{
+                            color: "#fde047",
+                            boxShadow: "0 0 5px 1px #eab30866",
+                            border: "1px solid #eab30888",
+                            background: "transparent",
+                          }}
+                        >
+                          c
+                        </span>
+                      ) : (
+                        <span
+                          key={t}
+                          className={cn(
+                            "inline-flex items-center gap-0.5 text-[10px] text-muted-foreground",
+                          )}
+                        >
+                          <Tag className="h-2.5 w-2.5" />
+                          {t}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                  {deck && (
+                    <span className="text-[10px] text-muted-foreground border border-gold/30 rounded px-1.5 py-0.5">
+                      {deck.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 
   const pinnedCategoriesWidget = (
@@ -608,7 +797,10 @@ function CategoriesPage() {
       {/* Card editor — floating draggable/resizable panel */}
       <DraggableResizablePanel
         open={editorOpen}
-        onClose={() => { setEditorOpen(false); setPrefillCategoryName(null); }}
+        onClose={() => {
+          setEditorOpen(false);
+          setPrefillCategoryName(null);
+        }}
         title={editingCard ? "עריכת שאלה" : "הוספת שאלה"}
       >
         {editorOpen && (
@@ -616,17 +808,27 @@ function CategoriesPage() {
             <CardEditor
               deckId={editingCard?.deckId ?? defaultDeckId}
               editCard={editingCard ?? undefined}
-              prefillCategories={!editingCard && (prefillCategoryName ?? selectedCategory)
-                ? [prefillCategoryName ?? selectedCategory]
-                : undefined}
-              onClose={() => { setEditorOpen(false); setPrefillCategoryName(null); }}
+              prefillCategories={
+                !editingCard && (prefillCategoryName ?? selectedCategory)
+                  ? [prefillCategoryName ?? selectedCategory]
+                  : undefined
+              }
+              onClose={() => {
+                setEditorOpen(false);
+                setPrefillCategoryName(null);
+              }}
             />
           </Suspense>
         )}
       </DraggableResizablePanel>
 
       {/* Delete confirm */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>מחיקת שאלה</AlertDialogTitle>
@@ -636,7 +838,10 @@ function CategoriesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>ביטול</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
               מחק
             </AlertDialogAction>
           </AlertDialogFooter>
