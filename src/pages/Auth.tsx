@@ -61,9 +61,19 @@ export default function Auth() {
 
   const signIn = async () => {
     setBusy(true);
-    // Preload the main app bundle while the auth request is in-flight
     void import("./Index");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    let loginEmail = email.trim();
+    // If user typed a username (no @), look up the matching email
+    if (loginEmail && !loginEmail.includes("@")) {
+      const { data: resolved } = await supabase.rpc("email_for_username", { p_username: loginEmail });
+      if (typeof resolved === "string" && resolved) {
+        loginEmail = resolved;
+      } else {
+        // Fallback: synthetic email convention for username-only accounts
+        loginEmail = `${loginEmail.toLowerCase()}@users.local`;
+      }
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     setBusy(false);
     if (error) return toast.error(error.message);
     persistRemember();
@@ -120,7 +130,7 @@ export default function Auth() {
           </TabsList>
 
           <TabsContent value="signin" className="space-y-3 mt-4">
-            <Input dir="ltr" placeholder="email@example.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input dir="ltr" placeholder="email או שם משתמש" type="text" value={email} onChange={(e) => setEmail(e.target.value)} />
             <PasswordField value={password} onChange={setPassword} show={showPwd} onToggle={() => setShowPwd((v) => !v)} />
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

@@ -446,6 +446,7 @@ export type Database = {
           id: string
           status: string
           updated_at: string
+          username: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -455,6 +456,7 @@ export type Database = {
           id: string
           status?: string
           updated_at?: string
+          username?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -464,6 +466,7 @@ export type Database = {
           id?: string
           status?: string
           updated_at?: string
+          username?: string | null
         }
         Relationships: []
       }
@@ -969,16 +972,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      admin_create_user: {
-        Args: {
-          p_display_name?: string
-          p_email: string
-          p_password: string
-          p_role_name?: string
-          p_status?: string
-        }
-        Returns: string
-      }
+      admin_create_user:
+        | {
+            Args: {
+              p_display_name?: string
+              p_email: string
+              p_password: string
+              p_role_name?: string
+              p_status?: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_display_name?: string
+              p_email: string
+              p_password: string
+              p_role_name?: string
+              p_status?: string
+              p_username?: string
+            }
+            Returns: string
+          }
       admin_delete_user: { Args: { p_user_id: string }; Returns: undefined }
       admin_update_user: {
         Args: {
@@ -989,6 +1004,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      email_for_username: { Args: { p_username: string }; Returns: string }
       exec_sql: { Args: { query: string }; Returns: Json }
       get_bootstrap_snapshot: { Args: never; Returns: Json }
       get_card_forecast: {
@@ -1073,6 +1089,10 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       reorder_user_categories: { Args: { p_ids: string[] }; Returns: undefined }
+      suggest_usernames: {
+        Args: { p_base: string; p_count?: number }
+        Returns: string[]
+      }
     }
     Enums: {
       permission_action: "view" | "create" | "edit" | "delete" | "manage"

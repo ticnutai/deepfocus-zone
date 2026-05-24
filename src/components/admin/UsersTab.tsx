@@ -38,7 +38,10 @@ export function UsersTab() {
   const [busy, setBusy] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"email" | "username">("email");
   const [newEmail, setNewEmail] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<string>("user");
@@ -94,25 +97,48 @@ export function UsersTab() {
   };
 
   const resetAddForm = () => {
-    setNewEmail(""); setNewPassword(""); setNewName(""); setNewRole("user"); setNewStatus("approved");
+    setCreateMode("email");
+    setNewEmail(""); setNewUsername(""); setUsernameSuggestions([]);
+    setNewPassword(""); setNewName(""); setNewRole("user"); setNewStatus("approved");
+  };
+
+  const loadSuggestions = async (base: string) => {
+    const clean = base.trim();
+    if (!clean) { setUsernameSuggestions([]); return; }
+    const { data } = await supabase.rpc("suggest_usernames", { p_base: clean, p_count: 5 });
+    setUsernameSuggestions((data as string[] | null) ?? []);
   };
 
   const createUser = async () => {
-    if (!newEmail.trim() || newPassword.length < 6) {
-      toast.error("דוא\"ל וסיסמה (6+ תווים) נדרשים");
+    if (newPassword.length < 6) {
+      toast.error("סיסמה חייבת להכיל לפחות 6 תווים");
+      return;
+    }
+    if (createMode === "email" && !newEmail.trim()) {
+      toast.error('דוא"ל נדרש');
+      return;
+    }
+    if (createMode === "username" && !newUsername.trim()) {
+      toast.error("שם משתמש נדרש");
       return;
     }
     setBusy(true);
     const { error } = await supabase.rpc("admin_create_user", {
-      p_email: newEmail.trim(),
+      p_email: createMode === "email" ? newEmail.trim() : null,
       p_password: newPassword,
       p_display_name: newName.trim() || null,
       p_role_name: newRole,
       p_status: newStatus,
-    });
+      p_username: createMode === "username" ? newUsername.trim() : null,
+    } as never);
     setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success(`המשתמש ${newEmail} נוצר בהצלחה`);
+    if (error) {
+      if (createMode === "username" && /taken/i.test(error.message)) {
+        await loadSuggestions(newUsername.trim());
+      }
+      return toast.error(error.message);
+    }
+    toast.success(`המשתמש ${createMode === "username" ? newUsername : newEmail} נוצר בהצלחה`);
     setAddOpen(false);
     resetAddForm();
     load();
@@ -184,14 +210,65 @@ export function UsersTab() {
                 <DialogDescription className="text-right">צור חשבון חדש ושייך לתפקיד התחלתי</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={createMode === "email" ? "default" : "outline"}
+                    onClick={() => setCreateMode("email")}
+                    className="flex-1"
+                  >
+                    דוא"ל
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={createMode === "username" ? "default" : "outline"}
+                    onClick={() => setCreateMode("username")}
+                    className="flex-1"
+                  >
+                    שם משתמש בלבד
+                  </Button>
+                </div>
                 <div className="space-y-1">
                   <Label className="text-right block">שם תצוגה</Label>
                   <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="לא חובה" className="text-right" />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-right block">דוא"ל *</Label>
-                  <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" dir="ltr" />
-                </div>
+                {createMode === "email" ? (
+                  <div className="space-y-1">
+                    <Label className="text-right block">דוא"ל *</Label>
+                    <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" dir="ltr" />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-right block">שם משתמש * (אותיות/ספרות/_/. — לפחות 3)</Label>
+                    <Input
+                      value={newUsername}
+                      onChange={(e) => { setNewUsername(e.target.value); setUsernameSuggestions([]); }}
+                      dir="ltr"
+                      placeholder="yossi"
+                    />
+                    {usernameSuggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        <span className="text-xs text-muted-foreground">הצעות:</span>
+                        {usernameSuggestions.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => { setNewUsername(s); setUsernameSuggestions([]); }}
+                            className="text-xs px-2 py-0.5 rounded border border-gold/40 hover:bg-gold/10"
+                            dir="ltr"
+                          >{s}</button>
+                        ))}
+                      </div>
+                    )}
+                    {newUsername.trim() && (
+                      <p className="text-[10px] text-muted-foreground" dir="ltr">
+                        login email will be: {newUsername.trim().toLowerCase()}@users.local
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-right block">סיסמה * (לפחות 6 תווים)</Label>
                   <Input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" dir="ltr" />
