@@ -1,18 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ChevronLeft, ListChecks, GraduationCap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { useStudy } from "@/lib/study/store";
 import { MISHNAYOT_DATA } from "@/lib/study/mishnayotData";
 import { mishnaSefariaUrl, MISHNA_MASECHTA_EN } from "@/lib/study/sefariaExt";
 import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
+import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mishna-learning-state";
 
-interface SavedState { seder?: string; masechta?: string; perek?: number; mishna?: number; }
+type LayoutMode = "split" | "text-only" | "cards-only";
+
+interface SavedState {
+  seder?: string;
+  masechta?: string;
+  perek?: number;
+  mishna?: number;
+  layout?: LayoutMode;
+  splitRatio?: number;
+  splitReversed?: boolean;
+}
 function loadSaved(): SavedState {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { return {}; }
 }
@@ -45,8 +57,23 @@ export function MishnaLearningTab() {
   const [perek, setPerek] = useState<number>(saved.perek ?? 1);
   const [mishna, setMishna] = useState<number>(saved.mishna ?? 1);
   const [studyOpen, setStudyOpen] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "split");
+  const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
+  const [splitReversed, setSplitReversed] = useState<boolean>(!!saved.splitReversed);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
 
-  useEffect(() => { saveSt({ seder: sederName, masechta, perek, mishna }); }, [sederName, masechta, perek, mishna]);
+  useEffect(() => {
+    saveSt({
+      seder: sederName,
+      masechta,
+      perek,
+      mishna,
+      layout: layoutMode,
+      splitRatio,
+      splitReversed,
+    });
+  }, [sederName, masechta, perek, mishna, layoutMode, splitRatio, splitReversed]);
 
   const seder = MISHNAYOT_DATA.find((s) => s.name === sederName);
   const masechtot = seder?.masechtot ?? [];
@@ -66,6 +93,32 @@ export function MishnaLearningTab() {
     if (perek > chapters.length) { setPerek(1); setMishna(1); }
     else if (mishna > mishnayotInPerek) setMishna(1);
   }, [chapters.length, perek, mishna, mishnayotInPerek]);
+
+  const setSplitRatio = (value: number) => {
+    const next = Math.max(20, Math.min(80, Math.round(value)));
+    setSplitRatioState(next);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const onMove = (ev: MouseEvent) => {
+      const rect = splitContainerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+      const ratioFromLeft = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplitRatio(ratioFromLeft);
+    };
+
+    const onUp = () => setIsResizing(false);
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizing]);
 
   const cards = useMemo(() => filterCardsByCategoryChain(
     state.cards,
@@ -91,6 +144,64 @@ export function MishnaLearningTab() {
   const sefariaRef = isSupported
     ? `Mishnah_${MISHNA_MASECHTA_EN[masechta].replace(/\s+/g, "_")}.${perek}.${mishna}`
     : "";
+
+  const renderTextPanel = () => (
+    <div className="min-h-0">
+      {isSupported ? (
+        <SefariaTextViewer
+          sefariaRef={sefariaRef}
+          externalUrl={externalUrl}
+          title={`${masechta} · פרק ${toGematria(perek)} · משנה ${toGematria(mishna)}`}
+          className="h-full"
+          breadcrumbItems={["משנה", masechta, `פרק ${toGematria(perek)}`, `משנה ${toGematria(mishna)}`]}
+          lineLabel="משנה"
+          lineStartIndex={1}
+        />
+      ) : (
+        <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">
+          מסכת לא נתמכת ב-Sefaria
+        </Card>
+      )}
+    </div>
+  );
+
+  const renderCardsPanel = () => (
+    <div className="min-h-0">
+      <Card className="gold-frame p-4 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-1">
+            <ListChecks className="h-4 w-4 text-gold" /> שאלות למשנה זו ({cards.length})
+          </h3>
+          {cards.length > 0 && (
+            <Button onClick={() => setStudyOpen(true)} size="sm" className="bg-gradient-navy text-primary-foreground">
+              <GraduationCap className="h-4 w-4" /> תרגול
+            </Button>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {cards.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-12">
+              אין שאלות משויכות.<br />
+              <span className="text-xs">
+                שייך שאלות לקטגוריית "{masechta} › פרק {toGematria(perek)} › משנה {toGematria(mishna)}".
+              </span>
+            </div>
+          ) : (
+            cards.map((c, i) => (
+              <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">{c.question}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+    </div>
+  );
 
   if (studyOpen && cardIds.length > 0) {
     return <StudySession deckId={null} mode="practice" cardIds={cardIds} onExit={() => setStudyOpen(false)} />;
@@ -128,6 +239,25 @@ export function MishnaLearningTab() {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={layoutMode} onValueChange={(v) => setLayoutMode(v as LayoutMode)}>
+            <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="split">טקסט + שאלות</SelectItem>
+              <SelectItem value="text-only">טקסט בלבד</SelectItem>
+              <SelectItem value="cards-only">שאלות בלבד</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {layoutMode === "split" && (
+            <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-3 py-2">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span>יחס טקסט/שאלות</span>
+                <span>{splitRatio}% / {100 - splitRatio}%</span>
+              </div>
+              <Slider min={20} max={80} step={1} value={[splitRatio]} onValueChange={(v) => setSplitRatio(v[0] ?? 60)} />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2">
@@ -144,59 +274,66 @@ export function MishnaLearningTab() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
-        <div className="min-h-0">
-          {isSupported ? (
-            <SefariaTextViewer
-              sefariaRef={sefariaRef}
-              externalUrl={externalUrl}
-              title={`${masechta} · פרק ${toGematria(perek)} · משנה ${toGematria(mishna)}`}
-              className="h-full"
-              breadcrumbItems={["משנה", masechta, `פרק ${toGematria(perek)}`, `משנה ${toGematria(mishna)}`]}
-              lineLabel="משנה"
-              lineStartIndex={1}
-            />
-          ) : (
-            <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">
-              מסכת לא נתמכת ב-Sefaria
-            </Card>
-          )}
-        </div>
-        <div className="min-h-0">
-          <Card className="gold-frame p-4 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold flex items-center gap-1">
-                <ListChecks className="h-4 w-4 text-gold" /> שאלות למשנה זו ({cards.length})
-              </h3>
-              {cards.length > 0 && (
-                <Button onClick={() => setStudyOpen(true)} size="sm" className="bg-gradient-navy text-primary-foreground">
-                  <GraduationCap className="h-4 w-4" /> תרגול
-                </Button>
-              )}
+      <div style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
+        {layoutMode === "split" && (
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
+              {renderTextPanel()}
+              {renderCardsPanel()}
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {cards.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-12">
-                  אין שאלות משויכות.<br />
-                  <span className="text-xs">
-                    שייך שאלות לקטגוריית "{masechta} › פרק {toGematria(perek)} › משנה {toGematria(mishna)}".
-                  </span>
-                </div>
-              ) : (
-                cards.map((c, i) => (
-                  <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-foreground">{c.question}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))
+
+            <div
+              ref={splitContainerRef}
+              className={cn(
+                "hidden lg:flex h-full min-h-0 relative",
+                splitReversed ? "flex-row" : "flex-row-reverse",
               )}
+            >
+              <div className="h-full min-h-0" style={{ width: `${splitRatio}%` }}>
+                {renderTextPanel()}
+              </div>
+
+              <div className="relative mx-1 w-2 shrink-0 group/divider">
+                <button
+                  type="button"
+                  className="absolute top-2 left-1/2 z-10 -translate-x-1/2 h-7 w-7 rounded-full border border-gold/40 bg-card/90 text-navy shadow-sm backdrop-blur-sm opacity-0 transition-opacity group-hover/divider:opacity-100 hover:opacity-100 hover:bg-gold/10"
+                  title="החלף צדדים"
+                  onClick={() => setSplitReversed((prev) => !prev)}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5 mx-auto" />
+                </button>
+
+                <div
+                  className={cn(
+                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
+                    isResizing && "bg-gold/50",
+                  )}
+                  title="גרור לשינוי יחס"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsResizing(true);
+                  }}
+                />
+              </div>
+
+              <div className="h-full min-h-0" style={{ width: `${100 - splitRatio}%` }}>
+                {renderCardsPanel()}
+              </div>
             </div>
-          </Card>
-        </div>
+          </>
+        )}
+
+        {layoutMode === "text-only" && (
+          <div className="grid grid-cols-1 h-full">
+            {renderTextPanel()}
+          </div>
+        )}
+
+        {layoutMode === "cards-only" && (
+          <div className="grid grid-cols-1 h-full">
+            {renderCardsPanel()}
+          </div>
+        )}
       </div>
     </div>
   );

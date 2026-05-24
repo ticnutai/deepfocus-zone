@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ChevronLeft, ListChecks, GraduationCap } from "lucide-react";
+import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -67,6 +67,7 @@ export function NeviimKetuvimLearningTab() {
   const layoutMode = (state.uiPrefs?.neviimLayoutMode ?? "split") as LayoutMode;
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const isSplitReversed = !!state.uiPrefs?.neviimSplitReversed;
   const splitRatio = Math.max(20, Math.min(80, state.uiPrefs?.neviimSplitRatio ?? (layoutMode === "text-focus" ? 72 : 60)));
 
   useEffect(() => { saveSt({ mode, sefer, perek }); }, [mode, sefer, perek]);
@@ -278,22 +279,39 @@ export function NeviimKetuvimLearningTab() {
               {renderCardsPanel()}
             </div>
 
-            <div ref={splitContainerRef} className="hidden lg:flex h-full min-h-0 flex-row-reverse">
+            <div
+              ref={splitContainerRef}
+              className={cn(
+                "hidden lg:flex h-full min-h-0 relative",
+                isSplitReversed ? "flex-row" : "flex-row-reverse",
+              )}
+            >
               <div className="h-full min-h-0" style={{ width: `${splitRatio}%` }}>
                 {renderTextPanel()}
               </div>
 
-              <div
-                className={cn(
-                  "w-2 mx-1 rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
-                  isResizing && "bg-gold/50",
-                )}
-                title="גרור לשינוי יחס"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setIsResizing(true);
-                }}
-              />
+              <div className="relative mx-1 w-2 shrink-0 group/divider">
+                <button
+                  type="button"
+                  className="absolute top-2 left-1/2 z-10 -translate-x-1/2 h-7 w-7 rounded-full border border-gold/40 bg-card/90 text-navy shadow-sm backdrop-blur-sm opacity-0 transition-opacity group-hover/divider:opacity-100 hover:opacity-100 hover:bg-gold/10"
+                  title="החלף צדדים"
+                  onClick={() => setUiPref("neviimSplitReversed", !isSplitReversed)}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5 mx-auto" />
+                </button>
+
+                <div
+                  className={cn(
+                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
+                    isResizing && "bg-gold/50",
+                  )}
+                  title="גרור לשינוי יחס"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsResizing(true);
+                  }}
+                />
+              </div>
 
               <div className="h-full min-h-0" style={{ width: `${100 - splitRatio}%` }}>
                 {renderCardsPanel()}

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, memo } from "react";
-import { ChevronRight, ChevronLeft, LayoutGrid, Columns2, Rows2, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -19,7 +19,7 @@ import { StudySession } from "./StudySession";
 import { FitToContainer } from "./FitToContainer";
 import { cn } from "@/lib/utils";
 
-type Layout = "split-v" | "split-h" | "gemara" | "cards";
+type Layout = "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
 type SplitSide = "gemara-right" | "gemara-left";
 
@@ -32,6 +32,7 @@ interface SavedState {
   amud?: 1 | 2;
   layout?: Layout;
   splitSide?: SplitSide;
+  splitRatio?: number;
   practiceMode?: PracticeMode;
   practiceScale?: number;
 }
@@ -43,6 +44,14 @@ function saveState(s: SavedState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 
+function normalizeLayout(layout: SavedState["layout"]): Layout {
+  if (layout === "split-v" || layout === "split-h") return "split";
+  if (layout === "gemara") return "text-only";
+  if (layout === "cards") return "cards-only";
+  if (layout === "split" || layout === "text-only" || layout === "cards-only") return layout;
+  return "split";
+}
+
 function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const { state } = useStudy();
   const saved = useMemo(() => loadSaved(), []);
@@ -51,15 +60,59 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [masechta, setMasechta] = useState<string>(saved.masechta ?? "שבת");
   const [daf, setDaf] = useState<number>(saved.daf ?? 2);
   const [amud, setAmud] = useState<1 | 2>(saved.amud ?? 1);
-  const [layout, setLayout] = useState<Layout>(saved.layout ?? (window.innerWidth >= 1024 ? "split-v" : "cards"));
+  const [layout, setLayout] = useState<Layout>(() => {
+    const fallback: Layout = window.innerWidth >= 1024 ? "split" : "cards-only";
+    return normalizeLayout(saved.layout) ?? fallback;
+  });
   const [splitSide, setSplitSide] = useState<SplitSide>(saved.splitSide ?? "gemara-right");
+  const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
   const [studyOpen, setStudyOpen] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
   const [countsReady, setCountsReady] = useState(false);
 
   // שמור בחירה
-  useEffect(() => { saveState({ seder, masechta, daf, amud, layout, splitSide, practiceMode, practiceScale }); }, [seder, masechta, daf, amud, layout, splitSide, practiceMode, practiceScale]);
+  useEffect(() => {
+    saveState({
+      seder,
+      masechta,
+      daf,
+      amud,
+      layout,
+      splitSide,
+      splitRatio,
+      practiceMode,
+      practiceScale,
+    });
+  }, [seder, masechta, daf, amud, layout, splitSide, splitRatio, practiceMode, practiceScale]);
+
+  const setSplitRatio = (value: number) => {
+    const next = Math.max(20, Math.min(80, Math.round(value)));
+    setSplitRatioState(next);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const onMove = (ev: MouseEvent) => {
+      const rect = splitContainerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+      const ratioFromLeft = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplitRatio(ratioFromLeft);
+    };
+
+    const onUp = () => setIsResizing(false);
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizing]);
 
   // איפוס מסכת אם הסדר השתנה ולא תואם
   const masechtos = useMemo(() => SHAS_BAVLI.filter((m) => m.seder === seder), [seder]);
@@ -160,32 +213,24 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           <ToggleGroupItem value="2" className="flex-1">ע&quot;ב {dafCounts.get(daf)?.b ? <span className="text-gold mr-1 text-xs">({dafCounts.get(daf)?.b})</span> : null}</ToggleGroupItem>
         </ToggleGroup>
 
-        {/* פריסה */}
-        <ToggleGroup type="single" value={layout} onValueChange={(v) => v && setLayout(v as Layout)} className="w-full">
-          <ToggleGroupItem value="split-v" title="פיצול אנכי"><Columns2 className="h-4 w-4" /></ToggleGroupItem>
-          <ToggleGroupItem value="split-h" title="פיצול אופקי"><Rows2 className="h-4 w-4" /></ToggleGroupItem>
-          <ToggleGroupItem value="gemara" title="גמרא בלבד"><BookOpen className="h-4 w-4" /></ToggleGroupItem>
-          <ToggleGroupItem value="cards" title="שאלות בלבד"><ListChecks className="h-4 w-4" /></ToggleGroupItem>
-        </ToggleGroup>
+        <Select value={layout} onValueChange={(v) => setLayout(v as Layout)}>
+          <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="split">טקסט + שאלות</SelectItem>
+            <SelectItem value="text-only">טקסט בלבד</SelectItem>
+            <SelectItem value="cards-only">שאלות בלבד</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="w-full border-gold/40"
-          title={
-            splitSide === "gemara-right"
-              ? "החלף צדדים: גמרא לשמאל, שאלות לימין"
-              : "החלף צדדים: גמרא לימין, שאלות לשמאל"
-          }
-          onClick={() =>
-            setSplitSide((prev) =>
-              prev === "gemara-right" ? "gemara-left" : "gemara-right",
-            )
-          }
-        >
-          <ArrowLeftRight className="h-4 w-4" />
-        </Button>
+        {layout === "split" && (
+          <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-3 py-2">
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+              <span>יחס גמרא/שאלות</span>
+              <span>{splitRatio}% / {100 - splitRatio}%</span>
+            </div>
+            <Slider min={20} max={80} step={1} value={[splitRatio]} onValueChange={(v) => setSplitRatio(v[0] ?? 60)} />
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2">
@@ -327,44 +372,78 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Card>
   );
 
-  const showGemara =
-    layout === "split-v" || layout === "split-h" || layout === "gemara";
-  const showCards =
-    layout === "split-v" || layout === "split-h" || layout === "cards";
-
-  const splitPanels =
-    splitSide === "gemara-right"
-      ? [
-          showGemara ? <div key="gemara" className="min-h-0">{gemara}</div> : null,
-          showCards ? (
-            <div key="cards" className="min-h-0">
-              {studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel}
-            </div>
-          ) : null,
-        ]
-      : [
-          showCards ? (
-            <div key="cards" className="min-h-0">
-              {studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel}
-            </div>
-          ) : null,
-          showGemara ? <div key="gemara" className="min-h-0">{gemara}</div> : null,
-        ];
+  const cardsContent = studyOpen && practiceMode === "inline" ? practicePanel : cardsPanel;
+  const firstPanel = splitSide === "gemara-right" ? gemara : cardsContent;
+  const secondPanel = splitSide === "gemara-right" ? cardsContent : gemara;
 
   return (
     <div className="space-y-4" dir="rtl">
       {navigator}
-      <div
-        className={cn(
-          "gap-4",
-          layout === "split-v" && "grid grid-cols-1 lg:grid-cols-2",
-          layout === "split-h" && "grid grid-cols-1 grid-rows-2",
-          layout === "gemara" && "grid grid-cols-1",
-          layout === "cards" && "grid grid-cols-1",
+      <div style={{ height: "calc(100vh - 280px)", minHeight: 500 }}>
+        {layout === "split" && (
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
+              <div className="min-h-0">{firstPanel}</div>
+              <div className="min-h-0">{secondPanel}</div>
+            </div>
+
+            <div
+              ref={splitContainerRef}
+              className="hidden lg:flex h-full min-h-0 relative flex-row-reverse"
+            >
+              <div className="h-full min-h-0" style={{ width: `${splitRatio}%` }}>
+                {firstPanel}
+              </div>
+
+              <div className="relative mx-1 w-2 shrink-0 group/divider">
+                <button
+                  type="button"
+                  className="absolute top-2 left-1/2 z-10 -translate-x-1/2 h-7 w-7 rounded-full border border-gold/40 bg-card/90 text-navy shadow-sm backdrop-blur-sm opacity-0 transition-opacity group-hover/divider:opacity-100 hover:opacity-100 hover:bg-gold/10"
+                  title={
+                    splitSide === "gemara-right"
+                      ? "החלף צדדים: גמרא לשמאל, שאלות לימין"
+                      : "החלף צדדים: גמרא לימין, שאלות לשמאל"
+                  }
+                  onClick={() =>
+                    setSplitSide((prev) =>
+                      prev === "gemara-right" ? "gemara-left" : "gemara-right",
+                    )
+                  }
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5 mx-auto" />
+                </button>
+
+                <div
+                  className={cn(
+                    "w-2 h-full rounded-full bg-gold/20 hover:bg-gold/40 cursor-col-resize transition-colors",
+                    isResizing && "bg-gold/50",
+                  )}
+                  title="גרור לשינוי יחס"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsResizing(true);
+                  }}
+                />
+              </div>
+
+              <div className="h-full min-h-0" style={{ width: `${100 - splitRatio}%` }}>
+                {secondPanel}
+              </div>
+            </div>
+          </>
         )}
-        style={{ height: "calc(100vh - 280px)", minHeight: 500 }}
-      >
-        {splitPanels}
+
+        {layout === "text-only" && (
+          <div className="grid grid-cols-1 h-full">
+            <div className="min-h-0">{gemara}</div>
+          </div>
+        )}
+
+        {layout === "cards-only" && (
+          <div className="grid grid-cols-1 h-full">
+            <div className="min-h-0">{cardsContent}</div>
+          </div>
+        )}
       </div>
     </div>
   );
