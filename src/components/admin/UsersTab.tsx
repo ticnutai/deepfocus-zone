@@ -210,14 +210,65 @@ export function UsersTab() {
                 <DialogDescription className="text-right">צור חשבון חדש ושייך לתפקיד התחלתי</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={createMode === "email" ? "default" : "outline"}
+                    onClick={() => setCreateMode("email")}
+                    className="flex-1"
+                  >
+                    דוא"ל
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={createMode === "username" ? "default" : "outline"}
+                    onClick={() => setCreateMode("username")}
+                    className="flex-1"
+                  >
+                    שם משתמש בלבד
+                  </Button>
+                </div>
                 <div className="space-y-1">
                   <Label className="text-right block">שם תצוגה</Label>
                   <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="לא חובה" className="text-right" />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-right block">דוא"ל *</Label>
-                  <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" dir="ltr" />
-                </div>
+                {createMode === "email" ? (
+                  <div className="space-y-1">
+                    <Label className="text-right block">דוא"ל *</Label>
+                    <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" dir="ltr" />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-right block">שם משתמש * (אותיות/ספרות/_/. — לפחות 3)</Label>
+                    <Input
+                      value={newUsername}
+                      onChange={(e) => { setNewUsername(e.target.value); setUsernameSuggestions([]); }}
+                      dir="ltr"
+                      placeholder="yossi"
+                    />
+                    {usernameSuggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        <span className="text-xs text-muted-foreground">הצעות:</span>
+                        {usernameSuggestions.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => { setNewUsername(s); setUsernameSuggestions([]); }}
+                            className="text-xs px-2 py-0.5 rounded border border-gold/40 hover:bg-gold/10"
+                            dir="ltr"
+                          >{s}</button>
+                        ))}
+                      </div>
+                    )}
+                    {newUsername.trim() && (
+                      <p className="text-[10px] text-muted-foreground" dir="ltr">
+                        login email will be: {newUsername.trim().toLowerCase()}@users.local
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-right block">סיסמה * (לפחות 6 תווים)</Label>
                   <Input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" dir="ltr" />
