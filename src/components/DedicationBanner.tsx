@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { usePermissions } from "@/hooks/usePermissions";
+import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 import {
   Settings as SettingsIcon, Check, X, Type, AlignRight, AlignCenter, AlignLeft,
   Plus, Trash2, Move, GripVertical, Eye, EyeOff,
@@ -321,12 +322,13 @@ export function DedicationBanner() {
     const apply = (v: unknown) => {
       if (!mounted) return;
       if (skipReloadRef.current) { skipReloadRef.current = false; return; }
+      updateSiteSettingCache(KEY, v);
       const norm = normalize(v);
       writeCachedBanner(norm);
       setSettings(norm);
     };
-    supabase.from("site_settings").select("value").eq("key", KEY).maybeSingle()
-      .then(({ data }) => apply(data?.value));
+    void getSiteSettingValue(KEY)
+      .then((value) => apply(value));
     const channel = supabase.channel("site_settings_dedication")
       .on("postgres_changes",
         { event: "*", schema: "public", table: "site_settings", filter: `key=eq.${KEY}` },
@@ -337,6 +339,7 @@ export function DedicationBanner() {
 
   const persist = async (next: Settings, silent = false) => {
     skipReloadRef.current = true;
+    updateSiteSettingCache(KEY, next);
     writeCachedBanner(next);
     setSettings(next);
     const { error } = await supabase.from("site_settings")

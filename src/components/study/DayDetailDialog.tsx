@@ -471,15 +471,19 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                     )}
                     title={row.done ? "הסר סימון" : "סמן כנלמד"}
                   >
-                    <div
-                      className={cn(
-                        "h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0",
-                        row.done
-                          ? "border-emerald-600 bg-emerald-600 text-primary-foreground"
-                          : "border-gold/40"
+                    <div className="h-6 w-6 flex items-center justify-center shrink-0">
+                      {row.done ? (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(255,255,255)] border-[1.5px] border-[rgb(198,154,42)] shadow-sm">
+                          <Check
+                            className="h-3.5 w-3.5 text-[rgb(29,73,135)]"
+                            strokeWidth={2.6}
+                          />
+                        </span>
+                      ) : (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] border-muted-foreground/35 bg-muted/70">
+                          <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.6} />
+                        </span>
                       )}
-                    >
-                      {row.done && <Check className="h-4 w-4" />}
                     </div>
                     <div className="flex-1 text-right min-w-0">
                       <div className={cn("text-sm font-semibold truncate", row.done && "line-through text-muted-foreground")}>{row.unit}</div>
@@ -964,15 +968,21 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                       <div className="flex items-start gap-2 flex-row-reverse">
                         <button
                           onClick={() => isDoneToday ? unmarkShasReviewDone(r.id) : markShasReviewDone(r.id, dateKeyStr!)}
-                          className={cn(
-                            "h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5",
-                            isDoneToday
-                              ? "border-emerald-600 bg-emerald-600 text-primary-foreground"
-                              : "border-gold/40 hover:border-gold",
-                          )}
+                          className="h-6 w-6 flex items-center justify-center shrink-0 mt-0.5"
                           title={isDoneToday ? "בטל סימון ביצוע" : "סמן שביצעתי ביום זה"}
                         >
-                          {isDoneToday && <Check className="h-4 w-4" />}
+                          {isDoneToday ? (
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(255,255,255)] border-[1.5px] border-[rgb(198,154,42)] shadow-sm">
+                              <Check
+                                className="h-3.5 w-3.5 text-[rgb(29,73,135)]"
+                                strokeWidth={2.6}
+                              />
+                            </span>
+                          ) : (
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] border-muted-foreground/35 bg-muted/70">
+                              <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.6} />
+                            </span>
+                          )}
                         </button>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap justify-start">

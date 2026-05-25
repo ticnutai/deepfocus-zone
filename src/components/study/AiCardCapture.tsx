@@ -56,6 +56,8 @@ type Draft = {
   explanation?: string;
 };
 
+const EMPTY_CATEGORY_OPTIONS: { id: string; label: string; name: string }[] = [];
+
 export function AiCardCapture() {
   const { state, addCard, setUiPref } = useStudy();
   const [open, setOpen] = useState(false);
@@ -134,8 +136,9 @@ export function AiCardCapture() {
     }
   };
 
-  const decks = state.decks ?? [];
+  const decks = open ? (state.decks ?? []) : [];
   const categoryOptions = useMemo(() => {
+    if (!open) return EMPTY_CATEGORY_OPTIONS;
     const cats = state.categories ?? [];
     const result: { id: string; label: string; name: string }[] = [];
     const walk = (parentId: string | null, depth: number) => {
@@ -146,7 +149,7 @@ export function AiCardCapture() {
     };
     walk(null, 0);
     return result;
-  }, [state.categories]);
+  }, [open, state.categories]);
 
   const reset = () => {
     setText(""); setImageData(null); setDrafts([]);
@@ -275,6 +278,7 @@ export function AiCardCapture() {
       </button>
 
       <Dialog open={open} onOpenChange={handleClose}>
+        {open ? (
         <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0" dir="rtl">
           {/* Header with gold gradient accent */}
           <div className="bg-gradient-to-l from-gold/15 via-gold/8 to-transparent border-b border-gold/20 px-6 pt-5 pb-4">
@@ -592,6 +596,7 @@ export function AiCardCapture() {
             )}
           </div>
         </DialogContent>
+        ) : null}
       </Dialog>
     </>
   );

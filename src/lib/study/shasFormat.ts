@@ -23,6 +23,65 @@ export function toHebrewNum(n: number): string {
 
 export const amudLetter = (amud: 1 | 2) => (amud === 1 ? "א'" : "ב'");
 
+const SHAS_PREFIX_RE = /^(?:ש["״']?ס\s*בבלי|תלמוד\s*בבלי)\s*[—-]\s*/;
+const SHAS_LONG_RE = /^(?:מסכת\s+)?(.+?)\s+דף\s*([א-ת]+)['׳]?\s+עמ(?:וד)?\s*([אב])['׳]?/;
+const SHAS_SHORT_RE = /^(?:מסכת\s+)?(.+?)\s+([א-ת]+)['׳]?\s+ע["״]?([אב])/;
+const SHAS_SPLIT_RE = /[—–\-:|]/;
+
+const normalizeMasechta = (name: string) =>
+  name
+    .replace(/^(?:מסכת\s+)/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export function abbreviateMasechtaName(name: string, max = 4): string {
+  const trimmed = normalizeMasechta(name);
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, Math.max(2, max - 1))}'`;
+}
+
+function buildCompactShasLabel(masechtaRaw: string, dafRaw: string, amudRaw: string) {
+  const masechta = abbreviateMasechtaName(masechtaRaw);
+  const daf = dafRaw.replace(/["'׳]+$/g, "");
+  const amud = amudRaw === "א" ? "א'" : "ב'";
+  return `מס' ${masechta} דף ${daf}' עמ' ${amud}`;
+}
+
+function extractCompactShasLabel(candidate: string): string | null {
+  const cleaned = candidate.trim();
+  if (!cleaned) return null;
+
+  const long = cleaned.match(SHAS_LONG_RE);
+  if (long) {
+    return buildCompactShasLabel(long[1], long[2], long[3]);
+  }
+
+  const short = cleaned.match(SHAS_SHORT_RE);
+  if (short) {
+    return buildCompactShasLabel(short[1], short[2], short[3]);
+  }
+
+  return null;
+}
+
+export function compactShasCalendarLabel(raw: string): string | null {
+  const cleaned = raw.trim().replace(SHAS_PREFIX_RE, "").trim();
+  const direct = extractCompactShasLabel(cleaned);
+  if (direct) return direct;
+
+  const parts = cleaned
+    .split(SHAS_SPLIT_RE)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    const parsed = extractCompactShasLabel(part);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
 // תיאור מלא של היחידה הנוכחית: "יומא דף ב' עמוד א'" / "יומא דף ב' עמוד א' (חצי ראשון)"
 export function formatShasPosition(
   masechta: string,

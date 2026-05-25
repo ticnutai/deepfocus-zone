@@ -94,8 +94,12 @@ type WidgetLayoutCacheRecord = {
   updatedAt: number;
 };
 
+let openDbInFlight: Promise<IDBDatabase> | null = null;
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (openDbInFlight) return openDbInFlight;
+
+  openDbInFlight = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     let settled = false;
     const timer = globalThis.setTimeout(() => {
@@ -146,7 +150,11 @@ function openDb(): Promise<IDBDatabase> {
     req.onsuccess = () => finishSuccess(req.result);
     req.onerror = () => finishError(req.error ?? new Error("indexedDB.open error"));
     req.onblocked = () => finishError(new Error("indexedDB.open blocked"));
+  }).finally(() => {
+    openDbInFlight = null;
   });
+
+  return openDbInFlight;
 }
 
 type UiPrefsCacheRecord = {

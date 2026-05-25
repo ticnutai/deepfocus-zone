@@ -205,11 +205,26 @@ const notify = () => {
   listeners.forEach((l) => l());
 };
 
+let notifyTransitionScheduled = false;
+const requestStoreNotify = () => {
+  if (notifyTransitionScheduled) return;
+  notifyTransitionScheduled = true;
+  const flush = () => {
+    notifyTransitionScheduled = false;
+    startTransition(notify);
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => flush());
+    return;
+  }
+  window.setTimeout(() => flush(), 0);
+};
+
 const markCloudSyncJobs = (count: number) => {
   const next = Math.max(0, count);
   if (next === cloudSyncPendingJobs) return; // nothing changed, skip render
   cloudSyncPendingJobs = next;
-  notify();
+  requestStoreNotify();
 };
 
 const clearLegacyBrowserCachesForUser = async (userId: string) => {
@@ -1264,7 +1279,7 @@ async function fetchAllPages<T>(
  * IDB is saved after EVERY batch so that a mid-load refresh always resumes from
  * the last saved batch rather than restarting from scratch.
  */
-async function runPhase2CardBackfill(userId: string, notifyFn: () => void) {
+async function runPhase2CardBackfill(userId: string) {
   if (phase2BackfillInFlight) return;
   if (!phase2BackfillNeeded) return;
   // Already have all cards in memory — skip (common on second visit after IDB hydration).
@@ -1307,7 +1322,7 @@ async function runPhase2CardBackfill(userId: string, notifyFn: () => void) {
       if (newCards.length > 0) {
         memState = { ...memState, cards: [...memState.cards, ...newCards] };
         // Notify React so the category counts update visibly after each batch.
-        startTransition(notifyFn);
+        requestStoreNotify();
         // Save IDB incrementally: if the user refreshes mid-backfill the next visit
         // resumes from the cards we've already loaded, not from scratch.
         if (phase2BackfillUserId === userId) {
@@ -1322,7 +1337,7 @@ async function runPhase2CardBackfill(userId: string, notifyFn: () => void) {
       offset += CONCURRENCY * PAGE;
     }
     // Final React notification and authoritative IDB write.
-    startTransition(notifyFn);
+    requestStoreNotify();
     if (phase2BackfillUserId === userId) {
       await saveStudyStateCache(userId, memState);
     }
@@ -1965,7 +1980,7 @@ export function useStudy() {
                     if (typeof mergedFull.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedFull.uiPrefs.syncEnabled);
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
                     performance.mark("pashash:notify:bg-gap-refresh");
-                    startTransition(notify);
+                    requestStoreNotify();
                     performance.measure("pashash:react-render:bg-gap-refresh", "pashash:notify:bg-gap-refresh");
                     window.setTimeout(() => {
                       void saveStudyStateCache(uid, mergedFull);
@@ -1973,7 +1988,7 @@ export function useStudy() {
                     const now = Date.now();
                     localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(now));
                     localStorage.setItem(LAST_FULL_SYNC_AT_KEY(uid), String(now));
-                    void runPhase2CardBackfill(uid, notify);
+                    void runPhase2CardBackfill(uid);
                     return;
                   }
                   const localWlCacheDelta = readWidgetLayoutCache(uid);
@@ -1986,7 +2001,7 @@ export function useStudy() {
                   if (changed) {
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));
                     performance.mark("pashash:notify:bg-delta");
-                    startTransition(notify);
+                    requestStoreNotify();
                     performance.measure("pashash:react-render:bg-delta", "pashash:notify:bg-delta");
                     // Persist in background; do not block interaction thread on IDB write.
                     window.setTimeout(() => {
@@ -1995,7 +2010,7 @@ export function useStudy() {
                   }
                   localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(Date.now()));
                   // Phase 2 still runs only if it's still pending (rare on cached visits).
-                  void runPhase2CardBackfill(uid, notify);
+                  void runPhase2CardBackfill(uid);
                 } else {
                   const cloudBg = await loadAll(uid);
                   if (cancelled) return;
@@ -2007,7 +2022,7 @@ export function useStudy() {
                   if (typeof mergedBg.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(mergedBg.uiPrefs.syncEnabled);
                   await new Promise<void>((resolve) => setTimeout(resolve, 0));
                   performance.mark("pashash:notify:bg-refresh");
-                  startTransition(notify);
+                  requestStoreNotify();
                   performance.measure("pashash:react-render:bg-refresh", "pashash:notify:bg-refresh");
                   // Persist in background; avoid a long task right after refresh render.
                   window.setTimeout(() => {
@@ -2016,7 +2031,7 @@ export function useStudy() {
                   const now = Date.now();
                   localStorage.setItem(LAST_CLOUD_BOOTSTRAP_AT_KEY(uid), String(now));
                   localStorage.setItem(LAST_FULL_SYNC_AT_KEY(uid), String(now));
-                  void runPhase2CardBackfill(uid, notify);
+                  void runPhase2CardBackfill(uid);
                 }
               } catch (e) {
                 console.error("[load:bg_refresh]", e);
@@ -2094,7 +2109,7 @@ export function useStudy() {
         }
 
         // Phase 2: silently backfill unreviewed cards in the background.
-        void runPhase2CardBackfill(uid, notify);
+        void runPhase2CardBackfill(uid);
 
         perf.log("store:hydrate.done", "hydrate pipeline completed", "store", hydrateTraceId);
       } finally {
@@ -2276,7 +2291,7 @@ export function useStudy() {
     loadingCategoryParents.add(key);
     // Notify only on idle->busy transition to avoid transition storms during rapid navigation.
     if (!hadInFlightBefore) {
-      startTransition(notify);
+      requestStoreNotify();
     }
     try {
       const startedAt = performance.now();
@@ -2332,8 +2347,8 @@ export function useStudy() {
         loadingCategoryParents.delete(key);
         // Notify only when queue becomes empty (busy->idle), coalescing multiple child loads.
         if (loadingCategoryParents.size === 0) {
-          // Defer React render to a new macrotask; startTransition lets React yield mid-render.
-          setTimeout(() => startTransition(notify), 0);
+          // Coalesced transition notification reduces bursty updates when many child loads finish together.
+          requestStoreNotify();
         }
       }
     }

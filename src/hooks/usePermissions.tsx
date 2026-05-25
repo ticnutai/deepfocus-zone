@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -44,27 +44,58 @@ function writeCachedPerms(uid: string, perms: PermSet): void {
   try { localStorage.setItem(LS_PERMS_KEY(uid), JSON.stringify(perms)); } catch { /* ignore */ }
 }
 
-async function fetchPerms(userId: string): Promise<PermSet> {
+function runWhenBrowserIdle(fn: () => void, timeout = 2000): void {
+  const ric = (window as typeof window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+  }).requestIdleCallback;
+  if (typeof ric === "function") {
+    ric(() => fn(), { timeout });
+    return;
+  }
+  window.setTimeout(fn, 0);
+}
+
+async function fetchUserRoles(userId: string): Promise<{ isAdmin: boolean; roles: { id: string; name: string }[]; roleIds: string[] }> {
   const { data: ur } = await supabase
     .from("user_roles")
     .select("role_id, app_roles(id,name)")
     .eq("user_id", userId);
+
   const urRows = (ur ?? []) as unknown as UserRoleRow[];
-  const roleIds = urRows.map((r) => r.role_id);
+  const roleIds = urRows.map((r) => r.role_id).filter((id): id is string => !!id);
   const roles = urRows.map((r) => ({ id: r.app_roles?.id, name: r.app_roles?.name })).filter((r) => r.id) as { id: string; name: string }[];
   const isAdmin = roles.some((r) => r.name === "admin");
+  return { isAdmin, roles, roleIds };
+}
+
+async function fetchRoleMatrix(roleIds: string[]): Promise<Record<string, boolean>> {
   const matrix: Record<string, boolean> = {};
-  if (roleIds.length) {
-    const { data: rp } = await supabase
-      .from("role_permissions")
-      .select("module, action, allowed")
-      .in("role_id", roleIds);
-    ((rp ?? []) as unknown as RolePermRow[]).forEach((row) => {
-      const key = `${row.module}:${row.action}`;
-      if (row.allowed) matrix[key] = true;
-    });
+  if (!roleIds.length) return matrix;
+  const { data: rp } = await supabase
+    .from("role_permissions")
+    .select("module, action, allowed")
+    .in("role_id", roleIds);
+  ((rp ?? []) as unknown as RolePermRow[]).forEach((row) => {
+    const key = `${row.module}:${row.action}`;
+    if (row.allowed) matrix[key] = true;
+  });
+  return matrix;
+}
+
+async function fetchPerms(userId: string, opts?: { deferMatrix?: boolean; seedMatrix?: Record<string, boolean> }): Promise<PermSet> {
+  const rolesData = await fetchUserRoles(userId);
+  if (rolesData.isAdmin || !rolesData.roleIds.length) {
+    return { isAdmin: rolesData.isAdmin, matrix: {}, roles: rolesData.roles };
   }
-  return { isAdmin, matrix, roles };
+  if (opts?.deferMatrix) {
+    return {
+      isAdmin: false,
+      roles: rolesData.roles,
+      matrix: opts.seedMatrix ?? {},
+    };
+  }
+  const matrix = await fetchRoleMatrix(rolesData.roleIds);
+  return { isAdmin: false, matrix, roles: rolesData.roles };
 }
 
 /** Mount once (inside AuthProvider) — all usePermissions() calls share a single fetch. */
@@ -77,30 +108,59 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   // where user object reference changes but user.id stays the same.
   const userId = user?.id ?? null;
 
+  const matrixRefreshInFlight = useRef<string | null>(null);
+
   const load = useCallback(async (forceNetwork = false) => {
     if (!userId) { setPerms(empty); setLoading(false); return; }
 
+    const cached = forceNetwork ? null : readCachedPerms(userId);
+
     // Serve stale immediately so the page renders without waiting for network.
-    if (!forceNetwork) {
-      const cached = readCachedPerms(userId);
-      if (cached) {
-        setPerms(cached);
-        setLoading(false);
-        // Revalidate in background — don't block render.
-        void (async () => {
-          const fresh = await fetchPerms(userId);
-          setPerms(fresh);
-          writeCachedPerms(userId, fresh);
-        })();
-        return;
-      }
+    if (cached) {
+      setPerms(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
     }
 
-    setLoading(true);
-    const fresh = await fetchPerms(userId);
-    setPerms(fresh);
+    const seedMatrix = cached?.matrix ?? {};
+    const base = await fetchPerms(userId, { deferMatrix: !forceNetwork, seedMatrix });
+    setPerms(base);
     setLoading(false);
-    writeCachedPerms(userId, fresh);
+    writeCachedPerms(userId, base);
+
+    if (base.isAdmin) return;
+
+    const roleKey = `${userId}:${base.roles.map((r) => r.id).sort().join(",")}`;
+    if (matrixRefreshInFlight.current === roleKey) return;
+    matrixRefreshInFlight.current = roleKey;
+
+    const refreshMatrix = async () => {
+      try {
+        const latest = await fetchUserRoles(userId);
+        if (latest.isAdmin || !latest.roleIds.length) {
+          const next: PermSet = { isAdmin: latest.isAdmin, roles: latest.roles, matrix: {} };
+          setPerms(next);
+          writeCachedPerms(userId, next);
+          return;
+        }
+        const matrix = await fetchRoleMatrix(latest.roleIds);
+        const next: PermSet = { isAdmin: false, roles: latest.roles, matrix };
+        setPerms(next);
+        writeCachedPerms(userId, next);
+      } finally {
+        matrixRefreshInFlight.current = null;
+      }
+    };
+
+    if (forceNetwork) {
+      await refreshMatrix();
+      return;
+    }
+
+    runWhenBrowserIdle(() => {
+      void refreshMatrix();
+    });
   }, [userId]);
 
   useEffect(() => { void load(); }, [load]);

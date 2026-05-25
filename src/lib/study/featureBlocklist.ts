@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 
 export interface FeatureBlocklist {
   sections: string[]; // sidebar section ids globally blocked
@@ -44,16 +45,13 @@ export async function loadFeatureBlocklist(opts?: { force?: boolean }): Promise<
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
-    const { data } = await supabase
-      .from("site_settings")
-      .select("value")
-      .eq("key", KEY)
-      .maybeSingle();
-    const v = (data?.value ?? EMPTY) as Partial<FeatureBlocklist>;
+    const value = await getSiteSettingValue(KEY, { force });
+    const v = (value ?? EMPTY) as Partial<FeatureBlocklist>;
     const norm: FeatureBlocklist = {
       sections: Array.isArray(v.sections) ? v.sections : [],
       widgets: (v.widgets && typeof v.widgets === "object" && !Array.isArray(v.widgets)) ? v.widgets as Record<string, string[]> : {},
     };
+    updateSiteSettingCache(KEY, norm);
     emit(norm);
     return norm;
   })().finally(() => {
@@ -68,6 +66,7 @@ export async function saveFeatureBlocklist(value: FeatureBlocklist): Promise<voi
     [{ key: KEY, value: value as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
+  updateSiteSettingCache(KEY, value);
   emit(value);
 }
 
