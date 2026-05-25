@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
 import {
+  useStudy,
   getCurrentStudyCardsCount,
   getLastCloudSyncAt,
   getLastFullSyncAt,
@@ -70,9 +72,11 @@ function Row({ label, value, hint, tone }: { label: string; value: React.ReactNo
 
 export default function SyncDiagnostics() {
   const { user } = useAuth();
+  const { requestCloudSyncNow } = useStudy();
   const uid = user?.id ?? null;
   const [, force] = useState(0);
   const [syncOn, setSyncOn] = useState<boolean>(() => isSyncEnabled());
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
 
   useEffect(() => subscribeSyncEnabled(setSyncOn), []);
   useEffect(() => {
@@ -100,6 +104,36 @@ export default function SyncDiagnostics() {
   const isVeryStale = lastFull > 0 && ageFull > ttl;
   const tooOld = lastSync > 0 && ageSync > AUTO_RESYNC_THRESHOLD_MS;
   const autoResyncWillFire = syncOn && (tooOld || mismatch || isVeryStale);
+
+  const handleManualSyncNow = useCallback(async () => {
+    if (isSyncingNow) return;
+    setIsSyncingNow(true);
+    try {
+      const result = await requestCloudSyncNow("sync-diagnostics");
+      if (result?.ok) {
+        toast({
+          title: "הסנכרון הושלם",
+          description: "הנתונים מול הענן עודכנו בהצלחה.",
+        });
+      } else {
+        toast({
+          title: "הסנכרון הושלם חלקית",
+          description: `נשארו ${result?.pendingAfter ?? 0} פעולות בתור לנסיון חוזר.`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "שגיאה לא ידועה";
+      toast({
+        title: "סנכרון ידני נכשל",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncingNow(false);
+      force((n) => n + 1);
+    }
+  }, [isSyncingNow, requestCloudSyncNow]);
 
   return (
     <div dir="rtl" className="container max-w-2xl py-6 space-y-4">
@@ -177,9 +211,9 @@ export default function SyncDiagnostics() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={() => window.location.reload()} size="sm" variant="outline">
-          <RefreshCw className="h-4 w-4 ml-1" />
-          רענן עכשיו
+        <Button onClick={handleManualSyncNow} size="sm" variant="outline" disabled={isSyncingNow}>
+          <RefreshCw className={`h-4 w-4 ml-1 ${isSyncingNow ? "animate-spin" : ""}`} />
+          {isSyncingNow ? "מסנכרן..." : "סנכרן עכשיו"}
         </Button>
       </div>
     </div>
