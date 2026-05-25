@@ -7,14 +7,31 @@ export interface FeatureBlocklist {
   widgets: Record<string, string[]>; // tabId -> blocked widget ids
 }
 
+export interface FeatureBlocklistProfile {
+  id: string;
+  name: string;
+  blocklist: FeatureBlocklist;
+  updatedAt: number;
+}
+
+export interface RoleBlocklistAssignment {
+  id: string;
+  roleId: string;
+  profileId: string;
+}
+
 const EMPTY: FeatureBlocklist = { sections: [], widgets: {} };
 const KEY = "feature_blocklist";
+const PROFILES_KEY = "feature_blocklist_profiles_v1";
+const ROLE_ASSIGNMENTS_KEY = "feature_blocklist_role_assignments_v1";
 const CACHE_KEY = "cache:feature-blocklist";
 const REFRESH_TTL_MS = 2 * 60 * 1000;
 
 let cached: FeatureBlocklist | null = null;
 let lastLoadedAt = 0;
 let inFlight: Promise<FeatureBlocklist> | null = null;
+let profilesCache: FeatureBlocklistProfile[] | null = null;
+let roleAssignmentsCache: RoleBlocklistAssignment[] | null = null;
 const listeners = new Set<(b: FeatureBlocklist) => void>();
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
@@ -68,6 +85,84 @@ export async function saveFeatureBlocklist(value: FeatureBlocklist): Promise<voi
   );
   updateSiteSettingCache(KEY, value);
   emit(value);
+}
+
+const normalizeBlocklist = (value: unknown): FeatureBlocklist => {
+  const v = (value ?? EMPTY) as Partial<FeatureBlocklist>;
+  return {
+    sections: Array.isArray(v.sections) ? v.sections : [],
+    widgets: (v.widgets && typeof v.widgets === "object" && !Array.isArray(v.widgets)) ? v.widgets as Record<string, string[]> : {},
+  };
+};
+
+const normalizeProfiles = (value: unknown): FeatureBlocklistProfile[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const raw = item as Partial<FeatureBlocklistProfile> & { blocklist?: unknown };
+      return {
+        id: typeof raw.id === "string" ? raw.id : crypto.randomUUID(),
+        name: typeof raw.name === "string" ? raw.name : "ללא שם",
+        blocklist: normalizeBlocklist(raw.blocklist),
+        updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
+      };
+    });
+};
+
+const normalizeRoleAssignments = (value: unknown): RoleBlocklistAssignment[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const raw = item as Partial<RoleBlocklistAssignment>;
+      return {
+        id: typeof raw.id === "string" ? raw.id : crypto.randomUUID(),
+        roleId: typeof raw.roleId === "string" ? raw.roleId : "",
+        profileId: typeof raw.profileId === "string" ? raw.profileId : "",
+      };
+    })
+    .filter((row) => row.roleId && row.profileId);
+};
+
+export async function loadFeatureBlocklistProfiles(opts?: { force?: boolean }): Promise<FeatureBlocklistProfile[]> {
+  const force = !!opts?.force;
+  if (!force && profilesCache) return profilesCache;
+  const value = await getSiteSettingValue(PROFILES_KEY, { force });
+  const rows = normalizeProfiles(value);
+  profilesCache = rows;
+  updateSiteSettingCache(PROFILES_KEY, rows);
+  return rows;
+}
+
+export async function saveFeatureBlocklistProfiles(value: FeatureBlocklistProfile[]): Promise<void> {
+  const normalized = normalizeProfiles(value);
+  await supabase.from("site_settings").upsert(
+    [{ key: PROFILES_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    { onConflict: "key" },
+  );
+  profilesCache = normalized;
+  updateSiteSettingCache(PROFILES_KEY, normalized);
+}
+
+export async function loadRoleBlocklistAssignments(opts?: { force?: boolean }): Promise<RoleBlocklistAssignment[]> {
+  const force = !!opts?.force;
+  if (!force && roleAssignmentsCache) return roleAssignmentsCache;
+  const value = await getSiteSettingValue(ROLE_ASSIGNMENTS_KEY, { force });
+  const rows = normalizeRoleAssignments(value);
+  roleAssignmentsCache = rows;
+  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY, rows);
+  return rows;
+}
+
+export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignment[]): Promise<void> {
+  const normalized = normalizeRoleAssignments(value);
+  await supabase.from("site_settings").upsert(
+    [{ key: ROLE_ASSIGNMENTS_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    { onConflict: "key" },
+  );
+  roleAssignmentsCache = normalized;
+  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY, normalized);
 }
 
 export function useFeatureBlocklist(): FeatureBlocklist {

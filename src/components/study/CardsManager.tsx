@@ -180,10 +180,65 @@ function buildShasHierarchyChips(card: Pick<StudyCardType, "masechta" | "daf" | 
   return chips;
 }
 
+function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [booting, setBooting] = useState(false);
+
+  useEffect(() => {
+    console.debug("[DECK-CREATE] state", { open, booting });
+  }, [open, booting]);
+
+  useEffect(() => {
+    if (open) setBooting(false);
+  }, [open]);
+
+  const openDialog = () => {
+    console.debug("[DECK-CREATE] openDialog:buttonClick");
+    setBooting(true);
+    window.setTimeout(() => setOpen(true), 0);
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        onClick={openDialog}
+        className="bg-gradient-navy text-primary-foreground rounded-xl flex-1 gap-2"
+        title="הוסף מערכת חדשה"
+      >
+        <Plus className="h-4 w-4" />
+        מערכת חדשה
+      </Button>
+
+      <Dialog open={booting && !open} onOpenChange={(o) => { if (!o) setBooting(false); }} modal={false}>
+        <DialogContent showOverlay={false} trapFocus={false} disableOutsidePointerEvents={false} className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right">טוען מערכת חדשה...</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground text-right">מכין את חלון הסיווג</div>
+        </DialogContent>
+      </Dialog>
+
+      {open && (
+        <DeckCreateDialog
+          open={open}
+          onOpenChange={(next) => {
+            console.debug("[DECK-CREATE] onOpenChange", { next });
+            setOpen(next);
+          }}
+          onCreated={(id) => {
+            onCreated(id);
+            toast({ title: "המערכת נוספה" });
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function CardsManager() {
   const { state, addDeck, deleteDeck, deleteCard, moveCardToDeck, addCardToDeck, setCardCategories, setDeckCategories, duplicateCard, moveCategory, reorderCategories, duplicateCategoryUnder, setUiPref, setWidgetLayout } = useStudy();
   const [activeDeckId, setActiveDeckId] = useState<string | null>(state.decks[0]?.id ?? null);
-  const [deckCreateOpen, setDeckCreateOpen] = useState(false);
   const [deckEditOpen, setDeckEditOpen] = useState(false);
   const [deckEditingId, setDeckEditingId] = useState<string | null>(null);
 
@@ -768,15 +823,7 @@ function CardsManager() {
               </div>
 
               <div className="flex gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setDeckCreateOpen(true)}
-                  className="bg-gradient-navy text-primary-foreground rounded-xl flex-1 gap-2"
-                  title="הוסף מערכת חדשה"
-                >
-                  <Plus className="h-4 w-4" />
-                  מערכת חדשה
-                </Button>
+                <DeckCreateLauncher onCreated={(id) => { setActiveDeckId(id); }} />
               </div>
 
               {activeDeck && (
@@ -807,11 +854,6 @@ function CardsManager() {
                   </Button>
                 </div>
               )}
-              <DeckCreateDialog
-                open={deckCreateOpen}
-                onOpenChange={setDeckCreateOpen}
-                onCreated={(id) => { setActiveDeckId(id); toast({ title: "המערכת נוספה" }); }}
-              />
               <DeckEditDialog
                 open={deckEditOpen}
                 onOpenChange={(o) => { setDeckEditOpen(o); if (!o) setDeckEditingId(null); }}

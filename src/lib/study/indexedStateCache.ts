@@ -24,7 +24,7 @@ export type SyncJob = {
 export type PendingDelete = {
   id: string;            // queue row id
   userId: string;
-  table: "categories";   // currently only categories support tombstones
+  table: "categories" | "decks" | "cards";
   rowId: string;         // the row being deleted
   deletedAt: number;     // when the user pressed delete (epoch ms)
   attempts: number;

@@ -28,6 +28,7 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
@@ -518,6 +519,17 @@ const Index = () => {
 
     let cancelled = false;
     (async () => {
+      const assignedProfile = await resolveRoleLayoutProfile(guestProfile.roleId).catch(() => null);
+      if (cancelled) return;
+
+      if (assignedProfile) {
+        if (Array.isArray(assignedProfile.sidebarConfig)) saveSidebarConfig(assignedProfile.sidebarConfig);
+        if (assignedProfile.widgetLayout && typeof assignedProfile.widgetLayout === "object") {
+          saveWidgetLayout(assignedProfile.widgetLayout);
+        }
+        return;
+      }
+
       const { data } = await supabase
         .from("role_layout_defaults")
         .select("sidebar_config,widget_layout")

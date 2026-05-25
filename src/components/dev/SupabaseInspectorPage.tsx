@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { StudyState } from "@/lib/study/types";
+import type { StudyState, Card as StudyCard, Deck as StudyDeck, Category as StudyCategory } from "@/lib/study/types";
 import {
   RefreshCw,
   RotateCcw,
@@ -27,12 +27,15 @@ import {
   ArrowUp,
   ArrowDown,
   Monitor,
+  ArrowLeftRight,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { isSyncEnabled, setSyncEnabled, subscribeSyncEnabled } from "@/lib/study/syncControl";
 import { useStudy } from "@/lib/study/store";
 import { getIndexedMonitorSnapshot, clearAllIndexedStudyStorage, clearStudyStateCache, saveStudyStateCache, enqueueFullSyncJob, loadStudyStateCache, getOrCreateDeviceId, type IndexedMonitorSnapshot } from "@/lib/study/indexedStateCache";
 import { mergePartialIntoState } from "@/lib/study/backupSelection";
+import { defaultSrs } from "@/lib/study/srs";
 import { BackupTreeDialog } from "@/components/dev/BackupTreeDialog";
 import { Progress } from "@/components/ui/progress";
 
@@ -418,6 +421,228 @@ type DirectionalSyncSnapshot = {
   };
 };
 
+type CompareTableName = "cards" | "decks" | "categories";
+type CompareSide = "idb" | "supabase";
+
+type CompareCardRow = {
+  id: string;
+  deckId: string | null;
+  type: string;
+  question: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+};
+
+type CompareSimpleRow = {
+  id: string;
+  name: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+};
+
+type CompareTableSnapshot<T extends { id: string }> = {
+  rows: T[];
+  count: number;
+  maxUpdatedAt: string | null;
+  maxCreatedAt: string | null;
+};
+
+type CompareTableDiff = {
+  onlyInIdb: string[];
+  onlyInSupabase: string[];
+};
+
+type CompareSnapshot = {
+  scannedAt: string;
+  idb: {
+    cards: CompareTableSnapshot<CompareCardRow>;
+    decks: CompareTableSnapshot<CompareSimpleRow>;
+    categories: CompareTableSnapshot<CompareSimpleRow>;
+  };
+  supabase: {
+    cards: CompareTableSnapshot<CompareCardRow>;
+    decks: CompareTableSnapshot<CompareSimpleRow>;
+    categories: CompareTableSnapshot<CompareSimpleRow>;
+  };
+  diff: Record<CompareTableName, CompareTableDiff>;
+};
+
+const COMPARE_VISIBLE_LIMIT = 100;
+
+function toIsoFromMs(ms?: number | null): string | null {
+  if (!ms || !Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
+function newestIso<T extends { updatedAt: string | null; createdAt: string | null }>(rows: T[], field: "updatedAt" | "createdAt"): string | null {
+  let best: string | null = null;
+  for (const r of rows) {
+    const v = r[field];
+    if (!v) continue;
+    best = maxIso(best, v);
+  }
+  return best;
+}
+
+function buildDiff<T extends { id: string }>(idbRows: T[], supabaseRows: T[]): CompareTableDiff {
+  const idbIds = new Set(idbRows.map((r) => r.id));
+  const sbIds = new Set(supabaseRows.map((r) => r.id));
+  const onlyInIdb: string[] = [];
+  const onlyInSupabase: string[] = [];
+  idbIds.forEach((id) => { if (!sbIds.has(id)) onlyInIdb.push(id); });
+  sbIds.forEach((id) => { if (!idbIds.has(id)) onlyInSupabase.push(id); });
+  return { onlyInIdb, onlyInSupabase };
+}
+
+function pickTopByUpdated(rows: CompareCardRow[], n = COMPARE_VISIBLE_LIMIT): CompareCardRow[] {
+  return [...rows]
+    .sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() - new Date(a.updatedAt ?? a.createdAt ?? 0).getTime())
+    .slice(0, n);
+}
+
+function countBy<T>(rows: T[], keyOf: (row: T) => string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const key = keyOf(r) || "—";
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
+}
+
+function compactText(value: string | null | undefined, maxLen = 64): string {
+  if (!value) return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen)}…`;
+}
+
+function compareRowLabel(table: CompareTableName, row: CompareCardRow | CompareSimpleRow | undefined): string {
+  if (!row) return "";
+  if (table === "cards") {
+    return compactText((row as CompareCardRow).question, 80);
+  }
+  return compactText((row as CompareSimpleRow).name, 80);
+}
+
+function compareSelectionKey(table: CompareTableName, side: CompareSide, id: string): string {
+  return `${table}:${side}:${id}`;
+}
+
+function toMs(iso: string | null | undefined): number {
+  if (!iso) return Date.now();
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : Date.now();
+}
+
+function mergeById<T extends { id: string }>(base: T[], incoming: T[]): T[] {
+  const map = new Map(base.map((item) => [item.id, item]));
+  for (const item of incoming) map.set(item.id, item);
+  return Array.from(map.values());
+}
+
+function cardToSupabaseRow(c: StudyCard, userId: string) {
+  const cAny = c as StudyCard & {
+    answer?: string;
+    options?: string[];
+    correctIndices?: number[];
+    correct?: boolean;
+    explanation?: string;
+  };
+  return {
+    id: c.id,
+    user_id: userId,
+    deck_id: c.deckId,
+    type: c.type,
+    question: c.question,
+    updated_at: new Date(c.updatedAt ?? c.createdAt).toISOString(),
+    answer: cAny.answer ?? null,
+    options: cAny.options ?? null,
+    correct_indices: cAny.correctIndices ?? null,
+    correct_boolean: c.type === "boolean" ? (cAny.correct ?? false) : null,
+    explanation: cAny.explanation ?? null,
+    tags: c.tags,
+    srs: c.srs,
+    stats: c.stats,
+    masechta: c.masechta ?? null,
+    daf: c.daf ?? null,
+    amud: c.amud ?? null,
+  };
+}
+
+function cardFromSupabaseRow(row: {
+  id: string;
+  deck_id: string | null;
+  type: string;
+  question: string;
+  answer: string | null;
+  options: unknown;
+  correct_indices: unknown;
+  correct_boolean: boolean | null;
+  explanation: string | null;
+  tags: unknown;
+  srs: unknown;
+  stats: unknown;
+  masechta: string | null;
+  daf: number | null;
+  amud: number | null;
+  created_at: string;
+  updated_at: string | null;
+}): StudyCard {
+  const base = {
+    id: row.id,
+    deckId: row.deck_id ?? null,
+    type: row.type,
+    question: row.question,
+    tags: (row.tags as string[] | null) ?? [],
+    createdAt: toMs(row.created_at),
+    updatedAt: toMs(row.updated_at ?? row.created_at),
+    srs: (row.srs as StudyCard["srs"] | null) ?? defaultSrs(),
+    stats: (row.stats as StudyCard["stats"] | null) ?? { totalReviews: 0, correct: 0, incorrect: 0 },
+    masechta: row.masechta ?? null,
+    daf: row.daf ?? null,
+    amud: (row.amud as 1 | 2 | null | undefined) ?? null,
+  };
+
+  if (row.type === "flashcard") {
+    return { ...base, type: "flashcard", answer: row.answer ?? "" };
+  }
+  if (row.type === "multiple") {
+    const opts = (row.options as string[] | null) ?? [];
+    const correctIdxs = (row.correct_indices as number[] | null) ?? [];
+    const answer = row.answer ?? (correctIdxs.length > 0 && opts.length > 0 ? (opts[correctIdxs[0]] ?? undefined) : undefined);
+    return { ...base, type: "combo", answer, options: opts, correctIndices: correctIdxs, explanation: row.explanation ?? undefined };
+  }
+  if (row.type === "boolean") {
+    return { ...base, type: "boolean", correct: !!row.correct_boolean, explanation: row.explanation ?? undefined };
+  }
+  return {
+    ...base,
+    type: "combo",
+    answer: row.answer ?? undefined,
+    options: (row.options as string[] | null) ?? undefined,
+    correctIndices: (row.correct_indices as number[] | null) ?? undefined,
+    explanation: row.explanation ?? undefined,
+  };
+}
+
+function buildSimpleSnapshot(rows: CompareSimpleRow[]): CompareTableSnapshot<CompareSimpleRow> {
+  return {
+    rows,
+    count: rows.length,
+    maxUpdatedAt: newestIso(rows, "updatedAt"),
+    maxCreatedAt: newestIso(rows, "createdAt"),
+  };
+}
+
+function buildCardsSnapshot(rows: CompareCardRow[]): CompareTableSnapshot<CompareCardRow> {
+  return {
+    rows,
+    count: rows.length,
+    maxUpdatedAt: newestIso(rows, "updatedAt"),
+    maxCreatedAt: newestIso(rows, "createdAt"),
+  };
+}
+
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("he-IL", {
@@ -588,6 +813,11 @@ export function SupabaseInspectorPage() {
   );
   const [idbSnap, setIdbSnap] = useState<IndexedMonitorSnapshot | null>(null);
   const [idbDatabases, setIdbDatabases] = useState<Array<{ name: string; version: number }>>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareActionLoading, setCompareActionLoading] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [compareSnapshot, setCompareSnapshot] = useState<CompareSnapshot | null>(null);
+  const [compareSelection, setCompareSelection] = useState<Record<string, true>>({});
 
   // ── Table sort/filter state ────────────────────────────────────────────
   type SortField = "name" | "label" | "count" | "lastSync" | "syncField";
@@ -910,6 +1140,374 @@ export function SupabaseInspectorPage() {
     }
   }, [user?.id, refreshIdbList]);
 
+  const loadCompare = useCallback(async () => {
+    if (!user?.id) {
+      setCompareSnapshot(null);
+      setCompareError("יש להתחבר כדי להשוות נתונים");
+      return;
+    }
+
+    setCompareLoading(true);
+    setCompareError(null);
+    try {
+      const localState = await loadStudyStateCache(user.id);
+      const idbCards: CompareCardRow[] = (localState?.cards ?? []).map((c) => ({
+        id: c.id,
+        deckId: c.deckId ?? null,
+        type: c.type,
+        question: c.question ?? null,
+        updatedAt: toIsoFromMs(c.updatedAt ?? c.createdAt),
+        createdAt: toIsoFromMs(c.createdAt),
+      }));
+      const idbDecks: CompareSimpleRow[] = (localState?.decks ?? []).map((d) => ({
+        id: d.id,
+        name: d.name ?? null,
+        updatedAt: toIsoFromMs(d.updatedAt ?? d.createdAt),
+        createdAt: toIsoFromMs(d.createdAt),
+      }));
+      const idbCategories: CompareSimpleRow[] = (localState?.categories ?? []).map((c) => ({
+        id: c.id,
+        name: c.name ?? null,
+        updatedAt: toIsoFromMs(c.updatedAt ?? c.createdAt),
+        createdAt: toIsoFromMs(c.createdAt),
+      }));
+
+      const fetchAllRows = async (table: "cards" | "decks" | "categories", selectFields: string) => {
+        const PAGE = 1000;
+        let from = 0;
+        const all: Array<Record<string, unknown>> = [];
+        while (true) {
+          let query = supabase
+            .from(table)
+            .select(selectFields)
+            .eq("user_id", user.id)
+            // Compare only active rows so soft-deleted tombstones don't skew counts.
+            .is("deleted_at", null)
+            // Stable ordering across pages: prevents skip/duplicate rows when many
+            // records share the same updated_at timestamp.
+            .order("updated_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, from + PAGE - 1);
+          const { data, error } = await query;
+          if (error) throw new Error(`${table}: ${error.message}`);
+          const page = (data ?? []) as Array<Record<string, unknown>>;
+          all.push(...page);
+          if (page.length < PAGE) break;
+          from += PAGE;
+        }
+        return all;
+      };
+
+      const [cardsData, decksData, categoriesData] = await Promise.all([
+        fetchAllRows("cards", "id, deck_id, type, question, updated_at, created_at"),
+        fetchAllRows("decks", "id, name, updated_at, created_at"),
+        fetchAllRows("categories", "id, name, updated_at, created_at"),
+      ]);
+
+      const sbCards: CompareCardRow[] = cardsData.map((r) => ({
+        id: String(r.id ?? ""),
+        deckId: (r.deck_id as string | null | undefined) ?? null,
+        type: (r.type as string | null | undefined) ?? "unknown",
+        question: (r.question as string | null | undefined) ?? null,
+        updatedAt: (r.updated_at as string | null | undefined) ?? null,
+        createdAt: (r.created_at as string | null | undefined) ?? null,
+      }));
+      const sbDecks: CompareSimpleRow[] = decksData.map((r) => ({
+        id: String(r.id ?? ""),
+        name: (r.name as string | null | undefined) ?? null,
+        updatedAt: (r.updated_at as string | null | undefined) ?? null,
+        createdAt: (r.created_at as string | null | undefined) ?? null,
+      }));
+      const sbCategories: CompareSimpleRow[] = categoriesData.map((r) => ({
+        id: String(r.id ?? ""),
+        name: (r.name as string | null | undefined) ?? null,
+        updatedAt: (r.updated_at as string | null | undefined) ?? null,
+        createdAt: (r.created_at as string | null | undefined) ?? null,
+      }));
+
+      setCompareSnapshot({
+        scannedAt: new Date().toISOString(),
+        idb: {
+          cards: buildCardsSnapshot(idbCards),
+          decks: buildSimpleSnapshot(idbDecks),
+          categories: buildSimpleSnapshot(idbCategories),
+        },
+        supabase: {
+          cards: buildCardsSnapshot(sbCards),
+          decks: buildSimpleSnapshot(sbDecks),
+          categories: buildSimpleSnapshot(sbCategories),
+        },
+        diff: {
+          cards: buildDiff(idbCards, sbCards),
+          decks: buildDiff(idbDecks, sbDecks),
+          categories: buildDiff(idbCategories, sbCategories),
+        },
+      });
+      setCompareSelection({});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "שגיאה בהשוואה";
+      setCompareError(msg);
+    } finally {
+      setCompareLoading(false);
+    }
+  }, [user?.id]);
+
+  const getSelectedCompareIds = useCallback((table: CompareTableName, side: CompareSide): string[] => {
+    const prefix = `${table}:${side}:`;
+    return Object.keys(compareSelection)
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length));
+  }, [compareSelection]);
+
+  const toggleCompareSelection = useCallback((table: CompareTableName, side: CompareSide, id: string) => {
+    const key = compareSelectionKey(table, side, id);
+    setCompareSelection((prev) => {
+      if (prev[key]) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: true };
+    });
+  }, []);
+
+  const setBulkCompareSelection = useCallback((table: CompareTableName, side: CompareSide, ids: string[], selected: boolean) => {
+    setCompareSelection((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        const key = compareSelectionKey(table, side, id);
+        if (selected) next[key] = true;
+        else delete next[key];
+      }
+      return next;
+    });
+  }, []);
+
+  const deleteSelectedFromIdb = useCallback(async (table: CompareTableName, side: CompareSide) => {
+    if (!user?.id) {
+      toast.error("יש להתחבר כדי למחוק נתונים");
+      return;
+    }
+    const ids = getSelectedCompareIds(table, side);
+    if (ids.length === 0) {
+      toast.error("לא נבחרו פריטים למחיקה");
+      return;
+    }
+    if (!window.confirm(`למחוק ${ids.length} פריטים מתוך ${table} מ-IndexedDB?`)) return;
+
+    const state = await loadStudyStateCache(user.id);
+    if (!state) {
+      toast.error("לא נמצאו נתונים ב-IndexedDB");
+      return;
+    }
+
+    const idSet = new Set(ids);
+    const nextState: StudyState = { ...state };
+
+    if (table === "cards") {
+      nextState.cards = (state.cards ?? []).filter((row) => !idSet.has(row.id));
+      nextState.logs = (state.logs ?? []).filter((row) => !idSet.has(row.cardId));
+      if (state.cardDecks) nextState.cardDecks = state.cardDecks.filter((row) => !idSet.has(row.cardId));
+    } else if (table === "decks") {
+      nextState.decks = (state.decks ?? []).filter((row) => !idSet.has(row.id));
+      nextState.cards = (state.cards ?? []).map((row) => (idSet.has(row.deckId ?? "") ? { ...row, deckId: null } : row));
+      if (state.cardDecks) nextState.cardDecks = state.cardDecks.filter((row) => !idSet.has(row.deckId));
+      if (state.goals) nextState.goals = state.goals.map((goal) => (idSet.has(goal.deckId ?? "") ? { ...goal, deckId: null } : goal));
+    } else {
+      if (state.categories) nextState.categories = state.categories.filter((row) => !idSet.has(row.id));
+      nextState.decks = (state.decks ?? []).map((row) => ({
+        ...row,
+        categoryIds: (row.categoryIds ?? []).filter((catId) => !idSet.has(catId)),
+      }));
+      if (nextState.categories) {
+        nextState.categories = nextState.categories.map((row) => (idSet.has(row.parentId ?? "") ? { ...row, parentId: null } : row));
+      }
+    }
+
+    await saveStudyStateCache(user.id, nextState);
+    setBulkCompareSelection(table, side, ids, false);
+    toast.success(`נמחקו ${ids.length} פריטים מ-IndexedDB (${table})`);
+    await loadCompare();
+  }, [getSelectedCompareIds, loadCompare, setBulkCompareSelection, user?.id]);
+
+  const deleteSelectedFromSupabase = useCallback(async (table: CompareTableName, side: CompareSide) => {
+    if (!user?.id) {
+      toast.error("יש להתחבר כדי למחוק נתונים");
+      return;
+    }
+    const ids = getSelectedCompareIds(table, side);
+    if (ids.length === 0) {
+      toast.error("לא נבחרו פריטים למחיקה");
+      return;
+    }
+    if (!window.confirm(`למחוק ${ids.length} פריטים מתוך ${table} מ-Supabase?`)) return;
+
+    let errorMsg: string | null = null;
+    if (table === "cards") {
+      const { error } = await supabase.from("cards").delete().eq("user_id", user.id).in("id", ids);
+      if (error) errorMsg = error.message;
+    } else if (table === "decks") {
+      const { error } = await supabase.from("decks").delete().eq("user_id", user.id).in("id", ids);
+      if (error) errorMsg = error.message;
+    } else {
+      const { error } = await supabase.from("categories").delete().eq("user_id", user.id).in("id", ids);
+      if (error) errorMsg = error.message;
+    }
+
+    if (errorMsg) {
+      toast.error(`מחיקה מ-Supabase נכשלה: ${errorMsg}`);
+      return;
+    }
+
+    setBulkCompareSelection(table, side, ids, false);
+    toast.success(`נמחקו ${ids.length} פריטים מ-Supabase (${table})`);
+    await loadCompare();
+  }, [getSelectedCompareIds, loadCompare, setBulkCompareSelection, user?.id]);
+
+  const copySelectedIdbToSupabase = useCallback(async (table: CompareTableName) => {
+    if (!user?.id) {
+      toast.error("יש להתחבר כדי להעתיק נתונים");
+      return;
+    }
+    const ids = getSelectedCompareIds(table, "idb");
+    if (ids.length === 0) {
+      toast.error("לא נבחרו פריטים להעתקה");
+      return;
+    }
+    if (!window.confirm(`להעתיק ${ids.length} פריטים מ-IndexedDB ל-Supabase בטבלת ${table}?`)) return;
+
+    setCompareActionLoading(true);
+    try {
+      const state = await loadStudyStateCache(user.id);
+      if (!state) {
+        toast.error("לא נמצאו נתונים ב-IndexedDB");
+        return;
+      }
+      const idSet = new Set(ids);
+
+      if (table === "cards") {
+        const rows = (state.cards ?? []).filter((card) => idSet.has(card.id)).map((card) => cardToSupabaseRow(card, user.id));
+        if (rows.length > 0) {
+          const { error } = await supabase.from("cards").upsert(rows as never[], { onConflict: "id" });
+          if (error) throw new Error(error.message);
+        }
+      } else if (table === "decks") {
+        const rows = (state.decks ?? []).filter((deck) => idSet.has(deck.id)).map((deck) => ({
+          id: deck.id,
+          user_id: user.id,
+          name: deck.name,
+          description: deck.description ?? null,
+          color: deck.color,
+          created_at: new Date(deck.createdAt).toISOString(),
+          updated_at: new Date(deck.updatedAt ?? deck.createdAt).toISOString(),
+          category_ids: deck.categoryIds ?? [],
+          include_sub_categories: deck.includeSubCategories !== false,
+        }));
+        if (rows.length > 0) {
+          const { error } = await supabase.from("decks").upsert(rows as never[], { onConflict: "id" });
+          if (error) throw new Error(error.message);
+        }
+      } else {
+        const rows = (state.categories ?? []).filter((cat) => idSet.has(cat.id)).map((cat) => ({
+          id: cat.id,
+          user_id: user.id,
+          name: cat.name,
+          parent_id: cat.parentId,
+          color: cat.color ?? null,
+          created_at: new Date(cat.createdAt).toISOString(),
+          updated_at: new Date(cat.updatedAt ?? cat.createdAt).toISOString(),
+          sort_order: cat.sortOrder ?? 0,
+          deleted_at: null,
+        }));
+        if (rows.length > 0) {
+          const { error } = await supabase.from("categories").upsert(rows as never[], { onConflict: "id" });
+          if (error) throw new Error(error.message);
+        }
+      }
+
+      setBulkCompareSelection(table, "idb", ids, false);
+      toast.success(`הועתקו ${ids.length} פריטים מ-IDB ל-Supabase (${table})`);
+      await loadCompare();
+    } catch (err) {
+      toast.error(`העתקה ל-Supabase נכשלה: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCompareActionLoading(false);
+    }
+  }, [getSelectedCompareIds, loadCompare, setBulkCompareSelection, user?.id]);
+
+  const copySelectedSupabaseToIdb = useCallback(async (table: CompareTableName) => {
+    if (!user?.id) {
+      toast.error("יש להתחבר כדי להעתיק נתונים");
+      return;
+    }
+    const ids = getSelectedCompareIds(table, "supabase");
+    if (ids.length === 0) {
+      toast.error("לא נבחרו פריטים להעתקה");
+      return;
+    }
+    if (!window.confirm(`להעתיק ${ids.length} פריטים מ-Supabase ל-IndexedDB בטבלת ${table}?`)) return;
+
+    setCompareActionLoading(true);
+    try {
+      const state = (await loadStudyStateCache(user.id)) ?? ({ decks: [], cards: [], logs: [] } as StudyState);
+
+      if (table === "cards") {
+        const { data, error } = await supabase
+          .from("cards")
+          .select("id, deck_id, type, question, answer, options, correct_indices, correct_boolean, explanation, tags, srs, stats, masechta, daf, amud, created_at, updated_at")
+          .eq("user_id", user.id)
+          .in("id", ids);
+        if (error) throw new Error(error.message);
+        const incoming = (data ?? []).map((row) => cardFromSupabaseRow(row));
+        state.cards = mergeById(state.cards ?? [], incoming);
+      } else if (table === "decks") {
+        const { data, error } = await supabase
+          .from("decks")
+          .select("id, name, description, color, category_ids, include_sub_categories, created_at, updated_at")
+          .eq("user_id", user.id)
+          .in("id", ids);
+        if (error) throw new Error(error.message);
+        const incoming: StudyDeck[] = (data ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          description: row.description ?? undefined,
+          color: row.color,
+          categoryIds: Array.isArray(row.category_ids) ? (row.category_ids as string[]) : [],
+          includeSubCategories: row.include_sub_categories !== false,
+          createdAt: toMs(row.created_at),
+          updatedAt: toMs(row.updated_at ?? row.created_at),
+        }));
+        state.decks = mergeById(state.decks ?? [], incoming);
+      } else {
+        const { data, error } = await supabase
+          .from("categories")
+          .select("id, name, parent_id, color, sort_order, created_at, updated_at")
+          .eq("user_id", user.id)
+          .in("id", ids);
+        if (error) throw new Error(error.message);
+        const incoming: StudyCategory[] = (data ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          parentId: row.parent_id,
+          color: row.color ?? undefined,
+          sortOrder: row.sort_order ?? 0,
+          createdAt: toMs(row.created_at),
+          updatedAt: toMs(row.updated_at ?? row.created_at),
+        }));
+        state.categories = mergeById(state.categories ?? [], incoming);
+      }
+
+      await saveStudyStateCache(user.id, state);
+      setBulkCompareSelection(table, "supabase", ids, false);
+      toast.success(`הועתקו ${ids.length} פריטים מ-Supabase ל-IDB (${table})`);
+      await loadCompare();
+    } catch (err) {
+      toast.error(`העתקה ל-IndexedDB נכשלה: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCompareActionLoading(false);
+    }
+  }, [getSelectedCompareIds, loadCompare, setBulkCompareSelection, user?.id]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -1033,6 +1631,15 @@ export function SupabaseInspectorPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (activeTab !== "compare") return;
+    void loadCompare();
+    const timer = window.setInterval(() => {
+      void loadCompare();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, loadCompare]);
+
   const totalRows = stats.reduce((acc, s) => acc + (s.count ?? 0), 0);
   const activeTables = stats.filter((s) => s.count != null && s.count > 0).length;
   const errorTables = stats.filter((s) => s.error).length;
@@ -1109,6 +1716,9 @@ export function SupabaseInspectorPage() {
             </TabsTrigger>
             <TabsTrigger value="sync" className="flex-1 gap-1.5 rounded-xl px-2 py-2 text-sm data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <Activity className="h-4 w-4" /><span>סנכרון</span>
+            </TabsTrigger>
+            <TabsTrigger value="compare" className="flex-1 gap-1.5 rounded-xl px-2 py-2 text-sm data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <ArrowLeftRight className="h-4 w-4" /><span>השוואה</span>
             </TabsTrigger>
           </TabsList>
         </Card>
@@ -1673,6 +2283,409 @@ export function SupabaseInspectorPage() {
               </div>
             )}
           </Card>
+        </TabsContent>
+
+        <TabsContent value="compare" className="mt-4 space-y-3">
+          <Card className="gold-frame p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <Button onClick={() => void loadCompare()} disabled={compareLoading} variant="outline" size="sm" className="gap-1.5">
+                <RefreshCw className={`h-4 w-4 ${compareLoading ? "animate-spin" : ""}`} />
+                רענן השוואה
+              </Button>
+              <h4 className="font-semibold text-right flex items-center gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                השוואת IndexedDB מול Supabase
+              </h4>
+            </div>
+            <p className="text-xs text-muted-foreground text-right">
+              טבלאות: cards, decks, categories · הצגה עד {COMPARE_VISIBLE_LIMIT} מזהים בכל צד · רענון אוטומטי רק כשהטאב פתוח.
+            </p>
+            <p className="text-xs text-muted-foreground text-right mt-1">
+              זמן סריקה אחרון: {fmtDate(compareSnapshot?.scannedAt ?? null)}
+            </p>
+            {compareError && (
+              <div className="mt-3 text-sm text-destructive text-right">{compareError}</div>
+            )}
+          </Card>
+
+          {!compareSnapshot ? (
+            <Card className="gold-frame p-4 text-sm text-muted-foreground text-right">
+              {compareLoading ? "מבצע השוואה…" : "אין נתוני השוואה להצגה"}
+            </Card>
+          ) : (
+            <>
+              {(["cards", "decks", "categories"] as CompareTableName[]).map((table) => {
+                const idbTable = compareSnapshot.idb[table];
+                const sbTable = compareSnapshot.supabase[table];
+                const diff = compareSnapshot.diff[table];
+                const idbById = new Map(idbTable.rows.map((row) => [row.id, row]));
+                const sbById = new Map(sbTable.rows.map((row) => [row.id, row]));
+                const visibleIdbOnly = diff.onlyInIdb.slice(0, COMPARE_VISIBLE_LIMIT);
+                const visibleSbOnly = diff.onlyInSupabase.slice(0, COMPARE_VISIBLE_LIMIT);
+                const deckRowsForDisplay = table === "decks"
+                  ? (() => {
+                      const idbDeckRows = compareSnapshot.idb.decks.rows;
+                      const sbDeckRows = compareSnapshot.supabase.decks.rows;
+                      const idbCards = compareSnapshot.idb.cards.rows;
+                      const sbCards = compareSnapshot.supabase.cards.rows;
+                      const byDeckIdb = countBy(idbCards, (r) => r.deckId ?? "(ללא deck)");
+                      const byDeckSb = countBy(sbCards, (r) => r.deckId ?? "(ללא deck)");
+                      const nameByDeckId = new Map<string, string>();
+                      for (const d of idbDeckRows) if (d.name) nameByDeckId.set(d.id, d.name);
+                      for (const d of sbDeckRows) if (d.name) nameByDeckId.set(d.id, d.name);
+                      const allDeckIds = Array.from(new Set([
+                        ...idbDeckRows.map((d) => d.id),
+                        ...sbDeckRows.map((d) => d.id),
+                      ])).sort((a, b) => {
+                        const byCount = (byDeckSb[b] ?? 0) + (byDeckIdb[b] ?? 0) - (byDeckSb[a] ?? 0) - (byDeckIdb[a] ?? 0);
+                        if (byCount !== 0) return byCount;
+                        return (nameByDeckId.get(a) ?? a).localeCompare(nameByDeckId.get(b) ?? b, "he");
+                      });
+                      return allDeckIds.map((deckId) => {
+                        const idbCount = byDeckIdb[deckId] ?? 0;
+                        const sbCount = byDeckSb[deckId] ?? 0;
+                        return {
+                          id: deckId,
+                          name: nameByDeckId.get(deckId) ?? "ללא שם",
+                          idbCount,
+                          sbCount,
+                          hasGap: idbCount !== sbCount,
+                        };
+                      });
+                    })()
+                  : [];
+                const idbSelectableIds = table === "decks" ? deckRowsForDisplay.map((r) => r.id) : visibleIdbOnly;
+                const sbSelectableIds = table === "decks" ? deckRowsForDisplay.map((r) => r.id) : visibleSbOnly;
+                const idbSelectedCount = idbSelectableIds.filter((id) => !!compareSelection[compareSelectionKey(table, "idb", id)]).length;
+                const sbSelectedCount = sbSelectableIds.filter((id) => !!compareSelection[compareSelectionKey(table, "supabase", id)]).length;
+                const deckGapCount = deckRowsForDisplay.filter((r) => r.hasGap).length;
+                return (
+                  <Card key={table} className="gold-frame p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{table}</span>
+                      <h4 className="font-semibold text-right">השוואת {table}</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <Row label="IDB: כמות" value={idbTable.count.toLocaleString()} />
+                      <Row label="Supabase: כמות" value={sbTable.count.toLocaleString()} />
+                      <Row label="IDB: עדכון אחרון" value={fmtDate(idbTable.maxUpdatedAt)} />
+                      <Row label="Supabase: עדכון אחרון" value={fmtDate(sbTable.maxUpdatedAt)} />
+                      <Row label="IDB: יצירה אחרונה" value={fmtDate(idbTable.maxCreatedAt)} />
+                      <Row label="Supabase: יצירה אחרונה" value={fmtDate(sbTable.maxCreatedAt)} />
+                    </div>
+
+                    <div className={`grid grid-cols-1 ${table === "decks" ? "lg:grid-cols-[1fr_auto_1fr]" : "lg:grid-cols-2"} gap-3`}>
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => setBulkCompareSelection(table, "idb", idbSelectableIds, true)}
+                              disabled={idbSelectableIds.length === 0}
+                            >
+                              בחר הכל
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => setBulkCompareSelection(table, "idb", visibleIdbOnly, false)}
+                              disabled={idbSelectedCount === 0}
+                            >
+                              נקה
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs gap-1"
+                              onClick={() => void copySelectedIdbToSupabase(table)}
+                              disabled={idbSelectedCount === 0 || compareActionLoading}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              העתק ל-SB ({idbSelectedCount})
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => void deleteSelectedFromIdb(table, "idb")}
+                              disabled={idbSelectedCount === 0 || compareActionLoading}
+                            >
+                              מחק מ-IDB ({idbSelectedCount})
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => void deleteSelectedFromSupabase(table, "idb")}
+                              disabled={idbSelectedCount === 0 || compareActionLoading}
+                            >
+                              מחק מ-SB ({idbSelectedCount})
+                            </Button>
+                          </div>
+                          <div className="text-sm font-semibold text-right">קיים רק ב-IndexedDB ({diff.onlyInIdb.length})</div>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {table === "decks" ? deckRowsForDisplay.map((row) => (
+                            <button
+                              key={`idb-${row.id}`}
+                              type="button"
+                              onClick={() => toggleCompareSelection(table, "idb", row.id)}
+                              className={`w-full rounded border px-2 py-1.5 text-xs text-right space-y-0.5 transition ${compareSelection[compareSelectionKey(table, "idb", row.id)] ? "border-amber-500 bg-amber-500/20" : "border-amber-500/20 hover:border-amber-500/50"}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[11px] ${row.hasGap ? "text-amber-700" : "text-emerald-700"}`}>{row.hasGap ? "יש פער" : "תואם"}</span>
+                                <span className="font-mono">IDB {row.idbCount} | SB {row.sbCount}</span>
+                              </div>
+                              <div className="truncate">{row.name}</div>
+                              <div className="font-mono text-[10px] text-muted-foreground truncate">{row.id}</div>
+                            </button>
+                          )) : visibleIdbOnly.map((id) => {
+                            const selected = !!compareSelection[compareSelectionKey(table, "idb", id)];
+                            return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => toggleCompareSelection(table, "idb", id)}
+                              className={`w-full rounded border px-2 py-1.5 text-xs text-right space-y-0.5 transition ${selected ? "border-amber-500 bg-amber-500/20" : "border-transparent hover:border-amber-500/40"}`}
+                            >
+                              <div className="font-mono">{id}</div>
+                              {compareRowLabel(table, idbById.get(id)) && (
+                                <div className="text-[11px] text-muted-foreground">{compareRowLabel(table, idbById.get(id))}</div>
+                              )}
+                            </button>
+                          )})}
+                          {table === "decks"
+                            ? deckRowsForDisplay.length === 0 && <div className="text-xs text-muted-foreground text-right">אין דאקס להצגה</div>
+                            : diff.onlyInIdb.length === 0 && <div className="text-xs text-muted-foreground text-right">אין</div>}
+                        </div>
+                      </div>
+
+                      {table === "decks" && (
+                        <div className="hidden lg:flex items-center justify-center px-1">
+                          <div className={`rounded-full border px-3 py-1 text-xs font-semibold ${deckGapCount > 0 ? "border-amber-500/50 bg-amber-500/10 text-amber-700" : "border-emerald-500/50 bg-emerald-500/10 text-emerald-700"}`}>
+                            {deckGapCount > 0 ? `יש הפרש (${deckGapCount})` : "אין הפרש"}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => setBulkCompareSelection(table, "supabase", sbSelectableIds, true)}
+                              disabled={sbSelectableIds.length === 0}
+                            >
+                              בחר הכל
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => setBulkCompareSelection(table, "supabase", visibleSbOnly, false)}
+                              disabled={sbSelectedCount === 0}
+                            >
+                              נקה
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs gap-1"
+                              onClick={() => void copySelectedSupabaseToIdb(table)}
+                              disabled={sbSelectedCount === 0 || compareActionLoading}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              העתק ל-IDB ({sbSelectedCount})
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => void deleteSelectedFromIdb(table, "supabase")}
+                              disabled={sbSelectedCount === 0 || compareActionLoading}
+                            >
+                              מחק מ-IDB ({sbSelectedCount})
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => void deleteSelectedFromSupabase(table, "supabase")}
+                              disabled={sbSelectedCount === 0 || compareActionLoading}
+                            >
+                              מחק מ-SB ({sbSelectedCount})
+                            </Button>
+                          </div>
+                          <div className="text-sm font-semibold text-right">קיים רק ב-Supabase ({diff.onlyInSupabase.length})</div>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {table === "decks" ? deckRowsForDisplay.map((row) => (
+                            <button
+                              key={`sb-${row.id}`}
+                              type="button"
+                              onClick={() => toggleCompareSelection(table, "supabase", row.id)}
+                              className={`w-full rounded border px-2 py-1.5 text-xs text-right space-y-0.5 transition ${compareSelection[compareSelectionKey(table, "supabase", row.id)] ? "border-blue-500 bg-blue-500/20" : "border-blue-500/20 hover:border-blue-500/50"}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[11px] ${row.hasGap ? "text-amber-700" : "text-emerald-700"}`}>{row.hasGap ? "יש פער" : "תואם"}</span>
+                                <span className="font-mono">IDB {row.idbCount} | SB {row.sbCount}</span>
+                              </div>
+                              <div className="truncate">{row.name}</div>
+                              <div className="font-mono text-[10px] text-muted-foreground truncate">{row.id}</div>
+                            </button>
+                          )) : visibleSbOnly.map((id) => {
+                            const selected = !!compareSelection[compareSelectionKey(table, "supabase", id)];
+                            return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => toggleCompareSelection(table, "supabase", id)}
+                              className={`w-full rounded border px-2 py-1.5 text-xs text-right space-y-0.5 transition ${selected ? "border-blue-500 bg-blue-500/20" : "border-transparent hover:border-blue-500/40"}`}
+                            >
+                              <div className="font-mono">{id}</div>
+                              {compareRowLabel(table, sbById.get(id)) && (
+                                <div className="text-[11px] text-muted-foreground">{compareRowLabel(table, sbById.get(id))}</div>
+                              )}
+                            </button>
+                          )})}
+                          {table === "decks"
+                            ? deckRowsForDisplay.length === 0 && <div className="text-xs text-muted-foreground text-right">אין דאקס להצגה</div>
+                            : diff.onlyInSupabase.length === 0 && <div className="text-xs text-muted-foreground text-right">אין</div>}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+
+              <Card className="gold-frame p-4 space-y-3">
+                <h4 className="font-semibold text-right">פירוק כרטיסים (cards)</h4>
+                {(() => {
+                  const idbCards = compareSnapshot.idb.cards.rows;
+                  const sbCards = compareSnapshot.supabase.cards.rows;
+                  const idbDeckRows = compareSnapshot.idb.decks.rows;
+                  const sbDeckRows = compareSnapshot.supabase.decks.rows;
+                  const byTypeIdb = countBy(idbCards, (r) => r.type || "unknown");
+                  const byTypeSb = countBy(sbCards, (r) => r.type || "unknown");
+                  const byDeckIdb = countBy(idbCards, (r) => r.deckId ?? "(ללא deck)");
+                  const byDeckSb = countBy(sbCards, (r) => r.deckId ?? "(ללא deck)");
+                  const typeKeys = Array.from(new Set([...Object.keys(byTypeIdb), ...Object.keys(byTypeSb)])).sort();
+                  const deckNamesById = new Map<string, string>();
+                  for (const deck of idbDeckRows) {
+                    if (deck.name) deckNamesById.set(deck.id, deck.name);
+                  }
+                  for (const deck of sbDeckRows) {
+                    if (deck.name) deckNamesById.set(deck.id, deck.name);
+                  }
+                  const deckKeys = Array.from(
+                    new Set([
+                      ...idbDeckRows.map((d) => d.id),
+                      ...sbDeckRows.map((d) => d.id),
+                      ...Object.keys(byDeckIdb),
+                      ...Object.keys(byDeckSb),
+                    ])
+                  )
+                    .filter((k) => k !== "(ללא deck)")
+                    .sort((a, b) => {
+                      const delta = (byDeckSb[b] ?? 0) + (byDeckIdb[b] ?? 0) - (byDeckSb[a] ?? 0) - (byDeckIdb[a] ?? 0);
+                      if (delta !== 0) return delta;
+                      return (deckNamesById.get(a) ?? a).localeCompare(deckNamesById.get(b) ?? b, "he");
+                    });
+                  const unassignedRow = {
+                    key: "(ללא deck)",
+                    name: "ללא מערכת",
+                    idb: byDeckIdb["(ללא deck)"] ?? 0,
+                    sb: byDeckSb["(ללא deck)"] ?? 0,
+                  };
+                  const idbRecent = pickTopByUpdated(idbCards, COMPARE_VISIBLE_LIMIT);
+                  const sbRecent = pickTopByUpdated(sbCards, COMPARE_VISIBLE_LIMIT);
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <Row label="סה״כ cards ב-IDB" value={idbCards.length.toLocaleString()} />
+                        <Row label="סה״כ cards ב-Supabase" value={sbCards.length.toLocaleString()} />
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div className="rounded-lg border p-3">
+                          <div className="font-semibold text-right mb-2">לפי סוג שאלה</div>
+                          <div className="space-y-1">
+                            {typeKeys.map((k) => (
+                              <div key={k} className="flex items-center justify-between text-xs">
+                                <span className="font-mono">IDB {byTypeIdb[k] ?? 0} | SB {byTypeSb[k] ?? 0}</span>
+                                <span>{k}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border p-3">
+                          <div className="font-semibold text-right mb-2">לפי מערכת (שם + כמות כרטיסיות)</div>
+                          <div className="max-h-56 overflow-y-auto space-y-1">
+                            {deckKeys.slice(0, COMPARE_VISIBLE_LIMIT).map((k) => (
+                              <div key={k} className="flex items-center justify-between text-xs gap-2">
+                                <span className="font-mono">IDB {byDeckIdb[k] ?? 0} | SB {byDeckSb[k] ?? 0}</span>
+                                <div className="min-w-0 text-right">
+                                  <div className="truncate max-w-[26rem]">{deckNamesById.get(k) ?? "ללא שם"}</div>
+                                  <div className="font-mono text-[10px] text-muted-foreground truncate max-w-[26rem]">{k}</div>
+                                </div>
+                              </div>
+                            ))}
+                            {(unassignedRow.idb > 0 || unassignedRow.sb > 0) && (
+                              <div className="flex items-center justify-between text-xs gap-2 border-t pt-1 mt-1">
+                                <span className="font-mono">IDB {unassignedRow.idb} | SB {unassignedRow.sb}</span>
+                                <div className="min-w-0 text-right">
+                                  <div className="truncate max-w-[26rem]">{unassignedRow.name}</div>
+                                  <div className="font-mono text-[10px] text-muted-foreground truncate max-w-[26rem]">{unassignedRow.key}</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div className="rounded-lg border p-3">
+                          <div className="font-semibold text-right mb-2">כרטיסים ששונו לאחרונה ב-IDB</div>
+                          <div className="max-h-56 overflow-y-auto space-y-1">
+                            {idbRecent.map((r) => (
+                              <div key={`idb-${r.id}`} className="flex items-center justify-between text-xs gap-2">
+                                <span className="font-mono text-muted-foreground">{fmtDate(r.updatedAt ?? r.createdAt)}</span>
+                                <div className="min-w-0 text-right">
+                                  <div className="font-mono truncate">{r.id}</div>
+                                  {compactText(r.question, 56) && <div className="text-[11px] text-muted-foreground truncate">{compactText(r.question, 56)}</div>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border p-3">
+                          <div className="font-semibold text-right mb-2">כרטיסים ששונו לאחרונה ב-Supabase</div>
+                          <div className="max-h-56 overflow-y-auto space-y-1">
+                            {sbRecent.map((r) => (
+                              <div key={`sb-${r.id}`} className="flex items-center justify-between text-xs gap-2">
+                                <span className="font-mono text-muted-foreground">{fmtDate(r.updatedAt ?? r.createdAt)}</span>
+                                <div className="min-w-0 text-right">
+                                  <div className="font-mono truncate">{r.id}</div>
+                                  {compactText(r.question, 56) && <div className="text-[11px] text-muted-foreground truncate">{compactText(r.question, 56)}</div>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
 

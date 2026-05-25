@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +10,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Camera, Save, ShieldAlert, Layers as LayersIcon, Eye, RefreshCw, AlertTriangle } from "lucide-react";
+import { Save, ShieldAlert, Layers as LayersIcon, Eye, RefreshCw, AlertTriangle, Plus, Trash2, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
@@ -16,7 +18,25 @@ import { useStudy } from "@/lib/study/store";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
 import { WIDGET_DEFS } from "@/lib/study/widgetLayout";
 import type { SidebarConfig, WidgetConfig, WidgetLayout } from "@/lib/study/types";
-import { loadFeatureBlocklist, saveFeatureBlocklist, type FeatureBlocklist } from "@/lib/study/featureBlocklist";
+import {
+  loadFeatureBlocklist,
+  loadFeatureBlocklistProfiles,
+  loadRoleBlocklistAssignments,
+  saveFeatureBlocklist,
+  saveFeatureBlocklistProfiles,
+  saveRoleBlocklistAssignments,
+  type FeatureBlocklist,
+  type FeatureBlocklistProfile,
+  type RoleBlocklistAssignment,
+} from "@/lib/study/featureBlocklist";
+import {
+  loadRoleLayoutProfileAssignments,
+  loadRoleLayoutProfiles,
+  saveRoleLayoutProfileAssignments,
+  saveRoleLayoutProfiles,
+  type RoleLayoutProfile,
+  type RoleLayoutProfileAssignment,
+} from "@/lib/study/layoutProfiles";
 
 interface AppRole { id: string; name: string; description: string | null }
 interface ExistingDefault {
@@ -45,8 +65,26 @@ export function RoleDefaultsTab() {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const [layoutProfiles, setLayoutProfiles] = useState<RoleLayoutProfile[]>([]);
+  const [selectedLayoutProfileId, setSelectedLayoutProfileId] = useState<string>("");
+  const [layoutProfileName, setLayoutProfileName] = useState("");
+  const [savingLayoutProfile, setSavingLayoutProfile] = useState(false);
+  const [layoutAssignments, setLayoutAssignments] = useState<RoleLayoutProfileAssignment[]>([]);
+  const [savingLayoutAssignments, setSavingLayoutAssignments] = useState(false);
+
   const [blocklist, setBlocklist] = useState<FeatureBlocklist>({ sections: [], widgets: {} });
   const [savingBlock, setSavingBlock] = useState(false);
+  const [blockProfiles, setBlockProfiles] = useState<FeatureBlocklistProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [profileName, setProfileName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [roleAssignments, setRoleAssignments] = useState<RoleBlocklistAssignment[]>([]);
+  const [savingAssignments, setSavingAssignments] = useState(false);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>("");
+
+  const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   // Load roles + blocklist
   useEffect(() => {
@@ -57,8 +95,30 @@ export function RoleDefaultsTab() {
         const userRole = data.find((r) => r.name === "user");
         setSelectedRole(userRole?.id ?? data[0]?.id ?? "");
       }
-      const bl = await loadFeatureBlocklist();
+      const [bl, profiles, assignments, loadedLayoutProfiles, loadedLayoutAssignments] = await Promise.all([
+        loadFeatureBlocklist(),
+        loadFeatureBlocklistProfiles(),
+        loadRoleBlocklistAssignments(),
+        loadRoleLayoutProfiles(),
+        loadRoleLayoutProfileAssignments(),
+      ]);
       setBlocklist(bl);
+      setBlockProfiles(profiles);
+      setRoleAssignments(assignments);
+      setLayoutProfiles(loadedLayoutProfiles);
+      setLayoutAssignments(loadedLayoutAssignments);
+
+      if (profiles.length > 0) {
+        setSelectedProfileId(profiles[0].id);
+        setProfileName(profiles[0].name);
+      }
+      if (loadedLayoutProfiles.length > 0) {
+        setSelectedLayoutProfileId(loadedLayoutProfiles[0].id);
+        setLayoutProfileName(loadedLayoutProfiles[0].name);
+      }
+      if (assignments.length > 0) {
+        setSelectedAssignmentId(assignments[0].id);
+      }
     })();
   }, []);
 
@@ -84,18 +144,28 @@ export function RoleDefaultsTab() {
   );
 
   // === Snapshot preview (what WILL be saved) ===
-  const previewWidgetLayout: WidgetLayout = state.widgetLayout ?? {};
-  const previewSidebar: SidebarConfig[] = state.sidebarConfig ?? [];
-  const previewCategories = (state.categories ?? []).filter((c) => !c.parentId);
+  const currentWidgetLayout: WidgetLayout = state.widgetLayout ?? {};
+  const currentSidebar: SidebarConfig[] = state.sidebarConfig ?? [];
+  const currentCategories = (state.categories ?? []).filter((c) => !c.parentId);
+
+  const selectedLayoutProfile = useMemo(
+    () => layoutProfiles.find((p) => p.id === selectedLayoutProfileId) ?? null,
+    [layoutProfiles, selectedLayoutProfileId],
+  );
+
+  const requestedWidgetLayout: WidgetLayout = selectedLayoutProfile?.widgetLayout ?? currentWidgetLayout;
+  const requestedSidebar: SidebarConfig[] = selectedLayoutProfile?.sidebarConfig ?? currentSidebar;
+  const requestedCategories = selectedLayoutProfile?.categoryTemplate
+    ?? currentCategories.map((c) => ({ id: c.id, name: c.name, color: c.color ?? null }));
 
   const visibleWidgetsByTab = useMemo(() => {
     const out: Array<{ tab: string; widgets: WidgetConfig[] }> = [];
-    for (const [tab, widgets] of Object.entries(previewWidgetLayout)) {
+    for (const [tab, widgets] of Object.entries(requestedWidgetLayout)) {
       const vis = (widgets ?? []).filter((w) => w.visible).sort((a, b) => a.order - b.order);
       if (vis.length) out.push({ tab, widgets: vis });
     }
     return out;
-  }, [previewWidgetLayout]);
+  }, [requestedWidgetLayout]);
 
   const widgetLabel = (tab: string, id: string) =>
     WIDGET_DEFS[tab]?.find((w) => w.id === id)?.label ?? id;
@@ -110,7 +180,7 @@ export function RoleDefaultsTab() {
         role_id: selectedRole,
         widget_layout: (state.widgetLayout ?? null) as unknown as Json,
         sidebar_config: (state.sidebarConfig ?? null) as unknown as Json,
-        category_template: (previewCategories.map((c) => ({
+        category_template: (currentCategories.map((c) => ({
           id: c.id, name: c.name, color: c.color, parent_id: null,
         })) as unknown as Json),
         updated_by: (await supabase.auth.getUser()).data.user?.id ?? null,
@@ -150,6 +220,94 @@ export function RoleDefaultsTab() {
     }
   };
 
+  const loadLayoutProfilePreview = (profileId: string) => {
+    if (profileId === "__current") {
+      setSelectedLayoutProfileId("");
+      setLayoutProfileName("");
+      return;
+    }
+    setSelectedLayoutProfileId(profileId);
+    const profile = layoutProfiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    setLayoutProfileName(profile.name);
+  };
+
+  const saveNamedLayoutProfile = async () => {
+    const trimmed = layoutProfileName.trim();
+    if (!trimmed) {
+      toast.error("נא להזין שם לפרופיל פריסה");
+      return;
+    }
+    setSavingLayoutProfile(true);
+    try {
+      const now = Date.now();
+      const sameName = layoutProfiles.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+      const targetId = sameName?.id ?? uid();
+      const next = [
+        ...layoutProfiles.filter((p) => p.id !== targetId),
+        {
+          id: targetId,
+          name: trimmed,
+          widgetLayout: currentWidgetLayout,
+          sidebarConfig: currentSidebar,
+          categoryTemplate: currentCategories.map((c) => ({ id: c.id, name: c.name, color: c.color ?? null })),
+          updatedAt: now,
+        },
+      ].sort((a, b) => b.updatedAt - a.updatedAt);
+      await saveRoleLayoutProfiles(next);
+      setLayoutProfiles(next);
+      setSelectedLayoutProfileId(targetId);
+      setLayoutProfileName(trimmed);
+      toast.success("פרופיל הפריסה נשמר");
+    } catch (e) {
+      toast.error("שמירת פרופיל פריסה נכשלה: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSavingLayoutProfile(false);
+    }
+  };
+
+  const selectedRoleLayoutAssignment = useMemo(
+    () => layoutAssignments.find((row) => row.roleId === selectedRole) ?? null,
+    [layoutAssignments, selectedRole],
+  );
+
+  useEffect(() => {
+    if (!selectedRoleLayoutAssignment?.profileId) return;
+    const profile = layoutProfiles.find((p) => p.id === selectedRoleLayoutAssignment.profileId);
+    if (!profile) return;
+    setSelectedLayoutProfileId(profile.id);
+    setLayoutProfileName(profile.name);
+  }, [layoutProfiles, selectedRoleLayoutAssignment?.profileId]);
+
+  const setSelectedRoleLayoutProfile = (profileId: string) => {
+    if (!selectedRole) return;
+    setLayoutAssignments((prev) => {
+      const existingRow = prev.find((row) => row.roleId === selectedRole);
+      if (profileId === "__none") {
+        return prev.filter((row) => row.roleId !== selectedRole);
+      }
+      if (existingRow) {
+        return prev.map((row) => (row.id === existingRow.id ? { ...row, profileId } : row));
+      }
+      return [...prev, { id: uid(), roleId: selectedRole, profileId }];
+    });
+    if (profileId !== "__none") loadLayoutProfilePreview(profileId);
+  };
+
+  const persistLayoutAssignments = async (successMessage = "שיוכי פריסה נשמרו") => {
+    const valid = layoutAssignments.filter((row) => row.roleId && row.profileId);
+    setSavingLayoutAssignments(true);
+    try {
+      await saveRoleLayoutProfileAssignments(valid);
+      setLayoutAssignments(valid);
+      toast.success(successMessage);
+    } catch (e) {
+      toast.error("שמירת שיוכי פריסה נכשלה: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSavingLayoutAssignments(false);
+    }
+  };
+
   const toggleSection = (id: string) => {
     setBlocklist((b) => {
       const set = new Set(b.sections);
@@ -168,6 +326,55 @@ export function RoleDefaultsTab() {
     });
   };
 
+  const allSidebarIds = useMemo(() => ALL_SIDEBAR_ITEMS.map((s) => s.id), []);
+  const allSidebarBlocked = allSidebarIds.length > 0 && allSidebarIds.every((id) => blocklist.sections.includes(id));
+
+  const toggleAllSections = () => {
+    setBlocklist((b) => {
+      const everyBlocked = allSidebarIds.length > 0 && allSidebarIds.every((id) => b.sections.includes(id));
+      if (everyBlocked) return { ...b, sections: [] };
+      return { ...b, sections: [...allSidebarIds] };
+    });
+  };
+
+  const allWidgetPairs = useMemo(
+    () => Object.entries(WIDGET_DEFS).flatMap(([tabId, widgets]) => widgets.map((w) => ({ tabId, widgetId: w.id }))),
+    [],
+  );
+  const allWidgetsBlocked = allWidgetPairs.length > 0 && allWidgetPairs.every(({ tabId, widgetId }) =>
+    (blocklist.widgets[tabId] ?? []).includes(widgetId),
+  );
+
+  const toggleAllWidgetsGlobal = () => {
+    setBlocklist((b) => {
+      const everyBlocked = allWidgetPairs.length > 0 && allWidgetPairs.every(({ tabId, widgetId }) =>
+        (b.widgets[tabId] ?? []).includes(widgetId),
+      );
+      if (everyBlocked) return { ...b, widgets: {} };
+
+      const widgets = Object.fromEntries(
+        Object.entries(WIDGET_DEFS).map(([tabId, defs]) => [tabId, defs.map((w) => w.id)]),
+      );
+      return { ...b, widgets };
+    });
+  };
+
+  const isAllWidgetsBlockedInTab = (tabId: string, widgetIds: string[]): boolean =>
+    widgetIds.length > 0 && widgetIds.every((id) => (blocklist.widgets[tabId] ?? []).includes(id));
+
+  const toggleAllWidgetsInTab = (tabId: string, widgetIds: string[]) => {
+    setBlocklist((b) => {
+      const allInTabBlocked = widgetIds.length > 0 && widgetIds.every((id) => (b.widgets[tabId] ?? []).includes(id));
+      const widgets = { ...b.widgets };
+      if (allInTabBlocked) {
+        delete widgets[tabId];
+      } else {
+        widgets[tabId] = [...widgetIds];
+      }
+      return { ...b, widgets };
+    });
+  };
+
   const persistBlocklist = async () => {
     setSavingBlock(true);
     try {
@@ -180,120 +387,403 @@ export function RoleDefaultsTab() {
     }
   };
 
+  const loadProfileToEditor = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    const profile = blockProfiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    setProfileName(profile.name);
+    setBlocklist(profile.blocklist);
+  };
+
+  const saveNamedProfile = async () => {
+    const trimmed = profileName.trim();
+    if (!trimmed) {
+      toast.error("נא להזין שם לפרופיל חסימה");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const now = Date.now();
+      const sameName = blockProfiles.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+      // Save-as behavior: new name creates a new profile, same name updates that profile.
+      const targetId = sameName?.id ?? uid();
+
+      const next = [
+        ...blockProfiles.filter((p) => p.id !== targetId),
+        {
+          id: targetId,
+          name: trimmed,
+          blocklist,
+          updatedAt: now,
+        },
+      ].sort((a, b) => b.updatedAt - a.updatedAt);
+
+      await saveFeatureBlocklistProfiles(next);
+      setBlockProfiles(next);
+      setSelectedProfileId(targetId);
+      setProfileName(trimmed);
+      toast.success("פרופיל החסימה נשמר");
+    } catch (e) {
+      toast.error("שמירת פרופיל נכשלה: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const addAssignmentRow = () => {
+    const row: RoleBlocklistAssignment = {
+      id: uid(),
+      roleId: selectedRole || roles[0]?.id || "",
+      profileId: selectedProfileId || blockProfiles[0]?.id || "",
+    };
+    setRoleAssignments((prev) => {
+      const next = [...prev, row];
+      setSelectedAssignmentId(row.id);
+      return next;
+    });
+  };
+
+  const selectedRoleAssignment = useMemo(
+    () => roleAssignments.find((row) => row.roleId === selectedRole) ?? null,
+    [roleAssignments, selectedRole],
+  );
+
+  const setSelectedRoleAssignmentProfile = (profileId: string) => {
+    if (!selectedRole) return;
+    setRoleAssignments((prev) => {
+      const existing = prev.find((row) => row.roleId === selectedRole);
+      if (profileId === "__none") {
+        return prev.filter((row) => row.roleId !== selectedRole);
+      }
+      if (existing) {
+        return prev.map((row) => (row.id === existing.id ? { ...row, profileId } : row));
+      }
+      const row: RoleBlocklistAssignment = { id: uid(), roleId: selectedRole, profileId };
+      setSelectedAssignmentId(row.id);
+      return [...prev, row];
+    });
+    if (profileId !== "__none") loadProfileToEditor(profileId);
+  };
+
+  const selectAssignmentRow = (row: RoleBlocklistAssignment) => {
+    setSelectedAssignmentId(row.id);
+    if (row.roleId) setSelectedRole(row.roleId);
+    if (row.profileId) loadProfileToEditor(row.profileId);
+  };
+
+  const setAssignmentField = (id: string, field: "roleId" | "profileId", value: string) => {
+    setRoleAssignments((prev) => {
+      const next = prev.map((row) => (row.id === id ? { ...row, [field]: value } : row));
+      const updated = next.find((row) => row.id === id);
+      if (updated) {
+        setSelectedAssignmentId(updated.id);
+        if (field === "roleId") setSelectedRole(value);
+        if (field === "profileId") loadProfileToEditor(value);
+      }
+      return next;
+    });
+  };
+
+  const removeAssignmentRow = (id: string) => {
+    setRoleAssignments((prev) => {
+      const next = prev.filter((row) => row.id !== id);
+      if (selectedAssignmentId === id) setSelectedAssignmentId(next[0]?.id ?? "");
+      return next;
+    });
+  };
+
+  const persistAssignments = async (successMessage = "שיוכי תפקיד לפרופיל נשמרו") => {
+    const valid = roleAssignments.filter((row) => row.roleId && row.profileId);
+    setSavingAssignments(true);
+    try {
+      await saveRoleBlocklistAssignments(valid);
+      setRoleAssignments(valid);
+      if (!selectedAssignmentId && valid[0]) setSelectedAssignmentId(valid[0].id);
+      toast.success(successMessage);
+    } catch (e) {
+      toast.error("שמירת שיוכים נכשלה: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSavingAssignments(false);
+    }
+  };
+
+  const selectedAssignment = useMemo(
+    () => roleAssignments.find((row) => row.id === selectedAssignmentId) ?? null,
+    [roleAssignments, selectedAssignmentId],
+  );
+
+  const selectedAssignmentProfile = useMemo(
+    () => blockProfiles.find((p) => p.id === selectedAssignment?.profileId) ?? null,
+    [blockProfiles, selectedAssignment?.profileId],
+  );
+
+  const profilePreview = selectedAssignmentProfile?.blocklist ?? blocklist;
+  const profilePreviewSections = ALL_SIDEBAR_ITEMS.filter((s) => profilePreview.sections.includes(s.id));
+
+  const profilePreviewWidgetsByTab = useMemo(
+    () => Object.entries(WIDGET_DEFS)
+      .map(([tabId, defs]) => ({
+        tabId,
+        widgets: defs.filter((w) => (profilePreview.widgets[tabId] ?? []).includes(w.id)),
+      }))
+      .filter((entry) => entry.widgets.length > 0),
+    [profilePreview.widgets],
+  );
+
   const existingUpdatedAt = existing?.updated_at
     ? new Date(existing.updated_at).toLocaleString("he-IL")
     : null;
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Section 1: Role-level defaults */}
-      <Card className="gold-frame p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="gold-icon-circle"><LayersIcon className="h-4 w-4" /></span>
-          <div>
-            <h3 className="font-display text-lg font-bold">ברירת מחדל לפי תפקיד</h3>
-            <p className="text-xs text-muted-foreground">
-              סדר אצלך את הפריסה (וידג'טים, סיידבר, קטגוריות) כפי שתרצה. בלחיצה על "שמור פריסה כברירת מחדל" המצב הנוכחי יישמר עבור התפקיד שנבחר.
-              משתמש שעדיין לא שינה כלום יקבל את הפריסה הזו אוטומטית. ברגע שמשתמש משנה משהו אצלו — השמירה האישית שלו מנצחת.
-            </p>
-          </div>
-        </div>
+      <Tabs defaultValue="layout" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="layout">טאב פריסה</TabsTrigger>
+          <TabsTrigger value="blocklist">טאב חסימה</TabsTrigger>
+        </TabsList>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-semibold">חל על תפקיד:</span>
-          <Select value={selectedRole} onValueChange={setSelectedRole}>
-            <SelectTrigger className="w-56"><SelectValue placeholder="בחר תפקיד" /></SelectTrigger>
-            <SelectContent>
-              {roles.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {roleLabel(r.name)} {r.name !== roleLabel(r.name) ? `(${r.name})` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {existing ? (
-            <Badge variant="default" className="bg-green-600 hover:bg-green-600">
-              ✓ קיימת ברירת מחדל{existingUpdatedAt ? ` · עודכן ${existingUpdatedAt}` : ""}
-            </Badge>
-          ) : (
-            <Badge variant="outline">אין עדיין ברירת מחדל לתפקיד זה</Badge>
-          )}
-          <Button variant="ghost" size="sm" onClick={() => selectedRole && fetchExisting(selectedRole)} disabled={loadingExisting}>
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingExisting ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
+        <TabsContent value="layout">
+          <Card className="gold-frame p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="gold-icon-circle"><LayersIcon className="h-4 w-4" /></span>
+              <div>
+                <h3 className="font-display text-lg font-bold">פריסה לפי תפקיד</h3>
+                <p className="text-xs text-muted-foreground">
+                  כאן מנהלים שמירת פריסה לתפקיד: וידג'טים, סיידבר וקטגוריות. זה נפרד לחלוטין מהחסימות.
+                </p>
+              </div>
+            </div>
 
-        {/* Scope clarity banner */}
-        <div className="rounded border-2 border-gold/30 bg-muted/30 p-3 text-xs space-y-1">
-          <div className="font-bold text-sm flex items-center gap-1">
-            <Eye className="h-3.5 w-3.5" /> מה בדיוק יוחל על "{roleLabel(selectedRoleName)}":
-          </div>
-          <ul className="list-disc pr-5 space-y-0.5">
-            <li>פריסת הוידג'טים בכל הטאבים (סדר, גודל, נראות).</li>
-            <li>סדר ונראות של פריטי הסיידבר.</li>
-            <li>תבנית קטגוריות שורש שתיזרע למשתמשים חדשים בתפקיד זה.</li>
-            <li><strong>לא</strong> נדרס מידע אישי של משתמשים שכבר התאימו אצלם פריסה.</li>
-          </ul>
-        </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-semibold">חל על תפקיד:</span>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="בחר תפקיד" /></SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {roleLabel(r.name)} {r.name !== roleLabel(r.name) ? `(${r.name})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm font-semibold">שיוך פריסה:</span>
+              <Select
+                value={selectedRoleLayoutAssignment?.profileId ?? "__none"}
+                onValueChange={setSelectedRoleLayoutProfile}
+              >
+                <SelectTrigger className="w-56"><SelectValue placeholder="בחר פרופיל פריסה" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">ללא שיוך</SelectItem>
+                  {layoutProfiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void persistLayoutAssignments(`שיוך הפריסה נשמר לתפקיד "${roleLabel(selectedRoleName)}"`)}
+                disabled={savingLayoutAssignments || !selectedRole}
+              >
+                שמור שיוך פריסה
+              </Button>
+              <Select value={selectedLayoutProfileId || "__current"} onValueChange={loadLayoutProfilePreview}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="בחר פרופיל פריסה לתצוגה" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__current">מצב נוכחי (ללא פרופיל)</SelectItem>
+                  {layoutProfiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {existing ? (
+                <Badge variant="default" className="bg-green-600 hover:bg-green-600">
+                  ✓ קיימת ברירת מחדל{existingUpdatedAt ? ` · עודכן ${existingUpdatedAt}` : ""}
+                </Badge>
+              ) : (
+                <Badge variant="outline">אין עדיין ברירת מחדל לתפקיד זה</Badge>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => selectedRole && fetchExisting(selectedRole)} disabled={loadingExisting}>
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingExisting ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
 
-        {/* Preview: current snapshot vs saved */}
-        <div className="grid md:grid-cols-2 gap-3">
-          <PreviewCard
-            title="פריסה שתישמר (המצב הנוכחי שלך)"
-            tone="current"
-            widgets={visibleWidgetsByTab}
-            sidebar={previewSidebar}
-            categories={previewCategories.map((c) => ({ name: c.name, color: c.color }))}
-            widgetLabel={widgetLabel}
-            sidebarLabel={sidebarLabel}
-          />
-          <PreviewCard
-            title={existing ? "פריסה שמורה כעת לתפקיד" : "אין עדיין פריסה שמורה"}
-            tone="saved"
-            empty={!existing}
-            widgets={(() => {
-              const wl = existing?.widget_layout ?? {};
-              const out: Array<{ tab: string; widgets: WidgetConfig[] }> = [];
-              for (const [tab, widgets] of Object.entries(wl)) {
-                const vis = (widgets ?? []).filter((w) => w.visible).sort((a, b) => a.order - b.order);
-                if (vis.length) out.push({ tab, widgets: vis });
-              }
-              return out;
-            })()}
-            sidebar={existing?.sidebar_config ?? []}
-            categories={(existing?.category_template ?? []).map((c) => ({ name: c.name, color: c.color ?? undefined }))}
-            widgetLabel={widgetLabel}
-            sidebarLabel={sidebarLabel}
-          />
-        </div>
+            <div className="rounded border-2 border-gold/30 bg-muted/30 p-3 text-xs space-y-1">
+              <div className="font-bold text-sm flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" /> מה בדיוק יוחל על "{roleLabel(selectedRoleName)}":
+              </div>
+              <ul className="list-disc pr-5 space-y-0.5">
+                <li>פריסת הוידג'טים בכל הטאבים (סדר, גודל, נראות).</li>
+                <li>סדר ונראות של פריטי הסיידבר.</li>
+                <li>תבנית קטגוריות שורש שתיזרע למשתמשים חדשים בתפקיד זה.</li>
+                <li><strong>לא</strong> נדרס מידע אישי של משתמשים שכבר התאימו אצלם פריסה.</li>
+              </ul>
+            </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={requestSave} disabled={busy || !selectedRole} className="gap-2">
-            <Camera className="h-4 w-4" />
-            שמור פריסה כברירת מחדל ל"{roleLabel(selectedRoleName)}"
-          </Button>
-          {existing && (
-            <Button variant="outline" onClick={clearDefaults} disabled={busy}>
-              מחק ברירת מחדל לתפקיד זה
-            </Button>
-          )}
-        </div>
-      </Card>
+            <div className="grid md:grid-cols-2 gap-3">
+              <PreviewCard
+                title="סטטוס מבוקש לתפקיד"
+                tone="current"
+                widgets={visibleWidgetsByTab}
+                sidebar={requestedSidebar}
+                categories={requestedCategories.map((c) => ({ name: c.name, color: c.color }))}
+                widgetLabel={widgetLabel}
+                sidebarLabel={sidebarLabel}
+              />
+              <PreviewCard
+                title={existing ? "סטטוס נוכחי לתפקיד" : "אין עדיין סטטוס שמור לתפקיד"}
+                tone="saved"
+                empty={!existing}
+                widgets={(() => {
+                  const wl = existing?.widget_layout ?? {};
+                  const out: Array<{ tab: string; widgets: WidgetConfig[] }> = [];
+                  for (const [tab, widgets] of Object.entries(wl)) {
+                    const vis = (widgets ?? []).filter((w) => w.visible).sort((a, b) => a.order - b.order);
+                    if (vis.length) out.push({ tab, widgets: vis });
+                  }
+                  return out;
+                })()}
+                sidebar={existing?.sidebar_config ?? []}
+                categories={(existing?.category_template ?? []).map((c) => ({ name: c.name, color: c.color ?? undefined }))}
+                widgetLabel={widgetLabel}
+                sidebarLabel={sidebarLabel}
+              />
+            </div>
 
-      {/* Section 2: Global blocklist */}
-      <Card className="gold-frame p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="gold-icon-circle"><ShieldAlert className="h-4 w-4" /></span>
-          <div>
-            <h3 className="font-display text-lg font-bold">חסימה גלובלית של פיצ'רים</h3>
-            <p className="text-xs text-muted-foreground">
-              הפיצ'רים שתסמן כאן <strong>לא יופיעו בכלל</strong> אצל אף משתמש (חוץ ממנהל). שינויים נכנסים לתוקף בטעינה הבאה.
-            </p>
-          </div>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={layoutProfileName}
+                onChange={(e) => setLayoutProfileName(e.target.value)}
+                placeholder="שם פרופיל פריסה"
+                className="w-56"
+              />
+              <Button type="button" variant="outline" onClick={saveNamedLayoutProfile} disabled={savingLayoutProfile}>
+                שמור פרופיל פריסה בשם
+              </Button>
+              <Button onClick={requestSave} disabled={busy || !selectedRole}>
+                שמור פריסה כברירת מחדל ל"{roleLabel(selectedRoleName)}"
+              </Button>
+              {existing && (
+                <Button variant="outline" onClick={clearDefaults} disabled={busy}>
+                  מחק ברירת מחדל לתפקיד זה
+                </Button>
+              )}
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="blocklist">
+          <Card className="gold-frame p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="gold-icon-circle"><ShieldAlert className="h-4 w-4" /></span>
+              <div>
+                <h3 className="font-display text-lg font-bold">חסימה לפי תפקיד ופרופיל</h3>
+                <p className="text-xs text-muted-foreground">
+                  כאן מנהלים פרופילי חסימה ואת השיוך שלהם לתפקידים. זה נפרד לחלוטין מהפריסה.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 rounded border-2 border-gold/20 bg-muted/20 p-3">
+              <span className="text-sm font-semibold">תפקיד:</span>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="בחר תפקיד" /></SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{roleLabel(r.name)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm font-semibold">שיוך חסימה:</span>
+              <Select value={selectedRoleAssignment?.profileId ?? "__none"} onValueChange={setSelectedRoleAssignmentProfile}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="בחר פרופיל חסימה" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">ללא שיוך</SelectItem>
+                  {blockProfiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void persistAssignments(`שיוך החסימה נשמר לתפקיד "${roleLabel(selectedRoleName)}"`)}
+                disabled={savingAssignments || !selectedRole}
+              >
+                שמור שיוך לתפקיד
+              </Button>
+              {selectedRoleAssignment ? (
+                <Badge variant="outline">משויך לפרופיל חסימה</Badge>
+              ) : (
+                <Badge variant="outline">אין שיוך חסימה לתפקיד זה</Badge>
+              )}
+            </div>
+
+            <div className="rounded border-2 border-gold/20 bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold flex items-center gap-1">
+                  <Link2 className="h-4 w-4" /> שיוך רשימות חסימה לפי תפקיד
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" className="gap-1" onClick={addAssignmentRow}>
+                    <Plus className="h-3.5 w-3.5" /> הוסף שורה
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => void persistAssignments()} disabled={savingAssignments}>
+                    שמור שיוכים
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {roleAssignments.length === 0 && (
+                  <div className="text-xs text-muted-foreground">עדיין אין שיוכים. לחץ "הוסף שורה" כדי להגדיר תפקיד + פרופיל חסימה.</div>
+                )}
+                {roleAssignments.map((row) => (
+                  <div
+                    key={row.id}
+                    className={`grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2 rounded border px-2 py-2 cursor-pointer ${selectedAssignmentId === row.id ? "border-primary/60 bg-primary/5" : "border-gold/20"}`}
+                    onClick={() => selectAssignmentRow(row)}
+                  >
+                    <Select value={row.roleId} onValueChange={(value) => setAssignmentField(row.id, "roleId", value)}>
+                      <SelectTrigger><SelectValue placeholder="חל על תפקיד" /></SelectTrigger>
+                      <SelectContent>
+                        {roles.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>{roleLabel(r.name)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={row.profileId} onValueChange={(value) => setAssignmentField(row.id, "profileId", value)}>
+                      <SelectTrigger><SelectValue placeholder="שם פרופיל חסימה" /></SelectTrigger>
+                      <SelectContent>
+                        {blockProfiles.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeAssignmentRow(row.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-bold">מקטעי סיידבר</h4>
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-bold">מקטעי סיידבר</h4>
+            <Button type="button" size="sm" variant="outline" onClick={toggleAllSections}>
+              {allSidebarBlocked ? "נקה הכל" : "בחר הכל"}
+            </Button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {ALL_SIDEBAR_ITEMS.map((s) => {
               const blocked = blocklist.sections.includes(s.id);
@@ -308,11 +798,30 @@ export function RoleDefaultsTab() {
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-bold">וידג'טים (לפי טאב)</h4>
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-bold">וידג'טים (לפי טאב)</h4>
+            <Button type="button" size="sm" variant="outline" onClick={toggleAllWidgetsGlobal}>
+              {allWidgetsBlocked ? "נקה הכל" : "בחר הכל"}
+            </Button>
+          </div>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
-            {Object.entries(WIDGET_DEFS).map(([tabId, widgets]) => (
+            {Object.entries(WIDGET_DEFS).map(([tabId, widgets]) => {
+              const widgetIds = widgets.map((w) => w.id);
+              const allTabBlocked = isAllWidgetsBlockedInTab(tabId, widgetIds);
+              return (
               <div key={tabId} className="rounded border-2 border-gold/20 p-2">
-                <div className="text-xs font-bold mb-1 text-muted-foreground">טאב: {tabId}</div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-muted-foreground">טאב: {tabId}</div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => toggleAllWidgetsInTab(tabId, widgetIds)}
+                  >
+                    {allTabBlocked ? "נקה הכל" : "בחר הכל"}
+                  </Button>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {widgets.map((w) => {
                     const blocked = (blocklist.widgets[tabId] ?? []).includes(w.id);
@@ -325,16 +834,48 @@ export function RoleDefaultsTab() {
                   })}
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
 
-        <div className="flex justify-end">
-          <Button onClick={persistBlocklist} disabled={savingBlock} className="gap-2">
-            <Save className="h-4 w-4" /> שמור רשימת חסימה
-          </Button>
-        </div>
-      </Card>
+            <div className="grid md:grid-cols-2 gap-3">
+              <BlocklistPreviewCard
+                title={selectedAssignmentProfile
+                  ? `תצוגת חסימה: ${selectedAssignmentProfile.name}`
+                  : "תצוגת חסימה (מהעריכה הנוכחית)"}
+                sections={profilePreviewSections.map((s) => s.label)}
+                widgetsByTab={profilePreviewWidgetsByTab.map(({ tabId, widgets }) => ({
+                  tabId,
+                  widgetLabels: widgets.map((w) => w.label),
+                }))}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Select value={selectedProfileId} onValueChange={loadProfileToEditor}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="טען פרופיל חסימה" /></SelectTrigger>
+                <SelectContent>
+                  {blockProfiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                placeholder="שם פרופיל חסימה"
+                className="w-56"
+              />
+              <Button type="button" variant="outline" onClick={saveNamedProfile} disabled={savingProfile} className="gap-2">
+                <Save className="h-4 w-4" /> שמור בשם
+              </Button>
+              <Button onClick={persistBlocklist} disabled={savingBlock} className="gap-2">
+                <Save className="h-4 w-4" /> שמור רשימת חסימה
+              </Button>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Overwrite warning */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -366,6 +907,48 @@ export function RoleDefaultsTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+/* ─── Preview sub-component ─── */
+function BlocklistPreviewCard(props: {
+  title: string;
+  sections: string[];
+  widgetsByTab: Array<{ tabId: string; widgetLabels: string[] }>;
+}) {
+  const { title, sections, widgetsByTab } = props;
+  return (
+    <div className="rounded-lg border-2 border-gold/30 bg-card/60 p-3 space-y-3 text-xs">
+      <div className="font-bold text-sm">{title}</div>
+      <div>
+        <div className="font-semibold mb-1 text-muted-foreground">מקטעי סיידבר חסומים ({sections.length})</div>
+        <div className="flex flex-wrap gap-1">
+          {sections.length === 0 ? (
+            <span className="text-muted-foreground italic">אין חסימות</span>
+          ) : (
+            sections.map((label) => (
+              <span key={label} className="rounded-full bg-muted px-2 py-0.5 text-[10px]">{label}</span>
+            ))
+          )}
+        </div>
+      </div>
+      <div>
+        <div className="font-semibold mb-1 text-muted-foreground">וידג'טים חסומים ({widgetsByTab.length} טאבים)</div>
+        <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+          {widgetsByTab.length === 0 && <span className="text-muted-foreground italic">אין חסימות</span>}
+          {widgetsByTab.map(({ tabId, widgetLabels }) => (
+            <div key={tabId} className="rounded border border-border/60 p-1.5">
+              <div className="text-[10px] font-bold text-muted-foreground mb-1">{tabId}</div>
+              <div className="flex flex-wrap gap-1">
+                {widgetLabels.map((w) => (
+                  <span key={w} className="rounded border border-border/50 bg-muted px-1.5 py-0.5 text-[10px]">{w}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

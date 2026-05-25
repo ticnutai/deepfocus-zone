@@ -8,9 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getActiveGuestViewProfileId,
+  hydrateGuestProfilesFromSiteSettings,
   listGuestViewProfiles,
+  loadGuestDefaultProfileIdFromSiteSettings,
   removeGuestViewProfile,
   saveGuestViewProfile,
+  saveGuestDefaultProfileIdToSiteSettings,
+  saveGuestViewProfilesToSiteSettings,
   setActiveGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
@@ -65,9 +69,20 @@ export function GuestProfilesTab() {
     const roleRows = (data ?? []) as AppRole[];
     setRoles(roleRows);
 
-    const allProfiles = listGuestViewProfiles();
+    const { profiles: hydratedProfiles } = await hydrateGuestProfilesFromSiteSettings();
+    const localProfiles = listGuestViewProfiles();
+    const needsMigration = hydratedProfiles.length === 0 && localProfiles.length > 0;
+
+    if (needsMigration) {
+      await saveGuestViewProfilesToSiteSettings(localProfiles);
+      const localDefault = getActiveGuestViewProfileId() ?? localProfiles[0]?.id ?? null;
+      await saveGuestDefaultProfileIdToSiteSettings(localDefault);
+    }
+
+    const defaultProfileId = await loadGuestDefaultProfileIdFromSiteSettings();
+    const allProfiles = hydratedProfiles.length > 0 ? hydratedProfiles : localProfiles;
     setProfiles(allProfiles);
-    const activeId = getActiveGuestViewProfileId();
+    const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
     setActiveProfileId(activeId);
 
     if (!selectedRoleId && roleRows.length > 0) {
@@ -141,11 +156,20 @@ export function GuestProfilesTab() {
     }
     setBusy(true);
     try {
-      await buildProfileFromRole({
+      const saved = await buildProfileFromRole({
         roleId: selectedRoleId,
         id: editingId ?? undefined,
         label: profileLabel,
       });
+
+      const allProfiles = listGuestViewProfiles();
+      await saveGuestViewProfilesToSiteSettings(allProfiles);
+      const currentDefault = await loadGuestDefaultProfileIdFromSiteSettings();
+      const nextDefault = currentDefault && allProfiles.some((p) => p.id === currentDefault)
+        ? currentDefault
+        : saved.id;
+      await saveGuestDefaultProfileIdToSiteSettings(nextDefault);
+
       toast.success(editingId ? "פרופיל אורח עודכן" : "פרופיל אורח נוצר");
       await load();
       resetForm();
@@ -162,19 +186,43 @@ export function GuestProfilesTab() {
     setProfileLabel(profile.label);
   };
 
-  const markAsDefault = (profileId: string) => {
-    setActiveGuestViewProfile(profileId);
-    setActiveProfileId(profileId);
-    toast.success("פרופיל ברירת המחדל לאורח עודכן");
+  const markAsDefault = async (profileId: string) => {
+    setBusy(true);
+    try {
+      setActiveGuestViewProfile(profileId);
+      await saveGuestDefaultProfileIdToSiteSettings(profileId);
+      setActiveProfileId(profileId);
+      toast.success("פרופיל ברירת המחדל לאורח עודכן");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "עדכון ברירת מחדל נכשל");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const remove = (profile: GuestViewProfile) => {
+  const remove = async (profile: GuestViewProfile) => {
+    setBusy(true);
+    try {
     removeGuestViewProfile(profile.id);
-    const activeId = getActiveGuestViewProfileId();
-    setActiveProfileId(activeId);
-    setProfiles(listGuestViewProfiles());
+    const nextProfiles = listGuestViewProfiles();
+    await saveGuestViewProfilesToSiteSettings(nextProfiles);
+
+    const currentDefault = await loadGuestDefaultProfileIdFromSiteSettings();
+    let nextDefault: string | null = currentDefault;
+    if (!nextDefault || nextDefault === profile.id || !nextProfiles.some((p) => p.id === nextDefault)) {
+      nextDefault = nextProfiles[0]?.id ?? null;
+    }
+    await saveGuestDefaultProfileIdToSiteSettings(nextDefault);
+
+    setActiveProfileId(nextDefault);
+    setProfiles(nextProfiles);
     toast.success("פרופיל אורח נמחק");
     if (editingId === profile.id) resetForm();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "מחיקת פרופיל נכשלה");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const refreshFromRole = async (profile: GuestViewProfile) => {
@@ -189,7 +237,9 @@ export function GuestProfilesTab() {
         id: profile.id,
         label: profile.label,
       });
-      setProfiles(listGuestViewProfiles());
+      const nextProfiles = listGuestViewProfiles();
+      await saveGuestViewProfilesToSiteSettings(nextProfiles);
+      setProfiles(nextProfiles);
       toast.success("הפרופיל רוענן מהגדרות התפקיד");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "רענון נכשל");
@@ -260,7 +310,7 @@ export function GuestProfilesTab() {
             </div>
 
             <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={() => markAsDefault(p.id)} disabled={activeProfileId === p.id}>
+              <Button size="sm" variant="outline" onClick={() => void markAsDefault(p.id)} disabled={busy || activeProfileId === p.id}>
                 <CheckCircle2 className="h-4 w-4" /> ברירת מחדל
               </Button>
               <Button size="sm" variant="outline" onClick={() => void refreshFromRole(p)} disabled={busy}>
@@ -269,7 +319,7 @@ export function GuestProfilesTab() {
               <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
                 ערוך
               </Button>
-              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(p)}>
+              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void remove(p)} disabled={busy}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>

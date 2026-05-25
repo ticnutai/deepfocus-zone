@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Plus, Search, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, Folder, FolderOpen, LayoutGrid, Maximize2, Minimize2, ChevronsDown, Clock3 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const [cardsCountAtOpen, setCardsCountAtOpen] = useState(0);
   const [treeSearch, setTreeSearch] = useState("");
   const [treeExpanded, setTreeExpanded] = useState<Record<string, boolean>>({});
+  const [classificationReady, setClassificationReady] = useState(false);
 
   // Recent (localStorage)
   const [recent, setRecent] = useState<string[]>(() => {
@@ -59,6 +60,34 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     const cur = state.uiPrefs?.pinnedCats ?? [];
     setUiPref("pinnedCats", cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]);
   };
+
+  useEffect(() => {
+    if (!open) {
+      setClassificationReady(false);
+      return;
+    }
+    // Keep open snappy: hydrate heavy classification work only when browser is idle.
+    let timeoutId = 0;
+    let idleId: number | null = null;
+    const scheduleReady = () => {
+      const hasIdle = typeof (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback === "function";
+      if (hasIdle) {
+        idleId = (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(() => {
+          setClassificationReady(true);
+        }, { timeout: 1200 });
+        return;
+      }
+      timeoutId = window.setTimeout(() => setClassificationReady(true), 180);
+    };
+    timeoutId = window.setTimeout(scheduleReady, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (idleId !== null) {
+        const cancelIdle = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+        cancelIdle?.(idleId);
+      }
+    };
+  }, [open]);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
@@ -277,8 +306,8 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
   }, [open, onOpenChange]);
 
   const categories = useMemo(
-    () => (open ? [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt) : []),
-    [open, state.categories],
+    () => (open && classificationReady ? [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt) : []),
+    [open, classificationReady, state.categories],
   );
   // Hebrew letter → numeric value for gematria sort
   const HVAL: Record<string, number> = {
@@ -287,20 +316,31 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     'ק':100,'ר':200,'ש':300,'ת':400,
   };
   const hebrewToNum = (s: string) => [...s].reduce((sum, ch) => sum + (HVAL[ch] ?? 0), 0);
-  const childrenOf = (pid: string | null) => {
-    const kids = categories.filter((c) => c.parentId === pid);
-    return [...kids].sort((a, b) => {
-      const an = hebrewToNum(displayCategoryName(a.name));
-      const bn = hebrewToNum(displayCategoryName(b.name));
-      if (an !== 0 || bn !== 0) return an - bn;
-      return displayCategoryName(a.name).localeCompare(displayCategoryName(b.name), 'he');
-    });
-  };
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, Category[]>();
+    for (const c of categories) {
+      const key = c.parentId ?? null;
+      const bucket = map.get(key);
+      if (bucket) bucket.push(c);
+      else map.set(key, [c]);
+    }
+    for (const [key, list] of map.entries()) {
+      map.set(key, [...list].sort((a, b) => {
+        const an = hebrewToNum(displayCategoryName(a.name));
+        const bn = hebrewToNum(displayCategoryName(b.name));
+        if (an !== 0 || bn !== 0) return an - bn;
+        return displayCategoryName(a.name).localeCompare(displayCategoryName(b.name), "he");
+      }));
+    }
+    return map;
+  }, [categories]);
+
+  const childrenOf = useCallback((pid: string | null) => childrenByParent.get(pid) ?? [], [childrenByParent]);
   const validNames = useMemo(() => new Set(categories.map((c) => c.name)), [categories]);
 
   // Recursive card count per category (including descendants)
   const countsMap = useMemo(() => {
-    if (!open) return new Map<string, number>();
+    if (!open || !classificationReady) return new Map<string, number>();
     const direct = new Map<string, number>();
     for (const card of state.cards ?? []) {
       for (const tag of card.tags ?? []) {
@@ -321,7 +361,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     };
     for (const cat of categories) countFor(cat);
     return total;
-  }, [open, state.cards, categories]);
+  }, [open, classificationReady, state.cards, categories, childrenOf]);
   const recentExisting = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -419,7 +459,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const topLevelCategories = useMemo(() => {
     const q = treeSearch.trim().toLowerCase();
     return childrenOf(null).filter((cat) => !q || matchesSearch(cat, q));
-  }, [categories, treeSearch]);
+  }, [childrenOf, treeSearch]);
 
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>();
@@ -451,7 +491,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     const q = treeSearch.trim().toLowerCase();
     const level = childrenOf(cardsParentId);
     return q ? level.filter((cat) => matchesSearch(cat, q)) : level;
-  }, [cardsParentId, categories, treeSearch]);
+  }, [cardsParentId, childrenOf, treeSearch]);
 
   const cardsBreadcrumb = useMemo(
     () => normalizedCardsPath.map((id) => categoryById.get(id)).filter((c): c is Category => !!c),
@@ -509,12 +549,17 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
       <DialogContent
         ref={dialogRef}
         showOverlay={false}
+        trapFocus={false}
+        disableOutsidePointerEvents={false}
         onEscapeKeyDown={() => onOpenChange(false)}
         className="max-w-[1400px] w-[min(92vw,680px)] min-w-[360px] min-h-[280px] max-h-[92vh] overflow-hidden gap-5 transition-[width,height] duration-100 ease-out"
         dir="rtl"
       >
         <DialogHeader>
           <DialogTitle className="text-right">מערכת חדשה</DialogTitle>
+          <DialogDescription className="sr-only">
+            יצירת מערכת חדשה ובחירת קטגוריות לשיוך.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 space-y-8 overflow-y-auto pr-1">
@@ -647,80 +692,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                 />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-3">
-                <aside className="space-y-3 rounded-xl border-2 border-gold/25 bg-card p-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">מוצמדים</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {pinnedCats.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">אין נעיצות</span>
-                      ) : (
-                        pinnedCats.map((catName) => (
-                          <button
-                            key={catName}
-                            type="button"
-                            onClick={() => toggle(catName)}
-                            className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-                              selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
-                            )}
-                          >
-                            <Pin className="h-3 w-3" />
-                            <span className="truncate max-w-[120px]">{catName}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">נבחרו לאחרונה</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {recentExisting.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">אין היסטוריה</span>
-                      ) : (
-                        recentExisting.map((catName) => (
-                          <button
-                            key={catName}
-                            type="button"
-                            onClick={() => toggle(catName)}
-                            className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-                              selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
-                            )}
-                          >
-                            <Clock3 className="h-3 w-3" />
-                            <span className="truncate max-w-[120px]">{catName}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">שורשים</div>
-                    <div className="space-y-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setCardsPathAndPersist([])}
-                        className="w-full text-right text-xs rounded border border-gold/30 px-2 py-1 hover:border-gold"
-                      >
-                        סיווג ראשי
-                      </button>
-                      {childrenOf(null).slice(0, 10).map((root) => (
-                        <button
-                          key={root.id}
-                          type="button"
-                          onClick={() => setCardsPathAndPersist([root.id])}
-                          className="w-full text-right text-xs rounded border border-gold/30 px-2 py-1 hover:border-gold"
-                        >
-                          {displayCategoryName(root.name)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
-
+              <div className="space-y-3">
                 <section className="space-y-3">
                   <div className="text-xs text-muted-foreground border border-gold/20 rounded-md px-2 py-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -738,7 +710,13 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                     </div>
                   </div>
 
-                  {classificationView === "cards" && (
+                  {!classificationReady && (
+                    <div className="rounded-lg border-2 border-gold/30 bg-card p-4 text-sm text-muted-foreground text-center">
+                      טוען סיווג...
+                    </div>
+                  )}
+
+                  {classificationReady && classificationView === "cards" && (
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3 max-h-[52vh] overflow-y-auto pr-0.5">
                       {cardsLevelCategories.map((root) => {
                         const isSelected = selected.includes(root.name);
@@ -794,7 +772,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                     </div>
                   )}
 
-                  {classificationView === "tree" && (
+                  {classificationReady && classificationView === "tree" && (
                     <div className="rounded-lg border-2 border-gold/30 bg-card overflow-hidden">
                       <div className="max-h-[52vh] overflow-y-auto p-1.5">
                         {categories.length === 0 ? (
@@ -805,6 +783,56 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                       </div>
                     </div>
                   )}
+
+                  <aside className="space-y-3 rounded-xl border-2 border-gold/25 bg-card p-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">מוצמדים</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {pinnedCats.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">אין נעיצות</span>
+                        ) : (
+                          pinnedCats.map((catName) => (
+                            <button
+                              key={catName}
+                              type="button"
+                              onClick={() => toggle(catName)}
+                              className={cn(
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                                selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                              )}
+                            >
+                              <Pin className="h-3 w-3" />
+                              <span className="truncate max-w-[120px]">{catName}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">נבחרו לאחרונה</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {recentExisting.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">אין היסטוריה</span>
+                        ) : (
+                          recentExisting.map((catName) => (
+                            <button
+                              key={catName}
+                              type="button"
+                              onClick={() => toggle(catName)}
+                              className={cn(
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                                selected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                              )}
+                            >
+                              <Clock3 className="h-3 w-3" />
+                              <span className="truncate max-w-[120px]">{catName}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </aside>
                 </section>
 
               </div>
@@ -844,6 +872,9 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
           <DialogContent dir="rtl" className="max-w-[min(96vw,900px)] max-h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-right">הוספת שאלה חדשה</DialogTitle>
+              <DialogDescription className="sr-only">
+                טופס הוספת שאלה חדשה למאגר.
+              </DialogDescription>
             </DialogHeader>
             <Suspense fallback={<div className="text-xs text-muted-foreground text-right">טוען עורך שאלה...</div>}>
               <CardEditor

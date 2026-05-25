@@ -8,11 +8,15 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, Eye, EyeOff, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { listGuestViewProfiles, type GuestViewProfile } from "@/lib/auth/guestViewProfile";
+import {
+  getActiveGuestViewProfileId,
+  hydrateGuestProfilesFromSiteSettings,
+  listGuestViewProfiles,
+  type GuestViewProfile,
+} from "@/lib/auth/guestViewProfile";
 
 const REMEMBER_KEY = "auth-remember";
 const EMAIL_KEY = "auth-remember-email";
@@ -34,8 +38,7 @@ export default function Auth() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [guestProfiles, setGuestProfiles] = useState<GuestViewProfile[]>([]);
-  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("none");
+  const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(null);
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
 
@@ -54,9 +57,38 @@ export default function Auth() {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    const profiles = listGuestViewProfiles();
-    setGuestProfiles(profiles);
-    setSelectedGuestProfileId(profiles[0]?.id ?? "none");
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const { profiles, defaultProfileId } = await hydrateGuestProfilesFromSiteSettings();
+        if (cancelled) return;
+        const effectiveProfiles = profiles.length > 0 ? profiles : listGuestViewProfiles();
+        const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
+        if (effectiveProfiles.length === 0) {
+          setGuestProfile(null);
+          return;
+        }
+        const hasActive = !!activeId && effectiveProfiles.some((p) => p.id === activeId);
+        setGuestProfile(hasActive
+          ? (effectiveProfiles.find((p) => p.id === activeId) ?? effectiveProfiles[0])
+          : effectiveProfiles[0]);
+      } catch {
+        const fallbackProfiles = listGuestViewProfiles();
+        const activeId = getActiveGuestViewProfileId();
+        if (fallbackProfiles.length === 0) {
+          setGuestProfile(null);
+          return;
+        }
+        const hasActive = !!activeId && fallbackProfiles.some((p) => p.id === activeId);
+        setGuestProfile(hasActive
+          ? (fallbackProfiles.find((p) => p.id === activeId) ?? fallbackProfiles[0])
+          : fallbackProfiles[0]);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const persistRemember = () => {
@@ -183,31 +215,24 @@ export default function Auth() {
         <Button
           variant="outline"
           onClick={() => {
-            const profileId = selectedGuestProfileId === "none" ? null : selectedGuestProfileId;
-            signInAsGuest(profileId);
+            if (!guestProfile?.id) {
+              toast.error("לא הוגדר פרופיל אורח קבוע. הגדר אותו במסך ניהול משתמשים.");
+              return;
+            }
+            signInAsGuest(guestProfile.id);
             navigate("/", { replace: true });
           }}
+          disabled={!guestProfile?.id}
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />
-          {selectedGuestProfileId === "none" ? "כניסה ללא חשבון (אורח)" : "כניסה כאורח לפי פרופיל"}
+          כניסה כאורח
         </Button>
-        {guestProfiles.length > 0 && (
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">פרופיל אורח להצגה</Label>
-            <Select value={selectedGuestProfileId} onValueChange={setSelectedGuestProfileId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="בחר פרופיל" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">אורח רגיל (ללא פרופיל)</SelectItem>
-                {guestProfiles.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <div className="text-xs text-muted-foreground text-center">
+          {guestProfile
+            ? `פרופיל אורח קבוע: ${guestProfile.label}`
+            : "לא הוגדר פרופיל אורח קבוע. יש להגדיר במסך ניהול משתמשים."}
+        </div>
         <p className="text-xs text-muted-foreground text-center">
           מצב אורח שומר נתונים רק על המכשיר הזה, ללא סנכרון. פרופילי אורח נוצרים ממסך ניהול תפקידים.
         </p>

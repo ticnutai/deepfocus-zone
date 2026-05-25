@@ -390,56 +390,6 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
               </div>
             </div>
 
-            <aside className="space-y-3 rounded-xl border-2 border-gold/25 bg-card p-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">מוצמדים</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {pinnedCats.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">אין נעיצות</span>
-                  ) : (
-                    pinnedCats.map((catName) => (
-                      <button
-                        key={catName}
-                        type="button"
-                        onClick={() => toggle(catName)}
-                        className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-                          localSelected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
-                        )}
-                      >
-                        <Pin className="h-3 w-3" />
-                        <span className="truncate max-w-[120px]">{catName}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">נבחרו לאחרונה</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {recentExisting.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">אין היסטוריה</span>
-                  ) : (
-                    recentExisting.map((catName) => (
-                      <button
-                        key={catName}
-                        type="button"
-                        onClick={() => toggle(catName)}
-                        className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
-                          localSelected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
-                        )}
-                      >
-                        <Clock3 className="h-3 w-3" />
-                        <span className="truncate max-w-[120px]">{catName}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            </aside>
-
             {classificationView === "cards" && (
               <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3 max-h-[52vh] overflow-y-auto pr-0.5">
                 {cardsLevelCategories.map((root) => {
@@ -504,6 +454,56 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                 </div>
               </div>
             )}
+
+            <aside className="space-y-3 rounded-xl border-2 border-gold/25 bg-card p-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">מוצמדים</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {pinnedCats.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">אין נעיצות</span>
+                  ) : (
+                    pinnedCats.map((catName) => (
+                      <button
+                        key={catName}
+                        type="button"
+                        onClick={() => toggle(catName)}
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                          localSelected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                        )}
+                      >
+                        <Pin className="h-3 w-3" />
+                        <span className="truncate max-w-[120px]">{catName}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">נבחרו לאחרונה</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {recentExisting.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">אין היסטוריה</span>
+                  ) : (
+                    recentExisting.map((catName) => (
+                      <button
+                        key={catName}
+                        type="button"
+                        onClick={() => toggle(catName)}
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border",
+                          localSelected.includes(catName) ? "border-navy bg-navy/10 text-navy" : "border-gold/40 hover:border-gold",
+                        )}
+                      >
+                        <Clock3 className="h-3 w-3" />
+                        <span className="truncate max-w-[120px]">{catName}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </aside>
           </section>
 
         </div>

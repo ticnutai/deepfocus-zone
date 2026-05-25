@@ -23,6 +23,7 @@ interface Props {
 export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
   const { state, setCardDecks } = useStudy();
   const [activeTab, setActiveTab] = useState<DialogTab>("existing");
+  const [contentReady, setContentReady] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set());
   const [deckCreateOpen, setDeckCreateOpen] = useState(false);
@@ -30,10 +31,21 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    setContentReady(false);
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setContentReady(true));
+    });
+
     setActiveTab("existing");
     setSelectedCardIds(new Set(cards.map((c) => c.id)));
     setSelectedDeckIds(new Set());
     setNewQuestionBaseCardIds(new Set(state.cards.map((c) => c.id)));
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
   }, [open, cards, state.cards]);
 
   useEffect(() => {
@@ -142,12 +154,23 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent className="max-w-4xl gold-frame" dir="rtl" showOverlay={false}>
+      <DialogContent
+        className="max-w-4xl gold-frame"
+        dir="rtl"
+        showOverlay={false}
+        trapFocus={false}
+        disableOutsidePointerEvents={false}
+      >
         <DialogHeader>
           <DialogTitle className="font-display text-right flex items-center gap-2 justify-end">
             <Layers className="h-5 w-5" /> בחירה מהירה וסיווג
           </DialogTitle>
         </DialogHeader>
+
+        {!contentReady ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">טוען...</div>
+        ) : (
+          <>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DialogTab)}>
           <TabsList className="grid grid-cols-4 w-full">
@@ -228,7 +251,10 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
               יצירת ערכה חדשה באמצעות הדיאלוג הקיים. לאחר יצירה, הערכה תסומן אוטומטית.
             </div>
             <div className="rounded-lg border border-gold/30 p-4 bg-secondary/20">
-              <Button className="bg-gradient-navy text-primary-foreground" onClick={() => setDeckCreateOpen(true)}>
+              <Button
+                className="bg-gradient-navy text-primary-foreground"
+                onClick={() => setDeckCreateOpen(true)}
+              >
                 פתח יצירת ערכה חדשה
               </Button>
               <div className="text-xs text-muted-foreground mt-2">
@@ -259,16 +285,20 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
             סווג את הנבחרות
           </Button>
         </DialogFooter>
+          </>
+        )}
       </DialogContent>
       </Dialog>
 
-      <Suspense fallback={null}>
-        <DeckCreateDialog
-          open={deckCreateOpen}
-          onOpenChange={setDeckCreateOpen}
-          onCreated={handleDeckCreated}
-        />
-      </Suspense>
+      {deckCreateOpen && (
+        <Suspense fallback={null}>
+          <DeckCreateDialog
+            open={deckCreateOpen}
+            onOpenChange={setDeckCreateOpen}
+            onCreated={handleDeckCreated}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

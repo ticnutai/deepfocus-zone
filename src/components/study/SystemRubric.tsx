@@ -539,9 +539,17 @@ const TabCard = ({ tab, isOpen, onToggle, startIndex, onNavigate, search = "" }:
   return (
     <Card className={cn("gold-frame overflow-hidden transition-shadow", isOpen && "shadow-elegant")}>
       {/* Header row — always visible */}
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="w-full flex items-center gap-3 p-3 text-right hover:bg-secondary/40 transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className="w-full flex items-center gap-3 p-3 text-right hover:bg-secondary/40 transition-colors cursor-pointer"
       >
         {/* Chevron */}
         <span className="text-muted-foreground flex-shrink-0">
@@ -586,7 +594,7 @@ const TabCard = ({ tab, isOpen, onToggle, startIndex, onNavigate, search = "" }:
             <Icon className="h-4 w-4" />
           </span>
         </div>
-      </button>
+      </div>
 
       {/* Expanded content */}
       {isOpen && (

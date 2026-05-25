@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, Re
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  clearActiveGuestViewProfile,
+  getActiveGuestViewProfileId,
+  listGuestViewProfiles,
   getActiveGuestViewProfile,
   setActiveGuestViewProfile,
   type GuestViewProfile,
@@ -77,7 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (guestMode) {
       localStorage.removeItem(GUEST_KEY);
-      clearActiveGuestViewProfile();
       setGuestProfile(null);
       setGuestMode(false);
       return;
@@ -86,10 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [guestMode]);
 
   const signInAsGuest = useCallback((profileId?: string | null) => {
-    if (profileId) {
-      setActiveGuestViewProfile(profileId);
-    } else {
-      clearActiveGuestViewProfile();
+    const fallbackProfileId = getActiveGuestViewProfileId() ?? listGuestViewProfiles()[0]?.id ?? null;
+    const effectiveProfileId = profileId ?? fallbackProfileId;
+    if (effectiveProfileId) {
+      setActiveGuestViewProfile(effectiveProfileId);
     }
     setGuestProfile(getActiveGuestViewProfile());
     localStorage.setItem(GUEST_KEY, "1");

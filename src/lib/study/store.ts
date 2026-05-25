@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, startTransition } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
@@ -8,6 +8,7 @@ import { SHAS_BAVLI } from "./shasData";
 import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
 import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
 import { applyCloudSyncPref, isSyncEnabled } from "./syncControl";
+import { resolveRoleLayoutProfile } from "./layoutProfiles";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -36,7 +37,11 @@ let cloudSyncPendingJobs = 0;
 let isHydrated = false;
 let hydrationInFlightFor: string | null = null;
 // Shared IDB read promise — prevents StrictMode double-mount from opening IDB twice.
-let idbHydratePromise: Promise<[import('./indexedStateCache').SyncJob[], import('./types').StudyState | null]> | null = null;
+let idbHydratePromise: Promise<[
+  import('./indexedStateCache').SyncJob[],
+  import('./indexedStateCache').PendingDelete[],
+  import('./types').StudyState | null,
+]> | null = null;
 let idbHydrateForUser: string | null = null;
 // Phase 2 card backfill: bootstrap only loads reviewed cards. The rest load silently here.
 let phase2BackfillNeeded = false;
@@ -112,9 +117,19 @@ export function setFullRefreshTtlMs(ms: number) {
 const LAST_CLOUD_BOOTSTRAP_AT_KEY = (userId: string) => `last-cloud-bootstrap-at:${userId}`;
 const LAST_FULL_SYNC_AT_KEY = (userId: string) => `last-cloud-full-sync-at:${userId}`;
 const LAST_CLOUD_CARDS_COUNT_KEY = (userId: string) => `last-cloud-cards-count:${userId}`;
+const LAST_CLOUD_DECKS_COUNT_KEY = (userId: string) => `last-cloud-decks-count:${userId}`;
+const LAST_CLOUD_CATEGORIES_COUNT_KEY = (userId: string) => `last-cloud-categories-count:${userId}`;
 
 function rememberCloudCardsTotalCount(userId: string, count: number): void {
   try { localStorage.setItem(LAST_CLOUD_CARDS_COUNT_KEY(userId), String(Math.max(0, Math.floor(count)))); } catch { /* ignore */ }
+}
+
+function rememberCloudDecksTotalCount(userId: string, count: number): void {
+  try { localStorage.setItem(LAST_CLOUD_DECKS_COUNT_KEY(userId), String(Math.max(0, Math.floor(count)))); } catch { /* ignore */ }
+}
+
+function rememberCloudCategoriesTotalCount(userId: string, count: number): void {
+  try { localStorage.setItem(LAST_CLOUD_CATEGORIES_COUNT_KEY(userId), String(Math.max(0, Math.floor(count)))); } catch { /* ignore */ }
 }
 
 /** Last time IDB was refreshed from cloud (delta or full). 0 if never. */
@@ -129,6 +144,15 @@ export function getLastFullSyncAt(userId: string): number {
 export function getLastKnownCloudCardsCount(userId: string): number {
   try { return Number(localStorage.getItem(LAST_CLOUD_CARDS_COUNT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
 }
+
+export function getLastKnownCloudDecksCount(userId: string): number {
+  try { return Number(localStorage.getItem(LAST_CLOUD_DECKS_COUNT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
+}
+
+export function getLastKnownCloudCategoriesCount(userId: string): number {
+  try { return Number(localStorage.getItem(LAST_CLOUD_CATEGORIES_COUNT_KEY(userId)) ?? "0") || 0; } catch { return 0; }
+}
+
 export function getCurrentStudyCardsCount(): number {
   return memState.cards.length;
 }
@@ -213,7 +237,7 @@ const requestStoreNotify = () => {
   notifyTransitionScheduled = true;
   const flush = () => {
     notifyTransitionScheduled = false;
-    startTransition(notify);
+    notify();
   };
   if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
     window.requestAnimationFrame(() => flush());
@@ -399,7 +423,11 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
   const normalized = normalizeReferenceNotationInState(state);
   const categories = dedupeBySemanticKeyLww(normalized.categories, (c) => `${c.parentId ?? "root"}::${normalizeName(c.name)}`);
   const decks = dedupeBySemanticKeyLww(
-    (normalized.decks ?? []).filter((d) => d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID && !deletedDeckIds.has(d.id)),
+    (normalized.decks ?? []).filter((d) => (
+      d.id !== DEPRECATED_FLASHCARD_TWIN_DECK_ID
+      && !deletedDeckIds.has(d.id)
+      && !lastCloudDeckTombstones.has(d.id)
+    )),
     (d) => normalizeName(d.name),
   );
   // Upgrade legacy "multiple" cards to "combo" so dual-mode study works regardless of
@@ -412,7 +440,11 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
   };
   const cards = dedupeBySemanticKeyLww(
     (normalized.cards ?? [])
-      .filter((c) => c.deckId !== DEPRECATED_FLASHCARD_TWIN_DECK_ID)
+      .filter((c) => (
+        c.deckId !== DEPRECATED_FLASHCARD_TWIN_DECK_ID
+        && !deletedCardIds.has(c.id)
+        && !lastCloudCardTombstones.has(c.id)
+      ))
       .map(upgradeCard),
     (c) => normalizeQuestionKey(c.question),
   );
@@ -439,11 +471,13 @@ function applyBidirectionalDedupeGuards(state: StudyState): StudyState {
 // the matching local rows. This is the multi-device delete-propagation path:
 // without it, device B (which still has X locally) would resurrect X on hydrate.
 let lastCloudCategoryTombstones: Set<string> = new Set();
+let lastCloudDeckTombstones: Set<string> = new Set();
+let lastCloudCardTombstones: Set<string> = new Set();
 
-// Deck hard-delete tombstones: deck ids deleted via the UI this session.
-// Prevents delta/full sync from re-adding a deck that was just deleted before
-// the cloud DELETE confirmed. Cleared only after cloud confirms the deletion.
+// Local in-flight delete guards: ids deleted via the UI this session.
+// Prevents delta/full sync from re-adding rows before cloud tombstones arrive.
 const deletedDeckIds: Set<string> = new Set();
+const deletedCardIds: Set<string> = new Set();
 
 const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSync = false): StudyState => {
   const localUiTs = typeof local.uiPrefs?.updatedAt === "number" ? local.uiPrefs.updatedAt : 0;
@@ -886,11 +920,15 @@ const flushPendingDeletes = async (userId: string): Promise<{ success: number; f
         .update({ deleted_at: nowIso } as never)
         .eq("id", job.rowId);
       if (error) {
+        if (job.table === "decks") deletedDeckIds.add(job.rowId);
+        if (job.table === "cards") deletedCardIds.add(job.rowId);
         await bumpPendingDeleteAttempt(job.id, error.message ?? "unknown");
         await appendDeleteAuditEvent(userId, job.table, job.rowId, "failed", error.message ?? "unknown");
         failed += 1;
       } else {
         await removePendingDelete(job.id);
+        if (job.table === "decks") deletedDeckIds.delete(job.rowId);
+        if (job.table === "cards") deletedCardIds.delete(job.rowId);
         await appendDeleteAuditEvent(userId, job.table, job.rowId, "success", "deleted_at propagated to cloud");
         success += 1;
       }
@@ -914,7 +952,7 @@ const flushPendingDeletes = async (userId: string): Promise<{ success: number; f
  *
  * Callers are still responsible for updating in-memory state.
  */
-const softDeleteWithQueue = (table: "categories", rowIds: string[]) => {
+const softDeleteWithQueue = (table: "categories" | "decks" | "cards", rowIds: string[]) => {
   if (!currentUserId || currentUserId === GUEST_ID) return;
   if (rowIds.length === 0) return;
   const userId = currentUserId;
@@ -944,6 +982,12 @@ const softDeleteWithQueue = (table: "categories", rowIds: string[]) => {
         const idSet = new Set(rowIds);
         const toRemove = all.filter((j) => j.table === table && idSet.has(j.rowId));
         await Promise.all(toRemove.map((j) => removePendingDelete(j.id)));
+        if (table === "decks") {
+          for (const rid of rowIds) deletedDeckIds.delete(rid);
+        }
+        if (table === "cards") {
+          for (const rid of rowIds) deletedCardIds.delete(rid);
+        }
       }
     } catch (err) {
       console.warn(`[softDelete:${table}]`, err);
@@ -1043,7 +1087,17 @@ const syncRowsById = async (
   // function is upsert-only.
   void userId;
   if (rows.length > 0) {
-    for (const batch of chunk(rows, 500)) {
+    const deduped = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      const rawId = row.id;
+      const key = typeof rawId === "string" && rawId.length > 0 ? rawId : JSON.stringify(row);
+      deduped.set(key, row);
+    }
+    const uniqueRows = Array.from(deduped.values());
+    if (uniqueRows.length !== rows.length) {
+      console.debug(`[sync:${table}] deduped ${rows.length - uniqueRows.length} duplicate row(s) before upsert`);
+    }
+    for (const batch of chunk(uniqueRows, 500)) {
       await runAndThrow(`${table}.upsert`, supabase.from(table as never).upsert(batch as never, { onConflict: "id" }));
     }
   }
@@ -1355,8 +1409,8 @@ async function runPhase2CardBackfill(userId: string) {
 /**
  * Smart delta sync — fetches ONLY rows changed since `sinceMs` (per-table
  * `updated_at >= since`). Returns a Partial<StudyState> meant to be merged
- * into memState via `mergeByKeyLww`. Deletions are NOT detected here; rely on
- * the periodic full reload (FULL_REFRESH_TTL_MS) to reconcile them.
+ * into memState via `mergeByKeyLww`. Deletions are captured via tombstones
+ * (`deleted_at != null`) and then filtered out in merge/apply guards.
  *
  * Skips small singleton tables (user_settings, shas_plans) — those are cheap
  * to refetch and live behind the full path. Logs are also skipped (we only
@@ -1364,6 +1418,8 @@ async function runPhase2CardBackfill(userId: string) {
  */
 async function loadDelta(userId: string, sinceMs: number): Promise<{
   cloudCardsTotalCount: number;
+  cloudDecksTotalCount: number;
+  cloudCategoriesActiveTotalCount: number;
   decks: Deck[];
   cards: Card[];
   categories: Category[];
@@ -1381,8 +1437,14 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
   const sinceIso = new Date(Math.max(0, sinceMs - 1000)).toISOString(); // -1s safety overlap
   type R<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
 
-  const [cardsCountR, decksR, cardsR, catsR, goalsR, notesR, cardDecksR, reviewsR, sessionsR, settingsR] = await Promise.all([
-    timeOp("db:delta:cards_count", "db", () => supabase.from("cards").select("id", { count: "exact", head: true })),
+  const [cardsCountR, decksCountR, categoriesActiveCountR, decksR, cardsR, catsR, goalsR, notesR, cardDecksR, reviewsR, sessionsR, settingsR] = await Promise.all([
+    timeOp("db:delta:cards_count", "db", () => supabase.from("cards").select("id", { count: "exact", head: true }).is("deleted_at", null)),
+    timeOp("db:delta:decks_count", "db", () => supabase.from("decks").select("id", { count: "exact", head: true }).is("deleted_at", null)),
+    timeOp(
+      "db:delta:categories_active_count",
+      "db",
+      () => supabase.from("categories").select("id", { count: "exact", head: true }).is("deleted_at", null),
+    ),
     timeOp("db:delta:decks", "db", () => supabase.from("decks").select("*").gte("updated_at", sinceIso)),
     (async () => {
       // Keep the page at 1000: the backend API caps ranged table reads at 1000 rows.
@@ -1418,17 +1480,39 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
   ]);
 
   if (cardsCountR.error) throw cardsCountR.error;
+  if (decksCountR.error) throw decksCountR.error;
+  if (categoriesActiveCountR.error) throw categoriesActiveCountR.error;
   const cloudCardsTotalCount = typeof cardsCountR.count === "number" ? cardsCountR.count : 0;
+  const cloudDecksTotalCount = typeof decksCountR.count === "number" ? decksCountR.count : 0;
+  const cloudCategoriesActiveTotalCount = typeof categoriesActiveCountR.count === "number" ? categoriesActiveCountR.count : 0;
   rememberCloudCardsTotalCount(userId, cloudCardsTotalCount);
+  rememberCloudDecksTotalCount(userId, cloudDecksTotalCount);
+  rememberCloudCategoriesTotalCount(userId, cloudCategoriesActiveTotalCount);
 
-  const decks: Deck[] = ((decksR.data ?? []) as R<'decks'>[]).map((d) => ({
+  const allDeckRows = (decksR.data ?? []) as Array<R<'decks'> & { deleted_at?: string | null }>;
+  const deltaDeckTombstones = new Set<string>();
+  for (const row of allDeckRows) if (row.deleted_at) deltaDeckTombstones.add(row.id);
+  if (deltaDeckTombstones.size) {
+    const next = new Set(lastCloudDeckTombstones);
+    for (const id of deltaDeckTombstones) next.add(id);
+    lastCloudDeckTombstones = next;
+  }
+  const decks: Deck[] = allDeckRows.filter((d) => !d.deleted_at).map((d) => ({
     id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
     createdAt: new Date(d.created_at).getTime(),
     updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
     categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
     includeSubCategories: d.include_sub_categories !== false,
   }));
-  const cards: Card[] = ((cardsR.data ?? []) as R<'cards'>[]).map(cardFromRow);
+  const allCardRows = (cardsR.data ?? []) as Array<R<'cards'> & { deleted_at?: string | null }>;
+  const deltaCardTombstones = new Set<string>();
+  for (const row of allCardRows) if (row.deleted_at) deltaCardTombstones.add(row.id);
+  if (deltaCardTombstones.size) {
+    const next = new Set(lastCloudCardTombstones);
+    for (const id of deltaCardTombstones) next.add(id);
+    lastCloudCardTombstones = next;
+  }
+  const cards: Card[] = allCardRows.filter((c) => !c.deleted_at).map(cardFromRow);
   const allCatRows = ((catsR.data ?? []) as Array<R<'categories'> & { deleted_at?: string | null }>);
   // Capture tombstones from this delta so the merge can drop them from local state.
   const deltaTombstones = new Set<string>();
@@ -1520,6 +1604,8 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
 
   return {
     cloudCardsTotalCount,
+    cloudDecksTotalCount,
+    cloudCategoriesActiveTotalCount,
     decks,
     cards,
     categories,
@@ -1644,7 +1730,7 @@ async function loadAll(userId: string): Promise<StudyState> {
   let sessionsR: { data?: R<'learning_sessions'>[] | null };
   let catsData: { data?: R<'categories'>[] | null };
 
-  const [bootstrap, roleDefaultsR] = await Promise.all([
+  const [bootstrap, roleDefaultsR, userRolesR] = await Promise.all([
     timeOp(
       "db:bootstrap_snapshot", "db",
       () => rpcClient.rpc("get_bootstrap_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
@@ -1653,14 +1739,35 @@ async function loadAll(userId: string): Promise<StudyState> {
       "db:role_layout_defaults", "db",
       () => rpcClient.rpc("get_my_role_layout_defaults") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
     ).catch(() => ({ data: null, error: null })),
+    timeOp(
+      "db:user_roles", "db",
+      () => supabase.from("user_roles").select("role_id").eq("user_id", userId),
+    ).catch(() => ({ data: null, error: null })),
   ]);
+  const userRoleIds = ((userRolesR?.data ?? []) as Array<{ role_id?: string | null }>)
+    .map((row) => row.role_id)
+    .filter((id): id is string => !!id);
+  let roleAssignedLayout: Awaited<ReturnType<typeof resolveRoleLayoutProfile>> = null;
+  for (const roleId of userRoleIds) {
+    const resolved = await resolveRoleLayoutProfile(roleId).catch(() => null);
+    if (resolved) {
+      roleAssignedLayout = resolved;
+      break;
+    }
+  }
   const roleDefaults = (roleDefaultsR?.data && typeof roleDefaultsR.data === "object") ? roleDefaultsR.data as Record<string, unknown> : null;
   const roleDefaultWidgetLayout = (() => {
+    if (roleAssignedLayout?.widgetLayout && typeof roleAssignedLayout.widgetLayout === "object") {
+      return roleAssignedLayout.widgetLayout;
+    }
     const raw = roleDefaults?.widget_layout;
     if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as unknown as WidgetLayout;
     return undefined;
   })();
   const roleDefaultSidebar = (() => {
+    if (Array.isArray(roleAssignedLayout?.sidebarConfig)) {
+      return roleAssignedLayout.sidebarConfig;
+    }
     const raw = roleDefaults?.sidebar_config;
     if (Array.isArray(raw)) return raw as unknown as SidebarConfig[];
     return undefined;
@@ -1668,13 +1775,30 @@ async function loadAll(userId: string): Promise<StudyState> {
 
   if (!bootstrap.error && bootstrap.data && typeof bootstrap.data === "object") {
     const payload = bootstrap.data as Record<string, unknown>;
-    decksR = { data: Array.isArray(payload.decks) ? (payload.decks as R<'decks'>[]) : [] };
-    cardsR = { data: Array.isArray(payload.cards) ? (payload.cards as R<'cards'>[]) : [] };
+    const bootstrapDeckRows = Array.isArray(payload.decks)
+      ? (payload.decks as Array<R<'decks'> & { deleted_at?: string | null }>)
+      : [];
+    const bootstrapCardRows = Array.isArray(payload.cards)
+      ? (payload.cards as Array<R<'cards'> & { deleted_at?: string | null }>)
+      : [];
+    const bootstrapDeckTombstones = new Set<string>();
+    for (const d of bootstrapDeckRows) if (d.deleted_at) bootstrapDeckTombstones.add(d.id);
+    const bootstrapDeckTombstoneIdsR = await supabase.from("decks").select("id").not("deleted_at", "is", null);
+    for (const d of (bootstrapDeckTombstoneIdsR.data ?? []) as Array<{ id: string }>) bootstrapDeckTombstones.add(d.id);
+    lastCloudDeckTombstones = bootstrapDeckTombstones;
+    const bootstrapCardTombstones = new Set<string>();
+    for (const c of bootstrapCardRows) if (c.deleted_at) bootstrapCardTombstones.add(c.id);
+    const bootstrapCardTombstoneIdsR = await supabase.from("cards").select("id").not("deleted_at", "is", null);
+    for (const c of (bootstrapCardTombstoneIdsR.data ?? []) as Array<{ id: string }>) bootstrapCardTombstones.add(c.id);
+    lastCloudCardTombstones = bootstrapCardTombstones;
+    decksR = { data: bootstrapDeckRows.filter((d) => !d.deleted_at) as R<'decks'>[] };
+    cardsR = { data: bootstrapCardRows.filter((c) => !c.deleted_at) as R<'cards'>[] };
     // Detect if Phase 2 backfill is needed (bootstrap only returned reviewed cards).
     const cardsTotalCount = typeof payload.cards_total_count === 'number' ? payload.cards_total_count : 0;
     const cardsLoadedCount = Array.isArray(payload.cards) ? payload.cards.length : 0;
     if (cardsTotalCount > 0) phase2TotalCount = cardsTotalCount;
     rememberCloudCardsTotalCount(userId, cardsTotalCount);
+    rememberCloudDecksTotalCount(userId, decksR.data?.length ?? 0);
     if (cardsTotalCount > cardsLoadedCount) {
       phase2BackfillNeeded = true;
     }
@@ -1697,6 +1821,7 @@ async function loadAll(userId: string): Promise<StudyState> {
       }
     }
     lastCloudCategoryTombstones = tombSet;
+    rememberCloudCategoriesTotalCount(userId, catsData.data?.length ?? 0);
   } else {
     [decksR, cardsR, logsR, goalsR, shasR, notesR, settingsR, cardDecksR, reviewsR, sessionsR, catsData] = await Promise.all([
       timeOp("db:decks", "db", () => supabase.from("decks").select("*").order("created_at"), rowCount),
@@ -1731,12 +1856,26 @@ async function loadAll(userId: string): Promise<StudyState> {
       ),
     ]);
     // Fallback path: split active rows from tombstones.
+    const allDeckRows = (decksR.data ?? []) as Array<R<'decks'> & { deleted_at?: string | null }>;
+    const deckTombSet = new Set<string>();
+    for (const r of allDeckRows) if (r.deleted_at) deckTombSet.add(r.id);
+    lastCloudDeckTombstones = deckTombSet;
+    decksR = { data: allDeckRows.filter((r) => !r.deleted_at) as R<'decks'>[] };
+
+    const allCardRows = (cardsR.data ?? []) as Array<R<'cards'> & { deleted_at?: string | null }>;
+    const cardTombSet = new Set<string>();
+    for (const r of allCardRows) if (r.deleted_at) cardTombSet.add(r.id);
+    lastCloudCardTombstones = cardTombSet;
+    cardsR = { data: allCardRows.filter((r) => !r.deleted_at) as R<'cards'>[] };
+
     const allRows = (catsData.data ?? []) as Array<R<'categories'> & { deleted_at?: string | null }>;
     const tombSet = new Set<string>();
     for (const r of allRows) if (r.deleted_at) tombSet.add(r.id);
     lastCloudCategoryTombstones = tombSet;
     catsData = { data: allRows.filter((r) => !r.deleted_at) };
     rememberCloudCardsTotalCount(userId, cardsR.data?.length ?? 0);
+    rememberCloudDecksTotalCount(userId, decksR.data?.length ?? 0);
+    rememberCloudCategoriesTotalCount(userId, catsData.data?.length ?? 0);
   }
   const decks: Deck[] = (decksR.data ?? []).map((d) => ({
       id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
@@ -2008,10 +2147,19 @@ export function useStudy() {
           idbHydrateForUser = uid;
           idbHydratePromise = Promise.all([
             listSyncJobs(uid),
+            listPendingDeletes(uid),
             needsHardReset ? Promise.resolve(null) : loadStudyStateCache(uid),
           ]);
         }
-        const [existingJobs, cachedState] = await idbHydratePromise!;
+        const [existingJobs, pendingDeletes, cachedState] = await idbHydratePromise!;
+        // Keep in-memory anti-resurrection guards aligned with the durable queue.
+        // If a deck/card delete is still pending, hide it locally until cloud tombstone succeeds.
+        deletedDeckIds.clear();
+        deletedCardIds.clear();
+        for (const job of pendingDeletes) {
+          if (job.table === "decks") deletedDeckIds.add(job.rowId);
+          if (job.table === "cards") deletedCardIds.add(job.rowId);
+        }
         stopJobs(`${existingJobs.length} jobs`);
         stopCacheLoad(cachedState ? "hit" : "miss");
         if (!cancelled) markCloudSyncJobs(existingJobs.length);
@@ -2037,12 +2185,9 @@ export function useStudy() {
           isHydrated = true;
           hasCache = true;
           performance.mark("pashash:notify:idb-cache-applied");
-          // Defer React re-render to a new task; wrap in startTransition so React
-          // can yield between component renders (concurrent mode).
+          // Defer React re-render to a new task so hydration never blocks open interactions.
           setTimeout(() => {
-            startTransition(() => {
-              notify();
-            });
+            notify();
             performance.measure("pashash:react-render:idb-cache", "pashash:notify:idb-cache-applied");
           }, 0);
           perf.log("store:hydrate.cache_applied", "indexeddb snapshot applied", "store", hydrateTraceId);
@@ -2053,13 +2198,19 @@ export function useStudy() {
           const shouldRefreshCloud = !Number.isFinite(lastCloudAt)
             || (Date.now() - lastCloudAt) > CLOUD_REFRESH_INTERVAL_MS;
           const knownCloudCardsTotal = getLastKnownCloudCardsCount(uid);
+          const knownCloudDecksTotal = getLastKnownCloudDecksCount(uid);
+          const knownCloudCategoriesTotal = getLastKnownCloudCategoriesCount(uid);
           const shouldCheckCardGap = knownCloudCardsTotal <= 0
             || (cachedState.cards.length !== knownCloudCardsTotal);
+          const shouldCheckDeckGap = knownCloudDecksTotal <= 0
+            || (cachedState.decks.length !== knownCloudDecksTotal);
+          const shouldCheckCategoryGap = knownCloudCategoriesTotal <= 0
+            || (cachedState.categories.length !== knownCloudCategoriesTotal);
+          const shouldCheckStructuralGap = shouldCheckCardGap || shouldCheckDeckGap || shouldCheckCategoryGap;
 
-          // Skip bg cloud refresh when there are pending sync jobs — running both
-          // concurrently risks pulling back deleted items from cloud into memState
-          // before the sync job can push the deletion.
-          if ((shouldRefreshCloud || shouldCheckCardGap) && existingJobs.length === 0) {
+          // Never block cloud->IDB pull: stale local caches cause larger correctness
+          // issues than in-flight delete propagation. Tombstones resolve deletes safely.
+          if (shouldRefreshCloud || shouldCheckStructuralGap) {
             window.setTimeout(() => {
               if (cancelled) return;
               if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -2087,7 +2238,9 @@ export function useStudy() {
                   const mergedDelta = applyDeltaToState(memState, delta);
                   const normalizedDelta = applyBidirectionalDedupeGuards(mergedDelta);
                   const cloudCardGap = delta.cloudCardsTotalCount > 0 && normalizedDelta.cards.length !== delta.cloudCardsTotalCount;
-                  if (cloudCardGap) {
+                  const cloudDeckGap = normalizedDelta.decks.length !== delta.cloudDecksTotalCount;
+                  const cloudCategoryGap = normalizedDelta.categories.length !== delta.cloudCategoriesActiveTotalCount;
+                  if (cloudCardGap || cloudDeckGap || cloudCategoryGap) {
                     phase2TotalCount = delta.cloudCardsTotalCount;
                     phase2BackfillNeeded = normalizedDelta.cards.length < delta.cloudCardsTotalCount;
                     const cloudBg = await loadAll(uid);
@@ -2564,14 +2717,19 @@ export function useStudy() {
         deckCategories: nextDC,
       };
     });
-    // Delete the deck row from cloud, then also remove orphaned card_deck rows.
-    // We clear the tombstone only after both deletes confirm so that any sync
-    // that races during the await cannot restore the deck.
-    void (async () => {
-      await supabase.from("decks").delete().eq("id", id);
-      await supabase.from("card_decks").delete().eq("deck_id", id);
-      deletedDeckIds.delete(id);
-    })();
+    // Durable tombstone propagation for deck deletion.
+    softDeleteWithQueue("decks", [id]);
+    // Also detach relationships (best-effort) so cards remain category-owned.
+    const nowIso = new Date().toISOString();
+    bg(supabase.from("card_decks").delete().eq("deck_id", id), "card_decks.deleteByDeck");
+    bg(
+      supabase
+        .from("cards")
+        .update({ deck_id: null, updated_at: nowIso } as never)
+        .eq("deck_id", id)
+        .is("deleted_at", null),
+      "cards.detachDeck",
+    );
   }, []);
 
   const addCard = useCallback((card: Omit<Card, "id" | "createdAt" | "srs" | "stats">) => {
@@ -2724,12 +2882,13 @@ export function useStudy() {
   }, []);
 
   const deleteCard = useCallback((id: string) => {
+    deletedCardIds.add(id);
     setState((s) => ({
       ...s,
       cards: s.cards.filter((c) => c.id !== id),
       cardDecks: (s.cardDecks ?? []).filter((l) => l.cardId !== id),
     }));
-    bg(supabase.from("cards").delete().eq("id", id));
+    softDeleteWithQueue("cards", [id]);
     bg(supabase.from("card_decks").delete().eq("card_id", id));
   }, []);
 
@@ -4419,15 +4578,16 @@ export function useStudy() {
   // === Delete all data for the current user ===
   const deleteAllUserData = useCallback(async () => {
     const userId = requireUser();
+    const nowIso = new Date().toISOString();
     // Clear local state immediately
     setState(() => emptyState());
     // Delete from all tables (by user_id FK)
     await Promise.all([
-      supabase.from("cards").delete().eq("user_id", userId),
+      supabase.from("cards").update({ deleted_at: nowIso, updated_at: nowIso } as never).eq("user_id", userId).is("deleted_at", null),
       supabase.from("card_decks").delete().eq("user_id", userId),
-      supabase.from("decks").delete().eq("user_id", userId),
+      supabase.from("decks").update({ deleted_at: nowIso, updated_at: nowIso } as never).eq("user_id", userId).is("deleted_at", null),
       // Soft-delete categories (tombstones for multi-device sync)
-      supabase.from("categories").update({ deleted_at: new Date().toISOString() } as never).eq("user_id", userId).is("deleted_at", null),
+      supabase.from("categories").update({ deleted_at: nowIso } as never).eq("user_id", userId).is("deleted_at", null),
       supabase.from("goals").delete().eq("user_id", userId),
       supabase.from("review_logs").delete().eq("user_id", userId),
       supabase.from("learning_sessions").delete().eq("user_id", userId),
@@ -4486,7 +4646,8 @@ export function useStudy() {
       // chunk in 100s to stay within URL limits
       for (let i = 0; i < cardIdArr.length; i += 100) {
         const chunk = cardIdArr.slice(i, i + 100);
-        ops.push(supabase.from("cards").delete().in("id", chunk));
+        const nowIso = new Date().toISOString();
+        ops.push(supabase.from("cards").update({ deleted_at: nowIso, updated_at: nowIso } as never).in("id", chunk).is("deleted_at", null));
         ops.push(supabase.from("card_decks").delete().in("card_id", chunk));
         ops.push(supabase.from("review_logs").delete().in("card_id", chunk));
       }

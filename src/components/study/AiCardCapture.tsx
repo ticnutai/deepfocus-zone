@@ -1,7 +1,7 @@
-import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,21 +11,30 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { useStudy } from "@/lib/study/store";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { Card as StudyCard } from "@/lib/study/types";
 
 type Mode = "text" | "voice" | "image";
-
 type Shape = "circle" | "square" | "rounded";
 type IconName = "sparkles" | "bot" | "brain" | "wand" | "star" | "zap" | "chat" | "book" | "bulb";
 type IconStyle = { color: string; bg: string; size: number; shape: Shape; icon: IconName };
-const STYLE_KEY = "ai_capture_icon_style_v1"; // legacy localStorage key — used for migration only
-const POS_KEY = "ai_capture_icon_pos_v1"; // legacy localStorage key — used for migration only
+type FabPos = { x: number; y: number };
+
+const STYLE_KEY_V2 = "ai_capture_icon_style_v2";
+const POS_KEY_V2 = "ai_capture_icon_pos_v2";
+const FAB_PADDING = 12;
+const DRAG_THRESHOLD = 4;
+
 const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
-const STYLE_SYNC_DEBOUNCE_MS = 180;
-const DRAG_THRESHOLD_PX = 3;
-const normalizeIconStyle = (value: unknown): IconStyle => {
+
+const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
+  sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
+  zap: Zap, chat: MessageCircle, book: BookOpen, bulb: Lightbulb,
+};
+
+const normalizeStyle = (value: unknown): IconStyle => {
   const raw = (value && typeof value === "object") ? (value as Partial<IconStyle>) : {};
   return {
     color: typeof raw.color === "string" ? raw.color : DEFAULT_STYLE.color,
@@ -35,22 +44,62 @@ const normalizeIconStyle = (value: unknown): IconStyle => {
     icon: raw.icon === "sparkles" || raw.icon === "bot" || raw.icon === "brain" || raw.icon === "wand" || raw.icon === "star" || raw.icon === "zap" || raw.icon === "chat" || raw.icon === "book" || raw.icon === "bulb" ? raw.icon : DEFAULT_STYLE.icon,
   };
 };
-const sameIconStyle = (a: IconStyle, b: IconStyle): boolean => (
-  a.color === b.color &&
-  a.bg === b.bg &&
-  a.size === b.size &&
-  a.shape === b.shape &&
-  a.icon === b.icon
-);
-const samePos = (a: { x: number; y: number }, b: { x: number; y: number }): boolean => a.x === b.x && a.y === b.y;
-const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n));
-const clampPosToViewport = (next: { x: number; y: number }, size: number): { x: number; y: number } => ({
-  x: clamp(next.x, 0, Math.max(0, window.innerWidth - size)),
-  y: clamp(next.y, 0, Math.max(0, window.innerHeight - size)),
-});
-const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
-  sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
-  zap: Zap, chat: MessageCircle, book: BookOpen, bulb: Lightbulb,
+
+const readStorageJson = <T,>(...keys: string[]): T | null => {
+  if (typeof window === "undefined") return null;
+  for (const key of keys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      return JSON.parse(raw) as T;
+    } catch {
+      // ignore malformed value
+    }
+  }
+  return null;
+};
+
+const safeInsets = () => {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+  const probe = document.createElement("div");
+  probe.style.position = "fixed";
+  probe.style.paddingTop = "env(safe-area-inset-top)";
+  probe.style.paddingRight = "env(safe-area-inset-right)";
+  probe.style.paddingBottom = "env(safe-area-inset-bottom)";
+  probe.style.paddingLeft = "env(safe-area-inset-left)";
+  probe.style.visibility = "hidden";
+  document.body.appendChild(probe);
+  const cs = window.getComputedStyle(probe);
+  const out = {
+    top: Number.parseFloat(cs.paddingTop || "0") || 0,
+    right: Number.parseFloat(cs.paddingRight || "0") || 0,
+    bottom: Number.parseFloat(cs.paddingBottom || "0") || 0,
+    left: Number.parseFloat(cs.paddingLeft || "0") || 0,
+  };
+  document.body.removeChild(probe);
+  return out;
+};
+
+const defaultPos = (size: number): FabPos => {
+  const insets = safeInsets();
+  return {
+    x: window.innerWidth - size - insets.right - FAB_PADDING,
+    y: window.innerHeight - size - insets.bottom - FAB_PADDING,
+  };
+};
+
+const clampPos = (pos: FabPos, size: number): FabPos => {
+  const insets = safeInsets();
+  const minX = insets.left + FAB_PADDING;
+  const minY = insets.top + FAB_PADDING;
+  const maxX = Math.max(minX, window.innerWidth - size - insets.right - FAB_PADDING);
+  const maxY = Math.max(minY, window.innerHeight - size - insets.bottom - FAB_PADDING);
+  return {
+    x: Math.max(minX, Math.min(maxX, pos.x)),
+    y: Math.max(minY, Math.min(maxY, pos.y)),
+  };
 };
 
 type Draft = {
@@ -67,8 +116,20 @@ const EMPTY_CATEGORY_OPTIONS: { id: string; label: string; name: string }[] = []
 
 export function AiCardCapture() {
   const { state, addCard, setUiPref } = useStudy();
+  const { user, isGuest } = useAuth();
+  const initialStyle = normalizeStyle(
+    state.uiPrefs?.aiButtonStyle ?? readStorageJson<IconStyle>(STYLE_KEY_V2) ?? DEFAULT_STYLE,
+  );
+  const initialPos = clampPos(
+    state.uiPrefs?.aiButtonPos ?? readStorageJson<FabPos>(POS_KEY_V2) ?? defaultPos(initialStyle.size),
+    initialStyle.size,
+  );
+
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("text");
+  const [style, setStyle] = useState<IconStyle>(initialStyle);
+  const [pos, setPos] = useState<FabPos>(initialPos);
+  const [syncState, setSyncState] = useState<"idle" | "saving" | "saved">("idle");
   const [text, setText] = useState("");
   const [imageData, setImageData] = useState<{ base64: string; mime: string; preview: string } | null>(null);
   const [recording, setRecording] = useState(false);
@@ -78,176 +139,253 @@ export function AiCardCapture() {
   const [selectedCategoryNames, setSelectedCategoryNames] = useState<string[]>([]);
   const recognitionRef = useRef<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; moved: boolean } | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const savedBadgeTimerRef = useRef<number | null>(null);
+  const firstRenderRef = useRef(true);
+  const debugSeqRef = useRef(0);
 
-  const [style, setStyle] = useState<IconStyle>(() => {
-    // Prefer uiPrefs from cloud/IDB, fall back to legacy localStorage for migration
-    if (state.uiPrefs?.aiButtonStyle) return normalizeIconStyle(state.uiPrefs.aiButtonStyle);
-    try { const r = localStorage.getItem(STYLE_KEY); if (r) return normalizeIconStyle(JSON.parse(r)); } catch {}
-    return DEFAULT_STYLE;
-  });
-  const styleSyncTimerRef = useRef<number | null>(null);
-  const persistStyle = useCallback((next: IconStyle) => {
-    try { localStorage.setItem(STYLE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    setUiPref("aiButtonStyle", next as { color: string; bg: string; size: number; shape: string; icon: string });
-  }, [setUiPref]);
-
-  useEffect(() => {
-    if (styleSyncTimerRef.current) window.clearTimeout(styleSyncTimerRef.current);
-    styleSyncTimerRef.current = window.setTimeout(() => {
-      const cloudStyle = normalizeIconStyle(state.uiPrefs?.aiButtonStyle);
-      if (!sameIconStyle(cloudStyle, style)) persistStyle(style);
-    }, STYLE_SYNC_DEBOUNCE_MS);
-
-    return () => {
-      if (styleSyncTimerRef.current) {
-        window.clearTimeout(styleSyncTimerRef.current);
-        styleSyncTimerRef.current = null;
+  const safeJson = useCallback((value: unknown) => {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, v) => {
+      if (typeof v === "bigint") return v.toString();
+      if (v instanceof Error) {
+        return { name: v.name, message: v.message, stack: v.stack };
       }
-    };
-  }, [style, state.uiPrefs?.aiButtonStyle, persistStyle]);
-  // Sync style from cloud/IDB hydration after initial render
-  useEffect(() => {
-    if (state.uiPrefs?.aiButtonStyle) {
-      const next = normalizeIconStyle(state.uiPrefs.aiButtonStyle);
-      setStyle((prev) => sameIconStyle(prev, next) ? prev : next);
-    }
-  }, [state.uiPrefs?.aiButtonStyle]);
-
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    // Prefer uiPrefs from cloud/IDB, fall back to legacy localStorage for migration
-    if (state.uiPrefs?.aiButtonPos) return state.uiPrefs.aiButtonPos;
-    try { const r = localStorage.getItem(POS_KEY); if (r) return JSON.parse(r); } catch {}
-    return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
-  });
-  const currentPosRef = useRef(pos);
-  const isDraggingRef = useRef(false);
-  const dragMetaRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; moved: boolean } | null>(null);
-  const rafMoveRef = useRef<number | null>(null);
-  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
-
-  const persistPos = useCallback((next: { x: number; y: number }) => {
-    try { localStorage.setItem(POS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    setUiPref("aiButtonPos", next);
-  }, [setUiPref]);
-
-  // Sync pos from cloud/IDB hydration after initial render
-  useEffect(() => {
-    if (isDraggingRef.current) return;
-    if (state.uiPrefs?.aiButtonPos) {
-      const next = clampPosToViewport(state.uiPrefs.aiButtonPos, style.size);
-      setPos((prev) => samePos(prev, next) ? prev : next);
-      currentPosRef.current = next;
-    }
-  }, [state.uiPrefs?.aiButtonPos?.x, state.uiPrefs?.aiButtonPos?.y, style.size]);
-
-  useEffect(() => {
-    const clamped = clampPosToViewport(currentPosRef.current, style.size);
-    if (!samePos(clamped, currentPosRef.current)) {
-      currentPosRef.current = clamped;
-      setPos(clamped);
-      persistPos(clamped);
-    }
-  }, [style.size, persistPos]);
-
-  useEffect(() => {
-    const onResize = () => {
-      const clamped = clampPosToViewport(currentPosRef.current, style.size);
-      if (!samePos(clamped, currentPosRef.current)) {
-        currentPosRef.current = clamped;
-        setPos(clamped);
-        persistPos(clamped);
+      if (v && typeof v === "object") {
+        if (seen.has(v as object)) return "[Circular]";
+        seen.add(v as object);
       }
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [style.size, persistPos]);
-
-  const flushPendingMove = useCallback(() => {
-    rafMoveRef.current = null;
-    const next = pendingPosRef.current;
-    pendingPosRef.current = null;
-    if (!next) return;
-    if (!samePos(next, currentPosRef.current)) {
-      currentPosRef.current = next;
-      setPos(next);
-    }
+      return v;
+    });
   }, []);
 
+  const dbg = useCallback((event: string, payload?: Record<string, unknown>) => {
+    debugSeqRef.current += 1;
+    const stamp = new Date().toISOString();
+    const perf = Math.round(performance.now());
+    if (payload) {
+      console.debug(`[AI-FAB][${debugSeqRef.current}] ${stamp} +${perf}ms ${event} ${safeJson(payload)}`);
+      return;
+    }
+    console.debug(`[AI-FAB][${debugSeqRef.current}] ${stamp} +${perf}ms ${event}`);
+  }, [safeJson]);
+
+  useEffect(() => {
+    dbg("mount", {
+      initialStyle,
+      initialPos,
+      hasUser: !!user,
+      isGuest,
+      categories: state.categories?.length ?? 0,
+      decks: state.decks?.length ?? 0,
+    });
+    return () => dbg("unmount");
+    // Intentionally mount-only: this must reflect true component lifecycle, not rerenders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbg]);
+
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    dbg("pointerDown", { pointerId: e.pointerId, x: e.clientX, y: e.clientY, pos });
     e.currentTarget.setPointerCapture(e.pointerId);
-    isDraggingRef.current = true;
-    dragMetaRef.current = {
+    dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      offsetX: e.clientX - currentPosRef.current.x,
-      offsetY: e.clientY - currentPosRef.current.y,
+      offsetX: e.clientX - pos.x,
+      offsetY: e.clientY - pos.y,
       moved: false,
     };
-  }, []);
+  }, [dbg, pos, pos.x, pos.y]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const meta = dragMetaRef.current;
-    if (!meta || meta.pointerId !== e.pointerId) return;
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = Math.abs(e.clientX - drag.startX);
+    const dy = Math.abs(e.clientY - drag.startY);
+    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) drag.moved = true;
+    const next = clampPos({ x: e.clientX - drag.offsetX, y: e.clientY - drag.offsetY }, style.size);
+    dbg("pointerMove", { pointerId: e.pointerId, x: e.clientX, y: e.clientY, dx, dy, moved: drag.moved, next });
+    setPos(next);
+  }, [dbg, style.size]);
 
-    const dx = Math.abs(e.clientX - meta.startX);
-    const dy = Math.abs(e.clientY - meta.startY);
-    if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) meta.moved = true;
+  const finishDrag = useCallback((pointerId: number, clientX?: number, clientY?: number) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== pointerId) return;
+    const movedByRelease = typeof clientX === "number" && typeof clientY === "number" &&
+      (Math.abs(clientX - drag.startX) > DRAG_THRESHOLD || Math.abs(clientY - drag.startY) > DRAG_THRESHOLD);
+    dragRef.current = null;
 
-    const next = clampPosToViewport({ x: e.clientX - meta.offsetX, y: e.clientY - meta.offsetY }, style.size);
-    pendingPosRef.current = next;
-    if (rafMoveRef.current == null) rafMoveRef.current = window.requestAnimationFrame(flushPendingMove);
-  }, [style.size, flushPendingMove]);
+    dbg("finishDrag", {
+      pointerId,
+      clientX,
+      clientY,
+      moved: drag.moved,
+      movedByRelease,
+      size: style.size,
+    });
+
+    if (drag.moved || movedByRelease) {
+      dbg("finishDrag:applyFreePosition");
+      setPos((prev) => clampPos(prev, style.size));
+      return;
+    }
+    dbg("finishDrag:openDialog");
+    setOpen(true);
+  }, [dbg, style.size]);
 
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    const meta = dragMetaRef.current;
-    if (!meta || meta.pointerId !== e.pointerId) return;
-    dragMetaRef.current = null;
-    isDraggingRef.current = false;
+    e.stopPropagation();
+    dbg("pointerUp", { pointerId: e.pointerId, x: e.clientX, y: e.clientY });
+    finishDrag(e.pointerId, e.clientX, e.clientY);
+  }, [dbg, finishDrag]);
 
-    if (meta.moved) {
-      persistPos(currentPosRef.current);
-    } else {
+  const onPointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    dbg("pointerCancel", { pointerId: e.pointerId });
+    finishDrag(e.pointerId);
+  }, [dbg, finishDrag]);
+
+  const onLostPointerCapture = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    dbg("lostPointerCapture", { pointerId: e.pointerId });
+    finishDrag(e.pointerId);
+  }, [dbg, finishDrag]);
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
+    dbg("keyDown", { key: e.key, shift: e.shiftKey, pos, size: style.size });
+    const step = e.shiftKey ? 24 : 12;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      dbg("keyDown:openDialog", { key: e.key });
       setOpen(true);
+      return;
     }
-  }, [persistPos]);
+
+    let next: FabPos | null = null;
+    if (e.key === "ArrowLeft") next = { x: pos.x - step, y: pos.y };
+    if (e.key === "ArrowRight") next = { x: pos.x + step, y: pos.y };
+    if (e.key === "ArrowUp") next = { x: pos.x, y: pos.y - step };
+    if (e.key === "ArrowDown") next = { x: pos.x, y: pos.y + step };
+    if (!next) return;
+
+    e.preventDefault();
+    dbg("keyDown:move", { next });
+    setPos(clampPos(next, style.size));
+  }, [dbg, pos, style.size]);
+
+  useEffect(() => {
+    const onResize = () => setPos((prev) => clampPos(prev, style.size));
+    dbg("viewportListener:attach", { size: style.size });
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => {
+      dbg("viewportListener:detach");
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+    };
+  }, [dbg, style.size]);
+
+  useEffect(() => {
+    // Absolute rebuild cleanup: remove old storage artifacts from the previous FAB implementation.
+    try {
+      localStorage.removeItem("ai_capture_icon_style_v1");
+      localStorage.removeItem("ai_capture_icon_pos_v1");
+      localStorage.removeItem("ai_capture_pref_sync_queue_v1");
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
+
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+    setSyncState("saving");
+    saveTimerRef.current = window.setTimeout(() => {
+      try {
+        localStorage.setItem(STYLE_KEY_V2, JSON.stringify(style));
+        localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
+        dbg("persist:localStorage", { style, pos });
+      } catch {
+        // ignore localStorage errors
+      }
+      setUiPref("aiButtonStyle", style as any);
+      setUiPref("aiButtonPos", pos as any);
+      dbg("persist:setUiPref", { style, pos });
+      setSyncState("saved");
+      if (savedBadgeTimerRef.current != null) window.clearTimeout(savedBadgeTimerRef.current);
+      savedBadgeTimerRef.current = window.setTimeout(() => {
+        dbg("syncState:idle");
+        setSyncState("idle");
+      }, 900);
+      saveTimerRef.current = null;
+    }, 180);
+
+    dbg("persist:scheduled", { style, pos });
+
+    return () => {
+      if (saveTimerRef.current != null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [dbg, pos, setUiPref, style]);
 
   useEffect(() => {
     return () => {
-      if (rafMoveRef.current != null) window.cancelAnimationFrame(rafMoveRef.current);
-      if (styleSyncTimerRef.current != null) window.clearTimeout(styleSyncTimerRef.current);
+      if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+      if (savedBadgeTimerRef.current != null) window.clearTimeout(savedBadgeTimerRef.current);
     };
   }, []);
 
   const decks = open ? (state.decks ?? []) : [];
+  const shouldBuildCategoryOptions = open && drafts.length > 0;
   const categoryOptions = useMemo(() => {
-    if (!open) return EMPTY_CATEGORY_OPTIONS;
+    if (!shouldBuildCategoryOptions) return EMPTY_CATEGORY_OPTIONS;
     const cats = state.categories ?? [];
+    if (cats.length === 0) return EMPTY_CATEGORY_OPTIONS;
+
+    const byParent = new Map<string | null, Category[]>();
+    for (const c of cats) {
+      const key = c.parentId ?? null;
+      const bucket = byParent.get(key);
+      if (bucket) bucket.push(c);
+      else byParent.set(key, [c]);
+    }
+
     const result: { id: string; label: string; name: string }[] = [];
     const walk = (parentId: string | null, depth: number) => {
-      cats.filter((c) => c.parentId === parentId).forEach((c) => {
+      const children = byParent.get(parentId) ?? [];
+      children.forEach((c) => {
         result.push({ id: c.id, label: `${"— ".repeat(depth)}${c.name}`, name: c.name });
         walk(c.id, depth + 1);
       });
     };
     walk(null, 0);
     return result;
-  }, [open, state.categories]);
+  }, [shouldBuildCategoryOptions, state.categories]);
 
   const reset = () => {
+    dbg("reset");
     setText(""); setImageData(null); setDrafts([]);
     setSelectedDeckIds([]); setSelectedCategoryNames([]);
     setMode("text");
   };
 
   const handleClose = (v: boolean) => {
+    dbg("handleClose", { nextOpen: v });
     if (!v) reset();
     setOpen(v);
   };
 
   const startVoice = () => {
+    dbg("voice:startRequested");
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
+      dbg("voice:notSupported");
       toast.error("הדפדפן לא תומך בזיהוי קולי");
       return;
     }
@@ -262,15 +400,17 @@ export function AiCardCapture() {
       }
       setText((prev) => prev + " " + finalText);
     };
-    rec.onerror = () => { setRecording(false); toast.error("שגיאה בזיהוי קולי"); };
-    rec.onend = () => setRecording(false);
+    rec.onerror = () => { dbg("voice:error"); setRecording(false); toast.error("שגיאה בזיהוי קולי"); };
+    rec.onend = () => { dbg("voice:end"); setRecording(false); };
     rec.start();
+    dbg("voice:started");
     recognitionRef.current = rec;
     setRecording(true);
   };
-  const stopVoice = () => { recognitionRef.current?.stop(); setRecording(false); };
+  const stopVoice = () => { dbg("voice:stop"); recognitionRef.current?.stop(); setRecording(false); };
 
   const onPickImage = (file: File) => {
+    dbg("image:picked", { name: file.name, type: file.type, size: file.size });
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -281,6 +421,14 @@ export function AiCardCapture() {
   };
 
   const extract = async () => {
+    dbg("extract:start", {
+      mode,
+      textLength: text.trim().length,
+      hasImage: !!imageData,
+      recording,
+      selectedDecks: selectedDeckIds.length,
+      selectedCategories: selectedCategoryNames.length,
+    });
     if (mode !== "image" && !text.trim()) { toast.error("הזן טקסט או הקלט קול"); return; }
     if (mode === "image" && !imageData) { toast.error("העלה תמונה"); return; }
     setLoading(true);
@@ -295,12 +443,15 @@ export function AiCardCapture() {
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       const cards = (data as any)?.cards ?? [];
+      dbg("extract:response", { cards: cards.length, hasError: !!(data as any)?.error });
       if (!cards.length) { toast.error("לא חולצו שאלות"); return; }
       setDrafts(cards);
       toast.success(`חולצו ${cards.length} שאלות`);
     } catch (e: any) {
+      dbg("extract:error", { message: e?.message ?? "unknown" });
       toast.error(e?.message || "שגיאה בחילוץ");
     } finally {
+      dbg("extract:finally");
       setLoading(false);
     }
   };
@@ -316,6 +467,11 @@ export function AiCardCapture() {
     setSelectedCategoryNames((arr) => (arr.includes(name) ? arr.filter((x) => x !== name) : [...arr, name]));
 
   const saveAll = () => {
+    dbg("saveAll:start", {
+      drafts: drafts.length,
+      selectedDecks: selectedDeckIds.length,
+      selectedCategories: selectedCategoryNames.length,
+    });
     if (!drafts.length) return;
     if (!selectedDeckIds.length) { toast.error("בחר לפחות חפיסה אחת"); return; }
     const categoryTags = selectedCategoryNames.map((n) => `cat:${n}`);
@@ -333,9 +489,20 @@ export function AiCardCapture() {
         saved++;
       }
     }
+    dbg("saveAll:done", { saved });
     toast.success(`נוספו ${saved} כרטיסים`);
     handleClose(false);
   };
+
+  useEffect(() => {
+    dbg("dialogState", { open, mode, drafts: drafts.length, loading, syncState });
+  }, [dbg, drafts.length, loading, mode, open, syncState]);
+
+  const syncTitle = syncState === "saving"
+    ? "שומר מיקום והגדרות"
+    : syncState === "saved"
+      ? "נשמר"
+      : "AI - גרור או לחץ";
 
   return (
     <>
@@ -343,7 +510,13 @@ export function AiCardCapture() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        title="AI - גרור או לחץ"
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onLostPointerCapture}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+        title={syncTitle}
+        aria-label={syncTitle}
+        tabIndex={0}
         style={{
           position: "fixed",
           left: pos.x,
@@ -355,14 +528,34 @@ export function AiCardCapture() {
           borderRadius: style.shape === "circle" ? "9999px" : style.shape === "rounded" ? "16px" : "4px",
           touchAction: "none",
         }}
-        className="z-40 shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-150 select-none flex items-center justify-center cursor-move focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+        className="z-40 shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-150 select-none flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
       >
         {(() => { const I = ICON_MAP[style.icon] ?? Sparkles; return <I style={{ width: style.size * 0.5, height: style.size * 0.5 }} />; })()}
+
+        {syncState !== "idle" && (
+          <span
+            className={`absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-background text-[10px] ${
+              syncState === "saved" ? "bg-emerald-600 text-white" : "bg-amber-500 text-black"
+            }`}
+            title={syncTitle}
+            role="status"
+            aria-live="polite"
+          >
+            {syncState === "saving" && <Loader2 className="h-3 w-3 animate-spin" />}
+            {syncState === "saved" && <Check className="h-3 w-3" />}
+          </span>
+        )}
       </button>
 
-      <Dialog open={open} onOpenChange={handleClose}>
+      <Dialog open={open} onOpenChange={handleClose} modal={false}>
         {open ? (
-        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0" dir="rtl">
+        <DialogContent
+          className="max-w-3xl max-h-[92vh] overflow-y-auto p-0"
+          dir="rtl"
+          showOverlay={false}
+          trapFocus={false}
+          disableOutsidePointerEvents={false}
+        >
           {/* Header with gold gradient accent */}
           <div className="bg-gradient-to-l from-gold/15 via-gold/8 to-transparent border-b border-gold/20 px-6 pt-5 pb-4">
             <DialogHeader>
@@ -423,6 +616,9 @@ export function AiCardCapture() {
                   </PopoverContent>
                 </Popover>
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                חילוץ שאלות ותשובות מטקסט, קול או תמונה באמצעות AI.
+              </DialogDescription>
             </DialogHeader>
           </div>
 

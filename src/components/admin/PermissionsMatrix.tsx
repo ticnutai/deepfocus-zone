@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Lock } from "lucide-react";
+import { Lock, LockOpen } from "lucide-react";
 
 const MODULES = ["decks","cards","goals","shas","analytics","users","roles","settings"] as const;
 const ACTIONS = ["view","create","edit","delete","manage"] as const;
@@ -38,6 +39,11 @@ export function PermissionsMatrix() {
       .then(({ data }) => setPerms((data ?? []) as Perm[]));
   }, [selected]);
 
+  const reloadPerms = useCallback(async (roleId: string) => {
+    const { data } = await supabase.from("role_permissions").select("*").eq("role_id", roleId);
+    setPerms((data ?? []) as Perm[]);
+  }, []);
+
   const map = useMemo(() => {
     const m: Record<string, Perm> = {};
     perms.forEach((p) => { m[`${p.module}:${p.action}`] = p; });
@@ -63,6 +69,51 @@ export function PermissionsMatrix() {
     }
   };
 
+  const isActionAllowed = useCallback((module: string, action: string): boolean => {
+    if (isAdminRole) return true;
+    return !!map[`${module}:${action}`]?.allowed;
+  }, [isAdminRole, map]);
+
+  const isModuleAllAllowed = useCallback((module: string): boolean => {
+    return ACTIONS.every((action) => isActionAllowed(module, action));
+  }, [isActionAllowed]);
+
+  const isAllAllowed = useMemo(() => MODULES.every((module) => isModuleAllAllowed(module)), [isModuleAllAllowed]);
+
+  const setModuleAll = useCallback(async (module: string, allowed: boolean) => {
+    if (!selected || isAdminRole) return;
+
+    try {
+      await Promise.all(ACTIONS.map(async (action) => {
+        const existing = map[`${module}:${action}`];
+        if (existing) {
+          const { error } = await supabase.from("role_permissions").update({ allowed }).eq("id", existing.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("role_permissions").insert({
+            role_id: selected,
+            module: module as never,
+            action: action as never,
+            allowed,
+          });
+          if (error) throw error;
+        }
+      }));
+      await reloadPerms(selected);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      await reloadPerms(selected);
+    }
+  }, [isAdminRole, map, reloadPerms, selected]);
+
+  const setAll = useCallback(async (allowed: boolean) => {
+    if (!selected || isAdminRole) return;
+    for (const module of MODULES) {
+      // Keep calls sequential to avoid overloading writes and reduce race conditions.
+      await setModuleAll(module, allowed);
+    }
+  }, [isAdminRole, selected, setModuleAll]);
+
   return (
     <Card className="gold-frame p-4 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -82,6 +133,18 @@ export function PermissionsMatrix() {
             <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3" /> אדמין — הכל פתוח</Badge>
           )}
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="gap-1"
+          disabled={isAdminRole || !selected}
+          onClick={() => void setAll(!isAllAllowed)}
+          title={isAllAllowed ? "נקה הכל" : "בחר הכל"}
+        >
+          {isAllAllowed ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+          {isAllAllowed ? "נקה הכל" : "בחר הכל"}
+        </Button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border-2 border-gold/40">
@@ -97,7 +160,23 @@ export function PermissionsMatrix() {
           <tbody>
             {MODULES.map((m) => (
               <tr key={m} className="border-t border-gold/20 hover:bg-secondary/40">
-                <td className="p-2 font-medium text-foreground">{MODULE_LABEL[m]}</td>
+                <td className="p-2 font-medium text-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{MODULE_LABEL[m]}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px] gap-1"
+                      disabled={isAdminRole}
+                      onClick={() => void setModuleAll(m, !isModuleAllAllowed(m))}
+                      title={isModuleAllAllowed(m) ? "נקה הכל" : "בחר הכל"}
+                    >
+                      {isModuleAllAllowed(m) ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                      {isModuleAllAllowed(m) ? "נקה הכל" : "בחר הכל"}
+                    </Button>
+                  </div>
+                </td>
                 {ACTIONS.map((a) => {
                   const p = map[`${m}:${a}`];
                   const checked = isAdminRole ? true : !!p?.allowed;

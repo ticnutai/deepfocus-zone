@@ -6,7 +6,16 @@ type CacheEntry = {
 };
 
 const CACHE_TTL_MS = 2 * 60 * 1000;
-const STARTUP_KEYS = ["dedication_banner", "feature_blocklist"] as const;
+const STARTUP_KEYS = [
+  "dedication_banner",
+  "feature_blocklist",
+  "feature_blocklist_profiles_v1",
+  "feature_blocklist_role_assignments_v1",
+  "role_layout_profiles_v1",
+  "role_layout_profile_assignments_v1",
+  "guest_view_profiles_v1",
+  "guest_view_default_profile_id_v1",
+] as const;
 
 const cache = new Map<string, CacheEntry>();
 let inFlight: Promise<void> | null = null;
