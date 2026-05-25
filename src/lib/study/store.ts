@@ -3634,6 +3634,20 @@ export function useStudy() {
   const setSidebarConfig = useCallback((sidebar: SidebarConfig[]) => {
     const userId = requireUser();
     setState((s) => ({ ...s, sidebarConfig: sidebar }));
+    const previewRoleId = (typeof window !== "undefined")
+      ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
+      : null;
+    if (previewRoleId) {
+      void (async () => {
+        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+        const { error } = await supabase.from("role_layout_defaults").upsert(
+          [{ role_id: previewRoleId, sidebar_config: sidebar as unknown as Json, updated_by: uid, updated_at: new Date().toISOString() }],
+          { onConflict: "role_id" },
+        );
+        if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
+      })();
+      return;
+    }
     const home = memState.tabConfig ?? [];
     bg(supabase.from("user_settings").upsert(
       { user_id: userId, tab_config: { home, sidebar } as unknown as Json },
@@ -3645,6 +3659,21 @@ export function useStudy() {
     const userId = requireUser();
     const now = Date.now();
     setState((s) => ({ ...s, widgetLayout: layout }));
+    const previewRoleId = (typeof window !== "undefined")
+      ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
+      : null;
+    if (previewRoleId) {
+      // Preview mode: redirect save to role_layout_defaults; do NOT touch admin's personal cache/settings.
+      void (async () => {
+        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+        const { error } = await supabase.from("role_layout_defaults").upsert(
+          [{ role_id: previewRoleId, widget_layout: layout as unknown as Json, updated_by: uid, updated_at: new Date().toISOString() }],
+          { onConflict: "role_id" },
+        );
+        if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
+      })();
+      return;
+    }
     // 1. Sync writes: localStorage (instant) + IDB (immediate, survives localStorage clear)
     writeWidgetLayoutCache(userId, layout, now);
     void writeWidgetLayoutIdb(userId, layout, now);
