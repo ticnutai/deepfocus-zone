@@ -38,6 +38,7 @@ export const INTERVAL_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 30,   label: "כל 30 דקות" },
   { value: 60,   label: "כל שעה"     },
   { value: 120,  label: "כל שעתיים"  },
+  { value: 300,  label: "כל 5 שעות"  },
   { value: 360,  label: "כל 6 שעות"  },
   { value: 720,  label: "כל 12 שעות" },
   { value: 1440, label: "פעם ביום"   },
@@ -45,7 +46,7 @@ export const INTERVAL_OPTIONS: Array<{ value: number; label: string }> = [
 
 export const DEFAULT_AUTO_BACKUP_CONFIG: AutoBackupConfig = {
   enabled: false,
-  intervalMinutes: 60,
+  intervalMinutes: 300,
   maxLocalBackups: 50,
   localEnabled: true,
   cloudEnabled: false,
@@ -63,9 +64,14 @@ export function loadAutoBackupConfig(): AutoBackupConfig {
     const raw = localStorage.getItem(CFG_KEY);
     if (!raw) return deepClone(DEFAULT_AUTO_BACKUP_CONFIG);
     const p = JSON.parse(raw) as Partial<AutoBackupConfig>;
+    const parsedInterval = Number(p.intervalMinutes);
+    const normalizedInterval = Number.isFinite(parsedInterval) && parsedInterval > 0
+      ? Math.max(300, parsedInterval)
+      : DEFAULT_AUTO_BACKUP_CONFIG.intervalMinutes;
     return {
       ...DEFAULT_AUTO_BACKUP_CONFIG,
       ...p,
+      intervalMinutes: normalizedInterval,
       topics: { ...DEFAULT_AUTO_BACKUP_CONFIG.topics, ...(p.topics ?? {}) },
     };
   } catch {

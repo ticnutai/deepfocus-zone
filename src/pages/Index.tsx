@@ -25,7 +25,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { DedicationBanner } from "@/components/DedicationBanner";
@@ -395,6 +394,32 @@ const SidebarWorkspace = ({
   </div>
 );
 
+const getInitialHomeTab = (): string => {
+  try {
+    const saved = localStorage.getItem("active-tab") ?? "overview";
+    // Keep first paint lightweight: never boot directly into the heavy backup tab.
+    return saved === "backup" ? "overview" : saved;
+  } catch {
+    return "overview";
+  }
+};
+
+const StaticLazyPanelPreview = ({ compact = false }: { compact?: boolean }) => (
+  <Card className={cn("gold-frame w-full bg-card/95", compact ? "p-3" : "p-6")}>
+    <div className={cn("rounded-xl border-2 border-gold/25 bg-secondary/25", compact ? "p-2" : "p-4")}>
+      <div className="h-4 w-44 rounded-full bg-muted/70 mx-auto mb-3" />
+      {!compact && (
+        <>
+          <div className="h-3 w-full rounded-full bg-muted/60 mb-2" />
+          <div className="h-3 w-10/12 rounded-full bg-muted/60 mb-2" />
+          <div className="h-3 w-8/12 rounded-full bg-muted/60" />
+        </>
+      )}
+      {compact && <div className="h-3 w-8/12 rounded-full bg-muted/60 mx-auto" />}
+    </div>
+  </Card>
+);
+
 // ─── Tab config types & defaults ───────────────────────────────────────────
 type TabDef = { v: string; l: string; I: typeof Gauge };
 type SortableConfigDef = { id: string; label: string; icon: typeof Gauge };
@@ -467,15 +492,6 @@ const Index = () => {
   } = useStudy();
   const { isHydrated } = getHydrationSnapshot();
 
-  // Only show the loading splash after 250ms — fast IDB-cache loads finish before this,
-  // so the user never sees a flash of the loading screen on normal navigations.
-  const [showLoadingSplash, setShowLoadingSplash] = useState(false);
-  useEffect(() => {
-    if (isHydrated) { setShowLoadingSplash(false); return; }
-    const t = setTimeout(() => setShowLoadingSplash(true), 250);
-    return () => clearTimeout(t);
-  }, [isHydrated]);
-
   useAutoBackupRunner();
   const [pinned, setPinned] = useState(true);
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -503,10 +519,10 @@ const Index = () => {
   const [showStudiedBadge, setShowStudiedBadge] = useState(
     () => localStorage.getItem("show-studied-badge") !== "false"
   );
-  const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem("active-tab") ?? "overview");
+  const [activeTab, setActiveTab] = useState<string>(() => getInitialHomeTab());
   // Only mount a tab's content the first time the user visits it.
   // On load, only the initially-active tab mounts its heavy widgets.
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([localStorage.getItem("active-tab") ?? "overview"]));
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([getInitialHomeTab()]));
   const tabsHoverTimer = useRef<number | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -847,69 +863,6 @@ const Index = () => {
 
   const sidebarVisible = pinned || sidebarHovered;
 
-  if (!isHydrated) {
-    if (!showLoadingSplash) return null;
-    // App-shell skeleton — mimics the real layout (sidebar + header + content area)
-    // so users see structure forming, not a blank/text screen (NN/g best practice).
-    return (
-      <div className="min-h-screen bg-background" dir="rtl">
-        <div className="flex">
-          {/* Sidebar skeleton */}
-          <aside className="hidden lg:flex flex-col bg-sidebar w-64 h-screen sticky top-0 self-start flex-shrink-0">
-            <div className="px-4 h-[60px] border-b-2 border-gold/40 flex items-center gap-2">
-              <Skeleton className="h-8 w-8 rounded-full" />
-              <Skeleton className="h-4 w-24" />
-            </div>
-            <div className="flex-1 p-3 space-y-2">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-2 py-2">
-                  <Skeleton className="h-4 w-4 rounded" />
-                  <Skeleton className="h-3.5 flex-1" />
-                </div>
-              ))}
-            </div>
-            <div className="p-3 border-t border-gold/20">
-              <Skeleton className="h-9 w-full rounded-md" />
-            </div>
-          </aside>
-
-          {/* Main content skeleton */}
-          <main className="flex-1 min-h-screen p-4 space-y-4">
-            {/* Header bar */}
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-8 w-48" />
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-8 w-8 rounded-full" />
-                <Skeleton className="h-8 w-24 rounded-md" />
-              </div>
-            </div>
-            {/* Tab chips */}
-            <div className="flex gap-2 flex-wrap">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-7 w-20 rounded-md" />
-              ))}
-            </div>
-            {/* Card grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="rounded-xl border border-gold/20 p-4 space-y-3 bg-secondary/10">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-5/6" />
-                  <Skeleton className="h-3 w-1/2" />
-                  <div className="pt-2 flex items-center gap-2">
-                    <Skeleton className="h-6 w-16 rounded-md" />
-                    <Skeleton className="h-6 w-12 rounded-md" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background" dir="rtl" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <PreviewRoleApplier />
@@ -1075,11 +1028,11 @@ const Index = () => {
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
             {active === "settings" ? (
-              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <Suspense fallback={<StaticLazyPanelPreview />}>
                 <SettingsPanel />
               </Suspense>
             ) : active === "cards" || active === "categories" ? (
-              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <Suspense fallback={<StaticLazyPanelPreview />}>
                 <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
               </Suspense>
             ) : active === "search" ? (
@@ -1088,16 +1041,16 @@ const Index = () => {
                   <h1 className="font-display text-2xl font-bold text-gold">חיפוש חכם</h1>
                   <p className="text-muted-foreground text-sm">חפש שאלות, תשובות, תגיות, קטגוריות ומערכות · קיצור: Ctrl+K</p>
                 </div>
-                <Suspense fallback={<Skeleton className="h-12 w-full rounded-xl" />}>
+                <Suspense fallback={<StaticLazyPanelPreview compact />}>
                   <SmartSearch variant="page" />
                 </Suspense>
               </div>
             ) : active === "admin" ? (
-              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <Suspense fallback={<StaticLazyPanelPreview />}>
                 <AdminPanel />
               </Suspense>
             ) : active !== "home" ? (
-              <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+              <Suspense fallback={<StaticLazyPanelPreview />}>
                 {renderSidebarPage(active)}
               </Suspense>
             ) : (
@@ -1146,7 +1099,7 @@ const Index = () => {
 
               <TabsContent value="overview" className="mt-6">
                 {visitedTabs.has("overview") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <WidgetGrid
                       tabId="overview"
                       widgetMap={{
@@ -1172,7 +1125,7 @@ const Index = () => {
 
               <TabsContent value="summary" className="mt-6">
                 {visitedTabs.has("summary") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <SummaryDashboard />
                   </Suspense>
                 )}
@@ -1180,7 +1133,7 @@ const Index = () => {
 
               <TabsContent value="study" className="mt-6">
                 {visitedTabs.has("study") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <StudyTab showBadge={showStudiedBadge} onToggleBadge={toggleStudiedBadge} />
                   </Suspense>
                 )}
@@ -1188,7 +1141,7 @@ const Index = () => {
 
               <TabsContent value="daf" className="mt-6" forceMount>
                 {visitedTabs.has("daf") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <DafLearningTab isVisible={activeTab === "daf"} />
                   </Suspense>
                 )}
@@ -1196,7 +1149,7 @@ const Index = () => {
 
               <TabsContent value="cards" className="mt-6" forceMount>
                 {visitedTabs.has("cards") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <CardsManager />
                   </Suspense>
                 )}
@@ -1204,7 +1157,7 @@ const Index = () => {
 
               <TabsContent value="goals" className="mt-6">
                 {visitedTabs.has("goals") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <WidgetGrid
                       tabId="goals"
                       widgetMap={{
@@ -1222,7 +1175,7 @@ const Index = () => {
 
               <TabsContent value="analytics" className="mt-6">
                 {visitedTabs.has("analytics") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <KnowledgeAnalytics />
                   </Suspense>
                 )}
@@ -1230,7 +1183,7 @@ const Index = () => {
 
               <TabsContent value="categories" className="mt-6" forceMount>
                 {visitedTabs.has("categories") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <CardsAndCategoriesPage />
                   </Suspense>
                 )}
@@ -1246,7 +1199,7 @@ const Index = () => {
 
               <TabsContent value="backup" className="mt-6" forceMount>
                 {visitedTabs.has("backup") && (
-                  <Suspense fallback={<Skeleton className="h-64 w-full rounded-xl" />}>
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
                     <BackupRestorePage />
                   </Suspense>
                 )}
@@ -1329,7 +1282,7 @@ const Index = () => {
             <DialogTitle className="text-right text-base">חיפוש חכם</DialogTitle>
           </DialogHeader>
           <div className="p-4 pt-2">
-            <Suspense fallback={<Skeleton className="h-12 w-full rounded-xl" />}>
+            <Suspense fallback={<StaticLazyPanelPreview compact />}>
               <SmartSearch
                 variant="modal"
                 onPick={(hit) => {

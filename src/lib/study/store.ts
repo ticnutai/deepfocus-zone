@@ -34,6 +34,7 @@ let uiPrefsSyncPayload: UiPrefs | null = null;
 let cloudSyncInFlight = false;
 let cloudSyncPendingJobs = 0;
 let isHydrated = false;
+let hydrationInFlightFor: string | null = null;
 // Shared IDB read promise — prevents StrictMode double-mount from opening IDB twice.
 let idbHydratePromise: Promise<[import('./indexedStateCache').SyncJob[], import('./types').StudyState | null]> | null = null;
 let idbHydrateForUser: string | null = null;
@@ -47,8 +48,8 @@ const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
 const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
-const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — ensures cross-device changes appear promptly
-const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // keep first paint fast, then reconcile IDB against cloud shortly after
+const CLOUD_REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes — reduces startup-adjacent background network churn
+const BG_CLOUD_REFRESH_DELAY_MS = 30 * 1000; // wait longer after first paint before cloud reconciliation
 const UI_PREFS_SYNC_DEBOUNCE_MS = 800;
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
@@ -60,6 +61,37 @@ function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
     return;
   }
   window.setTimeout(fn, 0);
+}
+
+function runAfterFirstInteractionOrDelay(fn: () => void, fallbackDelayMs = 20_000): () => void {
+  let done = false;
+  const win = window as Window;
+
+  const fire = () => {
+    if (done) return;
+    done = true;
+    cleanup();
+    fn();
+  };
+
+  const timer = win.setTimeout(fire, Math.max(0, fallbackDelayMs));
+  const opts: AddEventListenerOptions = { once: true, passive: true };
+  const onInteract = () => fire();
+
+  win.addEventListener("pointerdown", onInteract, opts);
+  win.addEventListener("keydown", onInteract, opts);
+  win.addEventListener("touchstart", onInteract, opts);
+  win.addEventListener("scroll", onInteract, opts);
+
+  const cleanup = () => {
+    win.clearTimeout(timer);
+    win.removeEventListener("pointerdown", onInteract);
+    win.removeEventListener("keydown", onInteract);
+    win.removeEventListener("touchstart", onInteract);
+    win.removeEventListener("scroll", onInteract);
+  };
+
+  return cleanup;
 }
 // Beyond this age, run a FULL reload instead of a delta sync (catches deletions
 // that delta sync can't observe — delta only sees updated_at >= lastSync).
@@ -1792,8 +1824,11 @@ export function useStudy() {
       notify();
       return;
     }
-    if (loadedFor === uid) return;
+    // Avoid duplicate parallel hydrations for the same user.
+    // If already hydrated, or currently hydrating this user, skip.
+    if (loadedFor === uid && (isHydrated || hydrationInFlightFor === uid)) return;
     loadedFor = uid;
+    hydrationInFlightFor = uid;
     if (uid === GUEST_ID) {
       const saved = localStorage.getItem(GUEST_STATE_KEY);
       if (saved) {
@@ -1994,16 +2029,29 @@ export function useStudy() {
             }, BG_CLOUD_REFRESH_DELAY_MS);
           }
 
-          // flush pending sync jobs in background — only if there are actually jobs to process
+          // Defer queue flushes until first interaction (or delayed fallback)
+          // so startup remains network-light.
           if (existingJobs.length > 0) {
-            void runPendingCloudSync(uid);
+            const cancelDeferredSync = runAfterFirstInteractionOrDelay(() => {
+              if (cancelled) return;
+              if (typeof navigator !== "undefined" && !navigator.onLine) return;
+              runWhenBrowserIdle(() => {
+                void runPendingCloudSync(uid);
+              }, 4000);
+            }, 15_000);
+            if (cancelled) cancelDeferredSync();
           } else {
             perf.log("store:hydrate.sync_skipped", "0 jobs, skipping runPendingCloudSync", "store", hydrateTraceId);
           }
-          // Always retry pending soft-deletes — these are independent of full-sync jobs.
-          window.setTimeout(() => {
-            void flushPendingDeletes(uid);
-          }, 500);
+
+          const cancelDeferredDeletes = runAfterFirstInteractionOrDelay(() => {
+            if (cancelled) return;
+            if (typeof navigator !== "undefined" && !navigator.onLine) return;
+            runWhenBrowserIdle(() => {
+              void flushPendingDeletes(uid);
+            }, 4000);
+          }, 20_000);
+          if (cancelled) cancelDeferredDeletes();
 
           perf.log("store:hydrate.done", "indexeddb-first completed", "store", hydrateTraceId);
           return;
@@ -2050,6 +2098,7 @@ export function useStudy() {
 
         perf.log("store:hydrate.done", "hydrate pipeline completed", "store", hydrateTraceId);
       } finally {
+        if (hydrationInFlightFor === uid) hydrationInFlightFor = null;
         stopHydrateTotal();
         restoreHydrateTrace();
       }

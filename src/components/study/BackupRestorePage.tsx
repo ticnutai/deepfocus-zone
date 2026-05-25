@@ -1598,6 +1598,8 @@ function BackupRestorePage() {
   const { state, setTabConfig, setSidebarConfig, setWidgetLayout, setUiPref, getDeleteAuditHistory, addDeck, addCard } = useStudy();
   const { user } = useAuth();
   const { openRestore: openRestoreCtx } = useRestoreContext();
+  const stateRef = useRef(state);
+  const userRef = useRef(user);
 
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [topicWizardOpen, setTopicWizardOpen] = useState(false);
@@ -1615,6 +1617,14 @@ function BackupRestorePage() {
   const [importPreview, setImportPreview] = useState<ImportedCard[] | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   // Load auto-save meta on mount
   useEffect(() => {
@@ -1649,17 +1659,22 @@ function BackupRestorePage() {
     void refreshDeleteAudit();
   }, [activeSection, refreshDeleteAudit]);
 
-  // Auto-save every 5 min
+  // Auto-save only when auto-backup is enabled, at a 5-hour cadence.
   useEffect(() => {
     if (!user?.id) return;
+
     const run = () => {
-      autoSaveSnapshot(state, user.id, user.email ?? undefined);
-      setAutoMeta(loadAutoSaveMeta(user.id));
+      const currentUser = userRef.current;
+      if (!currentUser?.id) return;
+      const cfg = loadAutoBackupConfig();
+      if (!cfg.enabled) return;
+      autoSaveSnapshot(stateRef.current, currentUser.id, currentUser.email ?? undefined);
+      setAutoMeta(loadAutoSaveMeta(currentUser.id));
     };
-    run();
-    const id = window.setInterval(run, 5 * 60 * 1000);
+
+    const id = window.setInterval(run, 5 * 60 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [state, user]);
+  }, [user?.id]);
 
   const openRestore = useCallback((snap: BackupSnapshot) => {
     openRestoreCtx(snap);

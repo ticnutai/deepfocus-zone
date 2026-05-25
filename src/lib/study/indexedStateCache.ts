@@ -97,6 +97,27 @@ type WidgetLayoutCacheRecord = {
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
+    const timer = globalThis.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("indexedDB.open timeout"));
+    }, 2000);
+
+    const finishSuccess = (db: IDBDatabase) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timer);
+      resolve(db);
+    };
+
+    const finishError = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timer);
+      reject(error instanceof Error ? error : new Error(String(error ?? "indexedDB.open failed")));
+    };
+
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -121,8 +142,10 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(UI_PREFS_STORE, { keyPath: "userId" });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+
+    req.onsuccess = () => finishSuccess(req.result);
+    req.onerror = () => finishError(req.error ?? new Error("indexedDB.open error"));
+    req.onblocked = () => finishError(new Error("indexedDB.open blocked"));
   });
 }
 
