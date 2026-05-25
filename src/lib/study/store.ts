@@ -4343,6 +4343,7 @@ export function useStudy() {
     setTabConfig,
     setSidebarConfig,
     setWidgetLayout,
+    _applyPreviewLayout,
     setUiPref,
     addGeneralPlan, deleteGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit,
     addMasecthaReviewPlan,
