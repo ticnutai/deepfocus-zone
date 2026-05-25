@@ -3689,6 +3689,20 @@ export function useStudy() {
     }
   }, []);
 
+  /**
+   * Non-persisting preview-mode setter. Applies a sidebar+widget layout to local
+   * state ONLY (no cloud sync, no IDB/localStorage write). Used by the admin
+   * "preview as role" iframe to render the app under another role's defaults
+   * without overwriting the admin's own personal layout.
+   */
+  const _applyPreviewLayout = useCallback((sidebar: SidebarConfig[] | null, layout: WidgetLayout | null) => {
+    setState((s) => ({
+      ...s,
+      ...(sidebar ? { sidebarConfig: sidebar } : {}),
+      ...(layout ? { widgetLayout: layout } : {}),
+    }));
+  }, []);
+
   const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {
     const userId = requireUser();
     const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };
