@@ -912,6 +912,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background" dir="rtl" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <PreviewRoleApplier />
       {/* Edge trigger zone — only when not pinned */}
       {!pinned && (
         <div
