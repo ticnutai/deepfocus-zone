@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -23,6 +23,8 @@ type IconStyle = { color: string; bg: string; size: number; shape: Shape; icon: 
 const STYLE_KEY = "ai_capture_icon_style_v1"; // legacy localStorage key — used for migration only
 const POS_KEY = "ai_capture_icon_pos_v1"; // legacy localStorage key — used for migration only
 const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
+const STYLE_SYNC_DEBOUNCE_MS = 180;
+const DRAG_THRESHOLD_PX = 3;
 const normalizeIconStyle = (value: unknown): IconStyle => {
   const raw = (value && typeof value === "object") ? (value as Partial<IconStyle>) : {};
   return {
@@ -41,6 +43,11 @@ const sameIconStyle = (a: IconStyle, b: IconStyle): boolean => (
   a.icon === b.icon
 );
 const samePos = (a: { x: number; y: number }, b: { x: number; y: number }): boolean => a.x === b.x && a.y === b.y;
+const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n));
+const clampPosToViewport = (next: { x: number; y: number }, size: number): { x: number; y: number } => ({
+  x: clamp(next.x, 0, Math.max(0, window.innerWidth - size)),
+  y: clamp(next.y, 0, Math.max(0, window.innerHeight - size)),
+});
 const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
   sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
   zap: Zap, chat: MessageCircle, book: BookOpen, bulb: Lightbulb,
@@ -78,14 +85,26 @@ export function AiCardCapture() {
     try { const r = localStorage.getItem(STYLE_KEY); if (r) return normalizeIconStyle(JSON.parse(r)); } catch {}
     return DEFAULT_STYLE;
   });
-  const isFirstStyleRender = useRef(true);
+  const styleSyncTimerRef = useRef<number | null>(null);
+  const persistStyle = useCallback((next: IconStyle) => {
+    try { localStorage.setItem(STYLE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    setUiPref("aiButtonStyle", next as { color: string; bg: string; size: number; shape: string; icon: string });
+  }, [setUiPref]);
+
   useEffect(() => {
-    if (isFirstStyleRender.current) { isFirstStyleRender.current = false; return; }
-    const cloudStyle = normalizeIconStyle(state.uiPrefs?.aiButtonStyle);
-    if (!sameIconStyle(cloudStyle, style)) {
-      setUiPref("aiButtonStyle", style as { color: string; bg: string; size: number; shape: string; icon: string });
-    }
-  }, [style, setUiPref, state.uiPrefs?.aiButtonStyle]);
+    if (styleSyncTimerRef.current) window.clearTimeout(styleSyncTimerRef.current);
+    styleSyncTimerRef.current = window.setTimeout(() => {
+      const cloudStyle = normalizeIconStyle(state.uiPrefs?.aiButtonStyle);
+      if (!sameIconStyle(cloudStyle, style)) persistStyle(style);
+    }, STYLE_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (styleSyncTimerRef.current) {
+        window.clearTimeout(styleSyncTimerRef.current);
+        styleSyncTimerRef.current = null;
+      }
+    };
+  }, [style, state.uiPrefs?.aiButtonStyle, persistStyle]);
   // Sync style from cloud/IDB hydration after initial render
   useEffect(() => {
     if (state.uiPrefs?.aiButtonStyle) {
@@ -101,40 +120,104 @@ export function AiCardCapture() {
     return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
   });
   const currentPosRef = useRef(pos);
+  const isDraggingRef = useRef(false);
+  const dragMetaRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; moved: boolean } | null>(null);
+  const rafMoveRef = useRef<number | null>(null);
+  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const persistPos = useCallback((next: { x: number; y: number }) => {
+    try { localStorage.setItem(POS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    setUiPref("aiButtonPos", next);
+  }, [setUiPref]);
+
   // Sync pos from cloud/IDB hydration after initial render
   useEffect(() => {
+    if (isDraggingRef.current) return;
     if (state.uiPrefs?.aiButtonPos) {
-      const next = state.uiPrefs.aiButtonPos;
+      const next = clampPosToViewport(state.uiPrefs.aiButtonPos, style.size);
       setPos((prev) => samePos(prev, next) ? prev : next);
       currentPosRef.current = next;
     }
-  }, [state.uiPrefs?.aiButtonPos?.x, state.uiPrefs?.aiButtonPos?.y]);
+  }, [state.uiPrefs?.aiButtonPos?.x, state.uiPrefs?.aiButtonPos?.y, style.size]);
 
-  const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, moved: false };
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    const nx = e.clientX - dragRef.current.dx;
-    const ny = e.clientY - dragRef.current.dy;
-    if (Math.abs(nx - pos.x) > 3 || Math.abs(ny - pos.y) > 3) dragRef.current.moved = true;
-    const maxX = window.innerWidth - style.size;
-    const maxY = window.innerHeight - style.size;
-    const newPos = { x: Math.max(0, Math.min(maxX, nx)), y: Math.max(0, Math.min(maxY, ny)) };
-    currentPosRef.current = newPos;
-    setPos(newPos);
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    const moved = dragRef.current?.moved;
-    dragRef.current = null;
-    if (moved) {
-      setUiPref("aiButtonPos", currentPosRef.current);
+  useEffect(() => {
+    const clamped = clampPosToViewport(currentPosRef.current, style.size);
+    if (!samePos(clamped, currentPosRef.current)) {
+      currentPosRef.current = clamped;
+      setPos(clamped);
+      persistPos(clamped);
+    }
+  }, [style.size, persistPos]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const clamped = clampPosToViewport(currentPosRef.current, style.size);
+      if (!samePos(clamped, currentPosRef.current)) {
+        currentPosRef.current = clamped;
+        setPos(clamped);
+        persistPos(clamped);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [style.size, persistPos]);
+
+  const flushPendingMove = useCallback(() => {
+    rafMoveRef.current = null;
+    const next = pendingPosRef.current;
+    pendingPosRef.current = null;
+    if (!next) return;
+    if (!samePos(next, currentPosRef.current)) {
+      currentPosRef.current = next;
+      setPos(next);
+    }
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isDraggingRef.current = true;
+    dragMetaRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - currentPosRef.current.x,
+      offsetY: e.clientY - currentPosRef.current.y,
+      moved: false,
+    };
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const meta = dragMetaRef.current;
+    if (!meta || meta.pointerId !== e.pointerId) return;
+
+    const dx = Math.abs(e.clientX - meta.startX);
+    const dy = Math.abs(e.clientY - meta.startY);
+    if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) meta.moved = true;
+
+    const next = clampPosToViewport({ x: e.clientX - meta.offsetX, y: e.clientY - meta.offsetY }, style.size);
+    pendingPosRef.current = next;
+    if (rafMoveRef.current == null) rafMoveRef.current = window.requestAnimationFrame(flushPendingMove);
+  }, [style.size, flushPendingMove]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const meta = dragMetaRef.current;
+    if (!meta || meta.pointerId !== e.pointerId) return;
+    dragMetaRef.current = null;
+    isDraggingRef.current = false;
+
+    if (meta.moved) {
+      persistPos(currentPosRef.current);
     } else {
       setOpen(true);
     }
-  };
+  }, [persistPos]);
+
+  useEffect(() => {
+    return () => {
+      if (rafMoveRef.current != null) window.cancelAnimationFrame(rafMoveRef.current);
+      if (styleSyncTimerRef.current != null) window.clearTimeout(styleSyncTimerRef.current);
+    };
+  }, []);
 
   const decks = open ? (state.decks ?? []) : [];
   const categoryOptions = useMemo(() => {
@@ -272,7 +355,7 @@ export function AiCardCapture() {
           borderRadius: style.shape === "circle" ? "9999px" : style.shape === "rounded" ? "16px" : "4px",
           touchAction: "none",
         }}
-        className="z-40 shadow-2xl hover:scale-110 transition-transform flex items-center justify-center cursor-move"
+        className="z-40 shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-150 select-none flex items-center justify-center cursor-move focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
       >
         {(() => { const I = ICON_MAP[style.icon] ?? Sparkles; return <I style={{ width: style.size * 0.5, height: style.size * 0.5 }} />; })()}
       </button>
