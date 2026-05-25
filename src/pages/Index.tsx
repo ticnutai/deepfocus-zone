@@ -27,6 +27,7 @@ import { Slider } from "@/components/ui/slider";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
@@ -481,16 +482,60 @@ const Index = () => {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const { user, signOut, isGuest } = useAuth();
-  const displayEmail = isGuest ? "אורח" : user?.email;
+  const { user, signOut, isGuest, guestProfile } = useAuth();
+  const displayEmail = isGuest
+    ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
+    : user?.email;
   const { isAdmin } = usePermissions();
   const {
     state,
     setTabConfig: saveTabConfig,
     setSidebarConfig: saveSidebarConfig,
+    setWidgetLayout: saveWidgetLayout,
     getHydrationSnapshot,
   } = useStudy();
   const { isHydrated } = getHydrationSnapshot();
+  const appliedGuestProfileRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isGuest) {
+      appliedGuestProfileRef.current = null;
+      return;
+    }
+
+    const profileId = guestProfile?.id ?? "__plain_guest__";
+    if (appliedGuestProfileRef.current === profileId) return;
+
+    if (guestProfile?.tabConfig) saveTabConfig(guestProfile.tabConfig);
+    if (guestProfile?.sidebarConfig) saveSidebarConfig(guestProfile.sidebarConfig);
+    if (guestProfile?.widgetLayout) saveWidgetLayout(guestProfile.widgetLayout);
+
+    appliedGuestProfileRef.current = profileId;
+  }, [guestProfile, isGuest, saveSidebarConfig, saveTabConfig, saveWidgetLayout]);
+
+  useEffect(() => {
+    if (!isGuest || !guestProfile?.roleId) return;
+
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("role_layout_defaults")
+        .select("sidebar_config,widget_layout")
+        .eq("role_id", guestProfile.roleId)
+        .maybeSingle();
+
+      if (cancelled || !data) return;
+
+      const sidebar = data.sidebar_config as unknown as { id: string; visible: boolean; order: number }[] | null;
+      const layout = data.widget_layout as unknown as Record<string, { id: string; visible: boolean; size: "half" | "full"; order: number; height?: number; collapsed?: boolean }[]> | null;
+      if (Array.isArray(sidebar)) saveSidebarConfig(sidebar);
+      if (layout && typeof layout === "object") saveWidgetLayout(layout);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guestProfile?.roleId, isGuest, saveSidebarConfig, saveWidgetLayout]);
 
   useAutoBackupRunner();
   const [pinned, setPinned] = useState(true);
@@ -919,9 +964,9 @@ const Index = () => {
                   {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
+                  <div className="text-xs font-medium text-foreground truncate">{displayEmail ?? ""}</div>
                   <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                    {isAdmin ? "👑 מנהל" : "משתמש"}
+                    {isGuest && guestProfile?.roleName ? `פרופיל ${guestProfile.roleName}` : (isAdmin ? "👑 מנהל" : "משתמש")}
                   </div>
                 </div>
                 <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
@@ -987,9 +1032,9 @@ const Index = () => {
                           {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-foreground truncate">{isGuest ? "אורח" : (user?.email ?? "")}</div>
+                          <div className="text-xs font-medium text-foreground truncate">{displayEmail ?? ""}</div>
                           <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                            {isAdmin ? "👑 מנהל" : "משתמש"}
+                            {isGuest && guestProfile?.roleName ? `פרופיל ${guestProfile.roleName}` : (isAdmin ? "👑 מנהל" : "משתמש")}
                           </div>
                         </div>
                         <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />

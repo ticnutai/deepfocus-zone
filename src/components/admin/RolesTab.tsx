@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2, Lock } from "lucide-react";
+import { Plus, Trash2, Lock, UserX } from "lucide-react";
+import { saveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
 
 interface Role { id: string; name: string; description: string | null; is_system: boolean; }
+interface RolePermRow { module: string; action: string; allowed: boolean; }
+interface RoleDefaultsRow { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null; }
 
 export function RolesTab() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -52,6 +56,42 @@ export function RolesTab() {
     load();
   };
 
+  const createGuestProfileFromRole = async (role: Role) => {
+    setBusy(true);
+    try {
+      const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+        supabase.from("role_permissions").select("module,action,allowed").eq("role_id", role.id),
+        supabase.from("role_layout_defaults").select("sidebar_config,widget_layout").eq("role_id", role.id).maybeSingle(),
+      ]);
+
+      if (permsError) throw new Error(permsError.message);
+      if (defaultsError) throw new Error(defaultsError.message);
+
+      const matrix: Record<string, boolean> = {};
+      ((perms ?? []) as RolePermRow[]).forEach((row) => {
+        if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
+      });
+
+      saveGuestViewProfile({
+        id: `role:${role.id}`,
+        label: `תצוגת אורח: ${role.name}`,
+        roleId: role.id,
+        roleName: role.name,
+        isAdmin: role.name === "admin",
+        roles: [{ id: role.id, name: role.name }],
+        matrix,
+        sidebarConfig: ((defaults as RoleDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
+        widgetLayout: ((defaults as RoleDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+      });
+
+      toast.success(`נוצר/עודכן פרופיל אורח לתפקיד ${role.name}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "יצירת פרופיל אורח נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card className="gold-frame p-4 space-y-3">
@@ -76,11 +116,17 @@ export function RolesTab() {
               </div>
               {r.description && <div className="text-xs text-muted-foreground mt-0.5">{r.description}</div>}
             </div>
-            {!r.is_system && (
-              <Button variant="ghost" size="icon" onClick={() => remove(r.id)} className="text-destructive">
-                <Trash2 className="h-4 w-4" />
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" onClick={() => createGuestProfileFromRole(r)} disabled={busy}>
+                <UserX className="h-4 w-4" />
+                פרופיל אורח
               </Button>
-            )}
+              {!r.is_system && (
+                <Button variant="ghost" size="icon" onClick={() => remove(r.id)} className="text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
         {!roles.length && <div className="text-center text-sm text-muted-foreground py-4">אין תפקידים</div>}

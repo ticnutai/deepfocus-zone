@@ -82,6 +82,19 @@ async function fetchRoleMatrix(roleIds: string[]): Promise<Record<string, boolea
   return matrix;
 }
 
+async function fetchSingleRoleMatrix(roleId: string): Promise<Record<string, boolean>> {
+  const matrix: Record<string, boolean> = {};
+  const { data: rp } = await supabase
+    .from("role_permissions")
+    .select("module, action, allowed")
+    .eq("role_id", roleId);
+  ((rp ?? []) as unknown as RolePermRow[]).forEach((row) => {
+    const key = `${row.module}:${row.action}`;
+    if (row.allowed) matrix[key] = true;
+  });
+  return matrix;
+}
+
 async function fetchPerms(userId: string, opts?: { deferMatrix?: boolean; seedMatrix?: Record<string, boolean> }): Promise<PermSet> {
   const rolesData = await fetchUserRoles(userId);
   if (rolesData.isAdmin || !rolesData.roleIds.length) {
@@ -100,7 +113,7 @@ async function fetchPerms(userId: string, opts?: { deferMatrix?: boolean; seedMa
 
 /** Mount once (inside AuthProvider) — all usePermissions() calls share a single fetch. */
 export function PermissionsProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isGuest, guestProfile } = useAuth();
   const [perms, setPerms] = useState<PermSet>(empty);
   const [loading, setLoading] = useState(true);
 
@@ -111,6 +124,44 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const matrixRefreshInFlight = useRef<string | null>(null);
 
   const load = useCallback(async (forceNetwork = false) => {
+    if (isGuest) {
+      if (!guestProfile) {
+        setPerms(empty);
+        setLoading(false);
+        return;
+      }
+
+      const fallback: PermSet = {
+        isAdmin: !!guestProfile.isAdmin,
+        matrix: guestProfile.matrix ?? {},
+        roles: guestProfile.roles ?? [],
+      };
+      setPerms(fallback);
+
+      if (guestProfile.roleId) {
+        try {
+          const [matrix, roleData] = await Promise.all([
+            fetchSingleRoleMatrix(guestProfile.roleId),
+            supabase.from("app_roles").select("id,name").eq("id", guestProfile.roleId).maybeSingle(),
+          ]);
+
+          const roleName = roleData.data?.name ?? guestProfile.roleName ?? guestProfile.roles?.[0]?.name ?? "role";
+          const live: PermSet = {
+            isAdmin: roleName === "admin",
+            matrix,
+            roles: [{ id: guestProfile.roleId, name: roleName }],
+          };
+          setPerms(live);
+        } catch {
+          // Keep snapshot fallback when offline / DB unavailable.
+          setPerms(fallback);
+        }
+      }
+
+      setLoading(false);
+      return;
+    }
+
     if (!userId) { setPerms(empty); setLoading(false); return; }
 
     const cached = forceNetwork ? null : readCachedPerms(userId);
@@ -161,7 +212,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     runWhenBrowserIdle(() => {
       void refreshMatrix();
     });
-  }, [userId]);
+  }, [guestProfile, isGuest, userId]);
 
   useEffect(() => { void load(); }, [load]);
 

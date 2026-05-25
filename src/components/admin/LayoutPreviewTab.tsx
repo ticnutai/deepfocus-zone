@@ -7,8 +7,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, Monitor, RefreshCw, X, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
+import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
+import { saveGuestViewProfile, setActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+import { toast } from "sonner";
 
 interface AppRole { id: string; name: string }
+interface RolePermissionRow { module: string; action: string; allowed: boolean }
+interface RoleLayoutDefaultsRow {
+  sidebar_config: SidebarConfig[] | null;
+  widget_layout: WidgetLayout | null;
+}
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "מנהל",
@@ -57,6 +65,51 @@ export function LayoutPreviewTab() {
     params.set("previewRole", roleId);
     params.set("_t", String(reloadToken));
     return `/?${params.toString()}`;
+  };
+
+  const saveRoleAsGuestProfile = async (roleId: string) => {
+    const role = roles.find((r) => r.id === roleId);
+    if (!role) return;
+
+    const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+      supabase
+        .from("role_permissions")
+        .select("module,action,allowed")
+        .eq("role_id", roleId),
+      supabase
+        .from("role_layout_defaults")
+        .select("sidebar_config,widget_layout")
+        .eq("role_id", roleId)
+        .maybeSingle(),
+    ]);
+
+    if (permsError) {
+      toast.error(`טעינת הרשאות נכשלה: ${permsError.message}`);
+      return;
+    }
+    if (defaultsError) {
+      toast.error(`טעינת פריסת תפקיד נכשלה: ${defaultsError.message}`);
+      return;
+    }
+
+    const matrix: Record<string, boolean> = {};
+    ((perms ?? []) as RolePermissionRow[]).forEach((row) => {
+      if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
+    });
+
+    const snapshot = saveGuestViewProfile({
+      id: `role:${roleId}`,
+      label: `תצוגת אורח: ${roleLabel(role.name)}`,
+      roleId,
+      roleName: role.name,
+      isAdmin: role.name === "admin",
+      roles: [{ id: roleId, name: role.name }],
+      matrix,
+      sidebarConfig: ((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
+      widgetLayout: ((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+    });
+    setActiveGuestViewProfile(snapshot.id);
+    toast.success(`נשמר פרופיל אורח עבור ${roleLabel(role.name)} והוגדר כברירת מחדל בכניסת אורח`);
   };
 
   return (
@@ -141,6 +194,15 @@ export function LayoutPreviewTab() {
                     <span className="text-[10px] text-muted-foreground truncate">{url}</span>
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px]"
+                      title="שמור תפקיד זה כפרופיל אורח"
+                      onClick={() => void saveRoleAsGuestProfile(roleId)}
+                    >
+                      שמור כאורח
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"

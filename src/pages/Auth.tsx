@@ -8,9 +8,11 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, Eye, EyeOff, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { listGuestViewProfiles, type GuestViewProfile } from "@/lib/auth/guestViewProfile";
 
 const REMEMBER_KEY = "auth-remember";
 const EMAIL_KEY = "auth-remember-email";
@@ -32,6 +34,8 @@ export default function Auth() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [guestProfiles, setGuestProfiles] = useState<GuestViewProfile[]>([]);
+  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("none");
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
 
@@ -48,6 +52,12 @@ export default function Auth() {
   useEffect(() => {
     if (!loading && user) navigate("/", { replace: true });
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    const profiles = listGuestViewProfiles();
+    setGuestProfiles(profiles);
+    setSelectedGuestProfileId(profiles[0]?.id ?? "none");
+  }, []);
 
   const persistRemember = () => {
     if (remember) {
@@ -172,14 +182,34 @@ export default function Auth() {
 
         <Button
           variant="outline"
-          onClick={() => { signInAsGuest(); navigate("/", { replace: true }); }}
+          onClick={() => {
+            const profileId = selectedGuestProfileId === "none" ? null : selectedGuestProfileId;
+            signInAsGuest(profileId);
+            navigate("/", { replace: true });
+          }}
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />
-          כניסה ללא חשבון (אורח)
+          {selectedGuestProfileId === "none" ? "כניסה ללא חשבון (אורח)" : "כניסה כאורח לפי פרופיל"}
         </Button>
+        {guestProfiles.length > 0 && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">פרופיל אורח להצגה</Label>
+            <Select value={selectedGuestProfileId} onValueChange={setSelectedGuestProfileId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="בחר פרופיל" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">אורח רגיל (ללא פרופיל)</SelectItem>
+                {guestProfiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground text-center">
-          מצב אורח שומר נתונים רק על המכשיר הזה, ללא סנכרון
+          מצב אורח שומר נתונים רק על המכשיר הזה, ללא סנכרון. פרופילי אורח נוצרים ממסך ניהול תפקידים.
         </p>
       </Card>
     </div>

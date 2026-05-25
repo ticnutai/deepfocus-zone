@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  clearActiveGuestViewProfile,
+  getActiveGuestViewProfile,
+  setActiveGuestViewProfile,
+  type GuestViewProfile,
+} from "@/lib/auth/guestViewProfile";
 
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
@@ -11,12 +17,14 @@ interface AuthCtx {
   session: Session | null;
   loading: boolean;
   isGuest: boolean;
+  guestProfile: GuestViewProfile | null;
   signOut: () => Promise<void>;
-  signInAsGuest: () => void;
+  signInAsGuest: (profileId?: string | null) => void;
 }
 
 const Ctx = createContext<AuthCtx>({
   user: null, session: null, loading: true, isGuest: false,
+  guestProfile: null,
   signOut: async () => {}, signInAsGuest: () => {},
 });
 
@@ -34,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestMode, setGuestMode] = useState(() => localStorage.getItem(GUEST_KEY) === "1");
+  const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(() => getActiveGuestViewProfile());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -68,16 +77,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (guestMode) {
       localStorage.removeItem(GUEST_KEY);
+      clearActiveGuestViewProfile();
+      setGuestProfile(null);
       setGuestMode(false);
       return;
     }
     await supabase.auth.signOut();
   }, [guestMode]);
 
-  const signInAsGuest = useCallback(() => {
+  const signInAsGuest = useCallback((profileId?: string | null) => {
+    if (profileId) {
+      setActiveGuestViewProfile(profileId);
+    } else {
+      clearActiveGuestViewProfile();
+    }
+    setGuestProfile(getActiveGuestViewProfile());
     localStorage.setItem(GUEST_KEY, "1");
     setGuestMode(true);
   }, []);
+
+  useEffect(() => {
+    if (!guestMode) {
+      setGuestProfile(null);
+      return;
+    }
+    setGuestProfile(getActiveGuestViewProfile());
+  }, [guestMode]);
 
   const effectiveUser = guestMode ? GUEST_USER : (session?.user ?? null);
 
@@ -88,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: effectiveUser,
         loading,
         isGuest: guestMode,
+        guestProfile,
         signOut,
         signInAsGuest,
       }}
