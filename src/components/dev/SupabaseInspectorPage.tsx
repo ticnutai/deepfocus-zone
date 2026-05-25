@@ -387,6 +387,9 @@ const SCHEMA: TableSchema[] = [
   },
 ];
 
+const SUPABASE_PROJECT_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ?? "";
+
 /* ─────────────────────────────────────────────
    Dynamic stats
    ───────────────────────────────────────────── */
@@ -1644,6 +1647,18 @@ export function SupabaseInspectorPage() {
   const activeTables = stats.filter((s) => s.count != null && s.count > 0).length;
   const errorTables = stats.filter((s) => s.error).length;
   const directionalSync = buildDirectionalSyncSnapshot(stats, idbSnap);
+  const copySupabaseValue = useCallback(async (label: "URL" | "anon key", value: string) => {
+    if (!value) {
+      toast.error(`אין ${label} תקין להעתקה`);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} הועתק`);
+    } catch {
+      toast.error(`העתקת ${label} נכשלה`);
+    }
+  }, []);
 
   return (
     <div className="space-y-4 pb-8" dir="rtl">
@@ -1681,6 +1696,38 @@ export function SupabaseInspectorPage() {
             <p className="text-xs text-muted-foreground mt-0.5">
               עודכן: {fmtDate(lastRefresh)} · משתמש: {user?.email ?? "לא מזוהה"}
             </p>
+            <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground" dir="ltr">
+              <div className="flex items-start gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  onClick={() => void copySupabaseValue("URL", SUPABASE_PROJECT_URL)}
+                  title="העתק URL"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <p className="break-all">
+                  URL: {SUPABASE_PROJECT_URL || "(missing VITE_SUPABASE_URL)"}
+                </p>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  onClick={() => void copySupabaseValue("anon key", SUPABASE_ANON_KEY)}
+                  title="העתק anon key"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <p className="break-all">
+                  anon key: {SUPABASE_ANON_KEY || "(missing VITE_SUPABASE_PUBLISHABLE_KEY)"}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
