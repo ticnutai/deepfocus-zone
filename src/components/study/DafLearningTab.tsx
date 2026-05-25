@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { ChevronRight, ChevronLeft, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Landmark, LibraryBig, Files, BookMarked, Move } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -10,7 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { dafLabel, toGematria } from "@/lib/study/shasGen";
@@ -28,8 +28,11 @@ type Layout = "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
 type SplitSide = "gemara-right" | "gemara-left";
 type NavStep = "seder" | "masechta" | "daf" | "amud";
+type ResizeDirection = "e" | "w" | "s";
 
 const STORAGE_KEY = "daf-learning-state";
+const MIN_NAV_DIALOG_WIDTH = 280;
+const MIN_NAV_DIALOG_HEIGHT = 220;
 
 interface SavedState {
   seder?: string;
@@ -41,6 +44,10 @@ interface SavedState {
   splitRatio?: number;
   practiceMode?: PracticeMode;
   practiceScale?: number;
+  navDialogX?: number;
+  navDialogY?: number;
+  navDialogWidth?: number;
+  navDialogHeight?: number;
 }
 
 function loadSaved(): SavedState {
@@ -56,6 +63,10 @@ function normalizeLayout(layout: SavedState["layout"]): Layout {
   if (layout === "cards") return "cards-only";
   if (layout === "split" || layout === "text-only" || layout === "cards-only") return layout;
   return "split";
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
@@ -89,6 +100,33 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [navDaf, setNavDaf] = useState<number>(saved.daf ?? 2);
   const [navAmud, setNavAmud] = useState<1 | 2>(saved.amud ?? 1);
   const [navDafPage, setNavDafPage] = useState(0);
+  const [navDialogPosition, setNavDialogPosition] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === "undefined") return { x: 16, y: 96 };
+    const width = clamp(saved.navDialogWidth ?? 760, MIN_NAV_DIALOG_WIDTH, window.innerWidth - 24);
+    const maxX = Math.max(16, window.innerWidth - width - 16);
+    const maxY = Math.max(12, window.innerHeight - MIN_NAV_DIALOG_HEIGHT - 12);
+    return {
+      x: clamp(saved.navDialogX ?? Math.round((window.innerWidth - width) / 2), 16, maxX),
+      y: clamp(saved.navDialogY ?? 96, 12, maxY),
+    };
+  });
+  const [navDialogSize, setNavDialogSize] = useState<{ width: number; height: number }>(() => {
+    if (typeof window === "undefined") return { width: 760, height: 620 };
+    return {
+      width: clamp(saved.navDialogWidth ?? 760, MIN_NAV_DIALOG_WIDTH, window.innerWidth - 24),
+      height: clamp(saved.navDialogHeight ?? 620, MIN_NAV_DIALOG_HEIGHT, window.innerHeight - 24),
+    };
+  });
+  const dragStateRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const resizeStateRef = useRef<{
+    dir: ResizeDirection;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    originWidth: number;
+    originHeight: number;
+  } | null>(null);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -111,8 +149,26 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       splitRatio,
       practiceMode,
       practiceScale,
+      navDialogX: navDialogPosition.x,
+      navDialogY: navDialogPosition.y,
+      navDialogWidth: navDialogSize.width,
+      navDialogHeight: navDialogSize.height,
     });
-  }, [seder, masechta, daf, amud, layout, splitSide, splitRatio, practiceMode, practiceScale]);
+  }, [
+    seder,
+    masechta,
+    daf,
+    amud,
+    layout,
+    splitSide,
+    splitRatio,
+    practiceMode,
+    practiceScale,
+    navDialogPosition.x,
+    navDialogPosition.y,
+    navDialogSize.width,
+    navDialogSize.height,
+  ]);
 
   const setSplitRatio = (value: number) => {
     const next = Math.max(20, Math.min(80, Math.round(value)));
@@ -195,8 +251,118 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setNavDaf(daf);
     setNavAmud(amud);
     setNavStep(startStep);
+    setNavDialogPosition((prev) => {
+      const maxX = Math.max(16, window.innerWidth - navDialogSize.width - 16);
+      const maxY = Math.max(12, window.innerHeight - navDialogSize.height - 12);
+      return {
+        x: clamp(prev.x, 16, maxX),
+        y: clamp(prev.y, 12, maxY),
+      };
+    });
     setNavDialogOpen(true);
   };
+
+  const startDialogDrag = (ev: React.PointerEvent<HTMLElement>) => {
+    ev.preventDefault();
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    dragStateRef.current = {
+      startX: ev.clientX,
+      startY: ev.clientY,
+      originX: navDialogPosition.x,
+      originY: navDialogPosition.y,
+    };
+  };
+
+  const startDialogResize = (dir: ResizeDirection, ev: React.PointerEvent<HTMLElement>) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    resizeStateRef.current = {
+      dir,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      originX: navDialogPosition.x,
+      originY: navDialogPosition.y,
+      originWidth: navDialogSize.width,
+      originHeight: navDialogSize.height,
+    };
+  };
+
+  useEffect(() => {
+    if (!navDialogOpen) return;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (dragStateRef.current) {
+        const nextX = dragStateRef.current.originX + (ev.clientX - dragStateRef.current.startX);
+        const nextY = dragStateRef.current.originY + (ev.clientY - dragStateRef.current.startY);
+        const maxX = Math.max(16, window.innerWidth - navDialogSize.width - 16);
+        const maxY = Math.max(12, window.innerHeight - navDialogSize.height - 12);
+        setNavDialogPosition({
+          x: clamp(nextX, 16, maxX),
+          y: clamp(nextY, 12, maxY),
+        });
+        return;
+      }
+
+      if (resizeStateRef.current) {
+        const minWidth = MIN_NAV_DIALOG_WIDTH;
+        const minHeight = MIN_NAV_DIALOG_HEIGHT;
+        const leftGap = 16;
+        const topGap = 12;
+        const rightGap = 16;
+        const bottomGap = 12;
+        const rs = resizeStateRef.current;
+        const widthDelta = ev.clientX - rs.startX;
+        const heightDelta = ev.clientY - rs.startY;
+
+        let nextX = rs.originX;
+        let nextY = rs.originY;
+        let nextWidth = rs.originWidth;
+        let nextHeight = rs.originHeight;
+
+        if (rs.dir === "e") {
+          const maxWidthFromRight = Math.max(minWidth, window.innerWidth - rs.originX - rightGap);
+          nextWidth = clamp(rs.originWidth + widthDelta, minWidth, maxWidthFromRight);
+        }
+
+        if (rs.dir === "w") {
+          const maxXFromMinWidth = rs.originX + rs.originWidth - minWidth;
+          nextX = clamp(rs.originX + widthDelta, leftGap, maxXFromMinWidth);
+          const maxWidthFromRight = Math.max(minWidth, window.innerWidth - nextX - rightGap);
+          nextWidth = clamp(rs.originWidth - (nextX - rs.originX), minWidth, maxWidthFromRight);
+        }
+
+        if (rs.dir === "s") {
+          const maxHeightFromBottom = Math.max(minHeight, window.innerHeight - rs.originY - bottomGap);
+          nextHeight = clamp(rs.originHeight + heightDelta, minHeight, maxHeightFromBottom);
+        }
+
+        const maxY = Math.max(topGap, window.innerHeight - nextHeight - bottomGap);
+        nextY = clamp(nextY, topGap, maxY);
+
+        const maxX = Math.max(leftGap, window.innerWidth - nextWidth - rightGap);
+        nextX = clamp(nextX, leftGap, maxX);
+
+        setNavDialogPosition({ x: nextX, y: nextY });
+        setNavDialogSize({
+          width: nextWidth,
+          height: nextHeight,
+        });
+      }
+    };
+
+    const onPointerUp = () => {
+      dragStateRef.current = null;
+      resizeStateRef.current = null;
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [navDialogOpen, navDialogSize.width, navDialogSize.height, navDialogPosition.x, navDialogPosition.y]);
 
   const navMasechtos = useMemo(
     () => SHAS_BAVLI.filter((m) => m.seder === navSeder),
@@ -293,6 +459,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     },
     [navStep, navDafPageCount],
   );
+
+  const navStepMeta: Record<NavStep, { label: string; icon: typeof Landmark }> = {
+    seder: { label: "בחירת סדר", icon: Landmark },
+    masechta: { label: "בחירת מסכת", icon: LibraryBig },
+    daf: { label: "בחירת דף", icon: Files },
+    amud: { label: "בחירת עמוד", icon: BookMarked },
+  };
+  const ActiveNavStepIcon = navStepMeta[navStep].icon;
 
   // לימוד פעיל במצב מסך מלא בלבד — מציג רק את ה-StudySession
   if (studyOpen && practiceMode === "fullscreen" && cardIds.length > 0) {
@@ -632,21 +806,76 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
       <Dialog open={navDialogOpen} onOpenChange={setNavDialogOpen} modal={false}>
         <DialogContent
-          className="max-w-2xl p-5 gap-3"
+          className="max-w-none p-0 gap-0 overflow-hidden border-2 border-gold/60 bg-white shadow-[0_28px_80px_-34px_rgba(6,20,58,0.6)] left-0 top-0 translate-x-0 translate-y-0"
           dir="rtl"
           showOverlay={false}
           onKeyDown={handleNavDialogKeyDown}
+          style={{
+            left: navDialogPosition.x,
+            top: navDialogPosition.y,
+            width: navDialogSize.width,
+            height: navDialogSize.height,
+            maxWidth: "calc(100vw - 16px)",
+            maxHeight: "calc(100vh - 12px)",
+          }}
         >
-          <DialogHeader>
-            <DialogTitle className="text-right">
-              {navStep === "seder" && "בחירת סדר"}
-              {navStep === "masechta" && "בחירת מסכת"}
-              {navStep === "daf" && "בחירת דף"}
-              {navStep === "amud" && "בחירת עמוד"}
+          <DialogHeader
+            className="px-5 pt-5 pb-3 bg-[linear-gradient(140deg,#ffffff_0%,#fffbf2_65%,#f8efe0_100%)] border-b border-gold/30 select-none cursor-move"
+            onPointerDown={(ev) => {
+              const target = ev.target as HTMLElement;
+              if (target.closest("button,a,input,select,textarea,[role='button']")) return;
+              startDialogDrag(ev);
+            }}
+          >
+            <DialogTitle className="text-right text-navy flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2">
+                <ActiveNavStepIcon className="h-5 w-5 text-navy" />
+                {navStepMeta[navStep].label}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-2 bg-white border-gold/55 text-navy hover:bg-gold/10 cursor-move touch-none"
+                  title="גרור להזזת החלון"
+                  onPointerDown={startDialogDrag}
+                >
+                  <Move className="h-4 w-4" />
+                </Button>
+                <span className="text-xs font-medium text-navy/65">ניווט מהיר</span>
+              </span>
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              חלון בחירה מהיר של סדר, מסכת, דף ועמוד.
+            </DialogDescription>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {(Object.keys(navStepMeta) as NavStep[]).map((stepKey) => {
+                const StepIcon = navStepMeta[stepKey].icon;
+                const selected = navStep === stepKey;
+                return (
+                  <Button
+                    key={stepKey}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn(
+                      "h-9 gap-1.5 rounded-md border text-xs",
+                      selected
+                        ? "bg-white border-navy text-navy ring-1 ring-navy/25"
+                        : "bg-white border-gold/50 text-navy hover:bg-gold/10 hover:text-navy",
+                    )}
+                    onClick={() => setNavStep(stepKey)}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    {navStepMeta[stepKey].label.replace("בחירת ", "")}
+                  </Button>
+                );
+              })}
+            </div>
           </DialogHeader>
 
-          <div className="space-y-2">
+          <div className="flex-1 min-h-0 space-y-3 p-5 bg-white overflow-y-auto">
             {navStep === "seder" && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {SEDARIM.map((s) => (
@@ -654,11 +883,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     key={s}
                     variant={s === navSeder ? "default" : "outline"}
                     className={cn(
-                      "h-11 rounded-lg",
-                      s === navSeder && "bg-gradient-navy text-primary-foreground",
+                      "h-11 rounded-lg border text-base",
+                      s === navSeder
+                        ? "bg-navy text-white border-navy shadow-md"
+                        : "bg-white border-gold/55 text-navy hover:bg-gold/10 hover:text-navy",
                     )}
                     onClick={() => handleChooseSeder(s)}
                   >
+                    <Landmark className="h-4 w-4" />
                     {s}
                   </Button>
                 ))}
@@ -671,7 +903,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1"
+                    className="gap-1 bg-white border-gold/55 text-navy hover:bg-gold/10"
                     onClick={() => setNavStep("seder")}
                   >
                     <ChevronRight className="h-4 w-4" /> חזרה לסדרים
@@ -687,12 +919,15 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                       key={m.name}
                       variant={m.name === navMasechta ? "default" : "outline"}
                       className={cn(
-                        "h-11 rounded-lg",
+                        "h-11 rounded-lg border",
                         m.name === navMasechta &&
-                          "bg-gradient-navy text-primary-foreground",
+                          "bg-navy text-white border-navy shadow-md",
+                        m.name !== navMasechta &&
+                          "bg-white border-gold/55 text-navy hover:bg-gold/10 hover:text-navy",
                       )}
                       onClick={() => handleChooseMasechta(m.name)}
                     >
+                      <LibraryBig className="h-4 w-4" />
                       {m.name}
                     </Button>
                   ))}
@@ -706,7 +941,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1"
+                    className="gap-1 bg-white border-gold/55 text-navy hover:bg-gold/10"
                     onClick={() => setNavStep("masechta")}
                   >
                     <ChevronRight className="h-4 w-4" /> חזרה למסכתות
@@ -718,7 +953,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="gap-1"
+                      className="gap-1 bg-white border-gold/55 text-navy hover:bg-gold/10"
                       disabled={!canGoPrevNavPage}
                       onClick={() => setNavDafPage((p) => Math.max(0, p - 1))}
                     >
@@ -727,7 +962,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="gap-1"
+                      className="gap-1 bg-white border-gold/55 text-navy hover:bg-gold/10"
                       disabled={!canGoNextNavPage}
                       onClick={() => setNavDafPage((p) => Math.min(navDafPageCount - 1, p + 1))}
                     >
@@ -750,11 +985,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                         size="sm"
                         variant={selected ? "default" : "outline"}
                         className={cn(
-                          "h-11 rounded-lg",
-                          selected && "bg-gradient-navy text-primary-foreground",
+                          "h-11 rounded-lg border",
+                          selected
+                            ? "bg-navy text-white border-navy shadow-md"
+                            : "bg-white border-gold/55 text-navy hover:bg-gold/10 hover:text-navy",
                         )}
                         onClick={() => handleChooseDaf(d)}
                       >
+                        <Files className="h-3.5 w-3.5" />
                         <span className="text-xs">{dafLabel(d).replace(".", "")}</span>
                         {cnt > 0 ? (
                           <span className={cn("mr-1 text-[10px]", selected ? "text-primary-foreground/90" : "text-gold")}>({cnt})</span>
@@ -772,7 +1010,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1"
+                    className="gap-1 bg-white border-gold/55 text-navy hover:bg-gold/10"
                     onClick={() => setNavStep("daf")}
                   >
                     <ChevronRight className="h-4 w-4" /> חזרה לדפים
@@ -786,11 +1024,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                   <Button
                     variant={navAmud === 1 ? "default" : "outline"}
                     className={cn(
-                      "h-16 text-lg rounded-xl",
-                      navAmud === 1 && "bg-gradient-navy text-primary-foreground",
+                      "h-16 text-lg rounded-xl border",
+                      navAmud === 1
+                        ? "bg-navy text-white border-navy shadow-md"
+                        : "bg-white border-gold/55 text-navy hover:bg-gold/10 hover:text-navy",
                     )}
                     onClick={() => applyNavSelection(1)}
                   >
+                    <BookMarked className="h-4 w-4" />
                     ע"א
                     {navDafCounts.get(navDaf)?.a ? (
                       <span className="mr-2 text-sm">({navDafCounts.get(navDaf)?.a})</span>
@@ -799,11 +1040,14 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                   <Button
                     variant={navAmud === 2 ? "default" : "outline"}
                     className={cn(
-                      "h-16 text-lg rounded-xl",
-                      navAmud === 2 && "bg-gradient-navy text-primary-foreground",
+                      "h-16 text-lg rounded-xl border",
+                      navAmud === 2
+                        ? "bg-navy text-white border-navy shadow-md"
+                        : "bg-white border-gold/55 text-navy hover:bg-gold/10 hover:text-navy",
                     )}
                     onClick={() => applyNavSelection(2)}
                   >
+                    <BookMarked className="h-4 w-4" />
                     ע"ב
                     {navDafCounts.get(navDaf)?.b ? (
                       <span className="mr-2 text-sm">({navDafCounts.get(navDaf)?.b})</span>
@@ -813,6 +1057,21 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               </>
             )}
           </div>
+          <div
+            className="absolute top-12 bottom-7 right-0 w-2 cursor-ew-resize hover:bg-gold/20 touch-none"
+            title="הרחבה או הצרה"
+            onPointerDown={(e) => startDialogResize("e", e)}
+          />
+          <div
+            className="absolute top-12 bottom-7 left-0 w-2 cursor-ew-resize hover:bg-gold/20 touch-none"
+            title="הרחבה או הצרה"
+            onPointerDown={(e) => startDialogResize("w", e)}
+          />
+          <div
+            className="absolute bottom-0 left-7 right-7 h-2 cursor-ns-resize hover:bg-gold/20 touch-none"
+            title="הגדלה או הקטנה לגובה"
+            onPointerDown={(e) => startDialogResize("s", e)}
+          />
         </DialogContent>
       </Dialog>
     </div>
