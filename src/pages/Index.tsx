@@ -11,6 +11,7 @@ import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closest
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
+import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
