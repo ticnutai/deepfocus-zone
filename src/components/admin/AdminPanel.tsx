@@ -60,6 +60,9 @@ export function AdminPanel() {
             <TabsTrigger value="defaults" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>ברירות מחדל ופריסה</span><LayoutDashboard className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="preview" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>תצוגה מקדימה</span><Monitor className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
@@ -70,6 +73,7 @@ export function AdminPanel() {
         <TabsContent value="overrides" className="mt-4"><UserPermOverrides /></TabsContent>
         <TabsContent value="sync-monitor" className="mt-4"><SyncMonitorTab /></TabsContent>
         <TabsContent value="defaults" className="mt-4"><RoleDefaultsTab /></TabsContent>
+        <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
       </Tabs>
     </div>
   );
