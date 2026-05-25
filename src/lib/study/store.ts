@@ -135,6 +135,8 @@ export function getCurrentStudyCardsCount(): number {
 const WIDGET_LAYOUT_CACHE_KEY = (userId: string) => `widget-layout-cache:${userId}`;
 /** Stores the widget_layout_updated_at timestamp that came from cloud on last loadAll(). Used to detect in-flight local changes during bg refresh. */
 const WIDGET_LAYOUT_CLOUD_TS_KEY = (userId: string) => `widget-layout-cloud-ts:${userId}`;
+/** Stores user_settings.updated_at from cloud for tab/sidebar config LWW during delta sync. */
+const TAB_CONFIG_CLOUD_TS_KEY = (userId: string) => `tab-config-cloud-ts:${userId}`;
 const UI_PREFS_CACHE_KEY = (userId: string) => `ui-prefs-cache:${userId}`;
 const DECK_CATEGORIES_KEY = (userId: string) => `deck-categories:${userId}`;
 
@@ -231,6 +233,7 @@ const clearLegacyBrowserCachesForUser = async (userId: string) => {
   try {
     localStorage.removeItem(WIDGET_LAYOUT_CACHE_KEY(userId));
     localStorage.removeItem(WIDGET_LAYOUT_CLOUD_TS_KEY(userId));
+    localStorage.removeItem(TAB_CONFIG_CLOUD_TS_KEY(userId));
     localStorage.removeItem(UI_PREFS_CACHE_KEY(userId));
     localStorage.removeItem(DECK_CATEGORIES_KEY(userId));
     localStorage.removeItem(`category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`);
@@ -1369,12 +1372,16 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
   cardDecks: { cardId: string; deckId: string; sortOrder: number; updatedAt: number }[];
   shasReviews: ShasReview[];
   learningSessions: LearningSession[];
+  widgetLayout?: WidgetLayout;
+  widgetLayoutUpdatedAt: number;
+  tabConfigBundle?: { home: TabConfig[]; sidebar: SidebarConfig[] };
+  tabConfigUpdatedAt: number;
 }> {
   void userId; // RLS handles user scoping
   const sinceIso = new Date(Math.max(0, sinceMs - 1000)).toISOString(); // -1s safety overlap
   type R<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
 
-  const [cardsCountR, decksR, cardsR, catsR, goalsR, notesR, cardDecksR, reviewsR, sessionsR] = await Promise.all([
+  const [cardsCountR, decksR, cardsR, catsR, goalsR, notesR, cardDecksR, reviewsR, sessionsR, settingsR] = await Promise.all([
     timeOp("db:delta:cards_count", "db", () => supabase.from("cards").select("id", { count: "exact", head: true })),
     timeOp("db:delta:decks", "db", () => supabase.from("decks").select("*").gte("updated_at", sinceIso)),
     (async () => {
@@ -1400,6 +1407,14 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
     timeOp("db:delta:card_decks", "db", () => supabase.from("card_decks").select("*").gte("updated_at", sinceIso)),
     timeOp("db:delta:shas_reviews", "db", () => supabase.from("shas_reviews").select("*").gte("updated_at", sinceIso)),
     timeOp("db:delta:learning_sessions", "db", () => supabase.from("learning_sessions").select("*").gte("updated_at", sinceIso)),
+    // Pull latest layout metadata every delta cycle so widget layout changes on another device
+    // propagate quickly without waiting for a full snapshot refresh.
+    timeOp("db:delta:user_settings_layout", "db", () =>
+      supabase
+        .from("user_settings")
+        .select("widget_layout,widget_layout_updated_at,tab_config,updated_at")
+        .maybeSingle(),
+    ),
   ]);
 
   if (cardsCountR.error) throw cardsCountR.error;
@@ -1468,15 +1483,85 @@ async function loadDelta(userId: string, sinceMs: number): Promise<{
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
   }));
 
-  return { cloudCardsTotalCount, decks, cards, categories, goals, dayNotes, cardDecks, shasReviews, learningSessions };
+  const widgetLayout = (() => {
+    const raw = settingsR.data?.widget_layout;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as unknown as WidgetLayout;
+    return undefined;
+  })();
+  const widgetLayoutUpdatedAt = (() => {
+    const raw = (settingsR.data as { widget_layout_updated_at?: string | null } | null)?.widget_layout_updated_at;
+    if (raw) {
+      const t = new Date(raw).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    if (settingsR.data?.updated_at) {
+      const t = new Date(settingsR.data.updated_at).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    return 0;
+  })();
+  const tabConfigBundle = (() => {
+    const raw = settingsR.data?.tab_config;
+    if (Array.isArray(raw)) {
+      return { home: raw as unknown as TabConfig[], sidebar: [] as SidebarConfig[] };
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const obj = raw as { home?: unknown; sidebar?: unknown };
+      return {
+        home: Array.isArray(obj.home) ? (obj.home as unknown as TabConfig[]) : [],
+        sidebar: Array.isArray(obj.sidebar) ? (obj.sidebar as unknown as SidebarConfig[]) : [],
+      };
+    }
+    return undefined;
+  })();
+  const tabConfigUpdatedAt = settingsR.data?.updated_at
+    ? new Date(settingsR.data.updated_at).getTime()
+    : 0;
+
+  return {
+    cloudCardsTotalCount,
+    decks,
+    cards,
+    categories,
+    goals,
+    dayNotes,
+    cardDecks,
+    shasReviews,
+    learningSessions,
+    widgetLayout,
+    widgetLayoutUpdatedAt,
+    tabConfigBundle,
+    tabConfigUpdatedAt,
+  };
 }
 
 const applyDeltaToState = (base: StudyState, delta: Awaited<ReturnType<typeof loadDelta>>): StudyState => {
+  const uidForSettings = currentUserId;
+  const storedWidgetCloudTs = (uidForSettings && uidForSettings !== GUEST_ID)
+    ? Number(localStorage.getItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uidForSettings)) ?? "0")
+    : 0;
+  const storedTabCloudTs = (uidForSettings && uidForSettings !== GUEST_ID)
+    ? Number(localStorage.getItem(TAB_CONFIG_CLOUD_TS_KEY(uidForSettings)) ?? "0")
+    : 0;
+  const hasWidgetSettingsDelta = !!(
+    uidForSettings
+    && uidForSettings !== GUEST_ID
+    && delta.widgetLayoutUpdatedAt > 0
+    && delta.widgetLayoutUpdatedAt > storedWidgetCloudTs
+  );
+  const hasTabConfigDelta = !!(
+    uidForSettings
+    && uidForSettings !== GUEST_ID
+    && delta.tabConfigBundle
+    && delta.tabConfigUpdatedAt > 0
+    && delta.tabConfigUpdatedAt > storedTabCloudTs
+  );
+
   // No changes anywhere → return base reference unchanged so React skips render.
   const totalChanged = delta.decks.length + delta.cards.length + delta.categories.length
     + delta.goals.length + delta.dayNotes.length + delta.cardDecks.length
     + delta.shasReviews.length + delta.learningSessions.length;
-  if (totalChanged === 0) return base;
+  if (totalChanged === 0 && !hasWidgetSettingsDelta && !hasTabConfigDelta) return base;
   const tombstones = lastCloudCategoryTombstones;
   const mergedCats = mergeByKeyLww(base.categories, delta.categories, (x) => x.id);
   let filteredCats: typeof mergedCats;
@@ -1494,6 +1579,34 @@ const applyDeltaToState = (base: StudyState, delta: Awaited<ReturnType<typeof lo
   } else {
     filteredCats = mergedCats;
   }
+
+  let nextWidgetLayout = base.widgetLayout;
+  const uidForLayout = uidForSettings;
+  if (uidForLayout && uidForLayout !== GUEST_ID && delta.widgetLayoutUpdatedAt > 0) {
+    localStorage.setItem(WIDGET_LAYOUT_CLOUD_TS_KEY(uidForLayout), String(delta.widgetLayoutUpdatedAt));
+    const localWidgetCache = readWidgetLayoutCache(uidForLayout);
+    const localTs = localWidgetCache?.updatedAt ?? 0;
+    if (delta.widgetLayout && localTs < delta.widgetLayoutUpdatedAt) {
+      nextWidgetLayout = delta.widgetLayout;
+      writeWidgetLayoutCache(uidForLayout, delta.widgetLayout, delta.widgetLayoutUpdatedAt);
+      void writeWidgetLayoutIdb(uidForLayout, delta.widgetLayout, delta.widgetLayoutUpdatedAt);
+    } else if (localWidgetCache?.layout && localTs >= delta.widgetLayoutUpdatedAt) {
+      nextWidgetLayout = localWidgetCache.layout;
+    } else if (!delta.widgetLayout && localWidgetCache?.layout) {
+      nextWidgetLayout = localWidgetCache.layout;
+    }
+  }
+
+  let nextTabConfig = base.tabConfig;
+  let nextSidebarConfig = base.sidebarConfig;
+  if (uidForSettings && uidForSettings !== GUEST_ID && delta.tabConfigUpdatedAt > 0) {
+    if (delta.tabConfigBundle && delta.tabConfigUpdatedAt > storedTabCloudTs) {
+      nextTabConfig = delta.tabConfigBundle.home;
+      nextSidebarConfig = delta.tabConfigBundle.sidebar;
+      localStorage.setItem(TAB_CONFIG_CLOUD_TS_KEY(uidForSettings), String(delta.tabConfigUpdatedAt));
+    }
+  }
+
   return applyBidirectionalDedupeGuards({
     ...base,
     decks: mergeByKeyLww(base.decks, delta.decks, (x) => x.id),
@@ -1504,6 +1617,9 @@ const applyDeltaToState = (base: StudyState, delta: Awaited<ReturnType<typeof lo
     cardDecks: mergeByKeyLww(base.cardDecks, delta.cardDecks, (x) => `${x.cardId}::${x.deckId}`),
     shasReviews: mergeByKeyLww(base.shasReviews, delta.shasReviews, (x) => x.id),
     learningSessions: mergeByKeyLww(base.learningSessions, delta.learningSessions, (x) => x.id),
+    tabConfig: nextTabConfig,
+    sidebarConfig: nextSidebarConfig,
+    widgetLayout: nextWidgetLayout,
   });
 };
 
@@ -1750,6 +1866,10 @@ async function loadAll(userId: string): Promise<StudyState> {
     }
     return { home: [] as TabConfig[], sidebar: [] as SidebarConfig[] };
   })();
+  const cloudTabConfigUpdatedAt = settingsR.data?.updated_at
+    ? new Date(settingsR.data.updated_at).getTime()
+    : 0;
+  localStorage.setItem(TAB_CONFIG_CLOUD_TS_KEY(userId), String(cloudTabConfigUpdatedAt));
 
   return {
     decks, cards, logs, categories, goals, shasPlan, dayNotes, cardDecks,
