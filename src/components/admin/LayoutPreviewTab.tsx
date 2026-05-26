@@ -110,9 +110,9 @@ export function LayoutPreviewTab() {
       roles: [{ id: roleId, name: role.name }],
       matrix,
       sidebarConfig: assignedProfile?.sidebarConfig
-        ?? (((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined),
+        ?? ((defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleLayoutDefaultsRow["sidebar_config"] | undefined),
       widgetLayout: assignedProfile?.widgetLayout
-        ?? (((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined),
+        ?? ((defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleLayoutDefaultsRow["widget_layout"] | undefined),
     });
     setActiveGuestViewProfile(snapshot.id);
     toast.success(`נשמר פרופיל אורח עבור ${roleLabel(role.name)} והוגדר כברירת מחדל בכניסת אורח`);

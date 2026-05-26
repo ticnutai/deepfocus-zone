@@ -98,7 +98,7 @@ const SEED_PAGE_SIZE = 1000;
 const SEED_MAX_ROWS = 50_000;
 
 async function fetchAllSeedPages<T>(
-  queryPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message?: string } | null }>,
+  queryPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
   label: string,
 ): Promise<T[]> {
   const rows: T[] = [];
@@ -364,8 +364,8 @@ export function RolesTab() {
           isAdmin: false,
           roles: [{ id: role!.id, name: role!.name }],
           matrix,
-          sidebarConfig: ((defaults as RoleDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-          widgetLayout: ((defaults as RoleDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+          sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleDefaultsRow["sidebar_config"] | undefined,
+          widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleDefaultsRow["widget_layout"] | undefined,
           studySeed,
         });
       })();
@@ -437,8 +437,8 @@ export function RolesTab() {
         isAdmin: role.name === "admin",
         roles: [{ id: role.id, name: role.name }],
         matrix,
-        sidebarConfig: ((defaults as RoleDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-        widgetLayout: ((defaults as RoleDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+        sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleDefaultsRow["sidebar_config"] | undefined,
+        widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleDefaultsRow["widget_layout"] | undefined,
         studySeed,
       });
 

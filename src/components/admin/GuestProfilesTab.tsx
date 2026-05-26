@@ -110,7 +110,7 @@ const SEED_PAGE_SIZE = 1000;
 const SEED_MAX_ROWS = 50_000;
 
 async function fetchAllSeedPages<T>(
-  queryPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message?: string } | null }>,
+  queryPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
   label: string,
 ): Promise<T[]> {
   const rows: T[] = [];
@@ -371,8 +371,8 @@ export function GuestProfilesTab() {
       isAdmin: role.name === "admin",
       roles: [{ id: role.id, name: role.name }],
       matrix,
-      sidebarConfig: ((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-      widgetLayout: ((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+      sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleLayoutDefaultsRow["sidebar_config"] | undefined,
+      widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleLayoutDefaultsRow["widget_layout"] | undefined,
       studySeed: studySeed ?? existing?.studySeed,
     });
   }, [buildGuestStudySeed, roles]);
