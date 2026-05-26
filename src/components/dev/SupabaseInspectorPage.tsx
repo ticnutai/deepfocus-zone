@@ -1193,7 +1193,7 @@ export function SupabaseInspectorPage() {
             .range(from, from + PAGE - 1);
           const { data, error } = await query;
           if (error) throw new Error(`${table}: ${error.message}`);
-          const page = (data ?? []) as Array<Record<string, unknown>>;
+          const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
           all.push(...page);
           if (page.length < PAGE) break;
           from += PAGE;
