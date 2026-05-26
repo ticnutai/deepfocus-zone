@@ -50,7 +50,7 @@ function saveState(s: SavedState) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 
-function normalizeLayout(layout: SavedState["layout"]): Layout {
+function normalizeLayout(layout: SavedState["layout"] | string | undefined): Layout {
   if (layout === "split-v" || layout === "split-h") return "split";
   if (layout === "gemara") return "text-only";
   if (layout === "cards") return "cards-only";

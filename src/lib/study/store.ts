@@ -4105,11 +4105,11 @@ export function useStudy() {
     scope: LayoutScope,
     patch: { sidebar?: SidebarConfig[]; layout?: WidgetLayout },
   ) => {
-    const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const currentUid = (await supabase.auth.getUser()).data.user?.id ?? null;
     if (scope === "desktop") {
       const payload: Record<string, unknown> = {
         role_id: roleId,
-        updated_by: uid,
+        updated_by: currentUid,
         updated_at: new Date().toISOString(),
       };
       if (patch.sidebar) payload.sidebar_config = patch.sidebar as unknown as Json;

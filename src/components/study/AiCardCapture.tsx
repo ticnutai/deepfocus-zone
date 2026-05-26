@@ -14,7 +14,7 @@ import { useStudy } from "@/lib/study/store";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { Card as StudyCard } from "@/lib/study/types";
+import type { Card as StudyCard, Category } from "@/lib/study/types";
 
 type Mode = "text" | "voice" | "image";
 type Shape = "circle" | "square" | "rounded";

@@ -99,7 +99,7 @@ let openDbInFlight: Promise<IDBDatabase> | null = null;
 function openDb(): Promise<IDBDatabase> {
   if (openDbInFlight) return openDbInFlight;
 
-  openDbInFlight = new Promise((resolve, reject) => {
+  openDbInFlight = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     let settled = false;
     const timer = globalThis.setTimeout(() => {

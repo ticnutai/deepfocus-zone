@@ -259,6 +259,8 @@ export interface UiPrefs {
   neviimLayoutMode?: "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
   // Text-to-cards width ratio for split layouts (percent for text pane)
   neviimSplitRatio?: number;
+  // Neviim/Ketuvim: swap order of text/cards panes in split layout
+  neviimSplitReversed?: boolean;
   // CategoryManager: selected view mode (synced across devices)
   categoryViewMode?: "browse" | "explorer" | "list" | "cards" | "mindmap";
   // Dev tools toggles (admin only) — default false (off)

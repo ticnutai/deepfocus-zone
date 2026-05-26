@@ -1193,7 +1193,7 @@ export function SupabaseInspectorPage() {
             .range(from, from + PAGE - 1);
           const { data, error } = await query;
           if (error) throw new Error(`${table}: ${error.message}`);
-          const page = (data ?? []) as Array<Record<string, unknown>>;
+          const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
           all.push(...page);
           if (page.length < PAGE) break;
           from += PAGE;
@@ -2365,8 +2365,8 @@ export function SupabaseInspectorPage() {
                 const idbTable = compareSnapshot.idb[table];
                 const sbTable = compareSnapshot.supabase[table];
                 const diff = compareSnapshot.diff[table];
-                const idbById = new Map(idbTable.rows.map((row) => [row.id, row]));
-                const sbById = new Map(sbTable.rows.map((row) => [row.id, row]));
+                const idbById = new Map((idbTable.rows as Array<CompareCardRow | CompareSimpleRow>).map((row) => [row.id, row] as const));
+                const sbById = new Map((sbTable.rows as Array<CompareCardRow | CompareSimpleRow>).map((row) => [row.id, row] as const));
                 const visibleIdbOnly = diff.onlyInIdb.slice(0, COMPARE_VISIBLE_LIMIT);
                 const visibleSbOnly = diff.onlyInSupabase.slice(0, COMPARE_VISIBLE_LIMIT);
                 const deckRowsForDisplay = table === "decks"
