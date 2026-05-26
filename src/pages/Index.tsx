@@ -13,6 +13,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
+import { AutoInitShasTemplate } from "@/components/AutoInitShasTemplate";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
