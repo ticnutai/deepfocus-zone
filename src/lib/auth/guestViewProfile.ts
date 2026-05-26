@@ -14,6 +14,35 @@ export interface GuestStudySeed {
   deckCategories?: Record<string, string[]>;
 }
 
+export function hasUsableGuestCategoryTree(categories: Pick<Category, "id" | "parentId">[]): boolean {
+  if (categories.length === 0) return true;
+
+  const ids = new Set(categories.map((category) => category.id));
+  let rootCount = 0;
+  let brokenParentCount = 0;
+  for (const category of categories) {
+    if (!category.parentId) {
+      rootCount += 1;
+      continue;
+    }
+    if (!ids.has(category.parentId)) {
+      brokenParentCount += 1;
+    }
+  }
+
+  return rootCount > 0 && brokenParentCount < categories.length;
+}
+
+export function isGuestStudySeedStructurallyUsable(seed: GuestStudySeed | undefined): boolean {
+  if (!seed) return false;
+  const hasMeaningfulData = seed.categories.length > 0
+    || seed.decks.length > 0
+    || seed.cards.length > 0
+    || seed.cardDecks.length > 0;
+  if (!hasMeaningfulData) return true;
+  return hasUsableGuestCategoryTree(seed.categories);
+}
+
 export interface GuestViewProfile {
   id: string;
   label: string;
@@ -63,7 +92,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
   const normalizeSeed = (seed: unknown): GuestStudySeed | undefined => {
     if (!seed || typeof seed !== "object" || Array.isArray(seed)) return undefined;
     const rawSeed = seed as Partial<GuestStudySeed>;
-    return {
+    const normalized: GuestStudySeed = {
       seededAt: typeof rawSeed.seededAt === "number" ? rawSeed.seededAt : Date.now(),
       categories: Array.isArray(rawSeed.categories) ? rawSeed.categories : [],
       decks: Array.isArray(rawSeed.decks) ? rawSeed.decks : [],
@@ -74,6 +103,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
           ? (rawSeed.deckCategories as Record<string, string[]>)
           : undefined,
     };
+            return isGuestStudySeedStructurallyUsable(normalized) ? normalized : undefined;
   };
 
   return raw

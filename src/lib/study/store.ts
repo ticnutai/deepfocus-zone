@@ -28,7 +28,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
-import { getActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+import {
+  getActiveGuestViewProfile,
+  hasUsableGuestCategoryTree,
+  isGuestStudySeedStructurallyUsable,
+} from "@/lib/auth/guestViewProfile";
 
 const emptyState = (): StudyState => ({
   decks: [], cards: [], logs: [], categories: [], goals: [],
@@ -81,15 +85,38 @@ const hasMeaningfulStudyData = (state: StudyState): boolean => {
     || (state.cardDecks?.length ?? 0) > 0;
 };
 
+const isStudyStateStructurallyUsable = (state: StudyState): boolean => {
+  if (!hasMeaningfulStudyData(state)) return true;
+  return hasUsableGuestCategoryTree(state.categories ?? []);
+};
+
+const clearStudyDataCollections = (state: StudyState): StudyState => ({
+  ...state,
+  categories: [],
+  decks: [],
+  cards: [],
+  cardDecks: [],
+  deckCategories: {},
+});
+
 const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
   if (typeof window === "undefined") return state;
   const activeProfile = getActiveGuestViewProfile();
   const seed = activeProfile?.studySeed;
   if (!activeProfile?.id || !seed) return state;
 
+  const stateHasData = hasMeaningfulStudyData(state);
+  const stateIsUsable = isStudyStateStructurallyUsable(state);
   const seedAppliedKey = GUEST_PROFILE_SEED_APPLIED_KEY(activeProfile.id);
-  if (localStorage.getItem(seedAppliedKey) === "1") return state;
-  if (hasMeaningfulStudyData(state)) return state;
+  const seedWasApplied = localStorage.getItem(seedAppliedKey) === "1";
+  if (stateHasData && stateIsUsable) return state;
+  if (seedWasApplied && stateHasData && !stateIsUsable) {
+    return clearStudyDataCollections(state);
+  }
+
+  if (!isGuestStudySeedStructurallyUsable(seed)) {
+    return stateHasData && !stateIsUsable ? clearStudyDataCollections(state) : state;
+  }
 
   const seededState = applyBidirectionalDedupeGuards({
     ...state,
@@ -102,6 +129,10 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
         ? seed.deckCategories
         : (state.deckCategories ?? {}),
   });
+
+  if (!isStudyStateStructurallyUsable(seededState)) {
+    return stateHasData && !stateIsUsable ? clearStudyDataCollections(state) : state;
+  }
 
   try {
     localStorage.setItem(seedAppliedKey, "1");
@@ -2167,6 +2198,9 @@ export function useStudy() {
         try { memState = applyBidirectionalDedupeGuards(JSON.parse(saved) as StudyState); } catch { memState = emptyState(); }
       } else {
         memState = emptyState();
+      }
+      if (hasMeaningfulStudyData(memState) && !isStudyStateStructurallyUsable(memState)) {
+        memState = clearStudyDataCollections(memState);
       }
       memState = applyGuestProfileSeedOnce(memState);
       // Guest mode loads local state eagerly.
