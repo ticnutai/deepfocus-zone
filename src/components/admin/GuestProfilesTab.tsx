@@ -110,7 +110,7 @@ const SEED_PAGE_SIZE = 1000;
 const SEED_MAX_ROWS = 50_000;
 
 async function fetchAllSeedPages<T>(
-  queryPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message?: string } | null }>,
+  queryPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
   label: string,
 ): Promise<T[]> {
   const rows: T[] = [];
