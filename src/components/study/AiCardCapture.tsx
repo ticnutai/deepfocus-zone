@@ -118,10 +118,10 @@ export function AiCardCapture() {
   const { state, addCard, setUiPref } = useStudy();
   const { user, isGuest } = useAuth();
   const initialStyle = normalizeStyle(
-    state.uiPrefs?.aiButtonStyle ?? readStorageJson<IconStyle>(STYLE_KEY_V2) ?? DEFAULT_STYLE,
+    readStorageJson<IconStyle>(STYLE_KEY_V2) ?? state.uiPrefs?.aiButtonStyle ?? DEFAULT_STYLE,
   );
   const initialPos = clampPos(
-    state.uiPrefs?.aiButtonPos ?? readStorageJson<FabPos>(POS_KEY_V2) ?? defaultPos(initialStyle.size),
+    readStorageJson<FabPos>(POS_KEY_V2) ?? state.uiPrefs?.aiButtonPos ?? defaultPos(initialStyle.size),
     initialStyle.size,
   );
 
@@ -302,16 +302,17 @@ export function AiCardCapture() {
       return;
     }
 
+    try {
+      localStorage.setItem(STYLE_KEY_V2, JSON.stringify(style));
+      localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
+      dbg("persist:localStorage:immediate", { style, pos });
+    } catch {
+      // ignore localStorage errors
+    }
+
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
     setSyncState("saving");
     saveTimerRef.current = window.setTimeout(() => {
-      try {
-        localStorage.setItem(STYLE_KEY_V2, JSON.stringify(style));
-        localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
-        dbg("persist:localStorage", { style, pos });
-      } catch {
-        // ignore localStorage errors
-      }
       setUiPref("aiButtonStyle", style as any);
       setUiPref("aiButtonPos", pos as any);
       dbg("persist:setUiPref", { style, pos });

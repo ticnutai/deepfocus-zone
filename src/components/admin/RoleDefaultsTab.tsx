@@ -25,6 +25,7 @@ import {
   saveFeatureBlocklist,
   saveFeatureBlocklistProfiles,
   saveRoleBlocklistAssignments,
+  type BlocklistScope,
   type FeatureBlocklist,
   type FeatureBlocklistProfile,
   type RoleBlocklistAssignment,
@@ -34,6 +35,7 @@ import {
   loadRoleLayoutProfiles,
   saveRoleLayoutProfileAssignments,
   saveRoleLayoutProfiles,
+  type LayoutScope,
   type RoleLayoutProfile,
   type RoleLayoutProfileAssignment,
 } from "@/lib/study/layoutProfiles";
@@ -58,6 +60,7 @@ const sizeLabel = (s?: string) => (s === "full" ? "רחב" : "חצי");
 
 export function RoleDefaultsTab() {
   const { state } = useStudy();
+  const [layoutScope, setLayoutScope] = useState<LayoutScope>("desktop");
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [existing, setExisting] = useState<ExistingDefault | null>(null);
@@ -81,6 +84,7 @@ export function RoleDefaultsTab() {
   const [roleAssignments, setRoleAssignments] = useState<RoleBlocklistAssignment[]>([]);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>("");
+  const scopeLabel = layoutScope === "mobile" ? "מובייל" : "מחשב";
 
   const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
@@ -96,11 +100,11 @@ export function RoleDefaultsTab() {
         setSelectedRole(userRole?.id ?? data[0]?.id ?? "");
       }
       const [bl, profiles, assignments, loadedLayoutProfiles, loadedLayoutAssignments] = await Promise.all([
-        loadFeatureBlocklist(),
-        loadFeatureBlocklistProfiles(),
-        loadRoleBlocklistAssignments(),
-        loadRoleLayoutProfiles(),
-        loadRoleLayoutProfileAssignments(),
+        loadFeatureBlocklist({ scope: layoutScope as BlocklistScope }),
+        loadFeatureBlocklistProfiles({ scope: layoutScope as BlocklistScope }),
+        loadRoleBlocklistAssignments({ scope: layoutScope as BlocklistScope }),
+        loadRoleLayoutProfiles({ scope: layoutScope }),
+        loadRoleLayoutProfileAssignments({ scope: layoutScope }),
       ]);
       setBlocklist(bl);
       setBlockProfiles(profiles);
@@ -120,7 +124,7 @@ export function RoleDefaultsTab() {
         setSelectedAssignmentId(assignments[0].id);
       }
     })();
-  }, []);
+  }, [layoutScope]);
 
   const fetchExisting = useCallback(async (roleId: string) => {
     setLoadingExisting(true);
@@ -136,7 +140,15 @@ export function RoleDefaultsTab() {
     }
   }, []);
 
-  useEffect(() => { if (selectedRole) void fetchExisting(selectedRole); }, [selectedRole, fetchExisting]);
+  useEffect(() => {
+    if (!selectedRole) return;
+    if (layoutScope === "desktop") {
+      void fetchExisting(selectedRole);
+      return;
+    }
+    setExisting(null);
+    setLoadingExisting(false);
+  }, [layoutScope, selectedRole, fetchExisting]);
 
   const selectedRoleName = useMemo(
     () => roles.find((r) => r.id === selectedRole)?.name ?? "",
@@ -174,6 +186,10 @@ export function RoleDefaultsTab() {
 
   const doSnapshot = async () => {
     if (!selectedRole) return;
+    if (layoutScope !== "desktop") {
+      toast.info("במובייל השמירה לתפקיד מתבצעת דרך פרופילי פריסה + שיוך.");
+      return;
+    }
     setBusy(true);
     try {
       const payload = {
@@ -201,11 +217,16 @@ export function RoleDefaultsTab() {
   };
 
   const requestSave = () => {
+    if (layoutScope !== "desktop") {
+      toast.info("במובייל השמירה לתפקיד מתבצעת דרך פרופילי פריסה + שיוך.");
+      return;
+    }
     if (existing) setConfirmOpen(true); else void doSnapshot();
   };
 
   const clearDefaults = async () => {
     if (!selectedRole) return;
+    if (layoutScope !== "desktop") return;
     if (!confirm(`למחוק את ברירת המחדל של "${roleLabel(selectedRoleName)}"?`)) return;
     setBusy(true);
     try {
@@ -254,7 +275,7 @@ export function RoleDefaultsTab() {
           updatedAt: now,
         },
       ].sort((a, b) => b.updatedAt - a.updatedAt);
-      await saveRoleLayoutProfiles(next);
+      await saveRoleLayoutProfiles(next, { scope: layoutScope });
       setLayoutProfiles(next);
       setSelectedLayoutProfileId(targetId);
       setLayoutProfileName(trimmed);
@@ -298,7 +319,7 @@ export function RoleDefaultsTab() {
     const valid = layoutAssignments.filter((row) => row.roleId && row.profileId);
     setSavingLayoutAssignments(true);
     try {
-      await saveRoleLayoutProfileAssignments(valid);
+      await saveRoleLayoutProfileAssignments(valid, { scope: layoutScope });
       setLayoutAssignments(valid);
       toast.success(successMessage);
     } catch (e) {
@@ -378,7 +399,7 @@ export function RoleDefaultsTab() {
   const persistBlocklist = async () => {
     setSavingBlock(true);
     try {
-      await saveFeatureBlocklist(blocklist);
+      await saveFeatureBlocklist(blocklist, { scope: layoutScope as BlocklistScope });
       toast.success("רשימת החסימה נשמרה לכל המשתמשים");
     } catch (e) {
       toast.error("שמירה נכשלה: " + (e instanceof Error ? e.message : String(e)));
@@ -418,7 +439,7 @@ export function RoleDefaultsTab() {
         },
       ].sort((a, b) => b.updatedAt - a.updatedAt);
 
-      await saveFeatureBlocklistProfiles(next);
+      await saveFeatureBlocklistProfiles(next, { scope: layoutScope as BlocklistScope });
       setBlockProfiles(next);
       setSelectedProfileId(targetId);
       setProfileName(trimmed);
@@ -496,7 +517,7 @@ export function RoleDefaultsTab() {
     const valid = roleAssignments.filter((row) => row.roleId && row.profileId);
     setSavingAssignments(true);
     try {
-      await saveRoleBlocklistAssignments(valid);
+      await saveRoleBlocklistAssignments(valid, { scope: layoutScope as BlocklistScope });
       setRoleAssignments(valid);
       if (!selectedAssignmentId && valid[0]) setSelectedAssignmentId(valid[0].id);
       toast.success(successMessage);
@@ -536,6 +557,13 @@ export function RoleDefaultsTab() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      <Tabs value={layoutScope} onValueChange={(v) => setLayoutScope(v as LayoutScope)} className="space-y-2">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="desktop">פריסת מחשב</TabsTrigger>
+          <TabsTrigger value="mobile">פריסת מובייל</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <Tabs defaultValue="layout" className="space-y-4">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="layout">טאב פריסה</TabsTrigger>
@@ -547,9 +575,9 @@ export function RoleDefaultsTab() {
             <div className="flex items-center gap-2">
               <span className="gold-icon-circle"><LayersIcon className="h-4 w-4" /></span>
               <div>
-                <h3 className="font-display text-lg font-bold">פריסה לפי תפקיד</h3>
+                <h3 className="font-display text-lg font-bold">פריסה לפי תפקיד · {scopeLabel}</h3>
                 <p className="text-xs text-muted-foreground">
-                  כאן מנהלים שמירת פריסה לתפקיד: וידג'טים, סיידבר וקטגוריות. זה נפרד לחלוטין מהחסימות.
+                  כאן מנהלים שמירת פריסה לתפקיד עבור {scopeLabel}: וידג'טים, סיידבר וקטגוריות. זה נפרד לחלוטין מהחסימות.
                 </p>
               </div>
             </div>
@@ -597,14 +625,16 @@ export function RoleDefaultsTab() {
                   ))}
                 </SelectContent>
               </Select>
-              {existing ? (
+              {layoutScope === "desktop" && existing ? (
                 <Badge variant="default" className="bg-green-600 hover:bg-green-600">
                   ✓ קיימת ברירת מחדל{existingUpdatedAt ? ` · עודכן ${existingUpdatedAt}` : ""}
                 </Badge>
-              ) : (
+              ) : layoutScope === "desktop" ? (
                 <Badge variant="outline">אין עדיין ברירת מחדל לתפקיד זה</Badge>
+              ) : (
+                <Badge variant="outline">במובייל עובדים עם פרופילים + שיוך לתפקיד</Badge>
               )}
-              <Button variant="ghost" size="sm" onClick={() => selectedRole && fetchExisting(selectedRole)} disabled={loadingExisting}>
+              <Button variant="ghost" size="sm" onClick={() => selectedRole && layoutScope === "desktop" && fetchExisting(selectedRole)} disabled={loadingExisting || layoutScope !== "desktop"}>
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingExisting ? "animate-spin" : ""}`} />
               </Button>
             </div>
@@ -655,16 +685,16 @@ export function RoleDefaultsTab() {
               <Input
                 value={layoutProfileName}
                 onChange={(e) => setLayoutProfileName(e.target.value)}
-                placeholder="שם פרופיל פריסה"
+                placeholder={`שם פרופיל פריסה (${scopeLabel})`}
                 className="w-56"
               />
               <Button type="button" variant="outline" onClick={saveNamedLayoutProfile} disabled={savingLayoutProfile}>
                 שמור פרופיל פריסה בשם
               </Button>
-              <Button onClick={requestSave} disabled={busy || !selectedRole}>
+              <Button onClick={requestSave} disabled={busy || !selectedRole || layoutScope !== "desktop"}>
                 שמור פריסה כברירת מחדל ל"{roleLabel(selectedRoleName)}"
               </Button>
-              {existing && (
+              {layoutScope === "desktop" && existing && (
                 <Button variant="outline" onClick={clearDefaults} disabled={busy}>
                   מחק ברירת מחדל לתפקיד זה
                 </Button>
@@ -678,9 +708,9 @@ export function RoleDefaultsTab() {
             <div className="flex items-center gap-2">
               <span className="gold-icon-circle"><ShieldAlert className="h-4 w-4" /></span>
               <div>
-                <h3 className="font-display text-lg font-bold">חסימה לפי תפקיד ופרופיל</h3>
+                <h3 className="font-display text-lg font-bold">חסימה לפי תפקיד ופרופיל · {scopeLabel}</h3>
                 <p className="text-xs text-muted-foreground">
-                  כאן מנהלים פרופילי חסימה ואת השיוך שלהם לתפקידים. זה נפרד לחלוטין מהפריסה.
+                  כאן מנהלים פרופילי חסימה ואת השיוך שלהם לתפקידים עבור {scopeLabel}. זה נפרד לחלוטין מהפריסה.
                 </p>
               </div>
             </div>
@@ -784,13 +814,19 @@ export function RoleDefaultsTab() {
               {allSidebarBlocked ? "נקה הכל" : "בחר הכל"}
             </Button>
           </div>
+          <div className="text-[11px] text-muted-foreground">חסום = פעיל, פתוח = כבוי</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {ALL_SIDEBAR_ITEMS.map((s) => {
               const blocked = blocklist.sections.includes(s.id);
               return (
                 <label key={s.id} className="flex items-center justify-between gap-2 rounded border-2 border-gold/30 bg-card px-2 py-1.5">
                   <span className="text-xs">{s.label}</span>
-                  <Switch checked={blocked} onCheckedChange={() => toggleSection(s.id)} />
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold ${blocked ? "text-destructive" : "text-muted-foreground"}`}>
+                      {blocked ? "חסום" : "פתוח"}
+                    </span>
+                    <Switch checked={blocked} onCheckedChange={() => toggleSection(s.id)} />
+                  </div>
                 </label>
               );
             })}
@@ -828,7 +864,12 @@ export function RoleDefaultsTab() {
                     return (
                       <label key={w.id} className="flex items-center justify-between gap-2 rounded border border-gold/20 bg-card px-2 py-1">
                         <span className="text-[11px]">{w.label}</span>
-                        <Switch checked={blocked} onCheckedChange={() => toggleWidget(tabId, w.id)} />
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold ${blocked ? "text-destructive" : "text-muted-foreground"}`}>
+                            {blocked ? "חסום" : "פתוח"}
+                          </span>
+                          <Switch checked={blocked} onCheckedChange={() => toggleWidget(tabId, w.id)} />
+                        </div>
                       </label>
                     );
                   })}

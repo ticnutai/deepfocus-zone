@@ -11,8 +11,13 @@ const STARTUP_KEYS = [
   "feature_blocklist",
   "feature_blocklist_profiles_v1",
   "feature_blocklist_role_assignments_v1",
+  "feature_blocklist_mobile_v1",
+  "feature_blocklist_profiles_mobile_v1",
+  "feature_blocklist_role_assignments_mobile_v1",
   "role_layout_profiles_v1",
   "role_layout_profile_assignments_v1",
+  "role_layout_profiles_mobile_v1",
+  "role_layout_profile_assignments_mobile_v1",
   "guest_view_profiles_v1",
   "guest_view_default_profile_id_v1",
 ] as const;

@@ -43,6 +43,7 @@ import { DeckEditDialog } from "./DeckEditDialog";
 import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
 import { PATH_SEP, dafLabel } from "@/lib/study/shasGen";
 import { toHebrewNum } from "@/lib/study/shasFormat";
+import { useAuth } from "@/hooks/useAuth";
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -237,6 +238,7 @@ function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) 
 }
 
 function CardsManager() {
+  const { isGuest } = useAuth();
   const { state, addDeck, deleteDeck, deleteCard, moveCardToDeck, addCardToDeck, setCardCategories, setDeckCategories, duplicateCard, moveCategory, reorderCategories, duplicateCategoryUnder, setUiPref, setWidgetLayout } = useStudy();
   const [activeDeckId, setActiveDeckId] = useState<string | null>(state.decks[0]?.id ?? null);
   const [deckEditOpen, setDeckEditOpen] = useState(false);
@@ -493,6 +495,36 @@ function CardsManager() {
     const normalized = next.map((w, i) => ({ ...w, order: i }));
     setWidgetLayout({ ...full, cards: normalized });
   }, [state.widgetLayout, setWidgetLayout]);
+
+  // Guest role previews may hide all cards widgets via saved layout.
+  // Ensure core widgets stay visible so systems/questions are actually accessible.
+  useEffect(() => {
+    if (!isGuest) return;
+    const full = state.widgetLayout ?? {};
+    const cardsLayout = full.cards;
+    if (!cardsLayout || cardsLayout.length === 0) return;
+
+    const requiredIds = ["cards-decks", "cards-list", "cards-categories"] as const;
+    let changed = false;
+    const next = [...cardsLayout];
+
+    requiredIds.forEach((id) => {
+      const idx = next.findIndex((w) => w.id === id);
+      if (idx === -1) {
+        next.push({ id, visible: true, size: "full", order: next.length });
+        changed = true;
+        return;
+      }
+      if (!next[idx].visible) {
+        next[idx] = { ...next[idx], visible: true };
+        changed = true;
+      }
+    });
+
+    if (!changed) return;
+    const normalized = next.map((w, i) => ({ ...w, order: i }));
+    setWidgetLayout({ ...full, cards: normalized });
+  }, [isGuest, state.widgetLayout, setWidgetLayout]);
 
   // Sorted card list for display
   const sortedDeckCards = useMemo(() => {

@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { useStudy } from "@/lib/study/store";
 import { useAuth } from "./useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { isProfileBMode } from "@/lib/study/profileBMode";
 import {
   loadAutoBackupConfig, saveAutoBackupConfig,
   retrieveFolderHandle, queryFolderPermission,
@@ -30,6 +31,7 @@ export function useAutoBackupRunner() {
   useEffect(() => {
     const tick = async () => {
       if (busy.current) return;
+      if (isProfileBMode()) return;
       const cfg = loadAutoBackupConfig();
       if (!cfg.enabled) return;
 

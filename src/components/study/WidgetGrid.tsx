@@ -1,4 +1,5 @@
 import { useState, ReactNode, useCallback, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import {
   DndContext,
   DragOverlay,
@@ -24,8 +25,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
 import { mergeLayout, applyWidgetBlocklist, WIDGET_DEFS } from "@/lib/study/widgetLayout";
-import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
+import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
   GripVertical,
@@ -289,7 +291,9 @@ interface WidgetGridProps {
 }
 
 export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridProps) {
+  const { search } = useLocation();
   const { state, setWidgetLayout } = useStudy();
+  const isMobile = useIsMobile();
   const [editMode, setEditMode] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showHiddenTray, setShowHiddenTray] = useState(false);
@@ -297,14 +301,20 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
   const toolbarHoverTimer = useRef<number | null>(null);
 
   const defs = WIDGET_DEFS[tabId] ?? [];
-  const blocklist = useFeatureBlocklist();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, roles } = usePermissions();
+  const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);
+  const roleIdsForBlocklist = useMemo(
+    () => (previewRoleId ? [previewRoleId] : roles.map((r) => r.id)),
+    [previewRoleId, roles],
+  );
+  const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
+  const bypassBlocklist = tabId === "cards" || tabId === "categories";
   const tabLayout: WidgetConfig[] = useMemo(
     () => {
       const merged = mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order);
-      return isAdmin ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
+      return (isAdmin || bypassBlocklist) ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
     },
-    [state.widgetLayout, tabId, blocklist, isAdmin],
+    [state.widgetLayout, tabId, blocklist, isAdmin, bypassBlocklist],
   );
 
   const save = useCallback((newTabLayout: WidgetConfig[]) => {

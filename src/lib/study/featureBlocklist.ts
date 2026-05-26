@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 
+export type BlocklistScope = "desktop" | "mobile";
+
 export interface FeatureBlocklist {
   sections: string[]; // sidebar section ids globally blocked
   widgets: Record<string, string[]>; // tabId -> blocked widget ids
@@ -21,18 +23,30 @@ export interface RoleBlocklistAssignment {
 }
 
 const EMPTY: FeatureBlocklist = { sections: [], widgets: {} };
-const KEY = "feature_blocklist";
-const PROFILES_KEY = "feature_blocklist_profiles_v1";
-const ROLE_ASSIGNMENTS_KEY = "feature_blocklist_role_assignments_v1";
-const CACHE_KEY = "cache:feature-blocklist";
+const KEY: Record<BlocklistScope, string> = {
+  desktop: "feature_blocklist",
+  mobile: "feature_blocklist_mobile_v1",
+};
+const PROFILES_KEY: Record<BlocklistScope, string> = {
+  desktop: "feature_blocklist_profiles_v1",
+  mobile: "feature_blocklist_profiles_mobile_v1",
+};
+const ROLE_ASSIGNMENTS_KEY: Record<BlocklistScope, string> = {
+  desktop: "feature_blocklist_role_assignments_v1",
+  mobile: "feature_blocklist_role_assignments_mobile_v1",
+};
+const CACHE_KEY: Record<BlocklistScope, string> = {
+  desktop: "cache:feature-blocklist",
+  mobile: "cache:feature-blocklist:mobile",
+};
 const REFRESH_TTL_MS = 2 * 60 * 1000;
 
-let cached: FeatureBlocklist | null = null;
-let lastLoadedAt = 0;
-let inFlight: Promise<FeatureBlocklist> | null = null;
-let profilesCache: FeatureBlocklistProfile[] | null = null;
-let roleAssignmentsCache: RoleBlocklistAssignment[] | null = null;
-const listeners = new Set<(b: FeatureBlocklist) => void>();
+const cachedByScope = new Map<BlocklistScope, FeatureBlocklist>();
+const loadedAtByScope = new Map<BlocklistScope, number>();
+const inFlightByScope = new Map<BlocklistScope, Promise<FeatureBlocklist>>();
+const profilesCache = new Map<BlocklistScope, FeatureBlocklistProfile[]>();
+const roleAssignmentsCache = new Map<BlocklistScope, RoleBlocklistAssignment[]>();
+const listenersByScope = new Map<BlocklistScope, Set<(b: FeatureBlocklist) => void>>();
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
   const ric = (window as typeof window & {
@@ -45,46 +59,60 @@ function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
   window.setTimeout(fn, 0);
 }
 
-function isFreshCache(): boolean {
-  return !!cached && Date.now() - lastLoadedAt < REFRESH_TTL_MS;
+function listenersForScope(scope: BlocklistScope): Set<(b: FeatureBlocklist) => void> {
+  const existing = listenersByScope.get(scope);
+  if (existing) return existing;
+  const created = new Set<(b: FeatureBlocklist) => void>();
+  listenersByScope.set(scope, created);
+  return created;
 }
 
-function emit(b: FeatureBlocklist) {
-  cached = b;
-  lastLoadedAt = Date.now();
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(b)); } catch { /* ignore */ }
-  listeners.forEach((fn) => fn(b));
+function isFreshCache(scope: BlocklistScope): boolean {
+  const cached = cachedByScope.get(scope);
+  const loadedAt = loadedAtByScope.get(scope) ?? 0;
+  return !!cached && Date.now() - loadedAt < REFRESH_TTL_MS;
 }
 
-export async function loadFeatureBlocklist(opts?: { force?: boolean }): Promise<FeatureBlocklist> {
+function emit(scope: BlocklistScope, b: FeatureBlocklist) {
+  cachedByScope.set(scope, b);
+  loadedAtByScope.set(scope, Date.now());
+  try { localStorage.setItem(CACHE_KEY[scope], JSON.stringify(b)); } catch { /* ignore */ }
+  listenersForScope(scope).forEach((fn) => fn(b));
+}
+
+export async function loadFeatureBlocklist(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
   const force = !!opts?.force;
-  if (!force && isFreshCache()) return cached as FeatureBlocklist;
+  const scope = opts?.scope ?? "desktop";
+  if (!force && isFreshCache(scope)) return cachedByScope.get(scope) as FeatureBlocklist;
+  const inFlight = inFlightByScope.get(scope);
   if (inFlight) return inFlight;
 
-  inFlight = (async () => {
-    const value = await getSiteSettingValue(KEY, { force });
+  const nextFlight = (async () => {
+    const value = await getSiteSettingValue(KEY[scope], { force });
     const v = (value ?? EMPTY) as Partial<FeatureBlocklist>;
     const norm: FeatureBlocklist = {
       sections: Array.isArray(v.sections) ? v.sections : [],
       widgets: (v.widgets && typeof v.widgets === "object" && !Array.isArray(v.widgets)) ? v.widgets as Record<string, string[]> : {},
     };
-    updateSiteSettingCache(KEY, norm);
-    emit(norm);
+    updateSiteSettingCache(KEY[scope], norm);
+    emit(scope, norm);
     return norm;
   })().finally(() => {
-    inFlight = null;
+    inFlightByScope.delete(scope);
   });
+  inFlightByScope.set(scope, nextFlight);
 
-  return inFlight;
+  return nextFlight;
 }
 
-export async function saveFeatureBlocklist(value: FeatureBlocklist): Promise<void> {
+export async function saveFeatureBlocklist(value: FeatureBlocklist, opts?: { scope?: BlocklistScope }): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
   await supabase.from("site_settings").upsert(
-    [{ key: KEY, value: value as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: KEY[scope], value: value as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  updateSiteSettingCache(KEY, value);
-  emit(value);
+  updateSiteSettingCache(KEY[scope], value);
+  emit(scope, value);
 }
 
 const normalizeBlocklist = (value: unknown): FeatureBlocklist => {
@@ -125,54 +153,91 @@ const normalizeRoleAssignments = (value: unknown): RoleBlocklistAssignment[] => 
     .filter((row) => row.roleId && row.profileId);
 };
 
-export async function loadFeatureBlocklistProfiles(opts?: { force?: boolean }): Promise<FeatureBlocklistProfile[]> {
+export async function loadFeatureBlocklistProfiles(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklistProfile[]> {
   const force = !!opts?.force;
-  if (!force && profilesCache) return profilesCache;
-  const value = await getSiteSettingValue(PROFILES_KEY, { force });
+  const scope = opts?.scope ?? "desktop";
+  if (!force && profilesCache.has(scope)) return profilesCache.get(scope) ?? [];
+  const value = await getSiteSettingValue(PROFILES_KEY[scope], { force });
   const rows = normalizeProfiles(value);
-  profilesCache = rows;
-  updateSiteSettingCache(PROFILES_KEY, rows);
+  profilesCache.set(scope, rows);
+  updateSiteSettingCache(PROFILES_KEY[scope], rows);
   return rows;
 }
 
-export async function saveFeatureBlocklistProfiles(value: FeatureBlocklistProfile[]): Promise<void> {
+export async function saveFeatureBlocklistProfiles(value: FeatureBlocklistProfile[], opts?: { scope?: BlocklistScope }): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
   const normalized = normalizeProfiles(value);
   await supabase.from("site_settings").upsert(
-    [{ key: PROFILES_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: PROFILES_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  profilesCache = normalized;
-  updateSiteSettingCache(PROFILES_KEY, normalized);
+  profilesCache.set(scope, normalized);
+  updateSiteSettingCache(PROFILES_KEY[scope], normalized);
 }
 
-export async function loadRoleBlocklistAssignments(opts?: { force?: boolean }): Promise<RoleBlocklistAssignment[]> {
+export async function loadRoleBlocklistAssignments(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<RoleBlocklistAssignment[]> {
   const force = !!opts?.force;
-  if (!force && roleAssignmentsCache) return roleAssignmentsCache;
-  const value = await getSiteSettingValue(ROLE_ASSIGNMENTS_KEY, { force });
+  const scope = opts?.scope ?? "desktop";
+  if (!force && roleAssignmentsCache.has(scope)) return roleAssignmentsCache.get(scope) ?? [];
+  const value = await getSiteSettingValue(ROLE_ASSIGNMENTS_KEY[scope], { force });
   const rows = normalizeRoleAssignments(value);
-  roleAssignmentsCache = rows;
-  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY, rows);
+  roleAssignmentsCache.set(scope, rows);
+  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY[scope], rows);
   return rows;
 }
 
-export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignment[]): Promise<void> {
+export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignment[], opts?: { scope?: BlocklistScope }): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
   const normalized = normalizeRoleAssignments(value);
   await supabase.from("site_settings").upsert(
-    [{ key: ROLE_ASSIGNMENTS_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: ROLE_ASSIGNMENTS_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  roleAssignmentsCache = normalized;
-  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY, normalized);
+  roleAssignmentsCache.set(scope, normalized);
+  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY[scope], normalized);
 }
 
-export function useFeatureBlocklist(): FeatureBlocklist {
+const mergeBlocklists = (base: FeatureBlocklist, extra: FeatureBlocklist | null): FeatureBlocklist => {
+  if (!extra) return base;
+  const sections = Array.from(new Set([...(base.sections ?? []), ...(extra.sections ?? [])]));
+  const widgets: Record<string, string[]> = { ...base.widgets };
+  for (const [tabId, ids] of Object.entries(extra.widgets ?? {})) {
+    widgets[tabId] = Array.from(new Set([...(widgets[tabId] ?? []), ...(ids ?? [])]));
+  }
+  return { sections, widgets };
+};
+
+export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
+  const scope = opts?.scope ?? "desktop";
+  const uniqueRoleIds = Array.from(new Set(roleIds.filter(Boolean)));
+  const [globalBlocklist, profiles, assignments] = await Promise.all([
+    loadFeatureBlocklist({ force: opts?.force, scope }),
+    loadFeatureBlocklistProfiles({ force: opts?.force, scope }),
+    loadRoleBlocklistAssignments({ force: opts?.force, scope }),
+  ]);
+
+  if (uniqueRoleIds.length === 0) return globalBlocklist;
+
+  const assignment = uniqueRoleIds
+    .map((roleId) => assignments.find((row) => row.roleId === roleId))
+    .find((row): row is RoleBlocklistAssignment => !!row);
+  if (!assignment) return globalBlocklist;
+
+  const profile = profiles.find((row) => row.id === assignment.profileId) ?? null;
+  return mergeBlocklists(globalBlocklist, profile?.blocklist ?? null);
+}
+
+export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureBlocklist {
+  const scope = opts?.scope ?? "desktop";
   const [b, setB] = useState<FeatureBlocklist>(() => {
+    const cached = cachedByScope.get(scope);
     if (cached) return cached;
     try {
-      const raw = localStorage.getItem(CACHE_KEY);
+      const raw = localStorage.getItem(CACHE_KEY[scope]);
       if (raw) {
         const parsed = JSON.parse(raw) as FeatureBlocklist;
-        cached = parsed;
+        cachedByScope.set(scope, parsed);
+        loadedAtByScope.set(scope, Date.now());
         return parsed;
       }
     } catch { /* ignore */ }
@@ -180,13 +245,30 @@ export function useFeatureBlocklist(): FeatureBlocklist {
   });
 
   useEffect(() => {
-    listeners.add(setB);
+    listenersForScope(scope).add(setB);
     // refresh from server in background (deduped + stale-while-revalidate)
     runWhenBrowserIdle(() => {
-      loadFeatureBlocklist().catch(() => { /* ignore */ });
+      loadFeatureBlocklist({ scope }).catch(() => { /* ignore */ });
     });
-    return () => { listeners.delete(setB); };
-  }, []);
+    return () => { listenersForScope(scope).delete(setB); };
+  }, [scope]);
 
   return b;
+}
+
+export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: BlocklistScope }): FeatureBlocklist {
+  const scope = opts?.scope ?? "desktop";
+  const [resolved, setResolved] = useState<FeatureBlocklist>(() => EMPTY);
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveRoleFeatureBlocklist(roleIds, { scope }).then((next) => {
+      if (!cancelled) setResolved(next);
+    }).catch(() => {
+      if (!cancelled) setResolved(EMPTY);
+    });
+    return () => { cancelled = true; };
+  }, [scope, JSON.stringify(Array.from(new Set(roleIds.filter(Boolean))).sort())]);
+
+  return resolved;
 }

@@ -2,6 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
 
+export type LayoutScope = "desktop" | "mobile";
+
 export interface LayoutProfileCategory {
   id: string;
   name: string;
@@ -32,11 +34,17 @@ export interface ResolvedRoleLayoutProfile {
   categoryTemplate: LayoutProfileCategory[];
 }
 
-const LAYOUT_PROFILES_KEY = "role_layout_profiles_v1";
-const LAYOUT_ASSIGNMENTS_KEY = "role_layout_profile_assignments_v1";
+const LAYOUT_PROFILES_KEY: Record<LayoutScope, string> = {
+  desktop: "role_layout_profiles_v1",
+  mobile: "role_layout_profiles_mobile_v1",
+};
+const LAYOUT_ASSIGNMENTS_KEY: Record<LayoutScope, string> = {
+  desktop: "role_layout_profile_assignments_v1",
+  mobile: "role_layout_profile_assignments_mobile_v1",
+};
 
-let profilesCache: RoleLayoutProfile[] | null = null;
-let assignmentsCache: RoleLayoutProfileAssignment[] | null = null;
+const profilesCache = new Map<LayoutScope, RoleLayoutProfile[]>();
+const assignmentsCache = new Map<LayoutScope, RoleLayoutProfileAssignment[]>();
 
 const uuid = () => (typeof crypto !== "undefined" && crypto.randomUUID
   ? crypto.randomUUID()
@@ -83,51 +91,56 @@ const normalizeAssignments = (value: unknown): RoleLayoutProfileAssignment[] => 
     .filter((row) => row.roleId && row.profileId);
 };
 
-export async function loadRoleLayoutProfiles(opts?: { force?: boolean }): Promise<RoleLayoutProfile[]> {
+export async function loadRoleLayoutProfiles(opts?: { force?: boolean; scope?: LayoutScope }): Promise<RoleLayoutProfile[]> {
   const force = !!opts?.force;
-  if (!force && profilesCache) return profilesCache;
-  const value = await getSiteSettingValue(LAYOUT_PROFILES_KEY, { force });
+  const scope = opts?.scope ?? "desktop";
+  if (!force && profilesCache.has(scope)) return profilesCache.get(scope) ?? [];
+  const value = await getSiteSettingValue(LAYOUT_PROFILES_KEY[scope], { force });
   const rows = normalizeProfiles(value);
-  profilesCache = rows;
-  updateSiteSettingCache(LAYOUT_PROFILES_KEY, rows);
+  profilesCache.set(scope, rows);
+  updateSiteSettingCache(LAYOUT_PROFILES_KEY[scope], rows);
   return rows;
 }
 
-export async function saveRoleLayoutProfiles(value: RoleLayoutProfile[]): Promise<void> {
+export async function saveRoleLayoutProfiles(value: RoleLayoutProfile[], opts?: { scope?: LayoutScope }): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
   const normalized = normalizeProfiles(value);
   await supabase.from("site_settings").upsert(
-    [{ key: LAYOUT_PROFILES_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: LAYOUT_PROFILES_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  profilesCache = normalized;
-  updateSiteSettingCache(LAYOUT_PROFILES_KEY, normalized);
+  profilesCache.set(scope, normalized);
+  updateSiteSettingCache(LAYOUT_PROFILES_KEY[scope], normalized);
 }
 
-export async function loadRoleLayoutProfileAssignments(opts?: { force?: boolean }): Promise<RoleLayoutProfileAssignment[]> {
+export async function loadRoleLayoutProfileAssignments(opts?: { force?: boolean; scope?: LayoutScope }): Promise<RoleLayoutProfileAssignment[]> {
   const force = !!opts?.force;
-  if (!force && assignmentsCache) return assignmentsCache;
-  const value = await getSiteSettingValue(LAYOUT_ASSIGNMENTS_KEY, { force });
+  const scope = opts?.scope ?? "desktop";
+  if (!force && assignmentsCache.has(scope)) return assignmentsCache.get(scope) ?? [];
+  const value = await getSiteSettingValue(LAYOUT_ASSIGNMENTS_KEY[scope], { force });
   const rows = normalizeAssignments(value);
-  assignmentsCache = rows;
-  updateSiteSettingCache(LAYOUT_ASSIGNMENTS_KEY, rows);
+  assignmentsCache.set(scope, rows);
+  updateSiteSettingCache(LAYOUT_ASSIGNMENTS_KEY[scope], rows);
   return rows;
 }
 
-export async function saveRoleLayoutProfileAssignments(value: RoleLayoutProfileAssignment[]): Promise<void> {
+export async function saveRoleLayoutProfileAssignments(value: RoleLayoutProfileAssignment[], opts?: { scope?: LayoutScope }): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
   const normalized = normalizeAssignments(value);
   await supabase.from("site_settings").upsert(
-    [{ key: LAYOUT_ASSIGNMENTS_KEY, value: normalized as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: LAYOUT_ASSIGNMENTS_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  assignmentsCache = normalized;
-  updateSiteSettingCache(LAYOUT_ASSIGNMENTS_KEY, normalized);
+  assignmentsCache.set(scope, normalized);
+  updateSiteSettingCache(LAYOUT_ASSIGNMENTS_KEY[scope], normalized);
 }
 
-export async function resolveRoleLayoutProfile(roleId: string, opts?: { force?: boolean }): Promise<ResolvedRoleLayoutProfile | null> {
+export async function resolveRoleLayoutProfile(roleId: string, opts?: { force?: boolean; scope?: LayoutScope }): Promise<ResolvedRoleLayoutProfile | null> {
   if (!roleId) return null;
+  const scope = opts?.scope ?? "desktop";
   const [profiles, assignments] = await Promise.all([
-    loadRoleLayoutProfiles(opts),
-    loadRoleLayoutProfileAssignments(opts),
+    loadRoleLayoutProfiles({ force: opts?.force, scope }),
+    loadRoleLayoutProfileAssignments({ force: opts?.force, scope }),
   ]);
   const assignment = assignments.find((row) => row.roleId === roleId);
   if (!assignment) return null;

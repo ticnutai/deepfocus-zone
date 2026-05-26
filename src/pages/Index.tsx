@@ -11,6 +11,7 @@ import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closest
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
+import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBMode";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
@@ -439,6 +441,39 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
 
+const SIDEBAR_NATIVE_IDS = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
+const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
+
+const DEFAULT_TABS_ALL: TabDef[] = (() => {
+  const byId = new Map(DEFAULT_TABS.map((tab) => [tab.v, tab]));
+  const out = [...DEFAULT_TABS];
+  for (const item of DEFAULT_SIDEBAR_ITEMS) {
+    if (byId.has(item.id)) continue;
+    out.push({ v: item.id, l: item.label, I: item.icon });
+  }
+  return out;
+})();
+
+const DEFAULT_SIDEBAR_ITEMS_ALL: NavItem[] = (() => {
+  const byId = new Map(DEFAULT_SIDEBAR_ITEMS.map((item) => [item.id, item]));
+  const out = [...DEFAULT_SIDEBAR_ITEMS];
+  for (const tab of DEFAULT_TABS) {
+    if (byId.has(tab.v)) continue;
+    out.push({ id: tab.v, label: tab.l, icon: tab.I });
+  }
+  return out;
+})();
+
+const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar-width";
+const USER_INFO_WIDTH_DESKTOP_STORAGE_KEY = "sidebar-user-info-width-desktop";
+const USER_INFO_WIDTH_MOBILE_STORAGE_KEY = "sidebar-user-info-width-mobile";
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 420;
+const USER_INFO_WIDTH_MIN = 45;
+const USER_INFO_WIDTH_MAX = 75;
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
 function SortableConfigItem({
   item,
   visible,
@@ -474,6 +509,7 @@ const Index = () => {
     ? (new URLSearchParams(window.location.search).get("section") ?? "home")
     : "home";
   const [active, setActive] = useState(initialSection);
+  const isMobile = useIsMobile();
   useEffect(() => {
     const onPop = () => {
       const s = new URLSearchParams(window.location.search).get("section");
@@ -487,7 +523,10 @@ const Index = () => {
   const displayEmail = isGuest
     ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
     : user?.email;
-  const { isAdmin } = usePermissions();
+  const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const canViewCardsModule = isAdmin || can("cards", "view");
+  const canUseQuestionTools = canViewCardsModule || isAdmin || can("cards", "create") || can("cards", "edit");
+  const [profileBActive, setProfileBActive] = useState(false);
   const {
     state,
     setTabConfig: saveTabConfig,
@@ -519,7 +558,7 @@ const Index = () => {
 
     let cancelled = false;
     (async () => {
-      const assignedProfile = await resolveRoleLayoutProfile(guestProfile.roleId).catch(() => null);
+      const assignedProfile = await resolveRoleLayoutProfile(guestProfile.roleId, { scope: isMobile ? "mobile" : "desktop" }).catch(() => null);
       if (cancelled) return;
 
       if (assignedProfile) {
@@ -547,7 +586,32 @@ const Index = () => {
     return () => {
       cancelled = true;
     };
-  }, [guestProfile?.roleId, isGuest, saveSidebarConfig, saveWidgetLayout]);
+  }, [guestProfile?.roleId, isGuest, isMobile, saveSidebarConfig, saveWidgetLayout]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const roleIds = isGuest
+      ? (guestProfile?.roleId ? [guestProfile.roleId] : [])
+      : roles.map((role) => role.id);
+
+    if (roleIds.length === 0) {
+      setProfileBMode(false);
+      setProfileBActive(false);
+      return;
+    }
+
+    void (async () => {
+      const active = await isRoleAssignedToProfileB(roleIds, { scope: isMobile ? "mobile" : "desktop" }).catch(() => false);
+      if (cancelled) return;
+      setProfileBMode(active);
+      setProfileBActive(active);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guestProfile?.roleId, isGuest, isMobile, roles]);
 
   useAutoBackupRunner();
   const [pinned, setPinned] = useState(true);
@@ -555,6 +619,23 @@ const Index = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [tabConfigOpen, setTabConfigOpen] = useState(false);
   const [sidebarConfigOpen, setSidebarConfigOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 256;
+    const raw = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    return Number.isFinite(raw) ? clampNumber(raw, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX) : 256;
+  });
+  const [userInfoDesktopWidthPct, setUserInfoDesktopWidthPct] = useState(() => {
+    if (typeof window === "undefined") return 60;
+    const raw = Number(window.localStorage.getItem(USER_INFO_WIDTH_DESKTOP_STORAGE_KEY));
+    return Number.isFinite(raw) ? clampNumber(raw, USER_INFO_WIDTH_MIN, USER_INFO_WIDTH_MAX) : 60;
+  });
+  const [userInfoMobileWidthPct, setUserInfoMobileWidthPct] = useState(() => {
+    if (typeof window === "undefined") return 60;
+    const raw = Number(window.localStorage.getItem(USER_INFO_WIDTH_MOBILE_STORAGE_KEY));
+    return Number.isFinite(raw) ? clampNumber(raw, USER_INFO_WIDTH_MIN, USER_INFO_WIDTH_MAX) : 60;
+  });
+  const userFooterDesktopRef = useRef<HTMLDivElement | null>(null);
+  const userFooterMobileRef = useRef<HTMLDivElement | null>(null);
 
   // Swipe-from-right gesture to open mobile sidebar (RTL app = sidebar is on right)
   const touchStartX = useRef<number>(0);
@@ -572,6 +653,64 @@ const Index = () => {
       if (dx < -60) setMobileSidebarOpen(false);
     }
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem(USER_INFO_WIDTH_DESKTOP_STORAGE_KEY, String(userInfoDesktopWidthPct));
+  }, [userInfoDesktopWidthPct]);
+
+  useEffect(() => {
+    window.localStorage.setItem(USER_INFO_WIDTH_MOBILE_STORAGE_KEY, String(userInfoMobileWidthPct));
+  }, [userInfoMobileWidthPct]);
+
+  const startSidebarResize = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!pinned) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX;
+      setSidebarWidth(clampNumber(startWidth + delta, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [pinned, sidebarWidth]);
+
+  const startUserInfoResize = useCallback((
+    e: React.MouseEvent<HTMLButtonElement>,
+    container: HTMLDivElement | null,
+    currentValue: number,
+    setValue: React.Dispatch<React.SetStateAction<number>>,
+  ) => {
+    if (!container) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startPct = currentValue;
+    const usableWidth = Math.max(container.clientWidth - 108, 1);
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX;
+      const deltaPct = (delta / usableWidth) * 100;
+      setValue(clampNumber(startPct + deltaPct, USER_INFO_WIDTH_MIN, USER_INFO_WIDTH_MAX));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
   const [showTabsConfigIcon, setShowTabsConfigIcon] = useState(false);
   const [showStudiedBadge, setShowStudiedBadge] = useState(
     () => localStorage.getItem("show-studied-badge") !== "false"
@@ -626,21 +765,49 @@ const Index = () => {
   // Build the ordered tab list (from saved config or defaults)
   const orderedTabs: (TabDef & { visible: boolean })[] = (() => {
     const cfg = state.tabConfig ?? [];
-    if (cfg.length === 0) return DEFAULT_TABS.map((t) => ({ ...t, visible: true }));
+    if (cfg.length === 0) return DEFAULT_TABS_ALL.map((t) => ({ ...t, visible: true }));
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const result: (TabDef & { visible: boolean })[] = [];
     for (const c of sorted) {
-      const def = DEFAULT_TABS.find((t) => t.v === c.id);
+      const def = DEFAULT_TABS_ALL.find((t) => t.v === c.id);
       if (def) result.push({ ...def, visible: c.visible });
     }
     // Append any new defaults not yet in config
-    for (const def of DEFAULT_TABS) {
+    for (const def of DEFAULT_TABS_ALL) {
       if (!result.find((r) => r.v === def.v)) result.push({ ...def, visible: true });
     }
     return result;
   })();
 
-  const visibleTabs = orderedTabs.filter((t) => t.visible);
+  const isAllowedByPermission = useCallback((id: string) => {
+    if (profileBActive && (id === "backup" || id === "backup-restore")) return false;
+    if (id === "admin") return isAdmin;
+    if (id === "cards") return canViewCardsModule;
+    if (id === "ai-generator" || id === "question-lab") return canUseQuestionTools;
+    return true;
+  }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
+
+  const visibleTabs = orderedTabs.filter((t) => {
+    if (!t.visible) return false;
+    return isAllowedByPermission(t.v);
+  });
+
+  const visibleHomeTabs = visibleTabs.filter((tab) => HOME_TAB_IDS.has(tab.v));
+
+  useEffect(() => {
+    if (permsLoading) return;
+    if (activeTab && !visibleHomeTabs.some((tab) => tab.v === activeTab)) {
+      const fallback = visibleHomeTabs[0]?.v ?? "overview";
+      setActiveTab(fallback);
+      setVisitedTabs((prev) => {
+        if (prev.has(fallback)) return prev;
+        const next = new Set(prev);
+        next.add(fallback);
+        return next;
+      });
+      try { localStorage.setItem("active-tab", fallback); } catch { /* ignore */ }
+    }
+  }, [activeTab, permsLoading, visibleHomeTabs]);
 
   const handleTabDragEnd = useCallback((e: DragEndEvent) => {
     const { active: dragActive, over } = e;
@@ -656,13 +823,20 @@ const Index = () => {
     saveTabConfig(newOrder);
   }, [orderedTabs, saveTabConfig]);
 
+  const allTabsSelected = useMemo(() => orderedTabs.every((tab) => tab.visible), [orderedTabs]);
+
+  const toggleAllTabs = useCallback(() => {
+    const nextVisible = !allTabsSelected;
+    saveTabConfig(orderedTabs.map((tab, index) => ({ id: tab.v, visible: nextVisible, order: index })));
+  }, [allTabsSelected, orderedTabs, saveTabConfig]);
+
   const resetTabsConfig = useCallback(() => {
-    saveTabConfig(DEFAULT_TABS.map((tab, index) => ({ id: tab.v, visible: true, order: index })));
+    saveTabConfig(DEFAULT_TABS_ALL.map((tab, index) => ({ id: tab.v, visible: true, order: index })));
   }, [saveTabConfig]);
 
   const orderedSidebarItems: (NavItem & { visible: boolean })[] = useMemo(() => {
     const cfg = state.sidebarConfig ?? [];
-    if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS.map((item) => ({ ...item, visible: true }));
+    if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS_ALL.map((item) => ({ ...item, visible: true }));
 
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const used = new Set<string>();
@@ -670,25 +844,35 @@ const Index = () => {
 
     for (const c of sorted) {
       if (used.has(c.id)) continue;
-      const def = DEFAULT_SIDEBAR_ITEMS.find((item) => item.id === c.id);
+      const def = DEFAULT_SIDEBAR_ITEMS_ALL.find((item) => item.id === c.id);
       if (!def) continue;
       result.push({ ...def, visible: c.visible });
       used.add(c.id);
     }
 
-    for (const def of DEFAULT_SIDEBAR_ITEMS) {
+    for (const def of DEFAULT_SIDEBAR_ITEMS_ALL) {
       if (!used.has(def.id)) result.push({ ...def, visible: true });
     }
 
     return result;
   }, [state.sidebarConfig]);
 
-  const visibleSidebarItems = orderedSidebarItems.filter((item) => item.visible && (item.id !== "admin" || isAdmin));
+  const visibleSidebarItems = orderedSidebarItems.filter((item) => {
+    if (!item.visible) return false;
+    return isAllowedByPermission(item.id);
+  });
 
   useEffect(() => {
     if (visibleSidebarItems.some((item) => item.id === active)) return;
     setActive(visibleSidebarItems[0]?.id ?? "home");
   }, [active, visibleSidebarItems]);
+
+  useEffect(() => {
+    if (permsLoading) return;
+    if ((active === "cards" || active === "categories") && !canViewCardsModule) {
+      setActive("home");
+    }
+  }, [active, canViewCardsModule, permsLoading]);
 
   const handleSidebarDragEnd = useCallback((e: DragEndEvent) => {
     const { active: dragActive, over } = e;
@@ -709,9 +893,86 @@ const Index = () => {
     saveSidebarConfig(newOrder);
   }, [orderedSidebarItems, saveSidebarConfig]);
 
+  const allSidebarSelected = useMemo(
+    () => orderedSidebarItems.filter((item) => item.id !== "home").every((item) => item.visible),
+    [orderedSidebarItems],
+  );
+
+  const toggleAllSidebar = useCallback(() => {
+    const nextVisible = !allSidebarSelected;
+    saveSidebarConfig(
+      orderedSidebarItems.map((item, index) => ({
+        id: item.id,
+        visible: item.id === "home" ? true : nextVisible,
+        order: index,
+      })),
+    );
+  }, [allSidebarSelected, orderedSidebarItems, saveSidebarConfig]);
+
   const resetSidebarConfig = useCallback(() => {
-    saveSidebarConfig(DEFAULT_SIDEBAR_ITEMS.map((item, index) => ({ id: item.id, visible: true, order: index })));
+    saveSidebarConfig(DEFAULT_SIDEBAR_ITEMS_ALL.map((item, index) => ({ id: item.id, visible: true, order: index })));
   }, [saveSidebarConfig]);
+
+  const copySidebarFromTabsConfig = useCallback(() => {
+    const tabOrder = new Map(orderedTabs.map((tab, index) => [tab.v, { index, visible: tab.visible }]));
+    const originalIndex = new Map(orderedSidebarItems.map((item, index) => [item.id, index]));
+
+    const next = [...orderedSidebarItems]
+      .sort((a, b) => {
+        const aRank = tabOrder.get(a.id)?.index ?? Number.MAX_SAFE_INTEGER;
+        const bRank = tabOrder.get(b.id)?.index ?? Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+        return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+      })
+      .map((item, order) => {
+        const fromTab = tabOrder.get(item.id);
+        return {
+          id: item.id,
+          visible: item.id === "home" ? true : (fromTab?.visible ?? item.visible),
+          order,
+        };
+      });
+
+    saveSidebarConfig(next);
+  }, [orderedSidebarItems, orderedTabs, saveSidebarConfig]);
+
+  const copyTabsFromSidebarConfig = useCallback(() => {
+    const sidebarOrder = new Map(orderedSidebarItems.map((item, index) => [item.id, { index, visible: item.visible }]));
+    const originalIndex = new Map(orderedTabs.map((tab, index) => [tab.v, index]));
+
+    const next = [...orderedTabs]
+      .sort((a, b) => {
+        const aRank = sidebarOrder.get(a.v)?.index ?? Number.MAX_SAFE_INTEGER;
+        const bRank = sidebarOrder.get(b.v)?.index ?? Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+        return (originalIndex.get(a.v) ?? 0) - (originalIndex.get(b.v) ?? 0);
+      })
+      .map((tab, order) => {
+        const fromSidebar = sidebarOrder.get(tab.v);
+        return {
+          id: tab.v,
+          visible: fromSidebar?.visible ?? tab.visible,
+          order,
+        };
+      });
+
+    saveTabConfig(next);
+  }, [orderedSidebarItems, orderedTabs, saveTabConfig]);
+
+  const selectSidebarItem = useCallback((id: string) => {
+    if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
+      setActive("home");
+      setActiveTab(id);
+      setVisitedTabs((s) => { s.has(id) || (s = new Set(s)); s.add(id); return s; });
+      try { localStorage.setItem("active-tab", id); } catch { /* ignore */ }
+      return;
+    }
+    setActive(id);
+  }, []);
+
+  const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
+    ? activeTab
+    : active;
 
   const renderSidebarPage = (pageId: string) => {
     switch (pageId) {
@@ -935,12 +1196,13 @@ const Index = () => {
         {/* Desktop sidebar — pinned: part of layout | auto-hide: fixed overlay */}
         <aside
           className={cn(
-            "hidden lg:flex flex-col bg-sidebar",
+            "hidden lg:flex flex-col bg-sidebar relative group/sidebar",
             pinned
-              ? "w-64 h-screen sticky top-0 self-start flex-shrink-0"
-              : "fixed right-0 top-0 h-screen w-64 z-40 shadow-2xl transition-transform duration-300",
+              ? "h-screen sticky top-0 self-start flex-shrink-0"
+              : "fixed right-0 top-0 h-screen z-40 shadow-2xl transition-transform duration-300",
             !pinned && !sidebarVisible && "translate-x-full",
           )}
+          style={{ width: `${sidebarWidth}px` }}
           onMouseLeave={() => !pinned && setSidebarHovered(false)}
         >
           <div className="px-4 h-[60px] border-b-2 border-gold/40 flex items-center justify-between">
@@ -963,58 +1225,56 @@ const Index = () => {
             <Logo />
           </div>
           <div className="flex-1 overflow-y-auto no-scrollbar">
-            <SidebarContent items={visibleSidebarItems} active={active} onSelect={(id) => { setActive(id); if (!pinned) setSidebarHovered(false); }} badges={sidebarBadges} />
-            {/* Sidebar footer: compact icon row */}
-            <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
-              {/* User profile button */}
+            <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); if (!pinned) setSidebarHovered(false); }} badges={sidebarBadges} />
+          </div>
+          <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
+            <div ref={userFooterDesktopRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
               <button
                 onClick={() => setActive("settings")}
-                className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
+                className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
+                style={{ flex: `0 0 ${userInfoDesktopWidthPct}%` }}
                 title="הגדרות משתמש"
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                   {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-foreground truncate">{displayEmail ?? ""}</div>
-                  <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                    {isGuest && guestProfile?.roleName ? `פרופיל ${guestProfile.roleName}` : (isAdmin ? "👑 מנהל" : "משתמש")}
-                  </div>
-                </div>
-                <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <div className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">{displayEmail ?? ""}</div>
               </button>
-              <div className="flex items-center justify-between gap-1">
-                <button
-                  onClick={() => signOut()}
-                  title={isGuest ? "יציאה" : "התנתקות"}
-                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setSidebarConfigOpen(true)}
-                  title="הגדרת סיידבר"
-                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                >
-                  <Sliders className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setTabConfigOpen(true)}
-                  title="הגדרת טאבים"
-                  className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                </button>
-                <ThemeSwitcher />
-              </div>
+              <button
+                type="button"
+                onMouseDown={(e) => startUserInfoResize(e, userFooterDesktopRef.current, userInfoDesktopWidthPct, setUserInfoDesktopWidthPct)}
+                title="שנה רוחב שם משתמש"
+                className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
+                aria-label="שנה רוחב שם משתמש"
+              />
+              <ThemeSwitcher />
+              <button
+                onClick={() => signOut()}
+                title={isGuest ? "יציאה" : "התנתקות"}
+                className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
+          <button
+            type="button"
+            onMouseDown={startSidebarResize}
+            title="שנה רוחב סיידבר"
+            className={cn(
+              "absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 h-14 w-2 cursor-col-resize transition-all duration-200 opacity-0 pointer-events-none group-hover/sidebar:opacity-100 group-hover/sidebar:pointer-events-auto group-hover/sidebar:w-3",
+              !pinned && "pointer-events-none opacity-0",
+            )}
+            aria-label="שנה רוחב סיידבר"
+          >
+            <span className="mx-auto block h-full w-px bg-gold/40 transition-colors group-hover/sidebar:bg-gold/70" />
+          </button>
         </aside>
 
         {/* Main — when not pinned, add margin-right that animates with sidebar */}
         <main
           className="flex-1 min-w-0 transition-[margin] duration-300"
-          style={!pinned ? { marginRight: sidebarVisible ? '16rem' : '0' } : undefined}
+          style={!pinned ? { marginRight: sidebarVisible ? `${sidebarWidth}px` : "0" } : undefined}
         >
           {/* Topbar */}
           <header className="[--topbar-h:56px] sm:[--topbar-h:60px] flex items-center justify-end gap-2 border-b-2 border-gold/40 bg-background px-2 h-[56px] sm:px-4 sm:gap-3 sm:h-[60px] lg:px-8" style={{ paddingTop: "env(safe-area-inset-top)", height: "calc(var(--topbar-h) + env(safe-area-inset-top))" }}>
@@ -1032,49 +1292,36 @@ const Index = () => {
                 <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
                   <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
                   <div className="flex-1 overflow-y-auto no-scrollbar">
-                    <SidebarContent items={visibleSidebarItems} active={active} onSelect={(id) => { setActive(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
-                    <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
-                      {/* User profile button */}
+                    <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
+                  </div>
+                  <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
+                    <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
                       <button
                         onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
-                        className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
+                        className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
+                        style={{ flex: `0 0 ${userInfoMobileWidthPct}%` }}
                         title="הגדרות משתמש"
                       >
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                           {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-foreground truncate">{displayEmail ?? ""}</div>
-                          <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-                            {isGuest && guestProfile?.roleName ? `פרופיל ${guestProfile.roleName}` : (isAdmin ? "👑 מנהל" : "משתמש")}
-                          </div>
-                        </div>
-                        <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                        <div className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">{displayEmail ?? ""}</div>
                       </button>
-                      <div className="flex items-center justify-between gap-1">
-                        <button
-                          onClick={() => signOut()}
-                          title={isGuest ? "יציאה" : "התנתקות"}
-                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                        >
-                          <LogOut className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => setSidebarConfigOpen(true)}
-                          title="הגדרת סיידבר"
-                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                        >
-                          <Sliders className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => setTabConfigOpen(true)}
-                          title="הגדרת טאבים"
-                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                        >
-                          <SlidersHorizontal className="h-4 w-4" />
-                        </button>
-                        <ThemeSwitcher />
-                      </div>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => startUserInfoResize(e, userFooterMobileRef.current, userInfoMobileWidthPct, setUserInfoMobileWidthPct)}
+                        title="שנה רוחב שם משתמש"
+                        className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
+                        aria-label="שנה רוחב שם משתמש"
+                      />
+                      <ThemeSwitcher />
+                      <button
+                        onClick={() => { signOut(); setMobileSidebarOpen(false); }}
+                        title={isGuest ? "יציאה" : "התנתקות"}
+                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                      >
+                        <LogOut className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 </SheetContent>
@@ -1088,7 +1335,7 @@ const Index = () => {
               <Suspense fallback={<StaticLazyPanelPreview />}>
                 <SettingsPanel />
               </Suspense>
-            ) : active === "cards" || active === "categories" ? (
+            ) : (active === "cards" || active === "categories") && canViewCardsModule ? (
               <Suspense fallback={<StaticLazyPanelPreview />}>
                 <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
               </Suspense>
@@ -1120,11 +1367,20 @@ const Index = () => {
 
             <Tabs
               value={activeTab}
-              onValueChange={(v) => { setActiveTab(v); setVisitedTabs((s) => { s.has(v) || (s = new Set(s)); s.add(v); return s; }); try { localStorage.setItem("active-tab", v); } catch { /* ignore */ } }}
+              onValueChange={(v) => {
+                if (!HOME_TAB_IDS.has(v)) {
+                  setActive(v);
+                  return;
+                }
+                setActive("home");
+                setActiveTab(v);
+                setVisitedTabs((s) => { s.has(v) || (s = new Set(s)); s.add(v); return s; });
+                try { localStorage.setItem("active-tab", v); } catch { /* ignore */ }
+              }}
               className="w-full" dir="rtl"
             >
               <Card className="gold-frame p-1.5 sm:p-2" onMouseEnter={handleTabsMouseEnter} onMouseLeave={handleTabsMouseLeave}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
                   <TabsList className="flex-1 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-wrap" dir="rtl">
                     {visibleTabs.map(({ v, l, I }) => (
                       <TabsTrigger
@@ -1141,16 +1397,27 @@ const Index = () => {
                       </TabsTrigger>
                     ))}
                   </TabsList>
-                  <button
-                    onClick={() => setTabConfigOpen(true)}
-                    title="הגדרת טאבים"
+                  <div
                     className={cn(
-                      "flex items-center justify-center h-9 w-9 shrink-0 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all",
+                      "flex items-center gap-1 shrink-0 self-start transition-all",
                       showTabsConfigIcon ? "opacity-100" : "opacity-0 pointer-events-none",
                     )}
                   >
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </button>
+                    <button
+                      onClick={() => setSidebarConfigOpen(true)}
+                      title="הגדרת סיידבר"
+                      className="flex items-center justify-center h-9 w-9 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
+                    >
+                      <Sliders className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setTabConfigOpen(true)}
+                      title="הגדרת טאבים"
+                      className="flex items-center justify-center h-9 w-9 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </Card>
 
@@ -1274,6 +1541,9 @@ const Index = () => {
               </div>
               <div className="p-4 overflow-y-auto min-h-0">
                 <p className="text-xs text-muted-foreground mb-3 text-right">גרור לשינוי סדר · סמן/בטל כדי להציג/להסתיר</p>
+                <Button variant="outline" className="w-full border-gold/60 mb-3" onClick={toggleAllTabs}>
+                  {allTabsSelected ? "נקה הכל" : "בחר הכל"}
+                </Button>
                 <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
                   <SortableContext items={orderedTabs.map((t) => t.v)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-1">
@@ -1289,6 +1559,9 @@ const Index = () => {
                   </SortableContext>
                 </DndContext>
                 <div className="mt-4">
+                  <Button variant="outline" className="w-full border-gold/60 mb-2" onClick={copyTabsFromSidebarConfig}>
+                    העתק פריסה מהסיידבר
+                  </Button>
                   <Button variant="outline" className="w-full border-gold/60" onClick={resetTabsConfig}>
                     איפוס טאבים לברירת מחדל
                   </Button>
@@ -1306,6 +1579,9 @@ const Index = () => {
               </div>
               <div className="p-4 overflow-y-auto min-h-0">
                 <p className="text-xs text-muted-foreground mb-3 text-right">גרור לשינוי סדר · סמן/בטל כדי להציג/להסתיר · בית תמיד פעיל</p>
+                <Button variant="outline" className="w-full border-gold/60 mb-3" onClick={toggleAllSidebar}>
+                  {allSidebarSelected ? "נקה הכל" : "בחר הכל"}
+                </Button>
                 <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleSidebarDragEnd}>
                   <SortableContext items={orderedSidebarItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-1">
@@ -1322,6 +1598,9 @@ const Index = () => {
                   </SortableContext>
                 </DndContext>
                 <div className="mt-4">
+                  <Button variant="outline" className="w-full border-gold/60 mb-2" onClick={copySidebarFromTabsConfig}>
+                    העתק פריסה מהטאבים
+                  </Button>
                   <Button variant="outline" className="w-full border-gold/60" onClick={resetSidebarConfig}>
                     איפוס סיידבר לברירת מחדל
                   </Button>
@@ -1344,6 +1623,7 @@ const Index = () => {
                 variant="modal"
                 onPick={(hit) => {
                   setSearchModalOpen(false);
+                  if (!canViewCardsModule) return;
                   if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
                   else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
                 }}

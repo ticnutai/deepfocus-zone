@@ -8,7 +8,22 @@ import { SHAS_BAVLI } from "./shasData";
 import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
 import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
 import { applyCloudSyncPref, isSyncEnabled } from "./syncControl";
-import { resolveRoleLayoutProfile } from "./layoutProfiles";
+import {
+  canProfileBDeleteCard,
+  canProfileBDeleteDeck,
+  canPushToCloud,
+  isProfileBMode,
+  markProfileBCardCreated,
+  markProfileBDeckCreated,
+} from "./profileBMode";
+import {
+  loadRoleLayoutProfileAssignments,
+  loadRoleLayoutProfiles,
+  resolveRoleLayoutProfile,
+  saveRoleLayoutProfileAssignments,
+  saveRoleLayoutProfiles,
+  type LayoutScope,
+} from "./layoutProfiles";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -840,7 +855,7 @@ const isCategoryParentCacheFresh = (parentId: string | null) => {
 
 const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
   if (currentUserId === GUEST_ID) return; // guest mode – no network sync
-  if (!isSyncEnabled()) return; // user disabled cloud sync — IndexedDB only
+  if (!isSyncEnabled() || !canPushToCloud()) return; // pull-only/local-only mode
   Promise.resolve(p).then((r) => {
     if (r?.error) {
       const err = r.error as { message?: string; code?: string; name?: string };
@@ -877,6 +892,7 @@ const flushUiPrefsCloudSync = () => {
   uiPrefsSyncPayload = null;
   if (!userId || userId === GUEST_ID || !payload) return;
   if (currentUserId !== userId) return;
+  if (!isSyncEnabled() || !canPushToCloud()) return;
   bg(
     supabase.from("user_settings").upsert(
       { user_id: userId, ui_prefs: payload as unknown as Json },
@@ -905,6 +921,7 @@ const scheduleUiPrefsCloudSync = (userId: string, payload: UiPrefs) => {
  */
 const flushPendingDeletes = async (userId: string): Promise<{ success: number; failed: number; empty: boolean }> => {
   if (!userId || userId === GUEST_ID) return { success: 0, failed: 0, empty: true };
+  if (!isSyncEnabled() || !canPushToCloud()) return { success: 0, failed: 0, empty: true };
   const pending = await listPendingDeletes(userId);
   if (pending.length === 0) {
     await appendDeleteAuditEvent(userId, "categories", null, "noop", "pending-delete queue is empty");
@@ -954,6 +971,7 @@ const flushPendingDeletes = async (userId: string): Promise<{ success: number; f
  */
 const softDeleteWithQueue = (table: "categories" | "decks" | "cards", rowIds: string[]) => {
   if (!currentUserId || currentUserId === GUEST_ID) return;
+  if (!isSyncEnabled() || !canPushToCloud()) return;
   if (rowIds.length === 0) return;
   const userId = currentUserId;
   void (async () => {
@@ -1267,7 +1285,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
 
 const runPendingCloudSync = async (userId: string) => {
   if (cloudSyncInFlight) return;
-  if (!isSyncEnabled()) return; // skip while sync disabled — jobs stay queued in IndexedDB
+  if (!isSyncEnabled() || !canPushToCloud()) return; // skip while push is disabled
   const traceId = perf.createTraceId("sync");
   const restoreTrace = perf.pushTrace(traceId);
   const stopSync = perf.startTimer("store:runPendingCloudSync(total)", "store", traceId);
@@ -1747,9 +1765,10 @@ async function loadAll(userId: string): Promise<StudyState> {
   const userRoleIds = ((userRolesR?.data ?? []) as Array<{ role_id?: string | null }>)
     .map((row) => row.role_id)
     .filter((id): id is string => !!id);
+  const viewportScope: LayoutScope = (typeof window !== "undefined" && window.innerWidth < 768) ? "mobile" : "desktop";
   let roleAssignedLayout: Awaited<ReturnType<typeof resolveRoleLayoutProfile>> = null;
   for (const roleId of userRoleIds) {
-    const resolved = await resolveRoleLayoutProfile(roleId).catch(() => null);
+    const resolved = await resolveRoleLayoutProfile(roleId, { scope: viewportScope }).catch(() => null);
     if (resolved) {
       roleAssignedLayout = resolved;
       break;
@@ -2656,11 +2675,13 @@ export function useStudy() {
       cats = [UNCATEGORIZED_NAME];
     }
     const deck: Deck = { id: uid(), name, description, color: "gold", createdAt: Date.now(), categoryIds: [], includeSubCategories: true };
+    const profileBActive = isProfileBMode();
     setState((s) => {
       const nextDC = { ...(s.deckCategories ?? {}), [deck.id]: cats };
       writeDeckCategoriesCache(userId, nextDC);
       return { ...s, decks: [...s.decks, deck], deckCategories: nextDC };
     });
+    if (profileBActive) markProfileBDeckCreated(userId, deck.id);
     bg(supabase.from("decks").insert({ id: deck.id, user_id: userId, name, description: description ?? null, color: "gold", category_ids: [], include_sub_categories: true } as never), "decks.insert");
     return deck;
   }, [ensureUncategorized]);
@@ -2700,6 +2721,14 @@ export function useStudy() {
 
   const deleteDeck = useCallback((id: string) => {
     const userId = currentUserId;
+    if (isProfileBMode() && userId && !canProfileBDeleteDeck(userId, id)) {
+      toast({
+        title: "מחיקה חסומה בפרופיל B",
+        description: "ניתן למחוק רק ערכות שנוצרו על ידך בפרופיל B.",
+        variant: "destructive",
+      });
+      return;
+    }
     // Mark as deleted before touching state so that any in-flight sync that
     // completes right after cannot resurrect the deck via mergeByKeyLww.
     deletedDeckIds.add(id);
@@ -2747,10 +2776,12 @@ export function useStudy() {
       ...card, tags, id: uid(), createdAt: Date.now(),
       srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
     } as Card;
+    const profileBActive = isProfileBMode();
     console.debug(
       `[🔍 DECK-DEBUG addCard] כרטיס נוצר: id=${full.id.slice(0,8)} | deckId=${full.deckId??'null'} | tags=${JSON.stringify(full.tags)} | q="${(full.question??'').slice(0,70)}" | dueAt=${new Date(full.srs.dueAt).toLocaleString('he-IL')}`,
     );
     setState((s) => ({ ...s, cards: [...s.cards, full] }));
+    if (profileBActive) markProfileBCardCreated(userId, full.id);
     bg(supabase.from("cards").insert(cardToRow(full, userId)));
     // Only mirror into card_decks if the card has a deck
     if (full.deckId) {
@@ -2796,6 +2827,10 @@ export function useStudy() {
         srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
       } as Card;
     });
+    const profileBActive = isProfileBMode();
+    if (profileBActive) {
+      for (const created of full) markProfileBCardCreated(userId, created.id);
+    }
     const links = full
       .filter((c) => c.deckId)
       .map((c) => ({ cardId: c.id, deckId: c.deckId!, sortOrder: 0 }));
@@ -2832,6 +2867,10 @@ export function useStudy() {
       id: uid(), name: d.name, description: d.description, color: "gold",
       createdAt: now, categoryIds: [], includeSubCategories: true,
     }));
+    const profileBActive = isProfileBMode();
+    if (profileBActive) {
+      for (const deck of created) markProfileBDeckCreated(userId, deck.id);
+    }
     setState((s) => {
       const nextDC = { ...(s.deckCategories ?? {}) };
       for (const d of created) nextDC[d.id] = [UNCATEGORIZED_NAME];
@@ -2864,6 +2903,7 @@ export function useStudy() {
 
   const duplicateCard = useCallback((id: string, targetDeckId?: string) => {
     const userId = requireUser();
+    const profileBActive = isProfileBMode();
     let copy: Card | undefined;
     setState((s) => {
       const orig = s.cards.find((c) => c.id === id);
@@ -2878,10 +2918,22 @@ export function useStudy() {
       } as Card;
       return { ...s, cards: [...s.cards, copy!] };
     });
-    if (copy) bg(supabase.from("cards").insert(cardToRow(copy, userId)));
+    if (copy) {
+      if (profileBActive) markProfileBCardCreated(userId, copy.id);
+      bg(supabase.from("cards").insert(cardToRow(copy, userId)));
+    }
   }, []);
 
   const deleteCard = useCallback((id: string) => {
+    const userId = currentUserId;
+    if (isProfileBMode() && userId && !canProfileBDeleteCard(userId, id)) {
+      toast({
+        title: "מחיקה חסומה בפרופיל B",
+        description: "ניתן למחוק רק שאלות שנוצרו על ידך בפרופיל B.",
+        variant: "destructive",
+      });
+      return;
+    }
     deletedCardIds.add(id);
     setState((s) => ({
       ...s,
@@ -3974,19 +4026,78 @@ export function useStudy() {
     ), "user_settings.tab_config");
   }, []);
 
+  const persistPreviewRoleScopedLayout = useCallback(async (
+    roleId: string,
+    scope: LayoutScope,
+    patch: { sidebar?: SidebarConfig[]; layout?: WidgetLayout },
+  ) => {
+    const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (scope === "desktop") {
+      const payload: Record<string, unknown> = {
+        role_id: roleId,
+        updated_by: uid,
+        updated_at: new Date().toISOString(),
+      };
+      if (patch.sidebar) payload.sidebar_config = patch.sidebar as unknown as Json;
+      if (patch.layout) payload.widget_layout = patch.layout as unknown as Json;
+      const { error } = await supabase.from("role_layout_defaults").upsert(
+        [payload as never],
+        { onConflict: "role_id" },
+      );
+      if (error) throw error;
+      return;
+    }
+
+    const [profiles, assignments] = await Promise.all([
+      loadRoleLayoutProfiles({ scope: "mobile" }),
+      loadRoleLayoutProfileAssignments({ scope: "mobile" }),
+    ]);
+
+    const existingAssignment = assignments.find((row) => row.roleId === roleId) ?? null;
+    const profileId = existingAssignment?.profileId ?? uid();
+    const existingProfile = profiles.find((row) => row.id === profileId) ?? null;
+
+    const nextProfiles = [
+      ...profiles.filter((row) => row.id !== profileId),
+      {
+        id: profileId,
+        name: existingProfile?.name ?? `פריסת מובייל · ${roleId.slice(0, 6)}`,
+        widgetLayout: patch.layout ?? existingProfile?.widgetLayout ?? {},
+        sidebarConfig: patch.sidebar ?? existingProfile?.sidebarConfig ?? [],
+        categoryTemplate: existingProfile?.categoryTemplate ?? [],
+        updatedAt: Date.now(),
+      },
+    ];
+
+    const nextAssignments = existingAssignment
+      ? assignments
+      : [...assignments, { id: uid(), roleId, profileId }];
+
+    await Promise.all([
+      saveRoleLayoutProfiles(nextProfiles, { scope: "mobile" }),
+      saveRoleLayoutProfileAssignments(nextAssignments, { scope: "mobile" }),
+    ]);
+  }, []);
+
   const setSidebarConfig = useCallback((sidebar: SidebarConfig[]) => {
     const userId = requireUser();
     setState((s) => ({ ...s, sidebarConfig: sidebar }));
     const previewRoleId = (typeof window !== "undefined")
       ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
       : null;
+    const previewLayoutScope: LayoutScope = (typeof window !== "undefined")
+      ? ((window as unknown as { __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope ?? "desktop")
+      : "desktop";
     if (previewRoleId) {
       void (async () => {
-        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-        const { error } = await supabase.from("role_layout_defaults").upsert(
-          [{ role_id: previewRoleId, sidebar_config: sidebar as unknown as Json, updated_by: uid, updated_at: new Date().toISOString() }],
-          { onConflict: "role_id" },
-        );
+        const { error } = await (async () => {
+          try {
+            await persistPreviewRoleScopedLayout(previewRoleId, previewLayoutScope, { sidebar });
+            return { error: null as { message?: string } | null };
+          } catch (e) {
+            return { error: { message: e instanceof Error ? e.message : String(e) } };
+          }
+        })();
         if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
       })();
       return;
@@ -3996,7 +4107,7 @@ export function useStudy() {
       { user_id: userId, tab_config: { home, sidebar } as unknown as Json },
       { onConflict: "user_id" },
     ), "user_settings.sidebar_config");
-  }, []);
+  }, [persistPreviewRoleScopedLayout]);
 
   const setWidgetLayout = useCallback((layout: WidgetLayout) => {
     const userId = requireUser();
@@ -4005,14 +4116,20 @@ export function useStudy() {
     const previewRoleId = (typeof window !== "undefined")
       ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
       : null;
+    const previewLayoutScope: LayoutScope = (typeof window !== "undefined")
+      ? ((window as unknown as { __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope ?? "desktop")
+      : "desktop";
     if (previewRoleId) {
       // Preview mode: redirect save to role_layout_defaults; do NOT touch admin's personal cache/settings.
       void (async () => {
-        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-        const { error } = await supabase.from("role_layout_defaults").upsert(
-          [{ role_id: previewRoleId, widget_layout: layout as unknown as Json, updated_by: uid, updated_at: new Date().toISOString() }],
-          { onConflict: "role_id" },
-        );
+        const { error } = await (async () => {
+          try {
+            await persistPreviewRoleScopedLayout(previewRoleId, previewLayoutScope, { layout });
+            return { error: null as { message?: string } | null };
+          } catch (e) {
+            return { error: { message: e instanceof Error ? e.message : String(e) } };
+          }
+        })();
         if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
       })();
       return;
@@ -4021,7 +4138,7 @@ export function useStudy() {
     writeWidgetLayoutCache(userId, layout, now);
     void writeWidgetLayoutIdb(userId, layout, now);
     // 2. Cloud: 3 retries with backoff, then enqueue full-sync on exhaustion
-    if (userId !== GUEST_ID && isSyncEnabled()) {
+    if (userId !== GUEST_ID && isSyncEnabled() && canPushToCloud()) {
       const MAX_RETRIES = 3;
       const trySaveToCloud = async (attempt: number): Promise<void> => {
         try {
@@ -4059,7 +4176,7 @@ export function useStudy() {
       };
       void trySaveToCloud(1);
     }
-  }, []);
+  }, [persistPreviewRoleScopedLayout]);
 
   /**
    * Non-persisting preview-mode setter. Applies a sidebar+widget layout to local
@@ -4659,6 +4776,9 @@ export function useStudy() {
     const userId = currentUserId;
     if (!userId || userId === GUEST_ID) {
       return { ok: false as const, reason: "guest-or-no-user", pendingAfter: 0 };
+    }
+    if (!canPushToCloud()) {
+      return { ok: false as const, reason: "profile-b-pull-only", pendingAfter: 0 };
     }
 
     await enqueueFullSyncJob(userId, `force:${reason}`);

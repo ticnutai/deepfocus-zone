@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useStudy } from "@/lib/study/store";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
+import { resolveRoleLayoutProfile, type LayoutScope } from "@/lib/study/layoutProfiles";
 import { Eye, Save } from "lucide-react";
 
 /**
@@ -25,29 +26,38 @@ export function PreviewRoleApplier() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const previewRoleId = params.get("previewRole");
+    const previewScopeParam = params.get("previewViewport");
+    const previewScope: LayoutScope = previewScopeParam === "mobile" ? "mobile" : "desktop";
     if (!previewRoleId || !isAdmin || !study._applyPreviewLayout) return;
     let cancelled = false;
     (async () => {
-      const [{ data: rd }, { data: role }] = await Promise.all([
-        supabase
+      const [assignedProfile, roleInfo] = await Promise.all([
+        resolveRoleLayoutProfile(previewRoleId, { scope: previewScope }).catch(() => null),
+        supabase.from("app_roles").select("name").eq("id", previewRoleId).maybeSingle(),
+      ]);
+      let rd: { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null } | null = null;
+      if (!assignedProfile && previewScope === "desktop") {
+        const { data } = await supabase
           .from("role_layout_defaults")
           .select("widget_layout, sidebar_config")
           .eq("role_id", previewRoleId)
-          .maybeSingle(),
-        supabase.from("app_roles").select("name").eq("id", previewRoleId).maybeSingle(),
-      ]);
+          .maybeSingle();
+        rd = (data ?? null) as { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null } | null;
+      }
       if (cancelled) return;
-      const sidebar = (rd?.sidebar_config ?? null) as unknown as SidebarConfig[] | null;
-      const layout = (rd?.widget_layout ?? null) as unknown as WidgetLayout | null;
+      const sidebar = assignedProfile?.sidebarConfig ?? (rd?.sidebar_config ?? null);
+      const layout = assignedProfile?.widgetLayout ?? (rd?.widget_layout ?? null);
       study._applyPreviewLayout?.(sidebar, layout);
       // Activate write redirection AFTER initial layout applied.
-      (window as unknown as { __previewRoleId?: string | null }).__previewRoleId = previewRoleId;
+      (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewRoleId = previewRoleId;
+      (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope = previewScope;
       setRoleId(previewRoleId);
-      setRoleName(role?.name ?? previewRoleId.slice(0, 6));
+      setRoleName(roleInfo.data?.name ?? previewRoleId.slice(0, 6));
     })();
     return () => {
       cancelled = true;
-      (window as unknown as { __previewRoleId?: string | null }).__previewRoleId = null;
+      (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewRoleId = null;
+      (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
@@ -55,9 +65,11 @@ export function PreviewRoleApplier() {
   if (!roleName || !roleId) return null;
 
   const exitPreview = () => {
-    (window as unknown as { __previewRoleId?: string | null }).__previewRoleId = null;
+    (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewRoleId = null;
+    (window as unknown as { __previewRoleId?: string | null; __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope = null;
     const url = new URL(window.location.href);
     url.searchParams.delete("previewRole");
+    url.searchParams.delete("previewViewport");
     window.location.href = url.toString();
   };
 

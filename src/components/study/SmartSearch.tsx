@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
-import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter } from "lucide-react";
+import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter, MoreHorizontal } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import {
 import { useStudy } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const RECENTS_KEY = "smart-search-recents-v1";
 const MAX_RECENTS = 8;
@@ -57,6 +58,7 @@ const KIND_META: Record<Kind, { label: string; icon: typeof BookOpen; color: str
 
 export function SmartSearch({ variant = "page", onPick }: Props) {
   const { state } = useStudy();
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [recents, setRecents] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -192,8 +194,57 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
     setter(next);
   };
 
+  const resultsList = (
+    <div className="space-y-1.5 max-w-full overflow-x-hidden">
+      {results.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground py-8">אין תוצאות</p>
+      )}
+      {results.map((hit) => {
+        const M = KIND_META[hit.kind];
+        return (
+          <button
+            key={hit.id}
+            type="button"
+            onClick={() => onPick?.(hit)}
+            className="w-full max-w-full min-w-0 overflow-hidden text-right rounded-lg border border-gold/30 bg-card hover:bg-secondary transition-colors p-3 flex items-start gap-3"
+          >
+            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary", M.color)}>
+              <M.icon className="h-4 w-4" />
+            </span>
+            <div className="flex-1 min-w-0 text-right">
+              <div className="font-medium text-sm leading-snug break-words whitespace-normal">
+                {highlight(hit.title.replace(/\{\{c\d+::([^}]+)\}\}/g, "$1"), query)}
+              </div>
+              {hit.subtitle && (
+                <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5 break-words whitespace-normal">
+                  {highlight(hit.subtitle, query)}
+                </div>
+              )}
+              {isMobile && (
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                  <Badge variant="outline" className="text-[10px] border-gold/30">{M.label}</Badge>
+                  {hit.due && hit.kind === "card" && (
+                    <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/30 border">לחזרה</Badge>
+                  )}
+                </div>
+              )}
+            </div>
+            {!isMobile && (
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <Badge variant="outline" className="text-[10px] border-gold/30">{M.label}</Badge>
+                {hit.due && hit.kind === "card" && (
+                  <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/30 border">לחזרה</Badge>
+                )}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <Card className={cn("gold-frame p-4 space-y-3", variant === "modal" && "shadow-2xl")} dir="rtl">
+    <Card className={cn("gold-frame p-4 space-y-3 max-w-full overflow-x-hidden", variant === "modal" && "shadow-2xl")} dir="rtl">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -218,11 +269,11 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-10 border-gold/50 gap-1">
-              <Filter className="h-4 w-4 text-gold" /> סוגים
+            <Button variant="outline" size="sm" className="h-10 border-gold/50 gap-1 shrink-0">
+              {isMobile ? <MoreHorizontal className="h-4 w-4 text-gold" /> : <Filter className="h-4 w-4 text-gold" />} {isMobile ? "עוד" : "סוגים"}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="max-w-[calc(100vw-1rem)]">
             <DropdownMenuLabel>סוג תוצאה</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {(Object.keys(KIND_META) as Kind[]).map((k) => (
@@ -311,44 +362,15 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
       )}
 
       {/* Results */}
-      <ScrollArea className={cn(variant === "modal" ? "h-[60vh]" : "h-[60vh]")}>
-        <div className="space-y-1.5">
-          {results.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground py-8">אין תוצאות</p>
-          )}
-          {results.map((hit) => {
-            const M = KIND_META[hit.kind];
-            return (
-              <button
-                key={hit.id}
-                type="button"
-                onClick={() => onPick?.(hit)}
-                className="w-full text-right rounded-lg border border-gold/30 bg-card hover:bg-secondary transition-colors p-3 flex items-start gap-3"
-              >
-                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary", M.color)}>
-                  <M.icon className="h-4 w-4" />
-                </span>
-                <div className="flex-1 min-w-0 text-right">
-                  <div className="font-medium text-sm leading-snug break-words">
-                    {highlight(hit.title.replace(/\{\{c\d+::([^}]+)\}\}/g, "$1"), query)}
-                  </div>
-                  {hit.subtitle && (
-                    <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5 break-words">
-                      {highlight(hit.subtitle, query)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <Badge variant="outline" className="text-[10px] border-gold/30">{M.label}</Badge>
-                  {hit.due && hit.kind === "card" && (
-                    <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/30 border">לחזרה</Badge>
-                  )}
-                </div>
-              </button>
-            );
-          })}
+      {isMobile ? (
+        <div className="h-[60vh] overflow-y-auto overflow-x-hidden pr-0.5">
+          {resultsList}
         </div>
-      </ScrollArea>
+      ) : (
+        <ScrollArea className={cn(variant === "modal" ? "h-[60vh]" : "h-[60vh]")}>
+          {resultsList}
+        </ScrollArea>
+      )}
     </Card>
   );
 }

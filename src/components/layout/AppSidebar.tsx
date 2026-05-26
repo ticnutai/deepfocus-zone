@@ -13,8 +13,9 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useStudy } from "@/lib/study/store";
-import { useFeatureBlocklist } from "@/lib/study/featureBlocklist";
+import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 
 const ROUTE_ITEMS: NavItem[] = [
@@ -151,9 +152,15 @@ export function AppShellSidebar() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { user, signOut, isGuest } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, roles } = usePermissions();
+  const isMobile = useIsMobile();
   const { state } = useStudy();
-  const blocklist = useFeatureBlocklist();
+  const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);
+  const roleIdsForBlocklist = useMemo(
+    () => (previewRoleId ? [previewRoleId] : roles.map((r) => r.id)),
+    [previewRoleId, roles],
+  );
+  const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
 
   const activeId = useMemo(() => {
     const s = new URLSearchParams(search).get("section");

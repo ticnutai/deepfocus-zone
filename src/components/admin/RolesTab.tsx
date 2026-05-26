@@ -6,12 +6,43 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Trash2, Lock, UserX } from "lucide-react";
-import { saveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+import {
+  saveGuestViewProfile,
+} from "@/lib/auth/guestViewProfile";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
+import {
+  loadFeatureBlocklistProfiles,
+  loadRoleBlocklistAssignments,
+  saveFeatureBlocklistProfiles,
+  saveRoleBlocklistAssignments,
+  type BlocklistScope,
+} from "@/lib/study/featureBlocklist";
+import { PROFILE_B_PROFILE_NAME } from "@/lib/study/profileBMode";
 
 interface Role { id: string; name: string; description: string | null; is_system: boolean; }
 interface RolePermRow { module: string; action: string; allowed: boolean; }
 interface RoleDefaultsRow { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null; }
+type PermissionModule = "decks" | "cards" | "goals" | "shas" | "analytics" | "users" | "roles" | "settings";
+type PermissionAction = "view" | "create" | "edit" | "delete" | "manage";
+
+const ALL_MODULES: PermissionModule[] = ["decks", "cards", "goals", "shas", "analytics", "users", "roles", "settings"];
+const ALL_ACTIONS: PermissionAction[] = ["view", "create", "edit", "delete", "manage"];
+
+const PROFILE_B_ALLOWED = new Set<string>([
+  "decks:view",
+  "decks:create",
+  "decks:edit",
+  "decks:delete",
+  "cards:view",
+  "cards:create",
+  "cards:edit",
+  "cards:delete",
+  "goals:view",
+  "goals:create",
+  "goals:edit",
+  "shas:view",
+  "analytics:view",
+]);
 
 export function RolesTab() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -24,6 +55,95 @@ export function RolesTab() {
     setRoles((data ?? []) as Role[]);
   };
   useEffect(() => { load(); }, []);
+
+  const ensureProfileBAssignmentForScope = async (roleId: string, scope: BlocklistScope) => {
+    const [profiles, assignments] = await Promise.all([
+      loadFeatureBlocklistProfiles({ scope }),
+      loadRoleBlocklistAssignments({ scope }),
+    ]);
+
+    const normalizedName = PROFILE_B_PROFILE_NAME.trim().toLowerCase();
+    let profile = profiles.find((row) => row.name.trim().toLowerCase() === normalizedName);
+    if (!profile) {
+      profile = {
+        id: crypto.randomUUID(),
+        name: PROFILE_B_PROFILE_NAME,
+        blocklist: { sections: ["backup", "backup-restore"], widgets: {} },
+        updatedAt: Date.now(),
+      };
+      await saveFeatureBlocklistProfiles([...profiles, profile], { scope });
+    }
+
+    const withoutRole = assignments.filter((row) => row.roleId !== roleId);
+    withoutRole.push({ id: crypto.randomUUID(), roleId, profileId: profile.id });
+    await saveRoleBlocklistAssignments(withoutRole, { scope });
+  };
+
+  const installProfileB = async () => {
+    setBusy(true);
+    try {
+      let role = roles.find((r) => r.name === "profile_b");
+      if (!role) {
+        const { data, error } = await supabase
+          .from("app_roles")
+          .insert({ name: "profile_b", description: "פרופיל B: pull-only + local-create", is_system: false })
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        role = data as Role;
+      }
+
+      await supabase.from("role_permissions").delete().eq("role_id", role.id);
+      const permissionRows = ALL_MODULES.flatMap((module) =>
+        ALL_ACTIONS.map((action) => ({
+          role_id: role!.id,
+          module,
+          action,
+          allowed: PROFILE_B_ALLOWED.has(`${module}:${action}`),
+        })),
+      );
+      await supabase.from("role_permissions").insert(permissionRows as never[]);
+
+      await Promise.all([
+        ensureProfileBAssignmentForScope(role.id, "desktop"),
+        ensureProfileBAssignmentForScope(role.id, "mobile"),
+      ]);
+
+      const guestSnapshot = await (async () => {
+        const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+          supabase.from("role_permissions").select("module,action,allowed").eq("role_id", role!.id),
+          supabase.from("role_layout_defaults").select("sidebar_config,widget_layout").eq("role_id", role!.id).maybeSingle(),
+        ]);
+        if (permsError) throw new Error(permsError.message);
+        if (defaultsError) throw new Error(defaultsError.message);
+
+        const matrix: Record<string, boolean> = {};
+        ((perms ?? []) as RolePermRow[]).forEach((row) => {
+          if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
+        });
+
+        return saveGuestViewProfile({
+          id: `role:${role!.id}`,
+          label: `תצוגת אורח: ${role!.name}`,
+          roleId: role!.id,
+          roleName: role!.name,
+          isAdmin: false,
+          roles: [{ id: role!.id, name: role!.name }],
+          matrix,
+          sidebarConfig: ((defaults as RoleDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
+          widgetLayout: ((defaults as RoleDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+        });
+      })();
+
+      void guestSnapshot;
+      toast.success("פרופיל B הותקן. אפשר לשייך אותו לאורח או לכל תפקיד לפי בחירה.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "התקנת פרופיל B נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const create = async () => {
     if (!name.trim()) return toast.error("הזן שם תפקיד");
@@ -100,9 +220,14 @@ export function RolesTab() {
           <Input placeholder="שם (למשל editor)" value={name} onChange={(e) => setName(e.target.value)} />
           <Input className="sm:col-span-2" placeholder="תיאור" value={desc} onChange={(e) => setDesc(e.target.value)} />
         </div>
-        <Button onClick={create} disabled={busy} className="bg-gradient-navy text-primary-foreground">
-          <Plus className="h-4 w-4" /> הוסף תפקיד
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={create} disabled={busy} className="bg-gradient-navy text-primary-foreground">
+            <Plus className="h-4 w-4" /> הוסף תפקיד
+          </Button>
+          <Button variant="outline" onClick={installProfileB} disabled={busy}>
+            התקן פרופיל B
+          </Button>
+        </div>
       </Card>
 
       <Card className="gold-frame p-4 space-y-2">

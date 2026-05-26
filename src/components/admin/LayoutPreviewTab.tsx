@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
 import { saveGuestViewProfile, setActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+import { resolveRoleLayoutProfile, type LayoutScope } from "@/lib/study/layoutProfiles";
 import { toast } from "sonner";
 
 interface AppRole { id: string; name: string }
@@ -29,6 +30,7 @@ export function LayoutPreviewTab() {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [section, setSection] = useState<string>("home");
+  const [scope, setScope] = useState<LayoutScope>("desktop");
   const [reloadToken, setReloadToken] = useState<number>(0);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export function LayoutPreviewTab() {
     const params = new URLSearchParams();
     params.set("section", section);
     params.set("previewRole", roleId);
+    params.set("previewViewport", scope);
     params.set("_t", String(reloadToken));
     return `/?${params.toString()}`;
   };
@@ -71,7 +74,8 @@ export function LayoutPreviewTab() {
     const role = roles.find((r) => r.id === roleId);
     if (!role) return;
 
-    const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+    const [assignedProfile, { data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+      resolveRoleLayoutProfile(roleId, { scope }).catch(() => null),
       supabase
         .from("role_permissions")
         .select("module,action,allowed")
@@ -105,8 +109,10 @@ export function LayoutPreviewTab() {
       isAdmin: role.name === "admin",
       roles: [{ id: roleId, name: role.name }],
       matrix,
-      sidebarConfig: ((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-      widgetLayout: ((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+      sidebarConfig: assignedProfile?.sidebarConfig
+        ?? (((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined),
+      widgetLayout: assignedProfile?.widgetLayout
+        ?? (((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined),
     });
     setActiveGuestViewProfile(snapshot.id);
     toast.success(`נשמר פרופיל אורח עבור ${roleLabel(role.name)} והוגדר כברירת מחדל בכניסת אורח`);
@@ -161,6 +167,17 @@ export function LayoutPreviewTab() {
                 {ALL_SIDEBAR_ITEMS.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold text-muted-foreground">מצב תצוגה:</div>
+            <Select value={scope} onValueChange={(v) => setScope(v as LayoutScope)}>
+              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desktop">מחשב</SelectItem>
+                <SelectItem value="mobile">מובייל</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -224,12 +241,25 @@ export function LayoutPreviewTab() {
                   </div>
                 </div>
                 <div className="relative w-full" style={{ height: "70vh", minHeight: 520 }}>
-                  <iframe
-                    key={`${roleId}-${reloadToken}`}
-                    src={url}
-                    title={`preview-${role?.name}`}
-                    className="absolute inset-0 w-full h-full rounded-md border border-gold/30 bg-background"
-                  />
+                  {scope === "mobile" ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-muted/10 rounded-md border border-gold/20">
+                      <div className="relative h-full max-h-[680px] w-[390px] max-w-full rounded-[28px] border-2 border-gold/40 bg-background shadow-xl overflow-hidden">
+                        <iframe
+                          key={`${roleId}-${scope}-${reloadToken}`}
+                          src={url}
+                          title={`preview-${role?.name}`}
+                          className="absolute inset-0 w-full h-full bg-background"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <iframe
+                      key={`${roleId}-${scope}-${reloadToken}`}
+                      src={url}
+                      title={`preview-${role?.name}`}
+                      className="absolute inset-0 w-full h-full rounded-md border border-gold/30 bg-background"
+                    />
+                  )}
                 </div>
               </Card>
             );

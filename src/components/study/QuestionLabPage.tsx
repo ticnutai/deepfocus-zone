@@ -4,6 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -19,11 +26,13 @@ import {
   Upload,
   ClipboardCheck,
   CheckSquare,
+  MoreHorizontal,
   Square,
 } from "lucide-react";
 import { useStudy } from "@/lib/study/store";
 import { toHebrewNum } from "@/lib/study/shasFormat";
 import type { Card as StudyCard } from "@/lib/study/types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type SamplePair = {
   key: string;
@@ -171,6 +180,7 @@ function formatKodeshRef(
 
 export function QuestionLabPage() {
   const { state, addCategory, addCard } = useStudy();
+  const isMobile = useIsMobile();
   type AddCardInput = Omit<StudyCard, "id" | "createdAt" | "srs" | "stats">;
   const [index, setIndex] = useState<ReportIndex | null>(null);
   const [selectedReportFile, setSelectedReportFile] =
@@ -378,6 +388,14 @@ export function QuestionLabPage() {
     toast.success("dry-run הושלם");
   };
 
+  const approveAllExtracted = () => {
+    if (isPilotPayload(data) || !data) return;
+    const next: Record<string, boolean> = {};
+    for (const r of data.rows) next[neviimRowKey(r)] = true;
+    setApprovedMap(next);
+    toast.success("סומנו כל השאלות לאישור");
+  };
+
   const commitImport = () => {
     if (!dryRunSummary) {
       toast.error("יש לבצע Dry-run לפני Commit");
@@ -489,7 +507,7 @@ export function QuestionLabPage() {
   };
 
   return (
-    <div dir="rtl" className="space-y-4 p-2 sm:p-4">
+    <div dir="rtl" className="space-y-4 p-2 sm:p-4 max-w-full overflow-x-hidden">
       <Card className="gold-frame p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -540,40 +558,79 @@ export function QuestionLabPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex gap-2">
-            {!isPilotPayload(data) && data && (
-              <Button
-                variant="outline"
-                className="flex-1 border-gold/50"
-                onClick={() => {
-                  const next: Record<string, boolean> = {};
-                  for (const r of data.rows) next[neviimRowKey(r)] = true;
-                  setApprovedMap(next);
-                  toast.success("סומנו כל השאלות לאישור");
-                }}
-                disabled={loading}
-              >
-                <CheckSquare className="h-4 w-4" />
-                אשר הכל
-              </Button>
+          <div className="flex min-w-0 w-full md:w-auto gap-2 md:justify-end">
+            {isMobile ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="flex-1 border-gold/50 min-w-0"
+                  onClick={runDryRun}
+                  disabled={!data || loading}
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Dry-run
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="border-gold/50 shrink-0">
+                      <MoreHorizontal className="h-4 w-4" />
+                      עוד
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => void loadIndex()}
+                      disabled={loading}
+                    >
+                      רענון דוחות
+                    </DropdownMenuItem>
+                    {!isPilotPayload(data) && data && (
+                      <DropdownMenuItem onClick={approveAllExtracted} disabled={loading}>
+                        אשר הכל
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={commitImport}
+                      disabled={!data || loading || importing || !dryRunSummary}
+                    >
+                      Commit
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <>
+                {!isPilotPayload(data) && data && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-gold/50"
+                    onClick={approveAllExtracted}
+                    disabled={loading}
+                  >
+                    <CheckSquare className="h-4 w-4" />
+                    אשר הכל
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="flex-1 border-gold/50"
+                  onClick={runDryRun}
+                  disabled={!data || loading}
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Dry-run
+                </Button>
+                <Button
+                  className="flex-1 bg-gradient-navy text-primary-foreground"
+                  onClick={commitImport}
+                  disabled={!data || loading || importing || !dryRunSummary}
+                >
+                  <Upload className="h-4 w-4" />
+                  Commit
+                </Button>
+              </>
             )}
-            <Button
-              variant="outline"
-              className="flex-1 border-gold/50"
-              onClick={runDryRun}
-              disabled={!data || loading}
-            >
-              <ClipboardCheck className="h-4 w-4" />
-              Dry-run
-            </Button>
-            <Button
-              className="flex-1 bg-gradient-navy text-primary-foreground"
-              onClick={commitImport}
-              disabled={!data || loading || importing || !dryRunSummary}
-            >
-              <Upload className="h-4 w-4" />
-              Commit
-            </Button>
           </div>
         </div>
       </Card>

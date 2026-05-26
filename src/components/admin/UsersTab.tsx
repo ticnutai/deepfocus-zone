@@ -7,6 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -17,8 +23,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
-  UserPlus, X, Search, CheckCircle2, XCircle, Clock, Pencil, Trash2, Plus,
+  UserPlus, X, Search, CheckCircle2, XCircle, Clock, Pencil, Trash2, Plus, MoreHorizontal,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface Profile { id: string; display_name: string | null; email: string | null; created_at: string; status: string; }
 interface Role { id: string; name: string; description: string | null; }
@@ -31,6 +38,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 
 export function UsersTab() {
   const { user: me } = useAuth();
+  const isMobile = useIsMobile();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [userRoles, setUserRoles] = useState<UR[]>([]);
@@ -328,58 +336,96 @@ export function UsersTab() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-wrap">
-                    {!isMe && p.status !== "approved" && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "approved")} disabled={busy}
-                            className="h-8 w-8 text-emerald-600 hover:bg-emerald-50">
-                            <CheckCircle2 className="h-4 w-4" />
+                    {isMobile ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" variant="outline" className="h-8 border-gold/50 gap-1">
+                            <MoreHorizontal className="h-4 w-4" />
+                            עוד
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>אשר</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {!isMe && p.status !== "pending" && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "pending")} disabled={busy}
-                            className="h-8 w-8 text-amber-500 hover:bg-amber-50">
-                            <Clock className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>השהה</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {!isMe && p.status !== "blocked" && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "blocked")} disabled={busy}
-                            className="h-8 w-8 text-destructive hover:bg-destructive/10">
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>חסום</TooltipContent>
-                      </Tooltip>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button size="icon" variant="ghost" onClick={() => startEdit(p)} disabled={busy}
-                          className="h-8 w-8 text-blue-600 hover:bg-blue-50">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>עריכה</TooltipContent>
-                    </Tooltip>
-                    {!isMe && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="icon" variant="ghost" onClick={() => setDeleting(p)} disabled={busy}
-                            className="h-8 w-8 text-destructive hover:bg-destructive/10">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>מחיקה</TooltipContent>
-                      </Tooltip>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {!isMe && p.status !== "approved" && (
+                            <DropdownMenuItem onClick={() => void setStatus(p.id, "approved")} disabled={busy}>
+                              אשר
+                            </DropdownMenuItem>
+                          )}
+                          {!isMe && p.status !== "pending" && (
+                            <DropdownMenuItem onClick={() => void setStatus(p.id, "pending")} disabled={busy}>
+                              השהה
+                            </DropdownMenuItem>
+                          )}
+                          {!isMe && p.status !== "blocked" && (
+                            <DropdownMenuItem onClick={() => void setStatus(p.id, "blocked")} disabled={busy}>
+                              חסום
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => startEdit(p)} disabled={busy}>
+                            עריכה
+                          </DropdownMenuItem>
+                          {!isMe && (
+                            <DropdownMenuItem onClick={() => setDeleting(p)} disabled={busy}>
+                              מחיקה
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <>
+                        {!isMe && p.status !== "approved" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "approved")} disabled={busy}
+                                className="h-8 w-8 text-emerald-600 hover:bg-emerald-50">
+                                <CheckCircle2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>אשר</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {!isMe && p.status !== "pending" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "pending")} disabled={busy}
+                                className="h-8 w-8 text-amber-500 hover:bg-amber-50">
+                                <Clock className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>השהה</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {!isMe && p.status !== "blocked" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => setStatus(p.id, "blocked")} disabled={busy}
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10">
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>חסום</TooltipContent>
+                          </Tooltip>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" onClick={() => startEdit(p)} disabled={busy}
+                              className="h-8 w-8 text-blue-600 hover:bg-blue-50">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>עריכה</TooltipContent>
+                        </Tooltip>
+                        {!isMe && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => setDeleting(p)} disabled={busy}
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>מחיקה</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

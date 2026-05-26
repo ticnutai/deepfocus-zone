@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, Eye, EyeOff, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,6 +16,7 @@ import {
   getActiveGuestViewProfileId,
   hydrateGuestProfilesFromSiteSettings,
   listGuestViewProfiles,
+  setActiveGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
 
@@ -38,7 +40,9 @@ export default function Auth() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [guestProfiles, setGuestProfiles] = useState<GuestViewProfile[]>([]);
   const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(null);
+  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
 
@@ -65,24 +69,34 @@ export default function Auth() {
         const effectiveProfiles = profiles.length > 0 ? profiles : listGuestViewProfiles();
         const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
         if (effectiveProfiles.length === 0) {
+          setGuestProfiles([]);
+          setSelectedGuestProfileId("");
           setGuestProfile(null);
           return;
         }
         const hasActive = !!activeId && effectiveProfiles.some((p) => p.id === activeId);
-        setGuestProfile(hasActive
+        const chosen = hasActive
           ? (effectiveProfiles.find((p) => p.id === activeId) ?? effectiveProfiles[0])
-          : effectiveProfiles[0]);
+          : effectiveProfiles[0];
+        setGuestProfiles(effectiveProfiles);
+        setSelectedGuestProfileId(chosen.id);
+        setGuestProfile(chosen);
       } catch {
         const fallbackProfiles = listGuestViewProfiles();
         const activeId = getActiveGuestViewProfileId();
         if (fallbackProfiles.length === 0) {
+          setGuestProfiles([]);
+          setSelectedGuestProfileId("");
           setGuestProfile(null);
           return;
         }
         const hasActive = !!activeId && fallbackProfiles.some((p) => p.id === activeId);
-        setGuestProfile(hasActive
+        const chosen = hasActive
           ? (fallbackProfiles.find((p) => p.id === activeId) ?? fallbackProfiles[0])
-          : fallbackProfiles[0]);
+          : fallbackProfiles[0];
+        setGuestProfiles(fallbackProfiles);
+        setSelectedGuestProfileId(chosen.id);
+        setGuestProfile(chosen);
       }
     };
     void run();
@@ -212,17 +226,40 @@ export default function Auth() {
           <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">כניסה אופליין</span></div>
         </div>
 
+        {guestProfiles.length > 0 && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">פרופיל לתצוגת אורח</Label>
+            <Select
+              value={selectedGuestProfileId}
+              onValueChange={(value) => {
+                setSelectedGuestProfileId(value);
+                setGuestProfile(guestProfiles.find((p) => p.id === value) ?? null);
+                setActiveGuestViewProfile(value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="בחר פרופיל אורח" />
+              </SelectTrigger>
+              <SelectContent>
+                {guestProfiles.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id}>{profile.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <Button
           variant="outline"
           onClick={() => {
-            if (!guestProfile?.id) {
+            if (!selectedGuestProfileId) {
               toast.error("לא הוגדר פרופיל אורח קבוע. הגדר אותו במסך ניהול משתמשים.");
               return;
             }
-            signInAsGuest(guestProfile.id);
+            signInAsGuest(selectedGuestProfileId);
             navigate("/", { replace: true });
           }}
-          disabled={!guestProfile?.id}
+          disabled={!selectedGuestProfileId}
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />

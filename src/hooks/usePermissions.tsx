@@ -146,9 +146,13 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
           ]);
 
           const roleName = roleData.data?.name ?? guestProfile.roleName ?? guestProfile.roles?.[0]?.name ?? "role";
+          const mergedMatrix: Record<string, boolean> = { ...(guestProfile.matrix ?? {}) };
+          Object.entries(matrix).forEach(([key, allowed]) => {
+            if (allowed) mergedMatrix[key] = true;
+          });
           const live: PermSet = {
-            isAdmin: roleName === "admin",
-            matrix,
+            isAdmin: roleName === "admin" || !!guestProfile.isAdmin,
+            matrix: mergedMatrix,
             roles: [{ id: guestProfile.roleId, name: roleName }],
           };
           setPerms(live);

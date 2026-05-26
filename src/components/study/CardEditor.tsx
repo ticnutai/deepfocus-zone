@@ -137,8 +137,8 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   );
   const [options, setOptions] = useState<string[]>(
     editCard && (editCard.type === "multiple" || editCard.type === "combo")
-      ? (editCard as AnyCard).options ?? ["", ""]
-      : ["", ""],
+      ? (editCard as AnyCard).options ?? ["", "", "", ""]
+      : ["", "", "", ""],
   );
   const [correctIndices, setCorrectIndices] = useState<number[]>(
     editCard && (editCard.type === "multiple" || editCard.type === "combo")
@@ -479,6 +479,16 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             ייווצרו כמה שאלות שונות לאותה שאלה, לפי הסוגים שבחרת.
           </p>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <Label className="block text-right">שאלה</Label>
+        <Textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="כתוב את השאלה..."
+          className="border-2 border-gold/40 text-right"
+        />
       </div>
 
       {showFlashFields && (
