@@ -29,12 +29,16 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   showOverlay?: boolean;
+  /** Accepted for API parity. When false, focus trapping is loosened (prevents auto-focus). */
+  trapFocus?: boolean;
+  /** Accepted for API parity. When false, outside pointer events are not blocked. */
+  disableOutsidePointerEvents?: boolean;
 }
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, showOverlay = true, ...props }, ref) => (
+>(({ className, children, showOverlay = true, trapFocus = true, disableOutsidePointerEvents: _dope, onOpenAutoFocus, ...props }, ref) => (
   <DialogPortal>
     {showOverlay ? <DialogOverlay /> : null}
     <DialogPrimitive.Content
