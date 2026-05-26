@@ -4109,7 +4109,7 @@ export function useStudy() {
     if (scope === "desktop") {
       const payload: Record<string, unknown> = {
         role_id: roleId,
-        updated_by: uid,
+        updated_by: currentUid,
         updated_at: new Date().toISOString(),
       };
       if (patch.sidebar) payload.sidebar_config = patch.sidebar as unknown as Json;
