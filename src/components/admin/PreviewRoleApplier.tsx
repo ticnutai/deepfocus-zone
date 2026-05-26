@@ -42,7 +42,7 @@ export function PreviewRoleApplier() {
           .select("widget_layout, sidebar_config")
           .eq("role_id", previewRoleId)
           .maybeSingle();
-        rd = (data ?? null) as { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null } | null;
+        rd = (data ?? null) as unknown as { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null } | null;
       }
       if (cancelled) return;
       const sidebar = assignedProfile?.sidebarConfig ?? (rd?.sidebar_config ?? null);
