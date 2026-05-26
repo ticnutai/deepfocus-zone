@@ -173,6 +173,7 @@ export type Database = {
           created_at: string
           daf: number | null
           deck_id: string | null
+          deleted_at: string | null
           explanation: string | null
           id: string
           masechta: string | null
@@ -194,6 +195,7 @@ export type Database = {
           created_at?: string
           daf?: number | null
           deck_id?: string | null
+          deleted_at?: string | null
           explanation?: string | null
           id?: string
           masechta?: string | null
@@ -215,6 +217,7 @@ export type Database = {
           created_at?: string
           daf?: number | null
           deck_id?: string | null
+          deleted_at?: string | null
           explanation?: string | null
           id?: string
           masechta?: string | null
@@ -311,6 +314,7 @@ export type Database = {
           category_ids: Json
           color: string
           created_at: string
+          deleted_at: string | null
           description: string | null
           id: string
           include_sub_categories: boolean
@@ -322,6 +326,7 @@ export type Database = {
           category_ids?: Json
           color?: string
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           id?: string
           include_sub_categories?: boolean
@@ -333,6 +338,7 @@ export type Database = {
           category_ids?: Json
           color?: string
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           id?: string
           include_sub_categories?: boolean

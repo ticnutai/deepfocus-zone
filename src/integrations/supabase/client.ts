@@ -13,8 +13,5 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // Disable the navigator.locks-based mutex — prevents the 5 s "Lock was not
-    // released" warning caused by React Strict Mode double-invoking effects.
-    lock: (name, acquireTimeout, fn) => fn(),
   }
 });
