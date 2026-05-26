@@ -371,8 +371,8 @@ export function GuestProfilesTab() {
       isAdmin: role.name === "admin",
       roles: [{ id: role.id, name: role.name }],
       matrix,
-      sidebarConfig: ((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-      widgetLayout: ((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+      sidebarConfig: ((defaults as unknown as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
+      widgetLayout: ((defaults as unknown as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
       studySeed: studySeed ?? existing?.studySeed,
     });
   }, [buildGuestStudySeed, roles]);
