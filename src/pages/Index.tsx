@@ -464,6 +464,19 @@ const DEFAULT_SIDEBAR_ITEMS_ALL: NavItem[] = (() => {
   return out;
 })();
 
+const PROFILE_B_ALLOWED_HOME_TAB_IDS = new Set<string>([
+  "overview",
+  "daf",
+  "categories",
+]);
+
+const PROFILE_B_ALLOWED_SIDEBAR_IDS = new Set<string>([
+  "home",
+  "cards",
+  "search",
+  "daf",
+]);
+
 const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar-width";
 const USER_INFO_WIDTH_DESKTOP_STORAGE_KEY = "sidebar-user-info-width-desktop";
 const USER_INFO_WIDTH_MOBILE_STORAGE_KEY = "sidebar-user-info-width-mobile";
@@ -612,6 +625,12 @@ const Index = () => {
       cancelled = true;
     };
   }, [guestProfile?.roleId, isGuest, isMobile, roles]);
+
+  useEffect(() => {
+    if (!profileBActive) return;
+    setSidebarConfigOpen(false);
+    setTabConfigOpen(false);
+  }, [profileBActive]);
 
   useAutoBackupRunner();
   const [pinned, setPinned] = useState(true);
@@ -780,6 +799,10 @@ const Index = () => {
   })();
 
   const isAllowedByPermission = useCallback((id: string) => {
+    if (profileBActive) {
+      if (HOME_TAB_IDS.has(id)) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(id);
+      return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(id);
+    }
     if (profileBActive && (id === "backup" || id === "backup-restore")) return false;
     if (id === "admin") return isAdmin;
     if (id === "cards") return canViewCardsModule;
@@ -788,7 +811,9 @@ const Index = () => {
   }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
 
   const visibleTabs = orderedTabs.filter((t) => {
-    if (!t.visible) return false;
+    if (!HOME_TAB_IDS.has(t.v)) return false;
+    if (!profileBActive && !t.visible) return false;
+    if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
     return isAllowedByPermission(t.v);
   });
 
@@ -858,6 +883,7 @@ const Index = () => {
   }, [state.sidebarConfig]);
 
   const visibleSidebarItems = orderedSidebarItems.filter((item) => {
+    if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
     if (!item.visible) return false;
     return isAllowedByPermission(item.id);
   });
@@ -1211,6 +1237,7 @@ const Index = () => {
                 onClick={() => setSidebarConfigOpen(true)}
                 title="הגדרת סיידבר"
                 className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-secondary text-gold hover:text-navy transition-colors"
+                style={{ display: profileBActive ? "none" : undefined }}
               >
                 <Sliders className="h-4 w-4" />
               </button>
@@ -1402,6 +1429,7 @@ const Index = () => {
                       "flex items-center gap-1 shrink-0 self-start transition-all",
                       showTabsConfigIcon ? "opacity-100" : "opacity-0 pointer-events-none",
                     )}
+                    style={{ display: profileBActive ? "none" : undefined }}
                   >
                     <button
                       onClick={() => setSidebarConfigOpen(true)}
