@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
+import { getActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
 
 const emptyState = (): StudyState => ({
   decks: [], cards: [], logs: [], categories: [], goals: [],
@@ -66,11 +67,49 @@ let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if a
 
 const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
+const GUEST_PROFILE_SEED_APPLIED_KEY = (profileId: string) => `guest-study-seed-applied:${profileId}`;
 const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
 const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — keeps cross-device data fresher while preserving cache-first UX
 const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // short delay after first paint before cloud reconciliation
 const UI_PREFS_SYNC_DEBOUNCE_MS = 800;
+
+const hasMeaningfulStudyData = (state: StudyState): boolean => {
+  return (state.categories?.length ?? 0) > 0
+    || (state.decks?.length ?? 0) > 0
+    || (state.cards?.length ?? 0) > 0
+    || (state.cardDecks?.length ?? 0) > 0;
+};
+
+const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
+  if (typeof window === "undefined") return state;
+  const activeProfile = getActiveGuestViewProfile();
+  const seed = activeProfile?.studySeed;
+  if (!activeProfile?.id || !seed) return state;
+
+  const seedAppliedKey = GUEST_PROFILE_SEED_APPLIED_KEY(activeProfile.id);
+  if (localStorage.getItem(seedAppliedKey) === "1") return state;
+  if (hasMeaningfulStudyData(state)) return state;
+
+  const seededState = applyBidirectionalDedupeGuards({
+    ...state,
+    categories: Array.isArray(seed.categories) ? seed.categories : [],
+    decks: Array.isArray(seed.decks) ? seed.decks : [],
+    cards: Array.isArray(seed.cards) ? seed.cards : [],
+    cardDecks: Array.isArray(seed.cardDecks) ? seed.cardDecks : [],
+    deckCategories:
+      seed.deckCategories && typeof seed.deckCategories === "object" && !Array.isArray(seed.deckCategories)
+        ? seed.deckCategories
+        : (state.deckCategories ?? {}),
+  });
+
+  try {
+    localStorage.setItem(seedAppliedKey, "1");
+  } catch {
+    // ignore storage errors
+  }
+  return seededState;
+};
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
   const ric = (window as typeof window & {
@@ -2129,6 +2168,7 @@ export function useStudy() {
       } else {
         memState = emptyState();
       }
+      memState = applyGuestProfileSeedOnce(memState);
       // Guest mode loads local state eagerly.
       markCategoryParentLoadedNow(null);
       for (const cat of memState.categories ?? []) {

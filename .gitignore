@@ -36,3 +36,8 @@ scripts/diagnose_output.txt
 *.njsproj
 *.sln
 *.sw?
+
+# Google Play publishing credentials (local only)
+secrets/
+*service-account*.json
+*androidpublisher*.json

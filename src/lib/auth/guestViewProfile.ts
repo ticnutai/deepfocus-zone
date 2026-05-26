@@ -1,9 +1,18 @@
-import type { SidebarConfig, TabConfig, WidgetLayout } from "@/lib/study/types";
+import type { Card, CardDeckLink, Category, Deck, SidebarConfig, TabConfig, WidgetLayout } from "@/lib/study/types";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 
 export type GuestPermissionMatrix = Record<string, boolean>;
+
+export interface GuestStudySeed {
+  seededAt: number;
+  categories: Category[];
+  decks: Deck[];
+  cards: Card[];
+  cardDecks: CardDeckLink[];
+  deckCategories?: Record<string, string[]>;
+}
 
 export interface GuestViewProfile {
   id: string;
@@ -16,6 +25,7 @@ export interface GuestViewProfile {
   sidebarConfig?: SidebarConfig[];
   tabConfig?: TabConfig[];
   widgetLayout?: WidgetLayout;
+  studySeed?: GuestStudySeed;
   createdAt: number;
   updatedAt: number;
 }
@@ -49,6 +59,23 @@ export function listGuestViewProfiles(): GuestViewProfile[] {
 
 function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
   if (!Array.isArray(raw)) return [];
+
+  const normalizeSeed = (seed: unknown): GuestStudySeed | undefined => {
+    if (!seed || typeof seed !== "object" || Array.isArray(seed)) return undefined;
+    const rawSeed = seed as Partial<GuestStudySeed>;
+    return {
+      seededAt: typeof rawSeed.seededAt === "number" ? rawSeed.seededAt : Date.now(),
+      categories: Array.isArray(rawSeed.categories) ? rawSeed.categories : [],
+      decks: Array.isArray(rawSeed.decks) ? rawSeed.decks : [],
+      cards: Array.isArray(rawSeed.cards) ? rawSeed.cards : [],
+      cardDecks: Array.isArray(rawSeed.cardDecks) ? rawSeed.cardDecks : [],
+      deckCategories:
+        rawSeed.deckCategories && typeof rawSeed.deckCategories === "object" && !Array.isArray(rawSeed.deckCategories)
+          ? (rawSeed.deckCategories as Record<string, string[]>)
+          : undefined,
+    };
+  };
+
   return raw
     .filter((item) => item && typeof item === "object")
     .map((item) => {
@@ -70,6 +97,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
         sidebarConfig: Array.isArray(p.sidebarConfig) ? p.sidebarConfig : undefined,
         tabConfig: Array.isArray(p.tabConfig) ? p.tabConfig : undefined,
         widgetLayout: p.widgetLayout && typeof p.widgetLayout === "object" ? p.widgetLayout : undefined,
+        studySeed: normalizeSeed(p.studySeed),
         createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
         updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
       };

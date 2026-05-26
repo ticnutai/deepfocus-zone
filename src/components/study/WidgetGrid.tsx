@@ -1,4 +1,4 @@
-import { useState, ReactNode, useCallback, useMemo, useRef } from "react";
+import { useState, ReactNode, useCallback, useMemo, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import {
   DndContext,
@@ -28,6 +28,7 @@ import { mergeLayout, applyWidgetBlocklist, WIDGET_DEFS } from "@/lib/study/widg
 import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { isProfileBMode } from "@/lib/study/profileBMode";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
   GripVertical,
@@ -288,9 +289,10 @@ interface WidgetGridProps {
   tabId: string;
   widgetMap: Record<string, ReactNode>;
   inlineDrag?: boolean;
+  lockEditing?: boolean;
 }
 
-export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridProps) {
+export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = false }: WidgetGridProps) {
   const { search } = useLocation();
   const { state, setWidgetLayout } = useStudy();
   const isMobile = useIsMobile();
@@ -299,6 +301,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
   const [showHiddenTray, setShowHiddenTray] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(false);
   const toolbarHoverTimer = useRef<number | null>(null);
+  const editingLocked = lockEditing || isProfileBMode();
 
   const defs = WIDGET_DEFS[tabId] ?? [];
   const { isAdmin, roles } = usePermissions();
@@ -334,6 +337,12 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
   const visibleWidgets = tabLayout.filter((w) => w.visible);
   const hiddenWidgets = tabLayout.filter((w) => !w.visible);
   const activeLabel = activeId ? (defs.find((d) => d.id === activeId)?.label ?? activeId) : "";
+
+  useEffect(() => {
+    if (!editingLocked) return;
+    setEditMode(false);
+    setShowHiddenTray(false);
+  }, [editingLocked]);
 
   const toggleSize = (id: string) => {
     save(tabLayout.map((w) => w.id === id ? { ...w, size: w.size === "full" ? "half" : "full" } : w));
@@ -409,6 +418,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
 
   return (
     <div className="space-y-4 relative">
+      {!editingLocked && (
       <div
         className="flex items-center justify-between gap-2"
         onMouseEnter={() => {
@@ -461,6 +471,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
           <p className="text-xs text-muted-foreground text-right">עריכה צמודה לווידג׳טים: גרירה/סדר, הסתרה, והגדלה/הקטנה מההנדלים</p>
         )}
       </div>
+      )}
 
       {hiddenWidgets.length > 0 && showHiddenTray && (
         <div className="rounded-xl border-2 border-dashed border-gold/50 bg-secondary/40 p-3 space-y-2">
@@ -498,7 +509,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true }: WidgetGridPr
                   <SortableWidget
                     key={cfg.id}
                     cfg={cfg}
-                    editMode={editMode}
+                    editMode={editMode && !editingLocked}
                     label={label}
                     canMovePrev={index > 0}
                     canMoveNext={index < visibleWidgets.length - 1}
