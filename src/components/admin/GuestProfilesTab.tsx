@@ -18,7 +18,9 @@ import {
   setActiveGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
-import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
+import { defaultSrs } from "@/lib/study/srs";
+import { useStudy } from "@/lib/study/store";
+import type { Card as StudyCard, CardDeckLink, Category, Deck, SidebarConfig, WidgetLayout } from "@/lib/study/types";
 import { toast } from "sonner";
 import { CheckCircle2, RefreshCw, Trash2, UserPlus } from "lucide-react";
 
@@ -38,6 +40,54 @@ interface RoleLayoutDefaultsRow {
   widget_layout: WidgetLayout | null;
 }
 
+interface CategorySeedRow {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  color: string | null;
+  created_at: string;
+  updated_at: string | null;
+  sort_order: number | null;
+}
+
+interface DeckSeedRow {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  created_at: string;
+  updated_at: string | null;
+  category_ids: unknown;
+  include_sub_categories: boolean;
+}
+
+interface CardSeedRow {
+  id: string;
+  deck_id: string | null;
+  type: string;
+  question: string;
+  tags: unknown;
+  created_at: string;
+  updated_at: string | null;
+  srs: unknown;
+  stats: unknown;
+  answer: string | null;
+  options: unknown;
+  correct_indices: unknown;
+  correct_boolean: boolean | null;
+  explanation: string | null;
+  masechta: string | null;
+  daf: number | null;
+  amud: number | null;
+}
+
+interface CardDeckSeedRow {
+  card_id: string;
+  deck_id: string;
+  sort_order: number | null;
+  updated_at: string | null;
+}
+
 const ROLE_LABEL: Record<string, string> = {
   admin: "מנהל",
   user: "משתמש רגיל",
@@ -55,6 +105,7 @@ const generateId = () => {
 };
 
 export function GuestProfilesTab() {
+  const { state: studyState } = useStudy();
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [profiles, setProfiles] = useState<GuestViewProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
@@ -100,11 +151,172 @@ export function GuestProfilesTab() {
     [roles, selectedRoleId],
   );
 
+  const buildGuestStudySeed = useCallback(async () => {
+    const hasMeaningfulLocalData =
+      (studyState.categories?.length ?? 0) > 0
+      || (studyState.decks?.length ?? 0) > 0
+      || (studyState.cards?.length ?? 0) > 0
+      || (studyState.cardDecks?.length ?? 0) > 0;
+
+    const hasUsableCategoryTree = (() => {
+      const categories = studyState.categories ?? [];
+      if (categories.length === 0) return true;
+
+      const ids = new Set(categories.map((c) => c.id));
+      let rootCount = 0;
+      let brokenParentCount = 0;
+      for (const category of categories) {
+        if (!category.parentId) {
+          rootCount += 1;
+          continue;
+        }
+        if (!ids.has(category.parentId)) {
+          brokenParentCount += 1;
+        }
+      }
+
+      return rootCount > 0 && brokenParentCount < categories.length;
+    })();
+
+    if (hasMeaningfulLocalData && hasUsableCategoryTree) {
+      return {
+        seededAt: Date.now(),
+        categories: [...(studyState.categories ?? [])],
+        decks: [...(studyState.decks ?? [])],
+        cards: [...(studyState.cards ?? [])],
+        cardDecks: [...(studyState.cardDecks ?? [])],
+        deckCategories: { ...(studyState.deckCategories ?? {}) },
+      };
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+    if (!userId) return undefined;
+
+    const [categoriesR, decksR, cardsR, cardDecksR] = await Promise.all([
+      supabase
+        .from("categories")
+        .select("id,name,parent_id,color,created_at,updated_at,sort_order")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("decks")
+        .select("id,name,description,color,created_at,updated_at,category_ids,include_sub_categories")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("cards")
+        .select("id,deck_id,type,question,tags,created_at,updated_at,srs,stats,answer,options,correct_indices,correct_boolean,explanation,masechta,daf,amud")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("card_decks")
+        .select("card_id,deck_id,sort_order,updated_at")
+        .eq("user_id", userId),
+    ]);
+
+    if (categoriesR.error) throw new Error(categoriesR.error.message);
+    if (decksR.error) throw new Error(decksR.error.message);
+    if (cardsR.error) throw new Error(cardsR.error.message);
+    if (cardDecksR.error) throw new Error(cardDecksR.error.message);
+
+    const categories: Category[] = ((categoriesR.data ?? []) as CategorySeedRow[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      parentId: row.parent_id,
+      color: row.color ?? undefined,
+      createdAt: new Date(row.created_at).getTime(),
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
+      sortOrder: row.sort_order ?? 0,
+    }));
+
+    const decks: Deck[] = ((decksR.data ?? []) as DeckSeedRow[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? undefined,
+      color: row.color,
+      createdAt: new Date(row.created_at).getTime(),
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
+      categoryIds: Array.isArray(row.category_ids) ? row.category_ids.filter((x): x is string => typeof x === "string") : [],
+      includeSubCategories: row.include_sub_categories !== false,
+    }));
+
+    const cards: StudyCard[] = ((cardsR.data ?? []) as CardSeedRow[]).map((row) => {
+      const base = {
+        id: row.id,
+        deckId: row.deck_id,
+        question: row.question,
+        tags: Array.isArray(row.tags) ? row.tags.filter((x): x is string => typeof x === "string") : [],
+        createdAt: new Date(row.created_at).getTime(),
+        updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
+        srs: row.srs && typeof row.srs === "object"
+          ? row.srs as StudyCard["srs"]
+          : defaultSrs(),
+        stats: row.stats && typeof row.stats === "object"
+          ? row.stats as StudyCard["stats"]
+          : { totalReviews: 0, correct: 0, incorrect: 0 },
+        masechta: row.masechta ?? null,
+        daf: row.daf ?? null,
+        amud: row.amud === 2 ? 2 : (row.amud === 1 ? 1 : null),
+      };
+
+      if (row.type === "flashcard") {
+        return { ...base, type: "flashcard", answer: row.answer ?? "" } as StudyCard;
+      }
+      if (row.type === "boolean") {
+        return { ...base, type: "boolean", correct: !!row.correct_boolean, explanation: row.explanation ?? undefined } as StudyCard;
+      }
+      if (row.type === "multiple") {
+        const options = Array.isArray(row.options) ? row.options.filter((x): x is string => typeof x === "string") : [];
+        const correctIndices = Array.isArray(row.correct_indices)
+          ? row.correct_indices.filter((x): x is number => typeof x === "number")
+          : [];
+        const answer = row.answer ?? (correctIndices.length > 0 ? (options[correctIndices[0]] ?? undefined) : undefined);
+        return { ...base, type: "combo", answer, options, correctIndices, explanation: row.explanation ?? undefined } as StudyCard;
+      }
+      return {
+        ...base,
+        type: "combo",
+        answer: row.answer ?? undefined,
+        options: Array.isArray(row.options) ? row.options.filter((x): x is string => typeof x === "string") : undefined,
+        correctIndices: Array.isArray(row.correct_indices)
+          ? row.correct_indices.filter((x): x is number => typeof x === "number")
+          : undefined,
+        explanation: row.explanation ?? undefined,
+      } as StudyCard;
+    });
+
+    const cardDecks: CardDeckLink[] = ((cardDecksR.data ?? []) as CardDeckSeedRow[]).map((row) => ({
+      cardId: row.card_id,
+      deckId: row.deck_id,
+      sortOrder: row.sort_order ?? 0,
+      updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
+    }));
+
+    const deckCategories = Object.fromEntries(decks.map((deck) => [deck.id, deck.categoryIds]));
+
+    return {
+      seededAt: Date.now(),
+      categories,
+      decks,
+      cards,
+      cardDecks,
+      deckCategories,
+    };
+  }, [studyState.cardDecks, studyState.cards, studyState.categories, studyState.deckCategories, studyState.decks]);
+
   const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string }) => {
     const role = roles.find((r) => r.id === opts.roleId);
     if (!role) throw new Error("תפקיד לא נמצא");
 
-    const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
+    const existing = opts.id
+      ? listGuestViewProfiles().find((profile) => profile.id === opts.id)
+      : null;
+
+    const [{ data: perms, error: permsError }, { data: defaults, error: defaultsError }, studySeed] = await Promise.all([
       supabase
         .from("role_permissions")
         .select("module,action,allowed")
@@ -114,6 +326,7 @@ export function GuestProfilesTab() {
         .select("sidebar_config,widget_layout")
         .eq("role_id", role.id)
         .maybeSingle(),
+      buildGuestStudySeed(),
     ]);
 
     if (permsError) throw new Error(permsError.message);
@@ -135,8 +348,9 @@ export function GuestProfilesTab() {
       matrix,
       sidebarConfig: ((defaults as RoleLayoutDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
       widgetLayout: ((defaults as RoleLayoutDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+      studySeed: studySeed ?? existing?.studySeed,
     });
-  }, [roles]);
+  }, [buildGuestStudySeed, roles]);
 
   const resetForm = () => {
     setEditingId(null);

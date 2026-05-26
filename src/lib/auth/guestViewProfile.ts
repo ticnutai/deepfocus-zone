@@ -195,24 +195,36 @@ export async function hydrateGuestProfilesFromSiteSettings(opts?: { force?: bool
   profiles: GuestViewProfile[];
   defaultProfileId: string | null;
 }> {
+  const localProfiles = listGuestViewProfiles();
   const [profiles, defaultProfileId] = await Promise.all([
     loadGuestViewProfilesFromSiteSettings({ force: !!opts?.force }),
     loadGuestDefaultProfileIdFromSiteSettings({ force: !!opts?.force }),
   ]);
 
-  setGuestProfilesLocal(profiles);
+  const mergedProfiles = profiles.map((profile) => {
+    if (profile.studySeed) return profile;
+    const local = localProfiles.find((candidate) => candidate.id === profile.id);
+    if (!local?.studySeed) return profile;
+    return {
+      ...profile,
+      studySeed: local.studySeed,
+      updatedAt: Math.max(profile.updatedAt, local.updatedAt),
+    };
+  });
+
+  setGuestProfilesLocal(mergedProfiles);
   const activeId = getActiveGuestViewProfileId();
-  const hasDefault = !!defaultProfileId && profiles.some((p) => p.id === defaultProfileId);
-  const hasActive = !!activeId && profiles.some((p) => p.id === activeId);
+  const hasDefault = !!defaultProfileId && mergedProfiles.some((p) => p.id === defaultProfileId);
+  const hasActive = !!activeId && mergedProfiles.some((p) => p.id === activeId);
 
   if (hasDefault) {
     setActiveGuestViewProfile(defaultProfileId);
   } else if (!hasActive) {
-    setActiveGuestViewProfile(profiles[0]?.id ?? null);
+    setActiveGuestViewProfile(mergedProfiles[0]?.id ?? null);
   }
 
   return {
-    profiles,
+    profiles: mergedProfiles,
     defaultProfileId: hasDefault ? defaultProfileId : null,
   };
 }
