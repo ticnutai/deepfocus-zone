@@ -437,8 +437,8 @@ export function RolesTab() {
         isAdmin: role.name === "admin",
         roles: [{ id: role.id, name: role.name }],
         matrix,
-        sidebarConfig: ((defaults as RoleDefaultsRow | null)?.sidebar_config ?? undefined) ?? undefined,
-        widgetLayout: ((defaults as RoleDefaultsRow | null)?.widget_layout ?? undefined) ?? undefined,
+        sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleDefaultsRow["sidebar_config"] | undefined,
+        widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleDefaultsRow["widget_layout"] | undefined,
         studySeed,
       });
 
