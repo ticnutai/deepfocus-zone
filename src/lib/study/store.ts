@@ -4105,7 +4105,7 @@ export function useStudy() {
     scope: LayoutScope,
     patch: { sidebar?: SidebarConfig[]; layout?: WidgetLayout },
   ) => {
-    const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const currentUid = (await supabase.auth.getUser()).data.user?.id ?? null;
     if (scope === "desktop") {
       const payload: Record<string, unknown> = {
         role_id: roleId,
