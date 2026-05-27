@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX } from "lucide-react";
+import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, MessageSquare } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { PermissionsMatrix } from "./PermissionsMatrix";
@@ -11,6 +11,7 @@ import { SyncMonitorTab } from "./SyncMonitorTab";
 import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { GuestProfilesTab } from "./GuestProfilesTab";
+import { ChangeNotesTab } from "./ChangeNotesTab";
 import { usePermissions } from "@/hooks/usePermissions";
 
 export function AdminPanel() {
@@ -67,6 +68,9 @@ export function AdminPanel() {
             <TabsTrigger value="guest-profiles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>פרופילי אורח</span><UserX className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="change-notes" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>הערות שינוי</span><MessageSquare className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
@@ -79,6 +83,7 @@ export function AdminPanel() {
         <TabsContent value="defaults" className="mt-4"><RoleDefaultsTab /></TabsContent>
         <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
         <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
+        <TabsContent value="change-notes" className="mt-4"><ChangeNotesTab /></TabsContent>
       </Tabs>
     </div>
   );

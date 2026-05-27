@@ -100,7 +100,7 @@ interface Props {
 }
 
 export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Props) {
-  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, setUiPref, state } = useStudy();
+  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, setUiPref, state, forkSourceCard, isCardFromSource } = useStudy();
   const isEdit = !!editCard;
   const persistedCreateTypes = Array.isArray(state.uiPrefs?.cardEditorLastCreateTypes)
     ? Array.from(new Set(state.uiPrefs.cardEditorLastCreateTypes.filter((t): t is CardType => t === "flashcard" || t === "multiple" || t === "boolean")))
@@ -196,6 +196,10 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       return next;
     });
   };
+  // Source-overlay: if editing a card from the source user, we'll fork it
+  // and (optionally) send a change-note to the admin/source.
+  const editingSourceCard = !!editCard && isCardFromSource(editCard.id);
+  const [changeNote, setChangeNote] = useState("");
 
   const handleSave = () => {
     if (!question.trim()) return;
@@ -213,7 +217,11 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
     // ---- EDIT MODE: keep single-card update ----
     if (isEdit && editCard) {
       const save = (card: Record<string, unknown>) => {
-        updateCard(editCard.id, card);
+        if (editingSourceCard) {
+          void forkSourceCard(editCard.id, { patch: card as Partial<StudyCardType>, note: changeNote });
+        } else {
+          updateCard(editCard.id, card);
+        }
         onClose?.();
       };
       if (type === "flashcard") {
@@ -599,11 +607,30 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       </div>
 
 
+      {editingSourceCard && (
+        <div className="space-y-2 rounded-xl border-2 border-gold/50 bg-gold/10 p-3 text-right">
+          <div className="text-sm font-semibold text-gold-foreground">
+            השאלה הזו הגיעה ממשתמש המקור (לקריאה בלבד).
+          </div>
+          <div className="text-xs text-muted-foreground">
+            השמירה תיצור עותק אישי שלך בענן ולא תשנה את המקור. אפשר להוסיף הערה למנהל על השינוי המוצע.
+          </div>
+          <Label className="block text-right">הערה למנהל (אופציונלי)</Label>
+          <Input
+            value={changeNote}
+            onChange={(e) => setChangeNote(e.target.value)}
+            placeholder="למשל: ניסוח לא ברור / תשובה שגויה / הצעה לתיקון"
+            className="border-2 border-gold/40 text-right"
+          />
+        </div>
+      )}
+
       <DialogFooter>
         <Button onClick={handleSave} className="bg-gradient-navy text-primary-foreground rounded-xl">
-          <Plus className="h-4 w-4" /> {isEdit ? "שמור שינויים" : (createTypes.length > 1 ? `הוסף ${createTypes.length} שאלות` : "הוסף שאלה")}
+          <Plus className="h-4 w-4" /> {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : (createTypes.length > 1 ? `הוסף ${createTypes.length} שאלות` : "הוסף שאלה")}
         </Button>
       </DialogFooter>
+
     </div>
   );
 }

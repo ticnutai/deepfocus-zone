@@ -77,9 +77,12 @@ const sourceOwnedCategoryIds = new Set<string>();
 const sourceOwnedCardIds = new Set<string>();
 let sourceOverlayHydrateInFlight = false;
 let sourceOverlayHydratedFor: string | null = null;
+let sourceOverlaySourceUserId: string | null = null;
 const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
 const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
 const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
+export function getSourceUserId(): string | null { return sourceOverlaySourceUserId; }
+export function isCardFromSource(id: string): boolean { return sourceOwnedCardIds.has(id); }
 
 
 const GUEST_ID = "guest";
@@ -2393,6 +2396,7 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
     }
 
     sourceOverlayHydratedFor = uid;
+    sourceOverlaySourceUserId = typeof payload.source_user_id === "string" ? payload.source_user_id : null;
     void ccR; // card_categories not directly used yet
     requestStoreNotify();
   } finally {
@@ -2446,6 +2450,7 @@ export function useStudy() {
       sourceOwnedDeckIds.clear();
       sourceOwnedCategoryIds.clear();
       sourceOverlayHydratedFor = null;
+      sourceOverlaySourceUserId = null;
     }
     if (!uid) {
       memState = emptyState();
@@ -3274,6 +3279,53 @@ export function useStudy() {
       bg(supabase.from("cards").insert(cardToRow(copy, userId)));
     }
   }, []);
+
+  /**
+   * Fork a source-overlay card into the current user's own cloud.
+   * Optionally applies a patch and sends a change-note to the source user.
+   * Returns the new (forked) card id, or null if nothing was done.
+   */
+  const forkSourceCard = useCallback(async (
+    id: string,
+    opts?: { patch?: Partial<Card>; note?: string }
+  ): Promise<string | null> => {
+    const userId = requireUser();
+    if (!isSourceOwnedCard(id)) return null;
+    const orig = memState.cards.find((c) => c.id === id);
+    if (!orig) return null;
+    const newId = uid();
+    const merged = {
+      ...orig,
+      ...(opts?.patch ?? {}),
+      id: newId,
+      createdAt: Date.now(),
+      srs: defaultSrs(),
+      stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+    } as Card;
+    sourceOwnedCardIds.delete(id);
+    setState((s) => ({
+      ...s,
+      cards: [...s.cards.filter((c) => c.id !== id), merged],
+    }));
+    bg(supabase.from("cards").insert(cardToRow(merged, userId)), "cards.fork");
+    const sourceUid = sourceOverlaySourceUserId;
+    const noteText = opts?.note?.trim();
+    if (noteText && sourceUid) {
+      bg(
+        supabase.from("source_change_notes").insert({
+          user_id: userId,
+          source_user_id: sourceUid,
+          original_card_id: id,
+          forked_card_id: newId,
+          original_question: orig.question,
+          note: noteText,
+        } as never),
+        "source_change_notes.insert",
+      );
+    }
+    return newId;
+  }, []);
+
 
   const deleteCard = useCallback((id: string) => {
     const userId = currentUserId;
@@ -5169,6 +5221,7 @@ export function useStudy() {
 
   return {
     state, addDeck, deleteDeck, addCard, bulkAddCards, bulkAddDecks, updateCard, duplicateCard, deleteCard,
+    forkSourceCard, isCardFromSource,
     reviewCard, undoReview, deleteReviewLog, addCategory, addCategoriesBulk, deleteCategory,
     ensureUncategorized,
     renameCategory, duplicateCategory, duplicateCategoryUnder,
