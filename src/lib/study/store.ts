@@ -2269,7 +2269,124 @@ async function hydrateGuestFromCloud(): Promise<void> {
     markCategoryParentLoadedNow(null);
     for (const c of mergedCategories) {
       if (c.parentId) categoryHasChildrenHint.set(c.parentId, true);
+}
+
+/**
+ * Pull a read-only overlay of cards/categories/decks from the configured
+ * "source" user. Merges into memState and tracks IDs in sourceOwned* sets so
+ * cloud sync never tries to write them under the current user's account.
+ * No-op for guest mode (guest has its own hydrator) and when admin disabled.
+ */
+async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
+  if (uid === GUEST_ID || !uid) return;
+  if (sourceOverlayHydrateInFlight) return;
+  if (sourceOverlayHydratedFor === uid) return;
+  sourceOverlayHydrateInFlight = true;
+  try {
+    const [snapR, ccR] = await Promise.all([
+      rpcClient.rpc("get_source_overlay_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      rpcClient.rpc("get_source_card_categories") as unknown as Promise<{ data: unknown; error: unknown }>,
+    ]);
+    if (snapR.error) { console.warn("[source-overlay] snapshot error:", snapR.error); return; }
+    const payload = snapR.data;
+    if (!payload || typeof payload !== "object") return; // disabled or no source
+
+    type CatRow = { id: string; name: string; parent_id: string | null; color: string | null; created_at: string; sort_order: number | null; updated_at?: string | null };
+    type DeckRow = { id: string; name: string; description: string | null; color: string; created_at: string; updated_at: string | null; category_ids: unknown; include_sub_categories: boolean | null };
+
+    const catsRaw = Array.isArray(payload.categories_roots) ? (payload.categories_roots as CatRow[]) : [];
+    const decksRaw = Array.isArray(payload.decks) ? (payload.decks as DeckRow[]) : [];
+    const cardsRaw = Array.isArray(payload.cards) ? (payload.cards as Parameters<typeof cardFromRow>[0][]) : [];
+    const cardDecksRaw = Array.isArray(payload.card_decks)
+      ? (payload.card_decks as Array<{ card_id: string; deck_id: string; sort_order: number | null }>)
+      : [];
+    const cardsTotalCount = typeof payload.cards_total_count === "number" ? payload.cards_total_count : 0;
+
+    const ownedCats = catsRaw.map((c) => ({
+      id: c.id, name: c.name, parentId: c.parent_id, color: c.color ?? undefined,
+      createdAt: new Date(c.created_at).getTime(),
+      sortOrder: c.sort_order ?? 0,
+      updatedAt: c.updated_at ? new Date(c.updated_at).getTime() : new Date(c.created_at).getTime(),
+    } as Category));
+    const ownedDecks = decksRaw.map((d) => ({
+      id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
+      createdAt: new Date(d.created_at).getTime(),
+      updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
+      categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
+      includeSubCategories: d.include_sub_categories !== false,
+    } as Deck));
+    const ownedCards = cardsRaw.map(cardFromRow);
+    const ownedCardDecks = cardDecksRaw.map((cd) => ({
+      cardId: cd.card_id, deckId: cd.deck_id, sortOrder: cd.sort_order ?? 0,
+    }));
+
+    // Track ownership BEFORE merging so sync filters work.
+    for (const c of ownedCats) sourceOwnedCategoryIds.add(c.id);
+    for (const d of ownedDecks) sourceOwnedDeckIds.add(d.id);
+    for (const c of ownedCards) sourceOwnedCardIds.add(c.id);
+
+    // Merge by id — local rows win (user's own copies override source).
+    const mergeById = <T extends { id: string }>(local: T[], cloud: T[]): T[] => {
+      const map = new Map<string, T>();
+      for (const item of cloud) map.set(item.id, item);
+      for (const item of local ?? []) map.set(item.id, item);
+      return [...map.values()];
+    };
+    const cdKey = (x: { cardId: string; deckId: string }) => `${x.cardId}::${x.deckId}`;
+    const cdMap = new Map<string, { cardId: string; deckId: string; sortOrder: number }>();
+    for (const x of ownedCardDecks) cdMap.set(cdKey(x), x);
+    for (const x of memState.cardDecks ?? []) cdMap.set(cdKey(x), x);
+
+    memState = {
+      ...memState,
+      categories: mergeById(memState.categories ?? [], ownedCats),
+      decks: mergeById(memState.decks ?? [], ownedDecks),
+      cards: mergeById(memState.cards ?? [], ownedCards),
+      cardDecks: [...cdMap.values()],
+    };
+
+    markCategoryParentLoadedNow(null);
+    for (const c of ownedCats) {
+      if (c.parentId) categoryHasChildrenHint.set(c.parentId, true);
     }
+
+    // Phase 2 backfill for source unreviewed cards (in background).
+    if (cardsTotalCount > ownedCards.length) {
+      void runSourceOverlayPhase2(uid, cardsTotalCount).catch((e) =>
+        console.warn("[source-overlay] phase2 failed:", e)
+      );
+    }
+
+    sourceOverlayHydratedFor = uid;
+    void ccR; // card_categories not directly used yet
+    requestStoreNotify();
+  } finally {
+    sourceOverlayHydrateInFlight = false;
+  }
+}
+
+async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<void> {
+  const PAGE = 3000;
+  let offset = 0;
+  // currentLoaded counts how many source cards we already have in mem.
+  let loaded = memState.cards.filter((c) => sourceOwnedCardIds.has(c.id)).length;
+  while (loaded < totalCount && currentUserId === uid) {
+    const { data, error } = await (rpcClient.rpc("get_source_unreviewed_cards_page", { p_offset: offset, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>);
+    if (error) { console.warn("[source-overlay] page error:", error); break; }
+    const rows = Array.isArray(data) ? (data as Parameters<typeof cardFromRow>[0][]) : [];
+    if (rows.length === 0) break;
+    const existing = new Set(memState.cards.map((c) => c.id));
+    const fresh = rows.map(cardFromRow).filter((c) => !existing.has(c.id));
+    for (const c of fresh) sourceOwnedCardIds.add(c.id);
+    if (fresh.length > 0) {
+      memState = { ...memState, cards: [...memState.cards, ...fresh] };
+      requestStoreNotify();
+    }
+    loaded += fresh.length;
+    offset += PAGE;
+    if (rows.length < PAGE) break;
+  }
+
 
     // Phase 2 backfill — pull remaining unreviewed cards in background.
     if (cardsTotalCount > cloudCards.length) {
