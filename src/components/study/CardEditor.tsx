@@ -196,6 +196,10 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       return next;
     });
   };
+  // Source-overlay: if editing a card from the source user, we'll fork it
+  // and (optionally) send a change-note to the admin/source.
+  const editingSourceCard = !!editCard && isCardFromSource(editCard.id);
+  const [changeNote, setChangeNote] = useState("");
 
   const handleSave = () => {
     if (!question.trim()) return;
@@ -213,7 +217,11 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
     // ---- EDIT MODE: keep single-card update ----
     if (isEdit && editCard) {
       const save = (card: Record<string, unknown>) => {
-        updateCard(editCard.id, card);
+        if (editingSourceCard) {
+          void forkSourceCard(editCard.id, { patch: card as Partial<StudyCardType>, note: changeNote });
+        } else {
+          updateCard(editCard.id, card);
+        }
         onClose?.();
       };
       if (type === "flashcard") {
