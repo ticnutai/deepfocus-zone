@@ -2721,6 +2721,10 @@ export function useStudy() {
         // Phase 2: silently backfill unreviewed cards in the background.
         void runPhase2CardBackfill(uid);
 
+        // Source overlay: read-only cards/categories pulled from configured source user.
+        void hydrateSourceOverlayForAuthUser(uid).catch((e) => console.warn("[source-overlay]", e));
+
+
         perf.log("store:hydrate.done", "hydrate pipeline completed", "store", hydrateTraceId);
       } finally {
         if (hydrationInFlightFor === uid) hydrationInFlightFor = null;
