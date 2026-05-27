@@ -137,6 +137,60 @@ export function GuestProfilesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Guest cloud source — when enabled, guests read this user's data from the cloud
+  // (read-only). When disabled, guests get an empty/clean app like before.
+  const [sourceEnabled, setSourceEnabled] = useState(false);
+  const [sourceUserId, setSourceUserId] = useState<string | null>(null);
+  const [sourceUserLabel, setSourceUserLabel] = useState<string>("");
+  const [adminCandidates, setAdminCandidates] = useState<Array<{ id: string; email: string | null; display_name: string | null }>>([]);
+  const [sourceBusy, setSourceBusy] = useState(false);
+
+  const loadGuestSource = useCallback(async () => {
+    const { data: srcRow } = await supabase
+      .from("site_settings").select("value").eq("key", "guest_source").maybeSingle();
+    const val = (srcRow?.value ?? {}) as { enabled?: boolean; user_id?: string | null };
+    setSourceEnabled(!!val.enabled);
+    setSourceUserId(val.user_id ?? null);
+
+    // List admin profiles as candidates for the source.
+    const { data: adminRoleRow } = await supabase
+      .from("app_roles").select("id").eq("name", "admin").maybeSingle();
+    if (adminRoleRow?.id) {
+      const { data: urs } = await supabase
+        .from("user_roles").select("user_id").eq("role_id", adminRoleRow.id);
+      const ids = (urs ?? []).map((r: { user_id: string }) => r.user_id);
+      if (ids.length > 0) {
+        const { data: profs } = await supabase
+          .from("profiles").select("id,email,display_name").in("id", ids);
+        const list = (profs ?? []) as Array<{ id: string; email: string | null; display_name: string | null }>;
+        setAdminCandidates(list);
+        const cur = list.find((p) => p.id === val.user_id);
+        setSourceUserLabel(cur ? (cur.display_name || cur.email || cur.id) : "");
+      }
+    }
+  }, []);
+
+  const saveGuestSource = async (enabled: boolean, userId: string | null) => {
+    setSourceBusy(true);
+    try {
+      const value = { enabled, user_id: userId };
+      const { error } = await supabase
+        .from("site_settings")
+        .upsert({ key: "guest_source", value }, { onConflict: "key" });
+      if (error) throw error;
+      setSourceEnabled(enabled);
+      setSourceUserId(userId);
+      const cur = adminCandidates.find((p) => p.id === userId);
+      setSourceUserLabel(cur ? (cur.display_name || cur.email || cur.id) : "");
+      toast.success(enabled ? "האורח יקרא מהענן" : "האורח לא יקרא מהענן");
+    } catch (e) {
+      toast.error("שגיאה בשמירת הגדרת מקור האורח");
+      console.error(e);
+    } finally {
+      setSourceBusy(false);
+    }
+  };
+
   const load = useCallback(async () => {
     const { data } = await supabase.from("app_roles").select("id,name").order("name");
     const roleRows = (data ?? []) as AppRole[];
@@ -162,11 +216,14 @@ export function GuestProfilesTab() {
       setSelectedRoleId(roleRows[0].id);
       setProfileLabel(`תצוגת אורח: ${roleLabel(roleRows[0].name)}`);
     }
-  }, [selectedRoleId]);
+
+    await loadGuestSource();
+  }, [selectedRoleId, loadGuestSource]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
 
   const selectedRole = useMemo(
     () => roles.find((r) => r.id === selectedRoleId) ?? null,
