@@ -117,6 +117,10 @@ export function RoleDefaultsTab() {
       if (profiles.length > 0) {
         setSelectedProfileId(profiles[0].id);
         setProfileName(profiles[0].name);
+        // CRITICAL: load the selected profile's blocklist into the editor,
+        // otherwise the editor shows the global blocklist while the name
+        // shows a profile — causing "saves don't persist" confusion.
+        setBlocklist(profiles[0].blocklist);
       }
       if (loadedLayoutProfiles.length > 0) {
         setSelectedLayoutProfileId(loadedLayoutProfiles[0].id);
