@@ -1986,11 +1986,10 @@ async function loadAll(userId: string): Promise<StudyState> {
   }));
 
   resetCategoryLazyState();
-  // Mark every parent level as loaded since bootstrap now returns all categories.
-  // This prevents redundant loadCategoryChildren network calls as the user navigates.
-  const allParentIds = new Set<string | null>([null]);
-  for (const cat of categories) allParentIds.add(cat.parentId ?? null);
-  for (const pid of allParentIds) markCategoryParentLoadedNow(pid);
+  // The bootstrap RPC returns ONLY root categories (parent_id IS NULL). Mark only the
+  // root level as loaded so loadCategoryChildren is still called lazily for deeper levels
+  // as the user navigates. (Previously every parent was marked, which disabled lazy loading.)
+  markCategoryParentLoadedNow(null);
   const goals: Goal[] = (goalsR.data ?? []).map((g) => ({
     id: g.id, type: g.type as Goal['type'], title: g.title, target: Number(g.target),
     windowDays: g.window_days ?? undefined, deckId: g.deck_id ?? null,
