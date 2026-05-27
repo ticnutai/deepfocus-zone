@@ -777,7 +777,7 @@ const isAbortError = (error: unknown) => {
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
   const isGuest = currentUserId === GUEST_ID;
   const rpcName = isGuest ? "get_guest_category_children" : "get_category_children";
-  const callRpc = async (accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+  const callRpc = async (name: string, accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -789,12 +789,11 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
   });
 
   // Guest mode has no Supabase session — call as anon (apikey only).
-  let response = await callRpc(isGuest ? null : await getCachedAccessToken());
+  let response = await callRpc(rpcName, isGuest ? null : await getCachedAccessToken());
   if (!isGuest && response.status === 401) {
-    // Token may have expired while cache stayed warm; refresh once and retry.
     cachedAccessToken = null;
     cachedAccessTokenAt = 0;
-    response = await callRpc(await getCachedAccessToken(true));
+    response = await callRpc(rpcName, await getCachedAccessToken(true));
   }
 
   if (!response.ok) {
@@ -802,9 +801,31 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
     throw new Error(body || `${rpcName} failed: ${response.status}`);
   }
 
-  const data = await response.json();
-  return (data ?? []) as CategoryChildRow[];
+  const ownRows = ((await response.json()) ?? []) as CategoryChildRow[];
+
+  // For authenticated users, also pull source-overlay children (read-only).
+  // No-op server-side when admin disabled the overlay.
+  if (!isGuest && currentUserId) {
+    try {
+      const tok = await getCachedAccessToken();
+      const sourceResp = await callRpc("get_source_category_children", tok);
+      if (sourceResp.ok) {
+        const sourceRows = ((await sourceResp.json()) ?? []) as CategoryChildRow[];
+        // Track ownership and merge (own rows win on id collision).
+        const ownIds = new Set(ownRows.map((r) => r.id));
+        for (const r of sourceRows) {
+          sourceOwnedCategoryIds.add(r.id);
+          if (!ownIds.has(r.id)) ownRows.push(r);
+        }
+      }
+    } catch (e) {
+      if (!isAbortError(e)) console.warn("[source-overlay] children fetch failed:", e);
+    }
+  }
+
+  return ownRows;
 };
+
 
 const CATEGORY_CHILDREN_CACHE_KEY = (userId: string) =>
   `category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`;
