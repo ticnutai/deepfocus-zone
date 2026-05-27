@@ -68,6 +68,9 @@ export function AdminPanel() {
             <TabsTrigger value="guest-profiles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>פרופילי אורח</span><UserX className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="change-notes" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>הערות שינוי</span><MessageSquare className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
