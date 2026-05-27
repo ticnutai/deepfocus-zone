@@ -11,6 +11,7 @@ import { SyncMonitorTab } from "./SyncMonitorTab";
 import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { GuestProfilesTab } from "./GuestProfilesTab";
+import { ChangeNotesTab } from "./ChangeNotesTab";
 import { usePermissions } from "@/hooks/usePermissions";
 
 export function AdminPanel() {
