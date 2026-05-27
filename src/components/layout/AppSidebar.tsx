@@ -197,8 +197,8 @@ export function AppShellSidebar() {
     const blockedSet = new Set(blocklist.sections ?? []);
     return result
       .filter((i) => i.id !== "admin" || isAdmin)
-      .filter((i) => isAdmin || !blockedSet.has(i.id));
-  }, [state.sidebarConfig, isAdmin, blocklist]);
+      .filter((i) => (isAdmin && !previewRoleId) || !blockedSet.has(i.id));
+  }, [state.sidebarConfig, isAdmin, previewRoleId, blocklist]);
 
   const goSection = (id: string) => {
     if (pathname !== "/") {

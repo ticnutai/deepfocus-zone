@@ -315,9 +315,9 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const tabLayout: WidgetConfig[] = useMemo(
     () => {
       const merged = mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order);
-      return (isAdmin || bypassBlocklist) ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
+      return ((isAdmin && !previewRoleId) || bypassBlocklist) ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
     },
-    [state.widgetLayout, tabId, blocklist, isAdmin, bypassBlocklist],
+    [state.widgetLayout, tabId, blocklist, isAdmin, previewRoleId, bypassBlocklist],
   );
 
   const save = useCallback((newTabLayout: WidgetConfig[]) => {
