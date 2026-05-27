@@ -16,6 +16,7 @@ import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
 import { AutoInitShasTemplate } from "@/components/AutoInitShasTemplate";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { useStudy } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
 import { Button } from "@/components/ui/button";
@@ -445,6 +446,13 @@ const DEFAULT_TABS: TabDef[] = [
 const SIDEBAR_NATIVE_IDS = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
 const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 
+// Maps a home top-bar tab id to its corresponding sidebar section id (for blocklist sync).
+// If a tab id matches a sidebar id directly, no mapping needed — handled via fallback.
+const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
+  categories: "cards",
+  backup: "backup-restore",
+};
+
 const DEFAULT_TABS_ALL: TabDef[] = (() => {
   const byId = new Map(DEFAULT_TABS.map((tab) => [tab.v, tab]));
   const out = [...DEFAULT_TABS];
@@ -538,6 +546,9 @@ const Index = () => {
     ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
     : user?.email;
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const roleIdsForBlocklist = useMemo(() => roles.map((r) => r.id), [roles]);
+  const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
+  const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
   const canViewCardsModule = isAdmin || can("cards", "view");
   const canUseQuestionTools = canViewCardsModule || isAdmin || can("cards", "create") || can("cards", "edit");
   const [profileBActive, setProfileBActive] = useState(false);
@@ -815,6 +826,11 @@ const Index = () => {
     if (!HOME_TAB_IDS.has(t.v)) return false;
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
+    // Sync with sidebar blocklist: hide top-bar tab if its matching sidebar id is blocked.
+    if (!isAdmin) {
+      const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
+      if (blockedSidebarSet.has(sidebarId)) return false;
+    }
     return isAllowedByPermission(t.v);
   });
 
