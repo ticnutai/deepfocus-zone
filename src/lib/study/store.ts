@@ -2396,6 +2396,7 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
     }
 
     sourceOverlayHydratedFor = uid;
+    sourceOverlaySourceUserId = typeof payload.source_user_id === "string" ? payload.source_user_id : null;
     void ccR; // card_categories not directly used yet
     requestStoreNotify();
   } finally {
