@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, Monitor, RefreshCw, X, ExternalLink } from "lucide-react";
+import { Eye, Monitor, RefreshCw, X, ExternalLink, Info, MousePointerClick, Save, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
