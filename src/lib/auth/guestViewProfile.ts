@@ -83,7 +83,7 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 export function listGuestViewProfiles(): GuestViewProfile[] {
   if (typeof window === "undefined") return [];
   const parsed = safeParse<GuestViewProfile[]>(localStorage.getItem(GUEST_PROFILE_CATALOG_KEY), []);
-  return normalizeGuestProfiles(parsed);
+  return attachCachedSeeds(normalizeGuestProfiles(parsed));
 }
 
 function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
@@ -135,9 +135,35 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 }
 
+// In-memory cache for the heavy studySeed data. Storing seeds in
+// localStorage can easily exceed the ~5MB quota (a single profile can hold
+// tens of thousands of cards), so we keep seeds out of disk persistence and
+// rely on the cloud (site_settings) as the source of truth.
+const seedCache = new Map<string, GuestStudySeed>();
+
+function attachCachedSeeds(profiles: GuestViewProfile[]): GuestViewProfile[] {
+  return profiles.map((p) => {
+    if (p.studySeed) return p;
+    const cached = seedCache.get(p.id);
+    return cached ? { ...p, studySeed: cached } : p;
+  });
+}
+
 function setGuestProfilesLocal(profiles: GuestViewProfile[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(GUEST_PROFILE_CATALOG_KEY, JSON.stringify(normalizeGuestProfiles(profiles)));
+  const normalized = normalizeGuestProfiles(profiles);
+  // Cache seeds in memory, then strip them before writing to localStorage
+  // to avoid QuotaExceededError on large datasets.
+  const stripped = normalized.map((p) => {
+    if (p.studySeed) seedCache.set(p.id, p.studySeed);
+    const { studySeed: _omit, ...rest } = p;
+    return rest as GuestViewProfile;
+  });
+  try {
+    localStorage.setItem(GUEST_PROFILE_CATALOG_KEY, JSON.stringify(stripped));
+  } catch (err) {
+    console.warn("[guest-view] failed to persist profiles to localStorage", err);
+  }
 }
 
 export function saveGuestViewProfile(profile: Omit<GuestViewProfile, "createdAt" | "updatedAt">): GuestViewProfile {
