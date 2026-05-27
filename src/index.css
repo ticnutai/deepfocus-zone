@@ -302,9 +302,13 @@
   /* Auto-apply snap to direct children — saves wiring per-item classes */
   .snap-list-y > * { scroll-snap-align: start; }
   .snap-list-x > * { scroll-snap-align: start; }
-  /* Disable snap on larger screens where mouse-wheel scroll feels better without it */
+  /* Disable snap on larger screens where mouse-wheel scroll feels better without it,
+     and allow wheel/trackpad scroll to propagate to the page when the inner list is at its
+     boundary (otherwise the page feels "stuck" when hovering decks/cards lists). */
   @media (min-width: 768px) {
     .snap-list-y, .snap-list-x { scroll-snap-type: none; }
+    .snap-list-y { overscroll-behavior: auto; }
+    .snap-list-x { overscroll-behavior-x: auto; }
   }
 
   /* Min tap target on touch devices */
