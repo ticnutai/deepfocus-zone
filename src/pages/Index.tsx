@@ -546,7 +546,14 @@ const Index = () => {
     ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
     : user?.email;
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
-  const roleIdsForBlocklist = useMemo(() => roles.map((r) => r.id), [roles]);
+  const previewRoleId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("previewRole") ?? "";
+  }, []);
+  const roleIdsForBlocklist = useMemo(
+    () => (previewRoleId ? [previewRoleId] : roles.map((r) => r.id)),
+    [previewRoleId, roles],
+  );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
   const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
   const canViewCardsModule = isAdmin || can("cards", "view");
@@ -827,7 +834,8 @@ const Index = () => {
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
     // Sync with sidebar blocklist: hide top-bar tab if its matching sidebar id is blocked.
-    if (!isAdmin) {
+    // Apply to admins too when previewing as a role.
+    if (!isAdmin || previewRoleId) {
       const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
       if (blockedSidebarSet.has(sidebarId)) return false;
     }
