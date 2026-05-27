@@ -5221,6 +5221,7 @@ export function useStudy() {
 
   return {
     state, addDeck, deleteDeck, addCard, bulkAddCards, bulkAddDecks, updateCard, duplicateCard, deleteCard,
+    forkSourceCard, isCardFromSource,
     reviewCard, undoReview, deleteReviewLog, addCategory, addCategoriesBulk, deleteCategory,
     ensureUncategorized,
     renameCategory, duplicateCategory, duplicateCategoryUnder,
