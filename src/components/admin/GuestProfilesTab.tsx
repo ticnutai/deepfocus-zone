@@ -552,7 +552,7 @@ export function GuestProfilesTab() {
               onValueChange={(v) => void saveGuestSource(sourceEnabled, v || null)}
               disabled={sourceBusy}
             >
-              <SelectTrigger><SelectValue placeholder="בחר משתמש אדמין" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="בחר משתמש מקור" /></SelectTrigger>
               <SelectContent>
                 {adminCandidates.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
