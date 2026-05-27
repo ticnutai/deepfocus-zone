@@ -69,6 +69,19 @@ let phase2BackfillUserId: string | null = null;
 let phase2BackfillInFlight = false;
 let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if already loaded
 
+// === Source-overlay (read-only items pulled from another user's cloud) ===
+// IDs here belong to a different user and must NEVER be written to the current
+// user's cloud. They live in memState for display purposes only.
+const sourceOwnedDeckIds = new Set<string>();
+const sourceOwnedCategoryIds = new Set<string>();
+const sourceOwnedCardIds = new Set<string>();
+let sourceOverlayHydrateInFlight = false;
+let sourceOverlayHydratedFor: string | null = null;
+const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
+const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
+const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
+
+
 const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
 const GUEST_PROFILE_SEED_APPLIED_KEY = (profileId: string) => `guest-study-seed-applied:${profileId}`;
@@ -764,7 +777,7 @@ const isAbortError = (error: unknown) => {
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
   const isGuest = currentUserId === GUEST_ID;
   const rpcName = isGuest ? "get_guest_category_children" : "get_category_children";
-  const callRpc = async (accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+  const callRpc = async (name: string, accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -776,12 +789,11 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
   });
 
   // Guest mode has no Supabase session — call as anon (apikey only).
-  let response = await callRpc(isGuest ? null : await getCachedAccessToken());
+  let response = await callRpc(rpcName, isGuest ? null : await getCachedAccessToken());
   if (!isGuest && response.status === 401) {
-    // Token may have expired while cache stayed warm; refresh once and retry.
     cachedAccessToken = null;
     cachedAccessTokenAt = 0;
-    response = await callRpc(await getCachedAccessToken(true));
+    response = await callRpc(rpcName, await getCachedAccessToken(true));
   }
 
   if (!response.ok) {
@@ -789,9 +801,31 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
     throw new Error(body || `${rpcName} failed: ${response.status}`);
   }
 
-  const data = await response.json();
-  return (data ?? []) as CategoryChildRow[];
+  const ownRows = ((await response.json()) ?? []) as CategoryChildRow[];
+
+  // For authenticated users, also pull source-overlay children (read-only).
+  // No-op server-side when admin disabled the overlay.
+  if (!isGuest && currentUserId) {
+    try {
+      const tok = await getCachedAccessToken();
+      const sourceResp = await callRpc("get_source_category_children", tok);
+      if (sourceResp.ok) {
+        const sourceRows = ((await sourceResp.json()) ?? []) as CategoryChildRow[];
+        // Track ownership and merge (own rows win on id collision).
+        const ownIds = new Set(ownRows.map((r) => r.id));
+        for (const r of sourceRows) {
+          sourceOwnedCategoryIds.add(r.id);
+          if (!ownIds.has(r.id)) ownRows.push(r);
+        }
+      }
+    } catch (e) {
+      if (!isAbortError(e)) console.warn("[source-overlay] children fetch failed:", e);
+    }
+  }
+
+  return ownRows;
 };
+
 
 const CATEGORY_CHILDREN_CACHE_KEY = (userId: string) =>
   `category-children-cache:${userId}:v${CATEGORY_CACHE_VERSION}`;
@@ -1246,7 +1280,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
 
   await runAndThrow("user_settings.upsert", supabase.from("user_settings").upsert(settingsPayload, { onConflict: "user_id" }));
 
-  const decksRows = (state.decks ?? []).map((d) => ({
+  const decksRows = (state.decks ?? []).filter((d) => !isSourceOwnedDeck(d.id)).map((d) => ({
     id: d.id,
     user_id: userId,
     name: d.name,
@@ -1258,7 +1292,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     include_sub_categories: d.includeSubCategories !== false,
   }));
 
-  const categoriesRows = (state.categories ?? []).map((c) => ({
+  const categoriesRows = (state.categories ?? []).filter((c) => !isSourceOwnedCategory(c.id)).map((c) => ({
     id: c.id,
     user_id: userId,
     name: c.name,
@@ -1269,7 +1303,8 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     sort_order: c.sortOrder ?? 0,
   }));
 
-  const cardsRows = (state.cards ?? []).map((c) => cardToRow(c, userId));
+  const cardsRows = (state.cards ?? []).filter((c) => !isSourceOwnedCard(c.id)).map((c) => cardToRow(c, userId));
+
 
   const goalsRows = (state.goals ?? []).map((g) => ({
     id: g.id,
@@ -2264,13 +2299,130 @@ async function hydrateGuestFromCloud(): Promise<void> {
       void runPhase2CardBackfill(GUEST_ID);
     }
 
-    // Persist to guest local state so next refresh shows data instantly.
     try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
     notify();
   } finally {
     guestCloudHydrateInFlight = false;
   }
 }
+
+/**
+ * Pull a read-only overlay of cards/categories/decks from the configured
+ * "source" user. Merges into memState and tracks IDs in sourceOwned* sets so
+ * cloud sync never tries to write them under the current user's account.
+ * No-op for guest mode (guest has its own hydrator) and when admin disabled.
+ */
+async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
+  if (uid === GUEST_ID || !uid) return;
+  if (sourceOverlayHydrateInFlight) return;
+  if (sourceOverlayHydratedFor === uid) return;
+  sourceOverlayHydrateInFlight = true;
+  try {
+    const [snapR, ccR] = await Promise.all([
+      rpcClient.rpc("get_source_overlay_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      rpcClient.rpc("get_source_card_categories") as unknown as Promise<{ data: unknown; error: unknown }>,
+    ]);
+    if (snapR.error) { console.warn("[source-overlay] snapshot error:", snapR.error); return; }
+    const payload = snapR.data;
+    if (!payload || typeof payload !== "object") return; // disabled or no source
+
+    type CatRow = { id: string; name: string; parent_id: string | null; color: string | null; created_at: string; sort_order: number | null; updated_at?: string | null };
+    type DeckRow = { id: string; name: string; description: string | null; color: string; created_at: string; updated_at: string | null; category_ids: unknown; include_sub_categories: boolean | null };
+
+    const catsRaw = Array.isArray(payload.categories_roots) ? (payload.categories_roots as CatRow[]) : [];
+    const decksRaw = Array.isArray(payload.decks) ? (payload.decks as DeckRow[]) : [];
+    const cardsRaw = Array.isArray(payload.cards) ? (payload.cards as Parameters<typeof cardFromRow>[0][]) : [];
+    const cardDecksRaw = Array.isArray(payload.card_decks)
+      ? (payload.card_decks as Array<{ card_id: string; deck_id: string; sort_order: number | null }>)
+      : [];
+    const cardsTotalCount = typeof payload.cards_total_count === "number" ? payload.cards_total_count : 0;
+
+    const ownedCats = catsRaw.map((c) => ({
+      id: c.id, name: c.name, parentId: c.parent_id, color: c.color ?? undefined,
+      createdAt: new Date(c.created_at).getTime(),
+      sortOrder: c.sort_order ?? 0,
+      updatedAt: c.updated_at ? new Date(c.updated_at).getTime() : new Date(c.created_at).getTime(),
+    } as Category));
+    const ownedDecks = decksRaw.map((d) => ({
+      id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
+      createdAt: new Date(d.created_at).getTime(),
+      updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
+      categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
+      includeSubCategories: d.include_sub_categories !== false,
+    } as Deck));
+    const ownedCards = cardsRaw.map(cardFromRow);
+    const ownedCardDecks = cardDecksRaw.map((cd) => ({
+      cardId: cd.card_id, deckId: cd.deck_id, sortOrder: cd.sort_order ?? 0,
+    }));
+
+    // Track ownership BEFORE merging so sync filters work.
+    for (const c of ownedCats) sourceOwnedCategoryIds.add(c.id);
+    for (const d of ownedDecks) sourceOwnedDeckIds.add(d.id);
+    for (const c of ownedCards) sourceOwnedCardIds.add(c.id);
+
+    // Merge by id — local rows win (user's own copies override source).
+    const mergeById = <T extends { id: string }>(local: T[], cloud: T[]): T[] => {
+      const map = new Map<string, T>();
+      for (const item of cloud) map.set(item.id, item);
+      for (const item of local ?? []) map.set(item.id, item);
+      return [...map.values()];
+    };
+    const cdKey = (x: { cardId: string; deckId: string }) => `${x.cardId}::${x.deckId}`;
+    const cdMap = new Map<string, { cardId: string; deckId: string; sortOrder: number }>();
+    for (const x of ownedCardDecks) cdMap.set(cdKey(x), x);
+    for (const x of memState.cardDecks ?? []) cdMap.set(cdKey(x), x);
+
+    memState = {
+      ...memState,
+      categories: mergeById(memState.categories ?? [], ownedCats),
+      decks: mergeById(memState.decks ?? [], ownedDecks),
+      cards: mergeById(memState.cards ?? [], ownedCards),
+      cardDecks: [...cdMap.values()],
+    };
+
+    markCategoryParentLoadedNow(null);
+    for (const c of ownedCats) {
+      if (c.parentId) categoryHasChildrenHint.set(c.parentId, true);
+    }
+
+    // Phase 2 backfill for source unreviewed cards (in background).
+    if (cardsTotalCount > ownedCards.length) {
+      void runSourceOverlayPhase2(uid, cardsTotalCount).catch((e) =>
+        console.warn("[source-overlay] phase2 failed:", e)
+      );
+    }
+
+    sourceOverlayHydratedFor = uid;
+    void ccR; // card_categories not directly used yet
+    requestStoreNotify();
+  } finally {
+    sourceOverlayHydrateInFlight = false;
+  }
+}
+
+async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<void> {
+  const PAGE = 3000;
+  let offset = 0;
+  // currentLoaded counts how many source cards we already have in mem.
+  let loaded = memState.cards.filter((c) => sourceOwnedCardIds.has(c.id)).length;
+  while (loaded < totalCount && currentUserId === uid) {
+    const { data, error } = await (rpcClient.rpc("get_source_unreviewed_cards_page", { p_offset: offset, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>);
+    if (error) { console.warn("[source-overlay] page error:", error); break; }
+    const rows = Array.isArray(data) ? (data as Parameters<typeof cardFromRow>[0][]) : [];
+    if (rows.length === 0) break;
+    const existing = new Set(memState.cards.map((c) => c.id));
+    const fresh = rows.map(cardFromRow).filter((c) => !existing.has(c.id));
+    for (const c of fresh) sourceOwnedCardIds.add(c.id);
+    if (fresh.length > 0) {
+      memState = { ...memState, cards: [...memState.cards, ...fresh] };
+      requestStoreNotify();
+    }
+    loaded += fresh.length;
+    offset += PAGE;
+    if (rows.length < PAGE) break;
+  }
+}
+
 
 export function useStudy() {
   const { user } = useAuth();
@@ -2289,6 +2441,12 @@ export function useStudy() {
     const uid = user?.id ?? null;
     let cancelled = false;
     currentUserId = uid;
+    if (sourceOverlayHydratedFor && sourceOverlayHydratedFor !== uid) {
+      sourceOwnedCardIds.clear();
+      sourceOwnedDeckIds.clear();
+      sourceOwnedCategoryIds.clear();
+      sourceOverlayHydratedFor = null;
+    }
     if (!uid) {
       memState = emptyState();
       isHydrated = true;
@@ -2400,6 +2558,8 @@ export function useStudy() {
             performance.measure("pashash:react-render:idb-cache", "pashash:notify:idb-cache-applied");
           }, 0);
           perf.log("store:hydrate.cache_applied", "indexeddb snapshot applied", "store", hydrateTraceId);
+          // Source overlay: fetch in parallel with cloud refresh.
+          void hydrateSourceOverlayForAuthUser(uid).catch((e) => console.warn("[source-overlay]", e));
         }
 
         if (hasCache) {
@@ -2589,6 +2749,10 @@ export function useStudy() {
 
         // Phase 2: silently backfill unreviewed cards in the background.
         void runPhase2CardBackfill(uid);
+
+        // Source overlay: read-only cards/categories pulled from configured source user.
+        void hydrateSourceOverlayForAuthUser(uid).catch((e) => console.warn("[source-overlay]", e));
+
 
         perf.log("store:hydrate.done", "hydrate pipeline completed", "store", hydrateTraceId);
       } finally {

@@ -144,6 +144,9 @@ export function GuestProfilesTab() {
   const [sourceUserLabel, setSourceUserLabel] = useState<string>("");
   const [adminCandidates, setAdminCandidates] = useState<Array<{ id: string; email: string | null; display_name: string | null }>>([]);
   const [sourceBusy, setSourceBusy] = useState(false);
+  // Same source, separate toggle for authenticated registered users (overlay).
+  const [overlayForUsersEnabled, setOverlayForUsersEnabled] = useState(false);
+  const [overlayBusy, setOverlayBusy] = useState(false);
 
   const loadGuestSource = useCallback(async () => {
     const { data: srcRow } = await supabase
@@ -151,6 +154,11 @@ export function GuestProfilesTab() {
     const val = (srcRow?.value ?? {}) as { enabled?: boolean; user_id?: string | null };
     setSourceEnabled(!!val.enabled);
     setSourceUserId(val.user_id ?? null);
+
+    const { data: overlayRow } = await supabase
+      .from("site_settings").select("value").eq("key", "source_overlay_for_users").maybeSingle();
+    const overlayVal = (overlayRow?.value ?? {}) as { enabled?: boolean };
+    setOverlayForUsersEnabled(!!overlayVal.enabled);
 
     // List ALL user profiles as candidates for the source (not just admins).
     const { data: profs } = await supabase
@@ -183,6 +191,25 @@ export function GuestProfilesTab() {
       setSourceBusy(false);
     }
   };
+
+  const saveOverlayForUsers = async (enabled: boolean) => {
+    setOverlayBusy(true);
+    try {
+      const { error } = await supabase
+        .from("site_settings")
+        .upsert({ key: "source_overlay_for_users", value: { enabled } }, { onConflict: "key" });
+      if (error) throw error;
+      setOverlayForUsersEnabled(enabled);
+      toast.success(enabled ? "משתמשים רשומים יקראו מהמקור" : "משתמשים רשומים יראו רק את המידע שלהם");
+    } catch (e) {
+      toast.error("שגיאה בשמירת הגדרת מקור למשתמשים");
+      console.error(e);
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
+
+
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("app_roles").select("id,name").order("name");
@@ -577,7 +604,25 @@ export function GuestProfilesTab() {
             ✓ אורחים יקראו כעת מהמשתמש: <strong>{sourceUserLabel}</strong>
           </div>
         )}
+        <div className="mt-3 border-t pt-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">משתמשים רשומים קוראים מהמקור</div>
+              <div className="text-xs text-muted-foreground">
+                כל משתמש רשום יראה גם את השאלות/קטגוריות של משתמש המקור (קריאה בלבד) — בנוסף למה ששייך לו.
+              </div>
+            </div>
+            <Button
+              onClick={() => void saveOverlayForUsers(!overlayForUsersEnabled)}
+              disabled={overlayBusy || !sourceUserId}
+              className={overlayForUsersEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-foreground"}
+            >
+              {overlayForUsersEnabled ? "פעיל — לחץ לכיבוי" : "כבוי — לחץ להפעלה"}
+            </Button>
+          </div>
+        </div>
       </Card>
+
       <Card className="gold-frame p-4 space-y-3">
 
         <h3 className="font-display text-lg font-semibold">

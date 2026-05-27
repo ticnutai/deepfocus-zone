@@ -1080,6 +1080,24 @@ export type Database = {
         Returns: Json
       }
       get_my_role_layout_defaults: { Args: never; Returns: Json }
+      get_source_card_categories: { Args: never; Returns: Json }
+      get_source_category_children: {
+        Args: { p_parent_id?: string }
+        Returns: {
+          color: string
+          created_at: string
+          has_children: boolean
+          id: string
+          name: string
+          parent_id: string
+          sort_order: number
+        }[]
+      }
+      get_source_overlay_snapshot: { Args: never; Returns: Json }
+      get_source_unreviewed_cards_page: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: Json
+      }
       get_unreviewed_cards_page: {
         Args: { p_limit?: number; p_offset?: number }
         Returns: Json
