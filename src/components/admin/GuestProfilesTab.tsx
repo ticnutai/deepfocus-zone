@@ -547,6 +547,46 @@ export function GuestProfilesTab() {
   return (
     <div className="space-y-4" dir="rtl">
       <Card className="gold-frame p-4 space-y-3">
+        <h3 className="font-display text-lg font-semibold">מקור נתונים לאורח (קריאה מהענן)</h3>
+        <p className="text-xs text-muted-foreground">
+          כאשר מופעל — האורח קורא את כל הקטגוריות והשאלות של המשתמש שנבחר ישירות מהענן (קריאה בלבד, ללא כתיבה). כשמכובה — האורח מקבל מערכת נקייה.
+        </p>
+        <div className="grid md:grid-cols-3 gap-3 items-end">
+          <div className="space-y-1 md:col-span-2">
+            <Label>משתמש מקור</Label>
+            <Select
+              value={sourceUserId ?? ""}
+              onValueChange={(v) => void saveGuestSource(sourceEnabled, v || null)}
+              disabled={sourceBusy}
+            >
+              <SelectTrigger><SelectValue placeholder="בחר משתמש אדמין" /></SelectTrigger>
+              <SelectContent>
+                {adminCandidates.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {(p.display_name || p.email || p.id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => void saveGuestSource(!sourceEnabled, sourceUserId)}
+              disabled={sourceBusy || (!sourceEnabled && !sourceUserId)}
+              className={sourceEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-foreground"}
+            >
+              {sourceEnabled ? "פעיל — לחץ לכיבוי" : "כבוי — לחץ להפעלה"}
+            </Button>
+          </div>
+        </div>
+        {sourceEnabled && sourceUserLabel && (
+          <div className="text-xs text-emerald-700">
+            ✓ אורחים יקראו כעת מהמשתמש: <strong>{sourceUserLabel}</strong>
+          </div>
+        )}
+      </Card>
+
+
         <h3 className="font-display text-lg font-semibold">
           {editingId ? "עריכת פרופיל אורח" : "יצירת פרופיל אורח"}
         </h3>
