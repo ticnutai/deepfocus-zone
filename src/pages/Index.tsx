@@ -16,6 +16,7 @@ import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
 import { AutoInitShasTemplate } from "@/components/AutoInitShasTemplate";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { useStudy } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
 import { Button } from "@/components/ui/button";
