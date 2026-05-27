@@ -883,7 +883,7 @@ export function RoleDefaultsTab() {
                     className="h-7 px-2 text-[11px]"
                     onClick={() => toggleAllWidgetsInTab(tabId, widgetIds)}
                   >
-                    {allTabBlocked ? "נקה הכל" : "בחר הכל"}
+                    {allTabBlocked ? "פתח הכל" : "חסום הכל"}
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
@@ -891,12 +891,12 @@ export function RoleDefaultsTab() {
                     const blocked = (blocklist.widgets[tabId] ?? []).includes(w.id);
                     return (
                       <label key={w.id} className="flex items-center justify-between gap-2 rounded border border-gold/20 bg-card px-2 py-1">
-                        <span className="text-[11px]">{w.label}</span>
+                        <span className={cn("text-[11px]", blocked && "line-through opacity-60")}>{w.label}</span>
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-bold ${blocked ? "text-destructive" : "text-muted-foreground"}`}>
+                          <span className={`text-[10px] font-bold ${blocked ? "text-destructive" : "text-emerald-600"}`}>
                             {blocked ? "חסום" : "פתוח"}
                           </span>
-                          <Switch checked={blocked} onCheckedChange={() => toggleWidget(tabId, w.id)} />
+                          <Switch checked={!blocked} onCheckedChange={() => toggleWidget(tabId, w.id)} />
                         </div>
                       </label>
                     );
