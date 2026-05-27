@@ -2450,6 +2450,7 @@ export function useStudy() {
       sourceOwnedDeckIds.clear();
       sourceOwnedCategoryIds.clear();
       sourceOverlayHydratedFor = null;
+      sourceOverlaySourceUserId = null;
     }
     if (!uid) {
       memState = emptyState();
