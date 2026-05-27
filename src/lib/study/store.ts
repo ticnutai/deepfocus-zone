@@ -77,9 +77,12 @@ const sourceOwnedCategoryIds = new Set<string>();
 const sourceOwnedCardIds = new Set<string>();
 let sourceOverlayHydrateInFlight = false;
 let sourceOverlayHydratedFor: string | null = null;
+let sourceOverlaySourceUserId: string | null = null;
 const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
 const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
 const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
+export function getSourceUserId(): string | null { return sourceOverlaySourceUserId; }
+export function isCardFromSource(id: string): boolean { return sourceOwnedCardIds.has(id); }
 
 
 const GUEST_ID = "guest";
