@@ -585,7 +585,7 @@ export function GuestProfilesTab() {
           </div>
         )}
       </Card>
-
+      <Card className="gold-frame p-4 space-y-3">
 
         <h3 className="font-display text-lg font-semibold">
           {editingId ? "עריכת פרופיל אורח" : "יצירת פרופיל אורח"}
