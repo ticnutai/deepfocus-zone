@@ -226,29 +226,6 @@ export default function Auth() {
           <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">כניסה אופליין</span></div>
         </div>
 
-        {guestProfiles.length > 0 && (
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">פרופיל לתצוגת אורח</Label>
-            <Select
-              value={selectedGuestProfileId}
-              onValueChange={(value) => {
-                setSelectedGuestProfileId(value);
-                setGuestProfile(guestProfiles.find((p) => p.id === value) ?? null);
-                setActiveGuestViewProfile(value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="בחר פרופיל אורח" />
-              </SelectTrigger>
-              <SelectContent>
-                {guestProfiles.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>{profile.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
         <Button
           variant="outline"
           onClick={() => {
@@ -265,11 +242,6 @@ export default function Auth() {
           <UserX className="h-4 w-4" />
           כניסה כאורח
         </Button>
-        <div className="text-xs text-muted-foreground text-center">
-          {guestProfile
-            ? `פרופיל אורח קבוע: ${guestProfile.label}`
-            : "לא הוגדר פרופיל אורח קבוע. יש להגדיר במסך ניהול משתמשים."}
-        </div>
         <p className="text-xs text-muted-foreground text-center">
           מצב אורח שומר נתונים רק על המכשיר הזה, ללא סנכרון. פרופילי אורח נוצרים ממסך ניהול תפקידים.
         </p>
