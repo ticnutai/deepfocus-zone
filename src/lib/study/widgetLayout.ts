@@ -211,8 +211,8 @@ export const DEFAULT_WIDGET_LAYOUT: WidgetLayout = {
     { id: "archive-recent", visible: true, size: "half", order: 1 },
   ],
   categories: [
-    { id: "cat-pinned",  visible: true, size: "full", order: 0 },
-    { id: "cat-manager", visible: true, size: "half", order: 1 },
+    { id: "cat-manager", visible: true, size: "full", order: 0 },
+    { id: "cat-pinned",  visible: true, size: "full", order: 1 },
     { id: "cat-cards",   visible: true, size: "half", order: 2 },
   ],
   study: [
