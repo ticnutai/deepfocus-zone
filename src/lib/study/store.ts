@@ -69,6 +69,19 @@ let phase2BackfillUserId: string | null = null;
 let phase2BackfillInFlight = false;
 let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if already loaded
 
+// === Source-overlay (read-only items pulled from another user's cloud) ===
+// IDs here belong to a different user and must NEVER be written to the current
+// user's cloud. They live in memState for display purposes only.
+const sourceOwnedDeckIds = new Set<string>();
+const sourceOwnedCategoryIds = new Set<string>();
+const sourceOwnedCardIds = new Set<string>();
+let sourceOverlayHydrateInFlight = false;
+let sourceOverlayHydratedFor: string | null = null;
+const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
+const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
+const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
+
+
 const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
 const GUEST_PROFILE_SEED_APPLIED_KEY = (profileId: string) => `guest-study-seed-applied:${profileId}`;
