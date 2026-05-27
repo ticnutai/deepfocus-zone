@@ -100,7 +100,7 @@ interface Props {
 }
 
 export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Props) {
-  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, setUiPref, state } = useStudy();
+  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, setUiPref, state, forkSourceCard, isCardFromSource } = useStudy();
   const isEdit = !!editCard;
   const persistedCreateTypes = Array.isArray(state.uiPrefs?.cardEditorLastCreateTypes)
     ? Array.from(new Set(state.uiPrefs.cardEditorLastCreateTypes.filter((t): t is CardType => t === "flashcard" || t === "multiple" || t === "boolean")))
