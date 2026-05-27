@@ -422,10 +422,19 @@ export function QuestionLabPage() {
         return created.id;
       };
 
-      const rootId = ensureCategory(
-        isPilotPayload(data) ? ROOT_CATEGORY_NAME : NEVIIM_ROOT_CATEGORY_NAME,
-        null,
-      );
+      // For Pilot/Talmud imports, reuse an existing Shas root (either alias) to avoid creating
+      // a parallel "תלמוד בבלי" tree next to the canonical 'ש"ס' tree built by the template.
+      let rootId: string;
+      if (isPilotPayload(data)) {
+        const existingShas = categories.find(
+          (c) => c.parentId === null && ROOT_CATEGORY_ALIASES.includes(c.name),
+        );
+        rootId = existingShas
+          ? existingShas.id
+          : ensureCategory(ROOT_CATEGORY_NAME, null);
+      } else {
+        rootId = ensureCategory(NEVIIM_ROOT_CATEGORY_NAME, null);
+      }
       const existingCardKeys = new Set(
         state.cards.map(
           (c) =>
