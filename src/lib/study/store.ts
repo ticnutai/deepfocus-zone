@@ -2272,9 +2272,10 @@ async function hydrateGuestFromCloud(): Promise<void> {
   }
 }
 
-
+export function useStudy() {
   const { user } = useAuth();
   const [, force] = useState(0);
+
 
   useEffect(() => {
     const fn = () => force((n) => n + 1);
