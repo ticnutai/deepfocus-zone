@@ -546,6 +546,9 @@ const Index = () => {
     ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
     : user?.email;
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const roleIdsForBlocklist = useMemo(() => roles.map((r) => r.id), [roles]);
+  const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
+  const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
   const canViewCardsModule = isAdmin || can("cards", "view");
   const canUseQuestionTools = canViewCardsModule || isAdmin || can("cards", "create") || can("cards", "edit");
   const [profileBActive, setProfileBActive] = useState(false);
