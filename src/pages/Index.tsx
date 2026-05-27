@@ -449,7 +449,6 @@ const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 // Maps a home top-bar tab id to its corresponding sidebar section id (for blocklist sync).
 // If a tab id matches a sidebar id directly, no mapping needed — handled via fallback.
 const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
-  categories: "cards",
   backup: "backup-restore",
 };
 
