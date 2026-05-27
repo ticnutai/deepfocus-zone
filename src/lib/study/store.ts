@@ -762,7 +762,9 @@ const isAbortError = (error: unknown) => {
 };
 
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
-  const callRpc = async (accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/get_category_children`, {
+  const isGuest = currentUserId === GUEST_ID;
+  const rpcName = isGuest ? "get_guest_category_children" : "get_category_children";
+  const callRpc = async (accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -773,8 +775,9 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
     signal,
   });
 
-  let response = await callRpc(await getCachedAccessToken());
-  if (response.status === 401) {
+  // Guest mode has no Supabase session — call as anon (apikey only).
+  let response = await callRpc(isGuest ? null : await getCachedAccessToken());
+  if (!isGuest && response.status === 401) {
     // Token may have expired while cache stayed warm; refresh once and retry.
     cachedAccessToken = null;
     cachedAccessTokenAt = 0;
@@ -783,7 +786,7 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `get_category_children failed: ${response.status}`);
+    throw new Error(body || `${rpcName} failed: ${response.status}`);
   }
 
   const data = await response.json();
