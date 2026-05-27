@@ -813,27 +813,53 @@ export function RoleDefaultsTab() {
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-sm font-bold">מקטעי סיידבר</h4>
             <Button type="button" size="sm" variant="outline" onClick={toggleAllSections}>
-              {allSidebarBlocked ? "נקה הכל" : "בחר הכל"}
+              {allSidebarBlocked ? "פתח הכל" : "חסום הכל"}
             </Button>
           </div>
-          <div className="text-[11px] text-muted-foreground">חסום = פעיל, פתוח = כבוי</div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {ALL_SIDEBAR_ITEMS.map((s) => {
-              const blocked = blocklist.sections.includes(s.id);
-              return (
-                <label key={s.id} className="flex items-center justify-between gap-2 rounded border-2 border-gold/30 bg-card px-2 py-1.5">
-                  <span className="text-xs">{s.label}</span>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-bold ${blocked ? "text-destructive" : "text-muted-foreground"}`}>
-                      {blocked ? "חסום" : "פתוח"}
-                    </span>
-                    <Switch checked={blocked} onCheckedChange={() => toggleSection(s.id)} />
-                  </div>
-                </label>
-              );
-            })}
-          </div>
+          <div className="text-[11px] text-muted-foreground">דלוק = פתוח למשתמש · כבוי = חסום</div>
+          {(() => {
+            const known = new Set(DEFAULT_SIDEBAR_ITEMS.map((i) => i.id));
+            const extras = ALL_SIDEBAR_ITEMS.filter((s) => !known.has(s.id));
+            const ordered: Array<{ id: string; label: string; icon?: typeof DEFAULT_SIDEBAR_ITEMS[number]["icon"] }> = [
+              ...DEFAULT_SIDEBAR_ITEMS.map((i) => ({ id: i.id, label: i.label, icon: i.icon })),
+              ...extras.map((s) => ({ id: s.id, label: s.label })),
+            ];
+            return (
+              <nav className="flex flex-col gap-1 rounded-xl border-2 border-gold/30 bg-card/60 p-3 max-w-md">
+                {ordered.map((item) => {
+                  const blocked = blocklist.sections.includes(item.id);
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                        blocked ? "opacity-50 bg-muted/40" : "bg-secondary/40 hover:bg-secondary",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-[10px] font-bold", blocked ? "text-destructive" : "text-emerald-600")}>
+                          {blocked ? "חסום" : "פתוח"}
+                        </span>
+                        <Switch checked={!blocked} onCheckedChange={() => toggleSection(item.id)} />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={cn(blocked && "line-through")}>{item.label}</span>
+                        <span className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-full border-2 border-gold/70 bg-card text-navy",
+                          blocked && "grayscale",
+                        )}>
+                          {Icon ? <Icon className="h-4 w-4" /> : <span className="text-[10px]">•</span>}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </nav>
+            );
+          })()}
         </div>
+
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
