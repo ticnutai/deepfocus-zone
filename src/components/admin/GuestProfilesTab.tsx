@@ -604,7 +604,25 @@ export function GuestProfilesTab() {
             ✓ אורחים יקראו כעת מהמשתמש: <strong>{sourceUserLabel}</strong>
           </div>
         )}
+        <div className="mt-3 border-t pt-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">משתמשים רשומים קוראים מהמקור</div>
+              <div className="text-xs text-muted-foreground">
+                כל משתמש רשום יראה גם את השאלות/קטגוריות של משתמש המקור (קריאה בלבד) — בנוסף למה ששייך לו.
+              </div>
+            </div>
+            <Button
+              onClick={() => void saveOverlayForUsers(!overlayForUsersEnabled)}
+              disabled={overlayBusy || !sourceUserId}
+              className={overlayForUsersEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-foreground"}
+            >
+              {overlayForUsersEnabled ? "פעיל — לחץ לכיבוי" : "כבוי — לחץ להפעלה"}
+            </Button>
+          </div>
+        </div>
       </Card>
+
       <Card className="gold-frame p-4 space-y-3">
 
         <h3 className="font-display text-lg font-semibold">
