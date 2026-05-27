@@ -834,7 +834,8 @@ const Index = () => {
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
     // Sync with sidebar blocklist: hide top-bar tab if its matching sidebar id is blocked.
-    if (!isAdmin) {
+    // Apply to admins too when previewing as a role.
+    if (!isAdmin || previewRoleId) {
       const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
       if (blockedSidebarSet.has(sidebarId)) return false;
     }
