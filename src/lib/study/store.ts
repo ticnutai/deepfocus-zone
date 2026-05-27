@@ -2400,22 +2400,8 @@ async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<
     offset += PAGE;
     if (rows.length < PAGE) break;
   }
-
-
-    // Phase 2 backfill — pull remaining unreviewed cards in background.
-    if (cardsTotalCount > cloudCards.length) {
-      phase2BackfillNeeded = true;
-      phase2TotalCount = cardsTotalCount;
-      void runPhase2CardBackfill(GUEST_ID);
-    }
-
-    // Persist to guest local state so next refresh shows data instantly.
-    try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
-    notify();
-  } finally {
-    guestCloudHydrateInFlight = false;
-  }
 }
+
 
 export function useStudy() {
   const { user } = useAuth();
