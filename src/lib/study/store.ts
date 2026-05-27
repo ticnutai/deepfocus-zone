@@ -2403,8 +2403,7 @@ export function useStudy() {
                 stopBg();
                 restoreBgTrace();
               }
-                })();
-              });
+              })();
             }, BG_CLOUD_REFRESH_DELAY_MS);
           }
 
