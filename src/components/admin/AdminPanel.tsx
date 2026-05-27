@@ -83,6 +83,7 @@ export function AdminPanel() {
         <TabsContent value="defaults" className="mt-4"><RoleDefaultsTab /></TabsContent>
         <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
         <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
+        <TabsContent value="change-notes" className="mt-4"><ChangeNotesTab /></TabsContent>
       </Tabs>
     </div>
   );
