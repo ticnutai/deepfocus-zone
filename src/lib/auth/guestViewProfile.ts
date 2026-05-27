@@ -83,7 +83,7 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 export function listGuestViewProfiles(): GuestViewProfile[] {
   if (typeof window === "undefined") return [];
   const parsed = safeParse<GuestViewProfile[]>(localStorage.getItem(GUEST_PROFILE_CATALOG_KEY), []);
-  return normalizeGuestProfiles(parsed);
+  return attachCachedSeeds(normalizeGuestProfiles(parsed));
 }
 
 function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
