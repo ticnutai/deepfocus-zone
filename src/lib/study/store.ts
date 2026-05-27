@@ -2269,6 +2269,20 @@ async function hydrateGuestFromCloud(): Promise<void> {
     markCategoryParentLoadedNow(null);
     for (const c of mergedCategories) {
       if (c.parentId) categoryHasChildrenHint.set(c.parentId, true);
+    }
+
+    // Phase 2 backfill — pull remaining unreviewed cards in background.
+    if (cardsTotalCount > cloudCards.length) {
+      phase2BackfillNeeded = true;
+      phase2TotalCount = cardsTotalCount;
+      void runPhase2CardBackfill(GUEST_ID);
+    }
+
+    try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+    notify();
+  } finally {
+    guestCloudHydrateInFlight = false;
+  }
 }
 
 /**
