@@ -16,6 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useStudy } from "@/lib/study/store";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
+import { DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+import { cn } from "@/lib/utils";
 import { WIDGET_DEFS } from "@/lib/study/widgetLayout";
 import type { SidebarConfig, WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
