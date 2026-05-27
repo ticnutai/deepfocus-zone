@@ -117,7 +117,8 @@ type ImportRow = {
 
 const INDEX_URL = "/data/question-lab-index.json";
 const FALLBACK_REPORT_URL = "/data/pilot_docx_qna_report.json";
-const ROOT_CATEGORY_NAME = "תלמוד בבלי";
+const ROOT_CATEGORY_NAME = 'ש"ס';
+const ROOT_CATEGORY_ALIASES = ['ש"ס', "תלמוד בבלי"];
 const NEVIIM_ROOT_CATEGORY_NAME = "נביאים וכתובים - מאגר שאלות";
 
 function isPilotPayload(x: unknown): x is PilotPayload {
