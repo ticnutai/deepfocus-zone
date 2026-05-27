@@ -446,6 +446,13 @@ const DEFAULT_TABS: TabDef[] = [
 const SIDEBAR_NATIVE_IDS = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
 const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 
+// Maps a home top-bar tab id to its corresponding sidebar section id (for blocklist sync).
+// If a tab id matches a sidebar id directly, no mapping needed — handled via fallback.
+const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
+  categories: "cards",
+  backup: "backup-restore",
+};
+
 const DEFAULT_TABS_ALL: TabDef[] = (() => {
   const byId = new Map(DEFAULT_TABS.map((tab) => [tab.v, tab]));
   const out = [...DEFAULT_TABS];
