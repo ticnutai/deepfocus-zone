@@ -2207,7 +2207,8 @@ export function useStudy() {
         memState = clearStudyDataCollections(memState);
       }
       memState = applyGuestProfileSeedOnce(memState);
-      // Guest mode loads local state eagerly.
+      ensureCategoryLocalState(uid);
+      // Mark roots loaded for any local-only seed data so UI shows it immediately.
       markCategoryParentLoadedNow(null);
       for (const cat of memState.categories ?? []) {
         if (!cat.parentId) continue;
@@ -2215,6 +2216,11 @@ export function useStudy() {
       }
       isHydrated = true;
       notify();
+      // In parallel: pull source-user snapshot from cloud (if admin enabled it).
+      // Guest cannot write to cloud — all changes stay local.
+      void hydrateGuestFromCloud().catch((err) => {
+        console.warn("[guest] cloud hydrate failed:", err);
+      });
       return;
     }
     ensureCategoryLocalState(uid);
