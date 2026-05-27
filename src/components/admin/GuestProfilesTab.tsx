@@ -152,22 +152,15 @@ export function GuestProfilesTab() {
     setSourceEnabled(!!val.enabled);
     setSourceUserId(val.user_id ?? null);
 
-    // List admin profiles as candidates for the source.
-    const { data: adminRoleRow } = await supabase
-      .from("app_roles").select("id").eq("name", "admin").maybeSingle();
-    if (adminRoleRow?.id) {
-      const { data: urs } = await supabase
-        .from("user_roles").select("user_id").eq("role_id", adminRoleRow.id);
-      const ids = (urs ?? []).map((r: { user_id: string }) => r.user_id);
-      if (ids.length > 0) {
-        const { data: profs } = await supabase
-          .from("profiles").select("id,email,display_name").in("id", ids);
-        const list = (profs ?? []) as Array<{ id: string; email: string | null; display_name: string | null }>;
-        setAdminCandidates(list);
-        const cur = list.find((p) => p.id === val.user_id);
-        setSourceUserLabel(cur ? (cur.display_name || cur.email || cur.id) : "");
-      }
-    }
+    // List ALL user profiles as candidates for the source (not just admins).
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id,email,display_name")
+      .order("display_name", { ascending: true });
+    const list = (profs ?? []) as Array<{ id: string; email: string | null; display_name: string | null }>;
+    setAdminCandidates(list);
+    const cur = list.find((p) => p.id === val.user_id);
+    setSourceUserLabel(cur ? (cur.display_name || cur.email || cur.id) : "");
   }, []);
 
   const saveGuestSource = async (enabled: boolean, userId: string | null) => {
