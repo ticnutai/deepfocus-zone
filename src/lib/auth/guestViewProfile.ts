@@ -220,11 +220,16 @@ export async function loadGuestViewProfilesFromSiteSettings(opts?: { force?: boo
 
 export async function saveGuestViewProfilesToSiteSettings(profiles: GuestViewProfile[]): Promise<void> {
   const normalized = normalizeGuestProfiles(profiles);
-  await supabase.from("site_settings").upsert(
-    [{ key: GUEST_PROFILES_SITE_KEY, value: normalized as unknown as Json }],
+  // Strip heavy studySeed before pushing to site_settings — it can easily exceed
+  // PostgREST request-size limits and cause silent 413/500 failures. The seed
+  // stays in localStorage and is re-merged by hydrateGuestProfilesFromSiteSettings.
+  const lightweight = normalized.map(({ studySeed: _omit, ...rest }) => rest) as GuestViewProfile[];
+  const { error } = await supabase.from("site_settings").upsert(
+    [{ key: GUEST_PROFILES_SITE_KEY, value: lightweight as unknown as Json }],
     { onConflict: "key" },
   );
-  updateSiteSettingCache(GUEST_PROFILES_SITE_KEY, normalized);
+  if (error) throw new Error(error.message);
+  updateSiteSettingCache(GUEST_PROFILES_SITE_KEY, lightweight);
   setGuestProfilesLocal(normalized);
 }
 
@@ -235,10 +240,11 @@ export async function loadGuestDefaultProfileIdFromSiteSettings(opts?: { force?:
 
 export async function saveGuestDefaultProfileIdToSiteSettings(profileId: string | null): Promise<void> {
   const value = profileId ?? null;
-  await supabase.from("site_settings").upsert(
+  const { error } = await supabase.from("site_settings").upsert(
     [{ key: GUEST_DEFAULT_PROFILE_SITE_KEY, value: value as unknown as Json }],
     { onConflict: "key" },
   );
+  if (error) throw new Error(error.message);
   updateSiteSettingCache(GUEST_DEFAULT_PROFILE_SITE_KEY, value);
   if (profileId) {
     setActiveGuestViewProfile(profileId);
