@@ -1441,9 +1441,11 @@ async function runPhase2CardBackfill(userId: string) {
     while (true) {
       // Fire CONCURRENCY pages in parallel.
       const batchOffsets = Array.from({ length: CONCURRENCY }, (_, i) => offset + i * PAGE);
+      const isGuest = currentUserId === GUEST_ID;
+      const phase2RpcName = isGuest ? "get_guest_unreviewed_cards_page" : "get_unreviewed_cards_page";
       const batchResults = await Promise.all(
         batchOffsets.map((o) =>
-          rpcClient.rpc("get_unreviewed_cards_page", { p_offset: o, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>
+          rpcClient.rpc(phase2RpcName, { p_offset: o, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>
         )
       );
 
