@@ -126,10 +126,42 @@ export function LayoutPreviewTab() {
           <div>
             <h3 className="font-display text-lg font-bold">תצוגה מקדימה והשוואה לפי תפקיד</h3>
             <p className="text-xs text-muted-foreground">
-              בחר עד 3 תפקידים ואת הדף להצגה. לכל תפקיד מוצג iframe של האתר האמיתי עם הפריסה השמורה לאותו תפקיד (קריאה בלבד — לא משנה הגדרות אישיות).
+              בחר עד 3 תפקידים ואת הדף להצגה. לכל תפקיד מוצג iframe של האתר האמיתי עם הפריסה השמורה לאותו תפקיד.
             </p>
           </div>
         </div>
+
+        {/* How-it-works banner */}
+        <div className="rounded-lg border-2 border-primary/40 bg-primary/5 p-3 text-xs space-y-2">
+          <div className="flex items-center gap-2 font-bold text-sm text-primary">
+            <Info className="h-4 w-4" />
+            איך עורכים פריסה לתפקיד?
+          </div>
+          <ol className="space-y-1.5 mr-5 list-decimal text-foreground/90 leading-relaxed">
+            <li>
+              <strong>בחר תפקיד</strong> (לדוגמה: editor, user, moderator) מהרשימה למטה — ייפתח iframe עם הפריסה הנוכחית של אותו תפקיד.
+            </li>
+            <li>
+              בתוך ה-iframe יופיע <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 text-black px-2 py-0.5 font-bold"><Eye className="h-3 w-3" />עריכת תפקיד</span> — סימן שאתה במצב עריכה לאותו תפקיד.
+            </li>
+            <li>
+              <span className="inline-flex items-center gap-1 font-semibold"><MousePointerClick className="h-3.5 w-3.5" />גרור, הסתר, הוסף ווידג'טים וטאבים</span> בתוך ה-iframe (לא בחלון הראשי!) — <strong>כל שינוי נשמר אוטומטית לתפקיד</strong>, לא להגדרות האישיות שלך.
+            </li>
+            <li>
+              <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-green-600" />כל משתמש</span> שייכנס עם אותו תפקיד יראה את הפריסה החדשה כברירת מחדל (אם הוא לא שינה לעצמו ידנית).
+            </li>
+            <li>
+              לחיצה על <strong>"שמור כאורח"</strong> מייצרת פרופיל אורח מהפריסה השמורה — שימושי לתצוגה ללא התחברות.
+            </li>
+          </ol>
+          <div className="flex items-start gap-1.5 pt-1 text-[11px] text-muted-foreground border-t border-primary/20">
+            <Save className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>
+              <strong>שמירה אוטומטית עובדת רק במחשב (desktop).</strong> במובייל יש להשתמש ב"פרופילי פריסה + שיוך" בלשונית "ברירות מחדל לתפקידים".
+            </span>
+          </div>
+        </div>
+
 
         <div className="flex flex-wrap items-end gap-4">
           {/* Roles multi-select */}
