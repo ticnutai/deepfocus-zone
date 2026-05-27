@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX } from "lucide-react";
+import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, MessageSquare } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { PermissionsMatrix } from "./PermissionsMatrix";
