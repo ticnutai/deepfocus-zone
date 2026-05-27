@@ -2441,6 +2441,12 @@ export function useStudy() {
     const uid = user?.id ?? null;
     let cancelled = false;
     currentUserId = uid;
+    if (sourceOverlayHydratedFor && sourceOverlayHydratedFor !== uid) {
+      sourceOwnedCardIds.clear();
+      sourceOwnedDeckIds.clear();
+      sourceOwnedCategoryIds.clear();
+      sourceOverlayHydratedFor = null;
+    }
     if (!uid) {
       memState = emptyState();
       isHydrated = true;
