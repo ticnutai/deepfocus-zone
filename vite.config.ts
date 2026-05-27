@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => ({
     process.env.BUILD_TARGET !== "electron" && mode === "production" && VitePWA({
       registerType: "autoUpdate",
       workbox: {
+        navigateFallbackDenylist: [/^\/~oauth/],
         globPatterns: ["**/*.{js,css,html,woff2}"],
         runtimeCaching: [
           {
