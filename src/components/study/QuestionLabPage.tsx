@@ -117,7 +117,8 @@ type ImportRow = {
 
 const INDEX_URL = "/data/question-lab-index.json";
 const FALLBACK_REPORT_URL = "/data/pilot_docx_qna_report.json";
-const ROOT_CATEGORY_NAME = "תלמוד בבלי";
+const ROOT_CATEGORY_NAME = 'ש"ס';
+const ROOT_CATEGORY_ALIASES = ['ש"ס', "תלמוד בבלי"];
 const NEVIIM_ROOT_CATEGORY_NAME = "נביאים וכתובים - מאגר שאלות";
 
 function isPilotPayload(x: unknown): x is PilotPayload {
@@ -421,10 +422,19 @@ export function QuestionLabPage() {
         return created.id;
       };
 
-      const rootId = ensureCategory(
-        isPilotPayload(data) ? ROOT_CATEGORY_NAME : NEVIIM_ROOT_CATEGORY_NAME,
-        null,
-      );
+      // For Pilot/Talmud imports, reuse an existing Shas root (either alias) to avoid creating
+      // a parallel "תלמוד בבלי" tree next to the canonical 'ש"ס' tree built by the template.
+      let rootId: string;
+      if (isPilotPayload(data)) {
+        const existingShas = categories.find(
+          (c) => c.parentId === null && ROOT_CATEGORY_ALIASES.includes(c.name),
+        );
+        rootId = existingShas
+          ? existingShas.id
+          : ensureCategory(ROOT_CATEGORY_NAME, null);
+      } else {
+        rootId = ensureCategory(NEVIIM_ROOT_CATEGORY_NAME, null);
+      }
       const existingCardKeys = new Set(
         state.cards.map(
           (c) =>

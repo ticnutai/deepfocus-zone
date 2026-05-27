@@ -318,13 +318,43 @@ export function AIQuestionGenerator() {
     return addCategory(name, parentId);
   }
 
+  // Find an existing Shas root by either canonical name (avoid creating duplicates).
+  function findShasRoot(): Category {
+    const cats = state.categories ?? [];
+    const existing = cats.find(
+      (c) => c.parentId === null && (c.name === 'ש"ס' || c.name === "תלמוד בבלי"),
+    );
+    if (existing) return existing;
+    return addCategory('ש"ס', null);
+  }
+
+  // Find a masechet anywhere inside the Shas subtree (matches whichever סדר it lives under
+  // in the user's existing template), rather than creating a duplicate at root level.
+  function findMasechetInShas(rootId: string, name: string): Category | null {
+    const cats = state.categories ?? [];
+    const byId = new Map(cats.map((c) => [c.id, c] as const));
+    const isDescendantOfRoot = (catId: string): boolean => {
+      let cur: string | null | undefined = catId;
+      let hops = 0;
+      while (cur && hops < 50) {
+        if (cur === rootId) return true;
+        cur = byId.get(cur)?.parentId ?? null;
+        hops++;
+      }
+      return false;
+    };
+    return cats.find((c) => c.name === name && isDescendantOfRoot(c.id)) ?? null;
+  }
+
   async function importToDb() {
     if (!questions.length) return;
     setImporting(true);
     try {
-      // Build category hierarchy: תלמוד בבלי → masechet → daf → amud
-      const root = findOrCreate("תלמוד בבלי", null);
-      const masechetCat = findOrCreate(masechet, root.id);
+      // Build category hierarchy under the existing Shas tree: ש"ס → סדר → masechet → daf → amud.
+      // Reuses the masechet from the template (under its proper סדר) instead of creating a parallel root.
+      const root = findShasRoot();
+      const existingMasechet = findMasechetInShas(root.id, masechet);
+      const masechetCat = existingMasechet ?? findOrCreate(masechet, root.id);
       const dafLabel = toHebrewNumeral(daf);
       const dafCat = findOrCreate(dafLabel, masechetCat.id);
       const amudLabel = amud === "a" ? "א" : "ב";
