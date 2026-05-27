@@ -74,8 +74,8 @@ const GUEST_STATE_KEY = "guest-study-state";
 const GUEST_PROFILE_SEED_APPLIED_KEY = (profileId: string) => `guest-study-seed-applied:${profileId}`;
 const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
-const CLOUD_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — keeps cross-device data fresher while preserving cache-first UX
-const BG_CLOUD_REFRESH_DELAY_MS = 5 * 1000; // short delay after first paint before cloud reconciliation
+const CLOUD_REFRESH_INTERVAL_MS = 0; // always refresh from cloud on hydrate so decks/cards arrive immediately
+const BG_CLOUD_REFRESH_DELAY_MS = 0; // no delay — kick the cloud reconciliation as soon as hydrate finishes
 const UI_PREFS_SYNC_DEBOUNCE_MS = 800;
 
 const hasMeaningfulStudyData = (state: StudyState): boolean => {
@@ -2306,9 +2306,7 @@ export function useStudy() {
           if (shouldRefreshCloud || shouldCheckStructuralGap) {
             window.setTimeout(() => {
               if (cancelled) return;
-              if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-              runWhenBrowserIdle(() => {
-                void (async () => {
+              void (async () => {
               const bgTraceId = perf.createTraceId("hydrate-bg");
               const restoreBgTrace = perf.pushTrace(bgTraceId);
               const stopBg = perf.startTimer("store:hydrate.bg_cloud_refresh", "store", bgTraceId);
@@ -2405,8 +2403,7 @@ export function useStudy() {
                 stopBg();
                 restoreBgTrace();
               }
-                })();
-              });
+              })();
             }, BG_CLOUD_REFRESH_DELAY_MS);
           }
 
