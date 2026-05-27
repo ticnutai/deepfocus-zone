@@ -2167,7 +2167,112 @@ async function loadAll(userId: string): Promise<StudyState> {
   }
 }
 
-export function useStudy() {
+/**
+ * Guest mode cloud hydration.
+ * Pulls the source-user snapshot (if admin enabled `guest_source` in site_settings)
+ * via SECURITY DEFINER RPCs callable by anon. Merges into memState, preserving any
+ * locally-created items. Guest NEVER writes back to cloud.
+ */
+let guestCloudHydrateInFlight = false;
+async function hydrateGuestFromCloud(): Promise<void> {
+  if (guestCloudHydrateInFlight) return;
+  if (currentUserId !== GUEST_ID) return;
+  guestCloudHydrateInFlight = true;
+  try {
+    const headers = { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY };
+    const [snapResp, ccResp] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot`, {
+        method: "POST", headers, body: "{}",
+      }),
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories`, {
+        method: "POST", headers, body: "{}",
+      }),
+    ]);
+    if (!snapResp.ok) return;
+    const payload = (await snapResp.json()) as Record<string, unknown> | null;
+    if (!payload || typeof payload !== "object") return; // guest source disabled
+
+    type CatRow = { id: string; name: string; parent_id: string | null; color: string | null; created_at: string; sort_order: number | null; updated_at?: string | null };
+    type DeckRow = { id: string; name: string; description: string | null; color: string; created_at: string; updated_at: string | null; category_ids: unknown; include_sub_categories: boolean | null };
+    type CardCatRow = { card_id: string; category_id: string };
+
+    const catsRaw = Array.isArray(payload.categories_roots) ? (payload.categories_roots as CatRow[]) : [];
+    const decksRaw = Array.isArray(payload.decks) ? (payload.decks as DeckRow[]) : [];
+    const cardsRaw = Array.isArray(payload.cards) ? (payload.cards as Parameters<typeof cardFromRow>[0][]) : [];
+    const cardDecksRaw = Array.isArray(payload.card_decks)
+      ? (payload.card_decks as Array<{ card_id: string; deck_id: string; sort_order: number | null }>)
+      : [];
+    const cardsTotalCount = typeof payload.cards_total_count === "number" ? payload.cards_total_count : 0;
+
+    const cloudCategories: Category[] = catsRaw.map((c) => ({
+      id: c.id, name: c.name, parentId: c.parent_id, color: c.color ?? undefined,
+      createdAt: new Date(c.created_at).getTime(),
+      sortOrder: c.sort_order ?? 0,
+      updatedAt: c.updated_at ? new Date(c.updated_at).getTime() : new Date(c.created_at).getTime(),
+    }));
+    const cloudDecks: Deck[] = decksRaw.map((d) => ({
+      id: d.id, name: d.name, description: d.description ?? undefined, color: d.color,
+      createdAt: new Date(d.created_at).getTime(),
+      updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : new Date(d.created_at).getTime(),
+      categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
+      includeSubCategories: d.include_sub_categories !== false,
+    }));
+    const cloudCards: Card[] = cardsRaw.map(cardFromRow);
+    const cloudCardDecks = cardDecksRaw.map((cd) => ({
+      cardId: cd.card_id, deckId: cd.deck_id, sortOrder: cd.sort_order ?? 0,
+    }));
+
+    // card_categories → derive deckCategories-like mapping is not direct; the existing app
+    // mostly relies on Card.tags / card_decks. We don't need card_categories for the read flow.
+    void ccResp; // reserved for future use
+
+    // Merge: cloud rows overwrite locals with same id; locally-added items survive.
+    const mergeById = <T extends { id: string }>(local: T[], cloud: T[]): T[] => {
+      const map = new Map<string, T>();
+      for (const item of local ?? []) map.set(item.id, item);
+      for (const item of cloud) map.set(item.id, item);
+      return [...map.values()];
+    };
+    const mergedCategories = mergeById(memState.categories ?? [], cloudCategories);
+    const mergedDecks = mergeById(memState.decks ?? [], cloudDecks);
+    const mergedCards = mergeById(memState.cards ?? [], cloudCards);
+    // card_decks has no id field — dedupe by (cardId,deckId)
+    const cdKey = (x: { cardId: string; deckId: string }) => `${x.cardId}::${x.deckId}`;
+    const cdMap = new Map<string, { cardId: string; deckId: string; sortOrder: number }>();
+    for (const x of memState.cardDecks ?? []) cdMap.set(cdKey(x), x);
+    for (const x of cloudCardDecks) cdMap.set(cdKey(x), x);
+    const mergedCardDecks = [...cdMap.values()];
+
+    memState = {
+      ...memState,
+      categories: mergedCategories,
+      decks: mergedDecks,
+      cards: mergedCards,
+      cardDecks: mergedCardDecks,
+    };
+
+    // Update lazy-load hints so the UI knows which roots have children.
+    markCategoryParentLoadedNow(null);
+    for (const c of mergedCategories) {
+      if (c.parentId) categoryHasChildrenHint.set(c.parentId, true);
+    }
+
+    // Phase 2 backfill — pull remaining unreviewed cards in background.
+    if (cardsTotalCount > cloudCards.length) {
+      phase2BackfillNeeded = true;
+      phase2TotalCount = cardsTotalCount;
+      void runPhase2CardBackfill(GUEST_ID);
+    }
+
+    // Persist to guest local state so next refresh shows data instantly.
+    try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+    notify();
+  } finally {
+    guestCloudHydrateInFlight = false;
+  }
+}
+
+
   const { user } = useAuth();
   const [, force] = useState(0);
 
