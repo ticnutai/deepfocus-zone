@@ -2531,6 +2531,8 @@ export function useStudy() {
             performance.measure("pashash:react-render:idb-cache", "pashash:notify:idb-cache-applied");
           }, 0);
           perf.log("store:hydrate.cache_applied", "indexeddb snapshot applied", "store", hydrateTraceId);
+          // Source overlay: fetch in parallel with cloud refresh.
+          void hydrateSourceOverlayForAuthUser(uid).catch((e) => console.warn("[source-overlay]", e));
         }
 
         if (hasCache) {
