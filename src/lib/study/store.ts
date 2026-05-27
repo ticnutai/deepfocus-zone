@@ -1259,7 +1259,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
 
   await runAndThrow("user_settings.upsert", supabase.from("user_settings").upsert(settingsPayload, { onConflict: "user_id" }));
 
-  const decksRows = (state.decks ?? []).map((d) => ({
+  const decksRows = (state.decks ?? []).filter((d) => !isSourceOwnedDeck(d.id)).map((d) => ({
     id: d.id,
     user_id: userId,
     name: d.name,
@@ -1271,7 +1271,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     include_sub_categories: d.includeSubCategories !== false,
   }));
 
-  const categoriesRows = (state.categories ?? []).map((c) => ({
+  const categoriesRows = (state.categories ?? []).filter((c) => !isSourceOwnedCategory(c.id)).map((c) => ({
     id: c.id,
     user_id: userId,
     name: c.name,
@@ -1282,7 +1282,8 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     sort_order: c.sortOrder ?? 0,
   }));
 
-  const cardsRows = (state.cards ?? []).map((c) => cardToRow(c, userId));
+  const cardsRows = (state.cards ?? []).filter((c) => !isSourceOwnedCard(c.id)).map((c) => cardToRow(c, userId));
+
 
   const goalsRows = (state.goals ?? []).map((g) => ({
     id: g.id,
