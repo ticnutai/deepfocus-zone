@@ -2306,9 +2306,7 @@ export function useStudy() {
           if (shouldRefreshCloud || shouldCheckStructuralGap) {
             window.setTimeout(() => {
               if (cancelled) return;
-              if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-              runWhenBrowserIdle(() => {
-                void (async () => {
+              void (async () => {
               const bgTraceId = perf.createTraceId("hydrate-bg");
               const restoreBgTrace = perf.pushTrace(bgTraceId);
               const stopBg = perf.startTimer("store:hydrate.bg_cloud_refresh", "store", bgTraceId);
