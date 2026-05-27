@@ -1060,6 +1060,25 @@ export type Database = {
         }[]
       }
       get_due_count_today: { Args: never; Returns: number }
+      get_guest_bootstrap_snapshot: { Args: never; Returns: Json }
+      get_guest_card_categories: { Args: never; Returns: Json }
+      get_guest_category_children: {
+        Args: { p_parent_id?: string }
+        Returns: {
+          color: string
+          created_at: string
+          has_children: boolean
+          id: string
+          name: string
+          parent_id: string
+          sort_order: number
+        }[]
+      }
+      get_guest_source_user_id: { Args: never; Returns: string }
+      get_guest_unreviewed_cards_page: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: Json
+      }
       get_my_role_layout_defaults: { Args: never; Returns: Json }
       get_unreviewed_cards_page: {
         Args: { p_limit?: number; p_offset?: number }
