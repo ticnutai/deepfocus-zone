@@ -458,6 +458,7 @@ export function GuestProfilesTab() {
 
   const resetForm = () => {
     setEditingId(null);
+    setProfileSourceUserId("");
     if (roles.length > 0) {
       setSelectedRoleId(roles[0].id);
       setProfileLabel(`תצוגת אורח: ${roleLabel(roles[0].name)}`);
@@ -478,6 +479,7 @@ export function GuestProfilesTab() {
         roleId: selectedRoleId,
         id: editingId ?? undefined,
         label: profileLabel,
+        sourceUserId: profileSourceUserId || null,
       });
 
       const allProfiles = listGuestViewProfiles();
@@ -502,6 +504,7 @@ export function GuestProfilesTab() {
     setEditingId(profile.id);
     setSelectedRoleId(profile.roleId ?? "");
     setProfileLabel(profile.label);
+    setProfileSourceUserId(profile.sourceUserId ?? "");
   };
 
   const markAsDefault = async (profileId: string) => {
