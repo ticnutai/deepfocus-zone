@@ -195,7 +195,7 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
                 collapsed ? "top-1" : (editMode ? "top-2" : "top-0"),
                 collapsed
                   ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                  : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 delay-0 group-hover:delay-700",
               )}
             >
               {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
@@ -216,7 +216,7 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
                   title="גודל ומיקום"
                   className={cn(
                     "absolute left-10 top-0 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
-                    quickLayoutOpen ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                    quickLayoutOpen ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 delay-0 group-hover:delay-700",
                   )}
                 >
                   <Settings2 className="h-4 w-4" />
@@ -605,7 +605,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
                     collapsed ? "top-1" : (editMode ? "top-2" : "top-0"),
                     collapsed
                       ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 delay-0 group-hover:delay-700",
                   )}
                 >
                   {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
@@ -618,7 +618,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
                       title="גודל ומיקום"
                       className={cn(
                         "absolute left-10 top-0 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
-                        quickLayoutId === cfg.id ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                        quickLayoutId === cfg.id ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 delay-0 group-hover:delay-700",
                       )}
                     >
                       <Settings2 className="h-4 w-4" />
