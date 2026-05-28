@@ -1002,6 +1002,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const renameBlurReady = useRef<Map<string, boolean>>(new Map());
   const [moveTargetOpen, setMoveTargetOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [smartDialogOpen, setSmartDialogOpen] = useState(false);
   const [editingSmart, setEditingSmart] = useState<SmartFolder | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -1642,11 +1643,16 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
 
   const handleBulkDelete = () => {
     if (!multiSelected.size) return;
-    if (!confirm(`למחוק ${multiSelected.size} קטגוריות?`)) return;
+    setBulkDeleteConfirmOpen(true);
+  };
+
+  const confirmBulkDelete = () => {
+    const count = multiSelected.size;
     multiSelected.forEach((id) => deleteCategory(id));
     setMultiSelected(new Set());
     onSelectCategory(null);
-    toast({ title: "נמחקו", description: `${multiSelected.size} קטגוריות` });
+    setBulkDeleteConfirmOpen(false);
+    toast({ title: "נמחקו", description: `${count} קטגוריות` });
   };
 
   const handleBulkMove = (targetParentId: string | null) => {
@@ -2461,8 +2467,8 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
           <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setMoveTargetOpen((v) => !v)}>
             <ArrowRightLeft className="h-3 w-3 ml-1" /> העבר
           </Button>
-          <Button size="sm" variant="destructive" className="h-6 text-xs" onClick={handleBulkDelete}>
-            <Trash2 className="h-3 w-3 ml-1" /> מחק
+          <Button size="sm" variant="destructive" className="h-6 w-6 p-0" title="מחק" onClick={handleBulkDelete}>
+            <Trash2 className="h-3 w-3" />
           </Button>
           <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setMultiSelected(new Set())} title="יציאה ממצב בחירה (ESC)">
             <X className="h-3.5 w-3.5" />
@@ -3399,6 +3405,24 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         category={pickerCat}
         deckId={pickerDeckId}
       />
+
+      {/* Bulk delete confirmation dialog */}
+      <Dialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>מחיקת קטגוריות</DialogTitle>
+            <DialogDescription>
+              האם למחוק {multiSelected.size} קטגוריות לצמיתות? לא ניתן לשחזר פעולה זו.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 flex-row-reverse justify-start">
+            <Button variant="destructive" onClick={confirmBulkDelete}>
+              <Trash2 className="h-3.5 w-3.5 ml-1" /> כן, מחק
+            </Button>
+            <Button variant="outline" onClick={() => setBulkDeleteConfirmOpen(false)}>בטל</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Templates dialog */}
       <CategoryTemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
