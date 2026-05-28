@@ -134,6 +134,7 @@ export function GuestProfilesTab() {
 
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [profileLabel, setProfileLabel] = useState("");
+  const [profileSourceUserId, setProfileSourceUserId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -410,7 +411,7 @@ export function GuestProfilesTab() {
     return seed;
   }, [studyState.cardDecks, studyState.cards, studyState.categories, studyState.deckCategories, studyState.decks]);
 
-  const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string }) => {
+  const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string; sourceUserId?: string | null }) => {
     const role = roles.find((r) => r.id === opts.roleId);
     if (!role) throw new Error("תפקיד לא נמצא");
 
@@ -451,11 +452,13 @@ export function GuestProfilesTab() {
       sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleLayoutDefaultsRow["sidebar_config"] | undefined,
       widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleLayoutDefaultsRow["widget_layout"] | undefined,
       studySeed: studySeed ?? existing?.studySeed,
+      sourceUserId: opts.sourceUserId !== undefined ? opts.sourceUserId : (existing?.sourceUserId ?? null),
     });
   }, [buildGuestStudySeed, roles]);
 
   const resetForm = () => {
     setEditingId(null);
+    setProfileSourceUserId("");
     if (roles.length > 0) {
       setSelectedRoleId(roles[0].id);
       setProfileLabel(`תצוגת אורח: ${roleLabel(roles[0].name)}`);
@@ -476,6 +479,7 @@ export function GuestProfilesTab() {
         roleId: selectedRoleId,
         id: editingId ?? undefined,
         label: profileLabel,
+        sourceUserId: profileSourceUserId || null,
       });
 
       const allProfiles = listGuestViewProfiles();
@@ -500,6 +504,7 @@ export function GuestProfilesTab() {
     setEditingId(profile.id);
     setSelectedRoleId(profile.roleId ?? "");
     setProfileLabel(profile.label);
+    setProfileSourceUserId(profile.sourceUserId ?? "");
   };
 
   const markAsDefault = async (profileId: string) => {
@@ -656,6 +661,26 @@ export function GuestProfilesTab() {
             />
           </div>
         </div>
+        <div className="space-y-1">
+          <Label>משתמש מקור לפרופיל זה (אופציונלי)</Label>
+          <Select
+            value={profileSourceUserId || "__default__"}
+            onValueChange={(v) => setProfileSourceUserId(v === "__default__" ? "" : v)}
+          >
+            <SelectTrigger><SelectValue placeholder="ברירת מחדל גלובלית" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">— ברירת מחדל גלובלית —</SelectItem>
+              {adminCandidates.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {(p.display_name || p.email || p.id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            כשמוגדר — האורח שיפעיל את הפרופיל הזה יקרא קטגוריות/כרטיסים של המשתמש שנבחר. אם לא בוחרים — חוזרים למקור הגלובלי מהכרטיס למעלה.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Button onClick={() => void submit()} disabled={busy || !selectedRole} className="bg-gradient-navy text-primary-foreground">
             <UserPlus className="h-4 w-4" />
@@ -680,6 +705,13 @@ export function GuestProfilesTab() {
               </div>
               <div className="text-xs text-muted-foreground">
                 תפקיד: {p.roleName ? roleLabel(p.roleName) : "לא הוגדר"} · עודכן {new Date(p.updatedAt).toLocaleString("he-IL")}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                מקור נתונים: {(() => {
+                  if (!p.sourceUserId) return "ברירת מחדל גלובלית";
+                  const u = adminCandidates.find((x) => x.id === p.sourceUserId);
+                  return u ? (u.display_name || u.email || u.id) : p.sourceUserId;
+                })()}
               </div>
             </div>
 

@@ -25,6 +25,11 @@ import {
   type LayoutScope,
 } from "./layoutProfiles";
 import { supabase } from "@/integrations/supabase/client";
+
+/** Active guest profile's pinned source user id, or null to use the global guest_source. */
+const getActiveGuestSourceUserId = (): string | null => {
+  try { return getActiveGuestViewProfile()?.sourceUserId ?? null; } catch { return null; }
+};
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
@@ -779,7 +784,11 @@ const isAbortError = (error: unknown) => {
 
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
   const isGuest = currentUserId === GUEST_ID;
-  const rpcName = isGuest ? "get_guest_category_children" : "get_category_children";
+  const rpcName = isGuest ? "get_guest_category_children_for" : "get_category_children";
+  const guestSourceUid = isGuest ? getActiveGuestSourceUserId() : null;
+  const body = isGuest
+    ? JSON.stringify({ p_source_user_id: guestSourceUid, p_parent_id: parentId })
+    : JSON.stringify({ p_parent_id: parentId });
   const callRpc = async (name: string, accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
@@ -787,7 +796,7 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
       apikey: SUPABASE_PUBLISHABLE_KEY,
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ p_parent_id: parentId }),
+    body,
     signal,
   });
 
@@ -1480,11 +1489,15 @@ async function runPhase2CardBackfill(userId: string) {
       // Fire CONCURRENCY pages in parallel.
       const batchOffsets = Array.from({ length: CONCURRENCY }, (_, i) => offset + i * PAGE);
       const isGuest = currentUserId === GUEST_ID;
-      const phase2RpcName = isGuest ? "get_guest_unreviewed_cards_page" : "get_unreviewed_cards_page";
+      const phase2RpcName = isGuest ? "get_guest_unreviewed_cards_page_for" : "get_unreviewed_cards_page";
+      const guestSourceUid = isGuest ? getActiveGuestSourceUserId() : null;
       const batchResults = await Promise.all(
-        batchOffsets.map((o) =>
-          rpcClient.rpc(phase2RpcName, { p_offset: o, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>
-        )
+        batchOffsets.map((o) => {
+          const args = isGuest
+            ? { p_source_user_id: guestSourceUid, p_offset: o, p_limit: PAGE }
+            : { p_offset: o, p_limit: PAGE };
+          return rpcClient.rpc(phase2RpcName, args) as Promise<{ data: unknown; error: unknown }>;
+        })
       );
 
       let batchHadRows = false;
@@ -2218,12 +2231,14 @@ async function hydrateGuestFromCloud(): Promise<void> {
   guestCloudHydrateInFlight = true;
   try {
     const headers = { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY };
+    const guestSourceUid = getActiveGuestSourceUserId();
+    const rpcBody = JSON.stringify({ p_source_user_id: guestSourceUid });
     const [snapResp, ccResp] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot`, {
-        method: "POST", headers, body: "{}",
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot_for`, {
+        method: "POST", headers, body: rpcBody,
       }),
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories`, {
-        method: "POST", headers, body: "{}",
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories_for`, {
+        method: "POST", headers, body: rpcBody,
       }),
     ]);
     if (!snapResp.ok) return;

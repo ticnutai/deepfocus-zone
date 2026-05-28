@@ -55,6 +55,12 @@ export interface GuestViewProfile {
   tabConfig?: TabConfig[];
   widgetLayout?: WidgetLayout;
   studySeed?: GuestStudySeed;
+  /**
+   * Optional registered-user id whose cloud data (categories/cards/decks) this
+   * guest profile should mirror. When null/undefined, falls back to the global
+   * guest_source site-setting.
+   */
+  sourceUserId?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -128,6 +134,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
         tabConfig: Array.isArray(p.tabConfig) ? p.tabConfig : undefined,
         widgetLayout: p.widgetLayout && typeof p.widgetLayout === "object" ? p.widgetLayout : undefined,
         studySeed: normalizeSeed(p.studySeed),
+        sourceUserId: typeof p.sourceUserId === "string" && p.sourceUserId ? p.sourceUserId : null,
         createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
         updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
       };
