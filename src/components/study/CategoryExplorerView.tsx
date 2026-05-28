@@ -1535,6 +1535,17 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       toggleMarkedCategory(cat.id);
       return;
     }
+    // If already in selection mode, toggle this folder's selection instead of navigating.
+    if (multiSelected.size > 0) {
+      setMultiSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(cat.id)) next.delete(cat.id);
+        else next.add(cat.id);
+        return next;
+      });
+      setLastSelectedId(cat.id);
+      return;
+    }
     // Single click is navigation-only.
     setMultiSelected(new Set());
     setLastSelectedId(null);
