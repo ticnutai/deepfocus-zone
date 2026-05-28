@@ -661,6 +661,26 @@ export function GuestProfilesTab() {
             />
           </div>
         </div>
+        <div className="space-y-1">
+          <Label>משתמש מקור לפרופיל זה (אופציונלי)</Label>
+          <Select
+            value={profileSourceUserId || "__default__"}
+            onValueChange={(v) => setProfileSourceUserId(v === "__default__" ? "" : v)}
+          >
+            <SelectTrigger><SelectValue placeholder="ברירת מחדל גלובלית" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">— ברירת מחדל גלובלית —</SelectItem>
+              {adminCandidates.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {(p.display_name || p.email || p.id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            כשמוגדר — האורח שיפעיל את הפרופיל הזה יקרא קטגוריות/כרטיסים של המשתמש שנבחר. אם לא בוחרים — חוזרים למקור הגלובלי מהכרטיס למעלה.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Button onClick={() => void submit()} disabled={busy || !selectedRole} className="bg-gradient-navy text-primary-foreground">
             <UserPlus className="h-4 w-4" />
