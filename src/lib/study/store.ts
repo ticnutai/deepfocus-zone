@@ -2231,12 +2231,14 @@ async function hydrateGuestFromCloud(): Promise<void> {
   guestCloudHydrateInFlight = true;
   try {
     const headers = { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY };
+    const guestSourceUid = getActiveGuestSourceUserId();
+    const rpcBody = JSON.stringify({ p_source_user_id: guestSourceUid });
     const [snapResp, ccResp] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot`, {
-        method: "POST", headers, body: "{}",
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot_for`, {
+        method: "POST", headers, body: rpcBody,
       }),
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories`, {
-        method: "POST", headers, body: "{}",
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories_for`, {
+        method: "POST", headers, body: rpcBody,
       }),
     ]);
     if (!snapResp.ok) return;
