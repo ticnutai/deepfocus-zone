@@ -2812,6 +2812,21 @@ export function useStudy() {
     };
   }, [user?.id]);
 
+  // One-time migration: rename legacy "ללא סיווג" → current UNCATEGORIZED_NAME
+  useEffect(() => {
+    const OLD = "ללא סיווג";
+    if (UNCATEGORIZED_NAME === OLD) return;
+    const uid = user?.id ?? null;
+    if (!uid) return;
+    const old = (memState.categories ?? []).find((c) => c.parentId === null && c.name === OLD);
+    if (!old) return;
+    setState((s) => ({
+      ...s,
+      categories: (s.categories ?? []).map((c) => c.id === old.id ? { ...c, name: UNCATEGORIZED_NAME } : c),
+    }));
+    bg(supabase.from("categories").update({ name: UNCATEGORIZED_NAME }).eq("id", old.id), "categories.migrate.rename");
+  }, [memState.categories, user?.id]);
+
   const state = memState;
   const getHydrationSnapshot = useCallback(() => ({
     isHydrated,
@@ -3022,8 +3037,21 @@ export function useStudy() {
     return currentUserId;
   };
 
-  /** Ensure the singleton "ללא סיווג" root category exists. Returns its id. */
+  /** Ensure the singleton uncategorized root category exists. Returns its id. */
   const ensureUncategorized = useCallback((): string => {
+    // Migrate old name "ללא סיווג" → current UNCATEGORIZED_NAME
+    const oldName = "ללא סיווג";
+    if (UNCATEGORIZED_NAME !== oldName) {
+      const old = (memState.categories ?? []).find((c) => c.parentId === null && c.name === oldName);
+      if (old) {
+        setState((s) => ({
+          ...s,
+          categories: (s.categories ?? []).map((c) => c.id === old.id ? { ...c, name: UNCATEGORIZED_NAME } : c),
+        }));
+        bg(supabase.from("categories").update({ name: UNCATEGORIZED_NAME }).eq("id", old.id), "categories.rename.uncategorized");
+        return old.id;
+      }
+    }
     const existing = findUncategorized(memState.categories);
     if (existing) return existing.id;
     const userId = requireUser();
