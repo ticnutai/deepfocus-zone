@@ -541,10 +541,10 @@ const Index = () => {
   }, []);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const { user, signOut, isGuest, guestProfile } = useAuth();
-  const displayEmail = isGuest
-    ? (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח")
-    : user?.email;
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const displayEmail = isGuest
+    ? (isAdmin ? `אורח · ADMIN` : (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח"))
+    : user?.email;
   const previewRoleId = useMemo(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";
@@ -1291,7 +1291,7 @@ const Index = () => {
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                   {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">{displayEmail ?? ""}</div>
+                <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
               </button>
               <button
                 type="button"
@@ -1358,7 +1358,7 @@ const Index = () => {
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                           {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">{displayEmail ?? ""}</div>
+                        <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
                       </button>
                       <button
                         type="button"
