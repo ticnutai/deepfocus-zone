@@ -143,9 +143,11 @@ interface SortableWidgetProps {
   onSetHeight: (h: number | undefined) => void;
   onHide: () => void;
   onToggleCollapse: () => void;
+  quickLayoutOpen: boolean;
+  onToggleQuickLayout: () => void;
 }
 
-function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNext, onMovePrev, onMoveNext, onSetSize, onSetHeight, onHide, onToggleCollapse }: SortableWidgetProps) {
+function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNext, onMovePrev, onMoveNext, onSetSize, onSetHeight, onHide, onToggleCollapse, quickLayoutOpen, onToggleQuickLayout }: SortableWidgetProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cfg.id, disabled: !editMode });
   const collapsed = !!cfg.collapsed;
   const style = {
@@ -202,6 +204,59 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
           <TooltipContent side="left">{collapsed ? "הרחב" : "מזער"}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
+
+      {/* Quick-layout button — visible on hover in normal (non-edit) mode */}
+      {!editMode && !collapsed && (
+        <>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onToggleQuickLayout()}
+                  title="גודל ומיקום"
+                  className={cn(
+                    "absolute left-10 top-0 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                    quickLayoutOpen ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                  )}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">גודל ומיקום</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {quickLayoutOpen && (
+            <div className="absolute top-8 left-2 z-40 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow-lg px-1.5 py-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => { onMovePrev(); onToggleQuickLayout(); }} disabled={!canMovePrev} className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                  </TooltipTrigger>
+                  <TooltipContent>הזז למעלה</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => { onMoveNext(); onToggleQuickLayout(); }} disabled={!canMoveNext} className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
+                  </TooltipTrigger>
+                  <TooltipContent>הזז למטה</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => { onSetSize(cfg.size === "full" ? "half" : "full"); onToggleQuickLayout(); }} className="text-muted-foreground hover:text-gold p-1">{cfg.size === "full" ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</button>
+                  </TooltipTrigger>
+                  <TooltipContent>{cfg.size === "full" ? "הפוך לחצי רוחב" : "הפוך לרוחב מלא"}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button onClick={() => { onHide(); onToggleQuickLayout(); }} className="text-muted-foreground hover:text-destructive p-1"><EyeOff className="h-4 w-4" /></button>
+                  </TooltipTrigger>
+                  <TooltipContent>הסתר "{label}"</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
+        </>
+      )}
 
       {editMode && !collapsed && (
         <div className="absolute top-12 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
@@ -424,14 +479,8 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
       {!editingLocked && (
       <div
         className="flex items-center justify-between gap-2"
-        onMouseEnter={() => {
-          if (toolbarHoverTimer.current) window.clearTimeout(toolbarHoverTimer.current);
-          toolbarHoverTimer.current = window.setTimeout(() => setToolbarVisible(true), 2000);
-        }}
-        onMouseLeave={() => {
-          if (toolbarHoverTimer.current) window.clearTimeout(toolbarHoverTimer.current);
-          setToolbarVisible(false);
-        }}
+        onMouseEnter={() => setToolbarVisible(true)}
+        onMouseLeave={() => setToolbarVisible(false)}
       >
         <div className={`flex items-center gap-2 transition-opacity duration-200 ${toolbarVisible || editMode ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <Button
@@ -522,6 +571,8 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
                     onSetHeight={(h) => setHeight(cfg.id, h)}
                     onHide={() => hideWidget(cfg.id)}
                     onToggleCollapse={() => toggleCollapse(cfg.id)}
+                    quickLayoutOpen={quickLayoutId === cfg.id}
+                    onToggleQuickLayout={() => setQuickLayoutId(quickLayoutId === cfg.id ? null : cfg.id)}
                   >
                     {widgetMap[cfg.id] ?? null}
                   </SortableWidget>
