@@ -134,6 +134,7 @@ export function GuestProfilesTab() {
 
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [profileLabel, setProfileLabel] = useState("");
+  const [profileSourceUserId, setProfileSourceUserId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
