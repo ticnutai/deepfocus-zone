@@ -212,16 +212,6 @@ export function UsersTab() {
     });
   };
 
-  const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
-
-  const toggleSelectAll = () => {
-    if (allVisibleSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(visible.map((p) => p.id)));
-    }
-  };
-
   const bulkDelete = async () => {
     setBusy(true);
     let ok = 0, fail = 0;
@@ -243,6 +233,16 @@ export function UsersTab() {
     (p.email ?? "").toLowerCase().includes(filter.toLowerCase()) ||
     p.id.includes(filter)
   );
+
+  const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(visible.map((p) => p.id)));
+    }
+  };
 
   return (
     <TooltipProvider>
