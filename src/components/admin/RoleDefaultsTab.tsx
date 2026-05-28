@@ -425,7 +425,8 @@ export function RoleDefaultsTab() {
 
   const loadProfileToEditor = (profileId: string) => {
     setSelectedProfileId(profileId);
-    const profile = blockProfiles.find((p) => p.id === profileId);
+    const profile = blockProfiles.find((p) => p.id === profileId)
+      ?? crossScopeProfiles.find((p) => p.id === profileId);
     if (!profile) return;
     setProfileName(profile.name);
     setBlocklist(profile.blocklist);
@@ -977,9 +978,22 @@ export function RoleDefaultsTab() {
               <Select value={selectedProfileId} onValueChange={loadProfileToEditor}>
                 <SelectTrigger className="w-56"><SelectValue placeholder="טען פרופיל חסימה" /></SelectTrigger>
                 <SelectContent>
-                  {blockProfiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
+                  {blockProfiles.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{scopeLabel}</div>
+                      {blockProfiles.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </>
+                  )}
+                  {crossScopeProfiles.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground border-t mt-1 pt-2">{otherScopeLabel} (ייבוא)</div>
+                      {crossScopeProfiles.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </>
+                  )}
                 </SelectContent>
               </Select>
               <Input
