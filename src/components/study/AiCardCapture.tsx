@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb, Move } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,7 @@ type FabPos = { x: number; y: number };
 
 const STYLE_KEY_V2 = "ai_capture_icon_style_v2";
 const POS_KEY_V2 = "ai_capture_icon_pos_v2";
+const DRAG_ENABLED_KEY = "ai_capture_drag_enabled";
 const FAB_PADDING = 12;
 const DRAG_THRESHOLD = 4;
 
@@ -129,6 +130,9 @@ export function AiCardCapture() {
   const [mode, setMode] = useState<Mode>("text");
   const [style, setStyle] = useState<IconStyle>(initialStyle);
   const [pos, setPos] = useState<FabPos>(initialPos);
+  const [dragEnabled, setDragEnabled] = useState<boolean>(
+    readStorageJson<boolean>(DRAG_ENABLED_KEY) ?? state.uiPrefs?.aiButtonDragEnabled ?? false,
+  );
   const [syncState, setSyncState] = useState<"idle" | "saving" | "saved">("idle");
   const [text, setText] = useState("");
   const [imageData, setImageData] = useState<{ base64: string; mime: string; preview: string } | null>(null);
@@ -251,6 +255,22 @@ export function AiCardCapture() {
     finishDrag(e.pointerId);
   }, [dbg, finishDrag]);
 
+  const toggleDragEnabled = useCallback(() => {
+    setDragEnabled((prev) => {
+      const next = !prev;
+      if (next) {
+        // When enabling drag, snap pos to the current fixed bottom-left visual position
+        // so the button stays in place and the user can drag from there.
+        const insets = safeInsets();
+        setPos(clampPos(
+          { x: insets.left + FAB_PADDING, y: window.innerHeight - style.size - insets.bottom - FAB_PADDING },
+          style.size,
+        ));
+      }
+      return next;
+    });
+  }, [style.size]);
+
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
     dbg("keyDown", { key: e.key, shift: e.shiftKey, pos, size: style.size });
     const step = e.shiftKey ? 24 : 12;
@@ -305,7 +325,8 @@ export function AiCardCapture() {
     try {
       localStorage.setItem(STYLE_KEY_V2, JSON.stringify(style));
       localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
-      dbg("persist:localStorage:immediate", { style, pos });
+      localStorage.setItem(DRAG_ENABLED_KEY, JSON.stringify(dragEnabled));
+      dbg("persist:localStorage:immediate", { style, pos, dragEnabled });
     } catch {
       // ignore localStorage errors
     }
@@ -315,7 +336,8 @@ export function AiCardCapture() {
     saveTimerRef.current = window.setTimeout(() => {
       setUiPref("aiButtonStyle", style as any);
       setUiPref("aiButtonPos", pos as any);
-      dbg("persist:setUiPref", { style, pos });
+      setUiPref("aiButtonDragEnabled", dragEnabled);
+      dbg("persist:setUiPref", { style, pos, dragEnabled });
       setSyncState("saved");
       if (savedBadgeTimerRef.current != null) window.clearTimeout(savedBadgeTimerRef.current);
       savedBadgeTimerRef.current = window.setTimeout(() => {
@@ -333,7 +355,7 @@ export function AiCardCapture() {
         saveTimerRef.current = null;
       }
     };
-  }, [dbg, pos, setUiPref, style]);
+  }, [dbg, dragEnabled, pos, setUiPref, style]);
 
   useEffect(() => {
     return () => {
@@ -503,11 +525,20 @@ export function AiCardCapture() {
     ? "שומר מיקום והגדרות"
     : syncState === "saved"
       ? "נשמר"
-      : "AI - גרור או לחץ";
+      : dragEnabled
+        ? "AI — גרור למיקום חדש"
+        : "AI — לחץ לחילוץ שאלות";
 
   return (
     <>
       <button
+        {...(dragEnabled ? {
+          onPointerDown,
+          onPointerMove,
+          onPointerUp,
+          onPointerCancel,
+          onLostPointerCapture,
+        } : {})}
         onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
         title={syncTitle}
@@ -515,8 +546,9 @@ export function AiCardCapture() {
         tabIndex={0}
         style={{
           position: "fixed",
-          left: FAB_PADDING,
-          bottom: FAB_PADDING,
+          ...(dragEnabled
+            ? { left: pos.x, top: pos.y, touchAction: "none" }
+            : { left: FAB_PADDING, bottom: FAB_PADDING }),
           width: style.size,
           height: style.size,
           background: style.bg,
@@ -606,6 +638,21 @@ export function AiCardCapture() {
                           </Button>
                         ))}
                       </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                      <div>
+                        <Label className="text-xs">מיקום חופשי (גרירה)</Label>
+                        {dragEnabled && <div className="text-[10px] text-gold mt-0.5">לחץ על הכפתור וגרור</div>}
+                      </div>
+                      <Button
+                        size="icon"
+                        variant={dragEnabled ? "default" : "outline"}
+                        className="h-8 w-8"
+                        title={dragEnabled ? "נעל למיקום קבוע" : "אפשר גרירה חופשית"}
+                        onClick={toggleDragEnabled}
+                      >
+                        <Move className="h-4 w-4" />
+                      </Button>
                     </div>
                     <Button size="sm" variant="ghost" className="w-full" onClick={() => setStyle(DEFAULT_STYLE)}>איפוס</Button>
                   </PopoverContent>

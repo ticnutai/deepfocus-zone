@@ -277,8 +277,9 @@ export interface UiPrefs {
   mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)
   syncEnabled?: boolean;
-  // Floating AI button — position and appearance, synced across devices
+  // Floating AI button — position, appearance, and drag-enabled flag, synced across devices
   aiButtonPos?: { x: number; y: number };
+  aiButtonDragEnabled?: boolean;
   // Anthropic API key for AI question generation (stored in user account)
   anthropicApiKey?: string;
   // CategoryExplorerView: the category id that opens by default on load
