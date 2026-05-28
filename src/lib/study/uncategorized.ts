@@ -7,7 +7,7 @@ import type { Category } from "./types";
  *  - Auto-created on first use (when a card lacks any cat: tag,
  *    or when a deck is created without picking a category).
  */
-export const UNCATEGORIZED_NAME = "ללא סיווג";
+export const UNCATEGORIZED_NAME = "כללי";
 
 export function findUncategorized(categories: Category[] | undefined): Category | undefined {
   return (categories ?? []).find(
