@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import {
   UserPlus, X, Search, CheckCircle2, XCircle, Clock, Pencil, Trash2, Plus, MoreHorizontal, KeyRound,
+  CheckSquare2, Square,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -63,6 +64,9 @@ export function UsersTab() {
 
   const [pwdTarget, setPwdTarget] = useState<Profile | null>(null);
   const [newPwd, setNewPwd] = useState("");
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDelConfirm, setBulkDelConfirm] = useState(false);
 
   const load = async () => {
     const [{ data: p }, { data: r }, { data: ur }] = await Promise.all([
@@ -200,6 +204,39 @@ export function UsersTab() {
     setNewPwd("");
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(visible.map((p) => p.id)));
+    }
+  };
+
+  const bulkDelete = async () => {
+    setBusy(true);
+    let ok = 0, fail = 0;
+    for (const id of selected) {
+      const { error } = await supabase.rpc("admin_delete_user", { p_user_id: id });
+      if (error) fail++; else ok++;
+    }
+    setBusy(false);
+    setBulkDelConfirm(false);
+    setSelected(new Set());
+    if (ok) toast.success(`${ok} משתמשים נמחקו`);
+    if (fail) toast.error(`${fail} נכשלו`);
+    load();
+  };
+
   const visible = profiles.filter((p) =>
     !filter ||
     p.display_name?.toLowerCase().includes(filter.toLowerCase()) ||
@@ -220,6 +257,21 @@ export function UsersTab() {
             className="flex-1 min-w-[200px] text-right"
           />
           <Badge variant="outline" className="border-gold/60 shrink-0">{visible.length}</Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={toggleSelectAll}
+                className={`h-8 w-8 shrink-0 transition-colors ${allVisibleSelected ? "text-gold" : "text-muted-foreground hover:text-gold"}`}
+              >
+                {allVisibleSelected
+                  ? <CheckSquare2 className="h-4 w-4" />
+                  : <Square className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{allVisibleSelected ? "נקה הכל" : "בחר הכל"}</TooltipContent>
+          </Tooltip>
           <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetAddForm(); }}>
             <DialogTrigger asChild>
               <Button className="gap-1 bg-gradient-navy text-primary-foreground hover:opacity-90">
@@ -329,6 +381,21 @@ export function UsersTab() {
           </Dialog>
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 bg-gold/10 border border-gold/40 rounded-lg px-3 py-2 flex-wrap">
+            <span className="text-sm font-medium">{selected.size} נבחרו</span>
+            <div className="flex-1" />
+            <Button size="sm" variant="outline" onClick={() => setSelected(new Set())} className="h-7 text-xs border-gold/50">
+              נקה בחירה
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => setBulkDelConfirm(true)} disabled={busy} className="h-7 text-xs gap-1">
+              <Trash2 className="h-3 w-3" />
+              מחק {selected.size} נבחרים
+            </Button>
+          </div>
+        )}
+
         {/* User list */}
         <div className="space-y-2">
           {visible.map((p) => {
@@ -336,8 +403,9 @@ export function UsersTab() {
             const availableRoles = roles.filter((r) => !userRolesList.find((ur) => ur.id === r.id));
             const isMe = p.id === me?.id;
             return (
-              <div key={p.id} className="rounded-xl border-2 border-gold/40 bg-card p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div key={p.id} className={`rounded-xl border-2 p-3 space-y-2 transition-colors ${selected.has(p.id) ? "border-gold bg-gold/5" : "border-gold/40 bg-card"}`}>
+                <div className="flex items-start gap-2 flex-wrap">
+                  <div className="flex-1 min-w-0 flex items-start justify-between gap-2 flex-wrap">
                   <div className="space-y-0.5 min-w-0 flex-1 text-right">
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                       {isMe && <Badge variant="outline" className="text-xs border-gold/60">אתה</Badge>}
@@ -455,6 +523,16 @@ export function UsersTab() {
                       </>
                     )}
                   </div>
+                  </div>
+                  <button
+                    onClick={() => toggleSelect(p.id)}
+                    className="shrink-0 mt-0.5 text-muted-foreground hover:text-gold transition-colors"
+                    title={selected.has(p.id) ? "בטל בחירה" : "בחר"}
+                  >
+                    {selected.has(p.id)
+                      ? <CheckSquare2 className="h-5 w-5 text-gold" />
+                      : <Square className="h-5 w-5" />}
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -540,6 +618,24 @@ export function UsersTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Bulk delete confirm */}
+        <AlertDialog open={bulkDelConfirm} onOpenChange={(o) => !o && setBulkDelConfirm(false)}>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-right">מחיקת {selected.size} משתמשים</AlertDialogTitle>
+              <AlertDialogDescription className="text-right">
+                האם למחוק את {selected.size} המשתמשים הנבחרים? פעולה זו אינה הפיכה.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex-row-reverse">
+              <AlertDialogAction onClick={bulkDelete} disabled={busy} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                מחק הכל
+              </AlertDialogAction>
+              <AlertDialogCancel>ביטול</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete confirm */}
         <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
