@@ -411,7 +411,7 @@ export function GuestProfilesTab() {
     return seed;
   }, [studyState.cardDecks, studyState.cards, studyState.categories, studyState.deckCategories, studyState.decks]);
 
-  const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string }) => {
+  const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string; sourceUserId?: string | null }) => {
     const role = roles.find((r) => r.id === opts.roleId);
     if (!role) throw new Error("תפקיד לא נמצא");
 
@@ -452,6 +452,7 @@ export function GuestProfilesTab() {
       sidebarConfig: (defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleLayoutDefaultsRow["sidebar_config"] | undefined,
       widgetLayout: (defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleLayoutDefaultsRow["widget_layout"] | undefined,
       studySeed: studySeed ?? existing?.studySeed,
+      sourceUserId: opts.sourceUserId !== undefined ? opts.sourceUserId : (existing?.sourceUserId ?? null),
     });
   }, [buildGuestStudySeed, roles]);
 
