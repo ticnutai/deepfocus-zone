@@ -784,7 +784,11 @@ const isAbortError = (error: unknown) => {
 
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
   const isGuest = currentUserId === GUEST_ID;
-  const rpcName = isGuest ? "get_guest_category_children" : "get_category_children";
+  const rpcName = isGuest ? "get_guest_category_children_for" : "get_category_children";
+  const guestSourceUid = isGuest ? getActiveGuestSourceUserId() : null;
+  const body = isGuest
+    ? JSON.stringify({ p_source_user_id: guestSourceUid, p_parent_id: parentId })
+    : JSON.stringify({ p_parent_id: parentId });
   const callRpc = async (name: string, accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
@@ -792,7 +796,7 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
       apikey: SUPABASE_PUBLISHABLE_KEY,
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ p_parent_id: parentId }),
+    body,
     signal,
   });
 
