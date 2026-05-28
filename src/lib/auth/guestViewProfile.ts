@@ -55,6 +55,12 @@ export interface GuestViewProfile {
   tabConfig?: TabConfig[];
   widgetLayout?: WidgetLayout;
   studySeed?: GuestStudySeed;
+  /**
+   * Optional registered-user id whose cloud data (categories/cards/decks) this
+   * guest profile should mirror. When null/undefined, falls back to the global
+   * guest_source site-setting.
+   */
+  sourceUserId?: string | null;
   createdAt: number;
   updatedAt: number;
 }
