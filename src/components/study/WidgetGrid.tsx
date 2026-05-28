@@ -48,6 +48,7 @@ import {
   ChevronsUpDown,
   ChevronUp,
   ChevronDown,
+  Settings2,
 } from "lucide-react";
 
 // Drag handle that appears on the right edge — drags left/right to toggle half ↔ full width
@@ -298,6 +299,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const { state, setWidgetLayout } = useStudy();
   const isMobile = useIsMobile();
   const [editMode, setEditMode] = useState(false);
+  const [quickLayoutId, setQuickLayoutId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showHiddenTray, setShowHiddenTray] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(false);
@@ -557,6 +559,65 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
                 >
                   {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                 </button>
+                {/* Quick-layout button — only in non-edit mode, hover visible */}
+                {!editMode && !collapsed && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setQuickLayoutId(quickLayoutId === cfg.id ? null : cfg.id); }}
+                      title="גודל ומיקום"
+                      className={cn(
+                        "absolute left-10 top-0 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                        quickLayoutId === cfg.id ? "opacity-100 text-gold" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      )}
+                    >
+                      <Settings2 className="h-4 w-4" />
+                    </button>
+                    {quickLayoutId === cfg.id && (
+                      <div className="absolute top-8 left-2 z-40 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow-lg px-1.5 py-1">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => { moveWidgetBy(cfg.id, -1); setQuickLayoutId(null); }}
+                                disabled={index === 0}
+                                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-30"
+                              ><ArrowUp className="h-4 w-4" /></button>
+                            </TooltipTrigger>
+                            <TooltipContent>הזז למעלה</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => { moveWidgetBy(cfg.id, 1); setQuickLayoutId(null); }}
+                                disabled={index === visibleWidgets.length - 1}
+                                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-30"
+                              ><ArrowDown className="h-4 w-4" /></button>
+                            </TooltipTrigger>
+                            <TooltipContent>הזז למטה</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => { toggleSize(cfg.id); setQuickLayoutId(null); }}
+                                className="text-muted-foreground hover:text-gold p-1"
+                              >{cfg.size === "full" ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</button>
+                            </TooltipTrigger>
+                            <TooltipContent>{cfg.size === "full" ? "הפוך לחצי רוחב" : "הפוך לרוחב מלא"}</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => { hideWidget(cfg.id); setQuickLayoutId(null); }}
+                                className="text-muted-foreground hover:text-destructive p-1"
+                              ><EyeOff className="h-4 w-4" /></button>
+                            </TooltipTrigger>
+                            <TooltipContent>הסתר "{label}"</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    )}
+                  </>
+                )}
                 {editMode && !collapsed && (
                   <div className="absolute top-2 right-2 z-20 flex items-center gap-1 bg-background/95 backdrop-blur rounded-xl border border-gold/40 shadow px-1.5 py-1">
                     <button
