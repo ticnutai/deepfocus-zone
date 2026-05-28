@@ -25,6 +25,12 @@ import {
   type LayoutScope,
 } from "./layoutProfiles";
 import { supabase } from "@/integrations/supabase/client";
+import { getActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
+
+/** Active guest profile's pinned source user id, or null to use the global guest_source. */
+const getActiveGuestSourceUserId = (): string | null => {
+  try { return getActiveGuestViewProfile()?.sourceUserId ?? null; } catch { return null; }
+};
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
