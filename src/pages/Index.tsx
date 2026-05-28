@@ -544,7 +544,7 @@ const Index = () => {
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
   const displayEmail = isGuest
     ? (isAdmin ? `אורח · ADMIN` : (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח"))
-    : user?.email;
+    : (isAdmin ? `${user?.email} · ADMIN` : user?.email);
   const previewRoleId = useMemo(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";

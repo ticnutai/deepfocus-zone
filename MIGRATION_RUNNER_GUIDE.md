@@ -1,24 +1,30 @@
-# 🚀 מדריך הרצת מיגרציות — smart-hebrew-transcriber
+# 🚀 מדריך הרצת מיגרציות — deepfocus-zone
+
+## פרטי הפרויקט
+- **תיקייה:** `c:\Users\jj121\OneDrive\שולחן העבודה\deepfocus-zone`
+- **Supabase URL:** `https://elfxevuxhffxskooppca.supabase.co`
+- **Project ID:** `elfxevuxhffxskooppca`
+- **Admin:** `jj1212t@gmail.com` / `543211`
 
 ## מה זה עושה?
-הכלי מריץ SQL על Supabase דרך Edge Function בשם `run-migration`.
+הכלי מריץ SQL על Supabase דרך RPC בשם `exec_sql`.
 
-בפרויקט הזה הכלי הרשמי הוא:
+הכלי הרשמי הוא:
 
 ```text
-scripts/direct-run.mjs
+scripts/run-migration.mjs
 ```
 
 ## שלב 1: כניסה לתיקיית הפרויקט
 
 ```powershell
-cd "c:\Users\jj121\smart-hebrew-transcriber"
+cd "c:\Users\jj121\OneDrive\שולחן העבודה\deepfocus-zone"
 ```
 
 ## שלב 2: הרצת מיגרציה מקובץ SQL
 
 ```powershell
-node scripts/direct-run.mjs file "supabase/migrations/20260405143000_add_compare_settings_json.sql"
+node scripts/run-migration.mjs file "supabase/migrations/<filename>.sql"
 ```
 
 זה השימוש הכי מומלץ למיגרציות אמיתיות.
@@ -26,35 +32,25 @@ node scripts/direct-run.mjs file "supabase/migrations/20260405143000_add_compare
 ## שלב 3: הרצת SQL ישיר (מהיר)
 
 ```powershell
-node scripts/direct-run.mjs sql "SELECT now();" "health_check"
+node scripts/run-migration.mjs sql "SELECT now();" "health_check"
 ```
 
 השם בסוף (`health_check`) הוא אופציונלי ונועד ללוגים.
 
-## איך מזינים סיסמה?
+## איך מזינים פרטי התחברות?
 
-יש 2 אפשרויות:
-
-1. אינטראקטיבי: הכלי יבקש סיסמה בטרמינל.
-2. Environment Variable:
+ברירת מחדל הכלי משתמש ב-`jj1212t@gmail.com` / `543211` אוטומטית.
+אפשר לדרוס עם Environment Variables:
 
 ```powershell
-$env:ADMIN_PASSWORD="your_password_here"
-node scripts/direct-run.mjs file "supabase/migrations/20260405143000_add_compare_settings_json.sql"
+$env:ADMIN_EMAIL="jj1212t@gmail.com"; $env:ADMIN_PASSWORD="543211"
+node scripts/run-migration.mjs file "supabase/migrations/<filename>.sql"
 ```
 
-אופציונלי אפשר גם לשנות אימייל אדמין:
-
-```powershell
-$env:ADMIN_EMAIL="jj1212t@gmail.com"
-```
-
-## פקודות נתמכות בכלי הזה
+## פקודות נתמכות
 
 1. `file <path>`
 2. `sql "..." [name]`
-
-הערה חשובה: הפקודה `pending` לא נתמכת בגרסה הנוכחית של הכלי בפרויקט הזה.
 
 ## איפה שמים קבצי מיגרציה?
 
@@ -65,7 +61,7 @@ supabase/migrations/
 דוגמה לשם טוב:
 
 ```text
-20260405143000_add_compare_settings_json.sql
+20260528120000_add_some_feature.sql
 ```
 
 ## בדיקה אחרי הרצה
@@ -79,19 +75,9 @@ supabase/migrations/
 
 ## פתרון תקלות מהיר
 
-1. `Login failed`
-  הסיסמה/אימייל לא נכונים או שאין הרשאות.
-2. `Edge function error`
-  בדוק ש-`run-migration` פרוסה ופעילה.
-3. `syntax error`
-  יש שגיאת SQL בקובץ.
-
-## דוגמה מלאה להרצת המיגרציה החדשה של compare settings
-
-```powershell
-cd "c:\Users\jj121\smart-hebrew-transcriber"
-node scripts/direct-run.mjs file "supabase/migrations/20260405143000_add_compare_settings_json.sql"
-```
+1. `Login failed` — הסיסמה/אימייל לא נכונים
+2. `exec_sql returned failure: Admin access required` — המשתמש לא ב-whitelist של exec_sql
+3. `syntax error` — יש שגיאת SQL בקובץ
 
 ## סיכום קצר
 
