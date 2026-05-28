@@ -86,7 +86,12 @@ export function RoleDefaultsTab() {
   const [roleAssignments, setRoleAssignments] = useState<RoleBlocklistAssignment[]>([]);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>("");
+  const [crossScopeProfiles, setCrossScopeProfiles] = useState<FeatureBlocklistProfile[]>([]);
+  const [importFromCrossId, setImportFromCrossId] = useState<string>("");
+  const [importingCross, setImportingCross] = useState(false);
   const scopeLabel = layoutScope === "mobile" ? "מובייל" : "מחשב";
+  const otherScopeLabel = layoutScope === "mobile" ? "מחשב" : "מובייל";
+  const otherScope: BlocklistScope = layoutScope === "mobile" ? "desktop" : "mobile";
 
   const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
@@ -101,16 +106,20 @@ export function RoleDefaultsTab() {
         const userRole = data.find((r) => r.name === "user");
         setSelectedRole(userRole?.id ?? data[0]?.id ?? "");
       }
-      const [bl, profiles, assignments, loadedLayoutProfiles, loadedLayoutAssignments] = await Promise.all([
+      const otherScp: BlocklistScope = layoutScope === "mobile" ? "desktop" : "mobile";
+      const [bl, profiles, assignments, loadedLayoutProfiles, loadedLayoutAssignments, crossProfiles] = await Promise.all([
         loadFeatureBlocklist({ scope: layoutScope as BlocklistScope }),
         loadFeatureBlocklistProfiles({ scope: layoutScope as BlocklistScope }),
         loadRoleBlocklistAssignments({ scope: layoutScope as BlocklistScope }),
         loadRoleLayoutProfiles({ scope: layoutScope }),
         loadRoleLayoutProfileAssignments({ scope: layoutScope }),
+        loadFeatureBlocklistProfiles({ scope: otherScp }),
       ]);
       setBlocklist(bl);
       setBlockProfiles(profiles);
       setRoleAssignments(assignments);
+      setCrossScopeProfiles(crossProfiles);
+      setImportFromCrossId(crossProfiles[0]?.id ?? "");
       setLayoutProfiles(loadedLayoutProfiles);
       setLayoutAssignments(loadedLayoutAssignments);
 
@@ -422,6 +431,29 @@ export function RoleDefaultsTab() {
     setBlocklist(profile.blocklist);
   };
 
+  const importCrossScopeProfile = async () => {
+    const source = crossScopeProfiles.find((p) => p.id === importFromCrossId);
+    if (!source) return;
+    setImportingCross(true);
+    try {
+      const now = Date.now();
+      // Generate a new id so it doesn't collide with the source scope's id
+      const newId = uid();
+      const imported: FeatureBlocklistProfile = { id: newId, name: source.name, blocklist: source.blocklist, updatedAt: now };
+      const next = [imported, ...blockProfiles].sort((a, b) => b.updatedAt - a.updatedAt);
+      await saveFeatureBlocklistProfiles(next, { scope: layoutScope as BlocklistScope });
+      setBlockProfiles(next);
+      setSelectedProfileId(newId);
+      setProfileName(source.name);
+      setBlocklist(source.blocklist);
+      toast.success(`פרופיל "${source.name}" יובא מ${otherScopeLabel} בהצלחה`);
+    } catch (e) {
+      toast.error("ייבוא נכשל: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setImportingCross(false);
+    }
+  };
+
   const saveNamedProfile = async () => {
     const trimmed = profileName.trim();
     if (!trimmed) {
@@ -720,6 +752,23 @@ export function RoleDefaultsTab() {
                 </p>
               </div>
             </div>
+
+            {crossScopeProfiles.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded border border-dashed border-gold/40 bg-muted/10 px-3 py-2">
+                <span className="text-xs text-muted-foreground font-semibold">ייבא פרופיל מ{otherScopeLabel}:</span>
+                <Select value={importFromCrossId} onValueChange={setImportFromCrossId}>
+                  <SelectTrigger className="w-52 h-8 text-xs"><SelectValue placeholder={`בחר פרופיל מ${otherScopeLabel}`} /></SelectTrigger>
+                  <SelectContent>
+                    {crossScopeProfiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => void importCrossScopeProfile()} disabled={importingCross || !importFromCrossId}>
+                  {importingCross ? "מייבא..." : `ייבא ל${scopeLabel}`}
+                </Button>
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3 rounded border-2 border-gold/20 bg-muted/20 p-3">
               <span className="text-sm font-semibold">תפקיד:</span>
