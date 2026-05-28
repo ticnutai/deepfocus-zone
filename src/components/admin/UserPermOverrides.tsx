@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { UserCog, X, RefreshCw } from "lucide-react";
+import { UserCog, X, RefreshCw, CheckCheck, Ban } from "lucide-react";
 
 const MODULES = ["decks","cards","goals","shas","analytics","users","roles","settings"] as const;
 const ACTIONS  = ["view","create","edit","delete","manage"] as const;
@@ -111,6 +111,53 @@ export function UserPermOverrides() {
     toast.success("כל הדריסות נמחקו — משתמש יחזור לברירת מחדל של תפקידיו");
   };
 
+  const setModuleRow = async (module: string, allowed: boolean) => {
+    if (!selectedUser) return;
+    setBusy(true);
+    const rows = ACTIONS.map((a) => ({
+      user_id: selectedUser, module, action: a, allowed, set_by: me?.id ?? null,
+    }));
+    const { data, error } = await supabase
+      .from("user_permission_overrides")
+      .upsert(rows, { onConflict: "user_id,module,action" })
+      .select();
+    if (error) { toast.error(error.message); setBusy(false); return; }
+    setOverrides((arr) => [
+      ...arr.filter((o) => o.module !== module),
+      ...(data as Override[]),
+    ]);
+    setBusy(false);
+  };
+
+  const clearModuleRow = async (module: string) => {
+    if (!selectedUser) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from("user_permission_overrides")
+      .delete()
+      .eq("user_id", selectedUser)
+      .eq("module", module);
+    if (error) { toast.error(error.message); setBusy(false); return; }
+    setOverrides((arr) => arr.filter((o) => o.module !== module));
+    setBusy(false);
+  };
+
+  const setAllOverrides = async (allowed: boolean) => {
+    if (!selectedUser) return;
+    setBusy(true);
+    const rows = MODULES.flatMap((m) =>
+      ACTIONS.map((a) => ({ user_id: selectedUser, module: m, action: a, allowed, set_by: me?.id ?? null }))
+    );
+    const { data, error } = await supabase
+      .from("user_permission_overrides")
+      .upsert(rows, { onConflict: "user_id,module,action" })
+      .select();
+    if (error) { toast.error(error.message); setBusy(false); return; }
+    setOverrides(data as Override[]);
+    toast.success(allowed ? "כל ההרשאות הופעלו" : "כל ההרשאות נחסמו");
+    setBusy(false);
+  };
+
   const selectedProfile = profiles.find((p) => p.id === selectedUser);
 
   return (
@@ -134,11 +181,23 @@ export function UserPermOverrides() {
               </SelectContent>
             </Select>
           </div>
-          {overrides.length > 0 && (
-            <Button size="sm" variant="outline" onClick={clearAllOverrides} disabled={busy}
-              className="gap-1 border-gold/60 text-muted-foreground">
-              <RefreshCw className="h-3 w-3" /> אפס הכל לברירת מחדל
-            </Button>
+          {selectedUser && (
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={() => setAllOverrides(true)} disabled={busy}
+                className="gap-1 border-green-500/60 text-green-700 dark:text-green-400">
+                <CheckCheck className="h-3 w-3" /> אפשר הכל
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setAllOverrides(false)} disabled={busy}
+                className="gap-1 border-destructive/60 text-destructive">
+                <Ban className="h-3 w-3" /> חסום הכל
+              </Button>
+              {overrides.length > 0 && (
+                <Button size="sm" variant="outline" onClick={clearAllOverrides} disabled={busy}
+                  className="gap-1 border-gold/60 text-muted-foreground">
+                  <RefreshCw className="h-3 w-3" /> אפס הכל לברירת מחדל
+                </Button>
+              )}
+            </div>
           )}
         </div>
 
@@ -176,7 +235,33 @@ export function UserPermOverrides() {
                 <tbody>
                   {MODULES.map((m) => (
                     <tr key={m} className="border-t border-gold/20 hover:bg-secondary/40">
-                      <td className="p-2 font-medium text-foreground">{MODULE_LABEL[m]}</td>
+                      <td className="p-2 font-medium text-foreground">
+                        <div className="flex items-center justify-between gap-1 min-w-[6rem]">
+                          <span>{MODULE_LABEL[m]}</span>
+                          <div className="flex gap-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button onClick={() => setModuleRow(m, true)} disabled={busy}
+                                  className="text-green-600 hover:text-green-700 p-0.5 rounded"
+                                  aria-label="אפשר שורה">
+                                  <CheckCheck className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>אפשר כל פעולות {MODULE_LABEL[m]}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button onClick={() => clearModuleRow(m)} disabled={busy}
+                                  className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                                  aria-label="נקה שורה">
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>נקה דריסות {MODULE_LABEL[m]}</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </td>
                       {ACTIONS.map((a) => {
                         const key = `${m}:${a}`;
                         const override = overrideMap[key];
