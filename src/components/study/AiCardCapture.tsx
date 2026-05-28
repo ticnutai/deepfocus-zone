@@ -508,26 +508,20 @@ export function AiCardCapture() {
   return (
     <>
       <button
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-        onLostPointerCapture={onLostPointerCapture}
-        onClick={(e) => e.stopPropagation()}
+        onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
         title={syncTitle}
         aria-label={syncTitle}
         tabIndex={0}
         style={{
           position: "fixed",
-          left: pos.x,
-          top: pos.y,
+          left: FAB_PADDING,
+          bottom: FAB_PADDING,
           width: style.size,
           height: style.size,
           background: style.bg,
           color: style.color,
           borderRadius: style.shape === "circle" ? "9999px" : style.shape === "rounded" ? "16px" : "4px",
-          touchAction: "none",
         }}
         className="z-40 shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-150 select-none flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
       >
