@@ -278,13 +278,14 @@ function SidebarRow({
 function FolderTileBase({
   cat, count, mastery, iconSize, isMultiSelected, isRenaming, isFavorite,
   selectionMode, isHome,
-  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
+  onOpen, onSelect, onToggleSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
   showCount = true, showMastery = true,
 }: {
   cat: Category; count: number; mastery: number | null; iconSize: IconSize;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
   selectionMode: boolean; isHome?: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
+  onToggleSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
   onSetHome?: () => void;
@@ -350,11 +351,11 @@ function FolderTileBase({
           {count}
         </span>
       )}
-      {/* Selection circle — top left, visible in selection mode; otherwise show favorite star */}
-      {selectionMode ? (
+      {/* Selection circle — top left; visible always in selection mode, on hover when not in selection mode */}
+      {(selectionMode || hovered) ? (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSelect(e); }}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(e); }}
           className={cn(
             "absolute top-1.5 left-1.5 h-4 w-4 rounded-full border-2 flex items-center justify-center z-10 transition-all",
             isMultiSelected
@@ -462,13 +463,14 @@ const FolderTile = memo(FolderTileBase, (p, n) =>
 function FolderListRowBase({
   cat, count, mastery, isMultiSelected, isRenaming, isFavorite,
   selectionMode, isHome,
-  onOpen, onSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
+  onOpen, onSelect, onToggleSelect, onAdd, onStudy, onRenameSubmit, onCancelRename, onSetHome,
   showCount = true, showMastery = true, compact = false,
 }: {
   cat: Category; count: number; mastery: number | null;
   isMultiSelected: boolean; isRenaming: boolean; isFavorite: boolean;
   selectionMode: boolean; isHome?: boolean;
   onOpen: (e: React.MouseEvent) => void; onSelect: (e: React.MouseEvent) => void;
+  onToggleSelect: (e: React.MouseEvent) => void;
   onAdd: () => void;
   onStudy?: () => void;
   onSetHome?: () => void;
@@ -520,10 +522,10 @@ function FolderListRowBase({
         isDragging && "opacity-40",
       )}
     >
-      {selectionMode ? (
+      {(selectionMode || hovered) ? (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSelect(e); }}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(e); }}
           className={cn(
             "h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
             isMultiSelected
@@ -1742,36 +1744,40 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   };
 
   /* === Keyboard shortcuts === */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
-      if (!containerRef.current?.contains(document.activeElement) && document.activeElement !== document.body) return;
+  // Stable keyboard handler via ref indirection — no re-registration on every selection change.
+  // Escape always fires regardless of focus; other shortcuts require focus inside the container.
+  const onKeyHandlerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  onKeyHandlerRef.current = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    // For non-Escape shortcuts: require focus inside the explorer container (or body)
+    if (e.key !== "Escape" && !containerRef.current?.contains(document.activeElement) && document.activeElement !== document.body) return;
 
-      if (e.key === "Delete" && multiSelected.size > 0) { e.preventDefault(); handleBulkDelete(); }
-      else if (e.key === "F2" && multiSelected.size === 1) { e.preventDefault(); setRenamingId([...multiSelected][0]); }
-      else if (e.key === "Enter" && multiSelected.size === 1) {
-        e.preventDefault();
-        const cat = categories.find((c) => c.id === [...multiSelected][0]);
-        if (cat) enterFolder(cat);
-      }
-      else if (e.key === "Backspace" && currentParentId) {
-        e.preventDefault();
-        const parent = categories.find((c) => c.id === currentParentId);
-        navigateTreeOnly(parent?.parentId ?? null);
-      }
-      else if (e.key === "Escape") { setMultiSelected(new Set()); setRenamingId(null); }
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setMultiSelected(new Set(visibleFolders.map((c) => c.id)));
-      }
-      else if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); goBack(); } // RTL: right=back
-      else if (e.altKey && e.key === "ArrowLeft")  { e.preventDefault(); goForward(); }
-    };
+    if (e.key === "Delete" && multiSelected.size > 0) { e.preventDefault(); handleBulkDelete(); }
+    else if (e.key === "F2" && multiSelected.size === 1) { e.preventDefault(); setRenamingId([...multiSelected][0]); }
+    else if (e.key === "Enter" && multiSelected.size === 1) {
+      e.preventDefault();
+      const cat = categories.find((c) => c.id === [...multiSelected][0]);
+      if (cat) enterFolder(cat);
+    }
+    else if (e.key === "Backspace" && currentParentId) {
+      e.preventDefault();
+      const parent = categories.find((c) => c.id === currentParentId);
+      navigateTreeOnly(parent?.parentId ?? null);
+    }
+    else if (e.key === "Escape") { setMultiSelected(new Set()); setRenamingId(null); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      setMultiSelected(new Set(visibleFolders.map((c) => c.id)));
+    }
+    else if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); goBack(); } // RTL: right=back
+    else if (e.altKey && e.key === "ArrowLeft")  { e.preventDefault(); goForward(); }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyHandlerRef.current?.(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [multiSelected, visibleFolders, categories, currentParentId, history, historyIdx]);
+  }, []); // stable — reads current state via ref indirection
 
   /* === Add category to a "מערכת" (deck) — opens card picker === */
   const addCategoryToDeck = useCallback((cat: Category, deckId: string) => {
@@ -2837,6 +2843,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   isHome={homeCategoryId === cat.id}
                                   onOpen={() => enterFolder(cat)}
                                   onSelect={(e) => handleSelectFolder(cat, e)}
+                                  onToggleSelect={() => toggleMarkedCategory(cat.id)}
                                   onAdd={() => openAddQuestions(cat.name)}
                                   onStudy={onStudyCategory ? () => onStudyCategory(cat.name) : undefined}
                                   onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
@@ -2872,6 +2879,7 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
                                   isHome={homeCategoryId === cat.id}
                                   onOpen={() => enterFolder(cat)}
                                   onSelect={(e) => handleSelectFolder(cat, e)}
+                                  onToggleSelect={() => toggleMarkedCategory(cat.id)}
                                   onAdd={() => openAddQuestions(cat.name)}
                                   onStudy={onStudyCategory ? () => onStudyCategory(cat.name) : undefined}
                                   onSetHome={() => setHomeCategory(homeCategoryId === cat.id ? null : cat.id)}
