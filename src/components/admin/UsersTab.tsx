@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
-  UserPlus, X, Search, CheckCircle2, XCircle, Clock, Pencil, Trash2, Plus, MoreHorizontal,
+  UserPlus, X, Search, CheckCircle2, XCircle, Clock, Pencil, Trash2, Plus, MoreHorizontal, KeyRound,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -60,6 +60,9 @@ export function UsersTab() {
   const [editEmail, setEditEmail] = useState("");
 
   const [deleting, setDeleting] = useState<Profile | null>(null);
+
+  const [pwdTarget, setPwdTarget] = useState<Profile | null>(null);
+  const [newPwd, setNewPwd] = useState("");
 
   const load = async () => {
     const [{ data: p }, { data: r }, { data: ur }] = await Promise.all([
@@ -183,6 +186,18 @@ export function UsersTab() {
     toast.success("המשתמש נמחק");
     setDeleting(null);
     load();
+  };
+
+  const savePassword = async () => {
+    if (!pwdTarget) return;
+    if (newPwd.length < 6) { toast.error("סיסמה חייבת להכיל לפחות 6 תווים"); return; }
+    setBusy(true);
+    const { error } = await supabase.rpc("admin_set_password", { p_user_id: pwdTarget.id, p_password: newPwd } as never);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success("הסיסמה עודכנה — המשתמש יכול כעת להיכנס עם דוא\"ל וסיסמה");
+    setPwdTarget(null);
+    setNewPwd("");
   };
 
   const visible = profiles.filter((p) =>
@@ -363,6 +378,9 @@ export function UsersTab() {
                           <DropdownMenuItem onClick={() => startEdit(p)} disabled={busy}>
                             עריכה
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setPwdTarget(p); setNewPwd(""); }} disabled={busy}>
+                            הגדר סיסמה
+                          </DropdownMenuItem>
                           {!isMe && (
                             <DropdownMenuItem onClick={() => setDeleting(p)} disabled={busy}>
                               מחיקה
@@ -413,6 +431,15 @@ export function UsersTab() {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>עריכה</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant="ghost" onClick={() => { setPwdTarget(p); setNewPwd(""); }} disabled={busy}
+                              className="h-8 w-8 text-violet-600 hover:bg-violet-50">
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>הגדר סיסמה</TooltipContent>
                         </Tooltip>
                         {!isMe && (
                           <Tooltip>
@@ -483,6 +510,33 @@ export function UsersTab() {
             <DialogFooter className="flex-row-reverse">
               <Button onClick={saveEdit} disabled={busy}>שמור</Button>
               <Button variant="outline" onClick={() => setEditing(null)}>ביטול</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Set password dialog */}
+        <Dialog open={!!pwdTarget} onOpenChange={(o) => { if (!o) { setPwdTarget(null); setNewPwd(""); } }}>
+          <DialogContent className="max-w-sm" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-right">הגדרת סיסמה</DialogTitle>
+              <DialogDescription className="text-right">
+                {pwdTarget?.display_name || pwdTarget?.email} — המשתמש יוכל להיכנס עם דוא"ל וסיסמה.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1">
+              <Label className="text-right block">סיסמה חדשה (לפחות 6 תווים)</Label>
+              <Input
+                value={newPwd}
+                onChange={(e) => setNewPwd(e.target.value)}
+                type="password"
+                dir="ltr"
+                placeholder="••••••••"
+                onKeyDown={(e) => e.key === "Enter" && savePassword()}
+              />
+            </div>
+            <DialogFooter className="flex-row-reverse">
+              <Button onClick={savePassword} disabled={busy || newPwd.length < 6}>שמור סיסמה</Button>
+              <Button variant="outline" onClick={() => { setPwdTarget(null); setNewPwd(""); }}>ביטול</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
