@@ -134,6 +134,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
         tabConfig: Array.isArray(p.tabConfig) ? p.tabConfig : undefined,
         widgetLayout: p.widgetLayout && typeof p.widgetLayout === "object" ? p.widgetLayout : undefined,
         studySeed: normalizeSeed(p.studySeed),
+        sourceUserId: typeof p.sourceUserId === "string" && p.sourceUserId ? p.sourceUserId : null,
         createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
         updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
       };
