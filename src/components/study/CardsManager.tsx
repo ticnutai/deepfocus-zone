@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, memo } from "react";
-import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download, X } from "lucide-react";
+import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download, X, CheckSquare, Square, Search } from "lucide-react";
 import { useMultiSelect } from "@/hooks/useMultiSelect";
 import { MultiSelectToolbar } from "@/components/study/MultiSelectToolbar";
 import {
@@ -548,17 +548,25 @@ function CardsManager() {
     return arr;
   }, [deckCards, cardSort, cardSortDir]);
 
+  const [cardSearch, setCardSearch] = useState("");
+
+  const searchedDeckCards = useMemo(() => {
+    if (!cardSearch.trim()) return sortedDeckCards;
+    const q = cardSearch.trim().toLowerCase();
+    return sortedDeckCards.filter((c) => c.question.toLowerCase().includes(q));
+  }, [sortedDeckCards, cardSearch]);
+
   useEffect(() => {
     setVisibleCardsCount(60);
-  }, [activeDeckId, categoryFilter, typeFilter, dateFilter, cardSort, cardSortDir]);
+  }, [activeDeckId, categoryFilter, typeFilter, dateFilter, cardSort, cardSortDir, cardSearch]);
 
   const visibleDeckCards = useMemo(
-    () => sortedDeckCards.slice(0, visibleCardsCount),
-    [sortedDeckCards, visibleCardsCount],
+    () => searchedDeckCards.slice(0, visibleCardsCount),
+    [searchedDeckCards, visibleCardsCount],
   );
 
   // ── Multi-select for cards ────────────────────────────────────────────
-  const cardMs = useMultiSelect(sortedDeckCards, (c) => c.id);
+  const cardMs = useMultiSelect(searchedDeckCards, (c) => c.id);
   const [confirmBulkDeleteCards, setConfirmBulkDeleteCards] = useState(false);
 
   const bulkDeleteCards = () => {
@@ -1236,8 +1244,34 @@ function CardsManager() {
                 <div className="text-center py-12 text-muted-foreground">בחר מערכת כדי להתחיל</div>
               ) : (
                 <div className="space-y-2 max-h-[500px] overflow-y-auto snap-list-y">
-                  <div className="flex items-center justify-between gap-2 pb-1 border-b border-gold/20">
-                    <span className="text-xs text-muted-foreground">{sortedDeckCards.length} שאלות</span>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-gold/20">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {cardSearch.trim() ? `${searchedDeckCards.length}/${sortedDeckCards.length}` : sortedDeckCards.length} שאלות
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={cardMs.toggleAll}
+                        className="h-6 px-1.5 text-xs gap-1 text-muted-foreground hover:text-gold shrink-0"
+                      >
+                        {cardMs.allSelected
+                          ? <CheckSquare className="h-3.5 w-3.5" />
+                          : <Square className="h-3.5 w-3.5" />}
+                        בחר הכל
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                        <Input
+                          value={cardSearch}
+                          onChange={(e) => setCardSearch(e.target.value)}
+                          placeholder="חיפוש..."
+                          className="h-7 w-28 text-xs pr-6 pl-2"
+                        />
+                      </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button type="button" size="sm" variant="ghost"
@@ -1262,21 +1296,21 @@ function CardsManager() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
 
-                  <MultiSelectToolbar
+                  {cardMs.count > 0 && <MultiSelectToolbar
                     count={cardMs.count}
                     total={cardMs.total}
                     allSelected={cardMs.allSelected}
                     onToggleAll={cardMs.toggleAll}
                     onClear={cardMs.clear}
-                    alwaysVisible
                     actions={[
                       { icon: Copy, label: "שכפל", onClick: bulkDuplicateCards },
                       { icon: Download, label: "ייצא", onClick: bulkExportCards },
                       { icon: Trash2, label: "מחק", onClick: () => setConfirmBulkDeleteCards(true), variant: "destructive" },
                     ]}
-                  />
+                  />}
 
                   {visibleDeckCards.map((c) => {
                     const categoryTags = c.tags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
@@ -1379,7 +1413,7 @@ function CardsManager() {
                       </DraggableCardRow>
                     );
                   })}
-                  {sortedDeckCards.length > visibleDeckCards.length && (
+                  {searchedDeckCards.length > visibleDeckCards.length && (
                     <div className="flex items-center justify-center pt-2">
                       <Button
                         type="button"
@@ -1387,7 +1421,7 @@ function CardsManager() {
                         className="border-gold/40"
                         onClick={() => setVisibleCardsCount((n) => n + 60)}
                       >
-                        טען עוד ({sortedDeckCards.length - visibleDeckCards.length} נותרו)
+                        טען עוד ({searchedDeckCards.length - visibleDeckCards.length} נותרו)
                       </Button>
                     </div>
                   )}
