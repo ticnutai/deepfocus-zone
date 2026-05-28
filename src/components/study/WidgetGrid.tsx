@@ -157,7 +157,7 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
   if (!cfg.visible) return null;
 
   return (
-    <div ref={setNodeRef} style={style} className={cn("relative group", editMode && !collapsed && "pt-10")}>
+    <div ref={setNodeRef} style={style} className={cn("relative group", !collapsed && (editMode ? "pt-10" : "pt-8"))}>
       {editMode && !collapsed && (
         <div
           {...attributes}
@@ -188,7 +188,8 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
               onClick={onToggleCollapse}
               aria-label={collapsed ? `הרחב "${label}"` : `מזער "${label}"`}
               className={cn(
-                "absolute top-2 left-2 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                "absolute left-2 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                collapsed ? "top-1" : (editMode ? "top-2" : "top-0"),
                 collapsed
                   ? "opacity-100"
                   : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
@@ -534,7 +535,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
             const label = defs.find((d) => d.id === cfg.id)?.label ?? cfg.id;
             const collapsed = !!cfg.collapsed;
             return (
-              <div key={cfg.id} style={{ gridColumn: cfg.size === "full" ? "1 / -1" : undefined, minHeight: collapsed ? undefined : (cfg.height ? `${cfg.height}px` : undefined) }} className="relative group">
+              <div key={cfg.id} style={{ gridColumn: cfg.size === "full" ? "1 / -1" : undefined, minHeight: collapsed ? undefined : (cfg.height ? `${cfg.height}px` : undefined) }} className={cn("relative group", !collapsed && (editMode ? "pt-10" : "pt-8"))}>
                 {editMode && !collapsed && <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-gold/60 pointer-events-none" />}
                 {editMode && !collapsed && (
                   <>
@@ -547,7 +548,8 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
                   aria-label={collapsed ? `הרחב "${label}"` : `מזער "${label}"`}
                   title={collapsed ? "הרחב" : "מזער"}
                   className={cn(
-                    "absolute top-2 left-2 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                    "absolute left-2 z-30 flex items-center justify-center h-7 w-7 rounded-lg border border-gold/40 bg-background/95 backdrop-blur shadow text-muted-foreground hover:text-gold transition-opacity",
+                    collapsed ? "top-1" : (editMode ? "top-2" : "top-0"),
                     collapsed
                       ? "opacity-100"
                       : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
