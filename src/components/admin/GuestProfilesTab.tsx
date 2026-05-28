@@ -706,6 +706,13 @@ export function GuestProfilesTab() {
               <div className="text-xs text-muted-foreground">
                 תפקיד: {p.roleName ? roleLabel(p.roleName) : "לא הוגדר"} · עודכן {new Date(p.updatedAt).toLocaleString("he-IL")}
               </div>
+              <div className="text-xs text-muted-foreground">
+                מקור נתונים: {(() => {
+                  if (!p.sourceUserId) return "ברירת מחדל גלובלית";
+                  const u = adminCandidates.find((x) => x.id === p.sourceUserId);
+                  return u ? (u.display_name || u.email || u.id) : p.sourceUserId;
+                })()}
+              </div>
             </div>
 
             <div className="flex items-center gap-1.5">
