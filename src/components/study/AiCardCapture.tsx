@@ -324,9 +324,9 @@ export function AiCardCapture() {
 
     try {
       localStorage.setItem(STYLE_KEY_V2, JSON.stringify(style));
-      localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
+      if (dragEnabled) localStorage.setItem(POS_KEY_V2, JSON.stringify(pos));
       localStorage.setItem(DRAG_ENABLED_KEY, JSON.stringify(dragEnabled));
-      dbg("persist:localStorage:immediate", { style, pos, dragEnabled });
+      dbg("persist:localStorage:immediate", { style, dragEnabled, pos: dragEnabled ? pos : "skipped" });
     } catch {
       // ignore localStorage errors
     }
@@ -335,9 +335,9 @@ export function AiCardCapture() {
     setSyncState("saving");
     saveTimerRef.current = window.setTimeout(() => {
       setUiPref("aiButtonStyle", style as any);
-      setUiPref("aiButtonPos", pos as any);
+      if (dragEnabled) setUiPref("aiButtonPos", pos as any);
       setUiPref("aiButtonDragEnabled", dragEnabled);
-      dbg("persist:setUiPref", { style, pos, dragEnabled });
+      dbg("persist:setUiPref", { style, dragEnabled, pos: dragEnabled ? pos : "skipped" });
       setSyncState("saved");
       if (savedBadgeTimerRef.current != null) window.clearTimeout(savedBadgeTimerRef.current);
       savedBadgeTimerRef.current = window.setTimeout(() => {
@@ -347,7 +347,7 @@ export function AiCardCapture() {
       saveTimerRef.current = null;
     }, 180);
 
-    dbg("persist:scheduled", { style, pos });
+    dbg("persist:scheduled", { style, dragEnabled });
 
     return () => {
       if (saveTimerRef.current != null) {
@@ -355,7 +355,7 @@ export function AiCardCapture() {
         saveTimerRef.current = null;
       }
     };
-  }, [dbg, dragEnabled, pos, setUiPref, style]);
+  }, [dbg, dragEnabled, dragEnabled ? pos : null, setUiPref, style]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
