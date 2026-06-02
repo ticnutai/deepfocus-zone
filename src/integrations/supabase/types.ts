@@ -1040,6 +1040,10 @@ export type Database = {
             Returns: string
           }
       admin_delete_user: { Args: { p_user_id: string }; Returns: undefined }
+      admin_set_password: {
+        Args: { p_password: string; p_user_id: string }
+        Returns: undefined
+      }
       admin_update_user: {
         Args: {
           p_display_name?: string
