@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound } from "lucide-react";
+import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
 import { MigrationRunner } from "@/components/dev/MigrationRunner";
@@ -9,6 +9,7 @@ import { DevIconsSettings } from "./DevIconsSettings";
 import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
+import { MobileLayoutSettings } from "./MobileLayoutSettings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 
