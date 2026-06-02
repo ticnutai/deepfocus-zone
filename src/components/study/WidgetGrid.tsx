@@ -552,7 +552,18 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
         </div>
       )}
 
-      {inlineDrag ? (
+      {useMobileLayout ? (
+        (() => {
+          const items = visibleWidgets.map((cfg) => ({
+            cfg,
+            label: defs.find((d) => d.id === cfg.id)?.label ?? cfg.id,
+            node: widgetMap[cfg.id] ?? null,
+          }));
+          if (mobileMode === "carousel") return <CarouselLayout items={items} />;
+          if (mobileMode === "magazine") return <MagazineLayout items={items} />;
+          return <PremiumStackLayout items={items} />;
+        })()
+      ) : inlineDrag ? (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
