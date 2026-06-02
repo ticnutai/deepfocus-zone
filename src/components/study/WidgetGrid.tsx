@@ -30,6 +30,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { isProfileBMode } from "@/lib/study/profileBMode";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
+import { useMobileLayoutMode, resolveMobileMode } from "@/lib/study/mobileLayoutMode";
+import { PremiumStackLayout, CarouselLayout, MagazineLayout } from "./MobileWidgetLayouts";
 import {
   GripVertical,
   EyeOff,
@@ -396,6 +398,10 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const hiddenWidgets = tabLayout.filter((w) => !w.visible);
   const activeLabel = activeId ? (defs.find((d) => d.id === activeId)?.label ?? activeId) : "";
 
+  const mobileModePref = useMobileLayoutMode();
+  const mobileMode = resolveMobileMode(mobileModePref, isMobile);
+  const useMobileLayout = mobileMode !== "default" && !editMode;
+
   useEffect(() => {
     if (!editingLocked) return;
     setEditMode(false);
@@ -546,7 +552,18 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
         </div>
       )}
 
-      {inlineDrag ? (
+      {useMobileLayout ? (
+        (() => {
+          const items = visibleWidgets.map((cfg) => ({
+            cfg,
+            label: defs.find((d) => d.id === cfg.id)?.label ?? cfg.id,
+            node: widgetMap[cfg.id] ?? null,
+          }));
+          if (mobileMode === "carousel") return <CarouselLayout items={items} />;
+          if (mobileMode === "magazine") return <MagazineLayout items={items} />;
+          return <PremiumStackLayout items={items} />;
+        })()
+      ) : inlineDrag ? (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

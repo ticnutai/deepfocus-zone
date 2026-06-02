@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound } from "lucide-react";
+import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
 import { MigrationRunner } from "@/components/dev/MigrationRunner";
@@ -9,6 +9,7 @@ import { DevIconsSettings } from "./DevIconsSettings";
 import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
+import { MobileLayoutSettings } from "./MobileLayoutSettings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 
@@ -54,6 +55,9 @@ export function SettingsPanel() {
             <TabsTrigger value="cache" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מטמון וסנכרון</span><Database className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="mobile-layout" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>תצוגת מובייל</span><Smartphone className="h-4 w-4" />
+            </TabsTrigger>
             <TabsTrigger value="api-keys" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מפתחות API</span><KeyRound className="h-4 w-4" />
             </TabsTrigger>
@@ -76,6 +80,9 @@ export function SettingsPanel() {
         </TabsContent>
         <TabsContent value="cache" className="mt-4">
           <CacheSettings />
+        </TabsContent>
+        <TabsContent value="mobile-layout" className="mt-4">
+          <MobileLayoutSettings />
         </TabsContent>
         <TabsContent value="api-keys" className="mt-4">
           <Card className="gold-frame p-4 space-y-4" dir="rtl">
