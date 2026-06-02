@@ -398,6 +398,10 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const hiddenWidgets = tabLayout.filter((w) => !w.visible);
   const activeLabel = activeId ? (defs.find((d) => d.id === activeId)?.label ?? activeId) : "";
 
+  const mobileModePref = useMobileLayoutMode();
+  const mobileMode = resolveMobileMode(mobileModePref, isMobile);
+  const useMobileLayout = mobileMode !== "default" && !editMode;
+
   useEffect(() => {
     if (!editingLocked) return;
     setEditMode(false);
