@@ -81,6 +81,9 @@ export function SettingsPanel() {
         <TabsContent value="cache" className="mt-4">
           <CacheSettings />
         </TabsContent>
+        <TabsContent value="mobile-layout" className="mt-4">
+          <MobileLayoutSettings />
+        </TabsContent>
         <TabsContent value="api-keys" className="mt-4">
           <Card className="gold-frame p-4 space-y-4" dir="rtl">
             <div className="flex items-center gap-2">
