@@ -55,6 +55,9 @@ export function SettingsPanel() {
             <TabsTrigger value="cache" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מטמון וסנכרון</span><Database className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="mobile-layout" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>תצוגת מובייל</span><Smartphone className="h-4 w-4" />
+            </TabsTrigger>
             <TabsTrigger value="api-keys" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מפתחות API</span><KeyRound className="h-4 w-4" />
             </TabsTrigger>
