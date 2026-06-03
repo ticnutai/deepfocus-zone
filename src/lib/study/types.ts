@@ -276,6 +276,10 @@ export interface UiPrefs {
   // Mishnayot tracker: { [sederName]: { [masechetName]: { [perekIndex]: number[] of learned mishna indices (1-based) } } }
   mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
   shasBoardProgress?: Record<string, Record<number, { a?: number; b?: number }>>;
+  // ShasBoard daily log: YYYY-MM-DD → amudim marked-as-learned that day
+  shasBoardLog?: Record<string, number>;
+  // ShasPlanner: user-defined daily target (overrides auto-suggested pace)
+  shasBoardDailyTarget?: number;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)
   syncEnabled?: boolean;
   // Floating AI button — position, appearance, and drag-enabled flag, synced across devices
