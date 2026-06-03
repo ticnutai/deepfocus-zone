@@ -435,11 +435,8 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "summary",       l: "סיכום",         I: LineChart },
   { v: "study",         l: "חזרות לימוד",  I: GraduationCap },
   { v: "daf",           l: "לימוד דף",      I: BookOpen },
-  { v: "cards",         l: "שאלות חזרה",   I: BookOpen },
   { v: "analytics",     l: "ניתוחים",       I: Activity },
   { v: "categories",    l: "קטגוריות ושאלות", I: FolderTree },
-  { v: "achievements",  l: "הישגים",        I: Trophy },
-  { v: "ai",            l: "ניתוח AI",      I: Sparkles },
   { v: "goals",         l: "יעדים",         I: Target },
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
