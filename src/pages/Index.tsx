@@ -1451,50 +1451,61 @@ const Index = () => {
               }}
               className="w-full" dir="rtl"
             >
-              <Card className="gold-frame p-1.5 sm:p-2" onMouseEnter={handleTabsMouseEnter} onMouseLeave={handleTabsMouseLeave}>
-                <div className="flex items-start gap-2">
-                  <TabsList
-                    className="flex-1 min-w-0 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-2 -mx-0.5 scroll-px-2"
-                    dir="rtl"
-                  >
-                    {visibleTabs.map(({ v, l, I }) => (
-                      <TabsTrigger
-                        key={v} value={v}
-                        className="shrink-0 sm:flex-1 snap-item min-w-[7.5rem] sm:min-w-[110px] justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
-                      >
-                        <span className="relative">
-                          {l}
-                          {v === "study" && showStudiedBadge && studiedToday && (
-                            <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
-                          )}
-                        </span>
-                        <I className="h-4 w-4" />
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+              <Card
+                className="gold-frame p-1.5 sm:p-2 relative"
+                onMouseEnter={handleTabsMouseEnter}
+                onMouseLeave={handleTabsMouseLeave}
+                onTouchStart={handleTabsTouchStart}
+                onTouchEnd={handleTabsTouchCancel}
+                onTouchMove={handleTabsTouchCancel}
+                onTouchCancel={handleTabsTouchCancel}
+              >
+                <TabsList
+                  className="w-full bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
+                  dir="rtl"
+                >
+                  {visibleTabs.map(({ v, l, I }) => (
+                    <TabsTrigger
+                      key={v} value={v}
+                      className="shrink-0 sm:flex-1 snap-item min-w-[7.5rem] sm:min-w-[110px] justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
+                    >
+                      <span className="relative">
+                        {l}
+                        {v === "study" && showStudiedBadge && studiedToday && (
+                          <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+                        )}
+                      </span>
+                      <I className="h-4 w-4" />
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {/* Floating config overlay — appears on hover (~1s) / long-press */}
+                {!profileBActive && (
                   <div
                     className={cn(
-                      "flex items-center gap-1 shrink-0 self-start transition-all",
-                      showTabsConfigIcon ? "opacity-100" : "opacity-0 pointer-events-none",
+                      "absolute left-2 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1 rounded-xl border-2 border-gold/70 bg-card/95 backdrop-blur-sm shadow-elegant p-1 transition-all duration-200",
+                      showTabsConfigIcon
+                        ? "opacity-100 scale-100 pointer-events-auto"
+                        : "opacity-0 scale-95 pointer-events-none",
                     )}
-                    style={{ display: profileBActive ? "none" : undefined }}
                   >
                     <button
-                      onClick={() => setSidebarConfigOpen(true)}
+                      onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
                       title="הגדרת סיידבר"
-                      className="flex items-center justify-center h-9 w-9 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
+                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
                     >
                       <Sliders className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => setTabConfigOpen(true)}
+                      onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
                       title="הגדרת טאבים"
-                      className="flex items-center justify-center h-9 w-9 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
+                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
                     >
                       <SlidersHorizontal className="h-4 w-4" />
                     </button>
                   </div>
-                </div>
+                )}
               </Card>
 
               <TabsContent value="overview" className="mt-6">
