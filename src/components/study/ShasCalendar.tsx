@@ -323,7 +323,7 @@ export function ShasCalendar() {
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-bold">תאריך סיום צפוי — סדרים</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {SEDARIM.map((s) => {
+          {SEDARIM.filter((s) => filterSedarim.size === 0 || filterSedarim.has(s)).map((s) => {
             const iso = finishes.perSeder[s];
             const allDone = SHAS_BAVLI.filter(m => m.seder === s).every(m => {
               const t = m.pages * 2;
