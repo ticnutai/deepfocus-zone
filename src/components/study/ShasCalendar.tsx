@@ -167,6 +167,79 @@ export function ShasCalendar() {
         )}
       </Card>
 
+      {/* Quick filters */}
+      <Card className="gold-frame p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-gold" />
+            <span className="font-semibold text-sm">סינון מהיר</span>
+            {hasFilter && (
+              <Badge variant="secondary" className="text-[10px]">
+                מציג {remainingPlan.length} עמ׳ נותרים
+              </Badge>
+            )}
+          </div>
+          {hasFilter && (
+            <Button variant="ghost" size="sm" onClick={() => { setFilterSedarim(new Set()); setFilterMasechtot(new Set()); }}>
+              <X className="h-3 w-3 ml-1" /> נקה הכל
+            </Button>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-muted-foreground">סדרים</div>
+          <div className="flex flex-wrap gap-1">
+            {SEDARIM.map((s) => {
+              const active = filterSedarim.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setFilterSedarim((prev) => toggleInSet(prev, s))}
+                  className={cn(
+                    "rounded-full border-2 px-3 py-1 text-xs transition-colors",
+                    active
+                      ? "bg-gold text-primary-foreground border-gold font-bold"
+                      : "border-gold/40 text-foreground hover:border-gold/70"
+                  )}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-muted-foreground">
+            מסכתות {filterSedarim.size > 0 && <span className="font-normal">(מסוננות לפי סדר)</span>}
+          </div>
+          <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+            {SHAS_BAVLI
+              .filter((m) => filterSedarim.size === 0 || filterSedarim.has(m.seder))
+              .map((m) => {
+                const active = filterMasechtot.has(m.name);
+                return (
+                  <button
+                    key={m.name}
+                    type="button"
+                    onClick={() => setFilterMasechtot((prev) => toggleInSet(prev, m.name))}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                      active
+                        ? "bg-gold/80 text-primary-foreground border-gold font-bold"
+                        : "border-gold/30 text-muted-foreground hover:border-gold/60 hover:text-foreground"
+                    )}
+                  >
+                    {m.name}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      </Card>
+
+
       {/* Month nav */}
       <Card className="gold-frame p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
