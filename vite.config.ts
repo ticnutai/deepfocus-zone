@@ -21,17 +21,35 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     process.env.BUILD_TARGET !== "electron" && mode === "production" && VitePWA({
       registerType: "autoUpdate",
+      injectRegister: null,
+      devOptions: { enabled: false },
+      filename: "sw.js",
       workbox: {
-        navigateFallbackDenylist: [/^\/~oauth/],
-        globPatterns: ["**/*.{js,css,html,woff2}"],
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/~oauth/, /^\/api\//],
+        globPatterns: ["**/*.{js,css,html,woff2,svg,png,ico,json}"],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/hgjfpwdugvvtrfhycejv\.supabase\.co\/.*/i,
+            // HTML navigations → network first so new deploys land fast.
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "html-pages",
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 30, maxAgeSeconds: 86400 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
             handler: "NetworkFirst",
             options: {
               cacheName: "supabase-api",
-              expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
-              networkTimeoutSeconds: 10,
+              expiration: { maxEntries: 200, maxAgeSeconds: 86400 * 7 },
+              networkTimeoutSeconds: 8,
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
           {
@@ -39,8 +57,21 @@ export default defineConfig(({ mode }) => ({
             handler: "CacheFirst",
             options: {
               cacheName: "google-fonts",
-              expiration: { maxEntries: 20, maxAgeSeconds: 31536000 },
+              expiration: { maxEntries: 30, maxAgeSeconds: 31536000 },
               cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-css" },
+          },
+          {
+            urlPattern: ({ request }) => ["image", "style", "script", "font"].includes(request.destination),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "assets",
+              expiration: { maxEntries: 300, maxAgeSeconds: 86400 * 30 },
             },
           },
         ],

@@ -11,6 +11,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { RestoreProvider } from "@/lib/study/RestoreContext";
 import { GlobalRestoreHost } from "@/components/study/GlobalRestoreHost";
 import { DevIconsHost } from "@/components/dev/DevIconsHost";
+import { OfflineBadge } from "@/components/OfflineBadge";
 import { DirectionProvider } from "@radix-ui/react-direction";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
@@ -73,6 +74,7 @@ const App = () => (
               <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
             </Suspense>
             <GlobalRestoreHost />
+            <OfflineBadge />
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>
