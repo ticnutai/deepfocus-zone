@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM, type Masechta } from "@/lib/study/shasData";
+import { ShasPlanner } from "./ShasPlanner";
 
 // ===== Types & helpers =====
 type AmudKey = "a" | "b";
@@ -86,7 +87,7 @@ export function ShasBoard() {
     [state.uiPrefs],
   );
 
-  const [view, setView] = useState<"hierarchy" | "flat">("hierarchy");
+  const [view, setView] = useState<"hierarchy" | "flat" | "planner">("hierarchy");
   const [selectedMasechta, setSelectedMasechta] = useState<string | null>(null);
   const [selectedSeder, setSelectedSeder] = useState<string | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set()); // "masechta:daf:amud"
@@ -94,7 +95,24 @@ export function ShasBoard() {
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
 
-  const save = (next: ShasBoardProgress) => setUiPref("shasBoardProgress", next);
+  const save = (next: ShasBoardProgress) => {
+    // Log delta of learned amudim to today's bucket for pace analysis
+    let oldLearned = 0, newLearned = 0;
+    for (const mp of Object.values(progress)) for (const e of Object.values(mp)) {
+      if ((e.a ?? 0) > 0) oldLearned++; if ((e.b ?? 0) > 0) oldLearned++;
+    }
+    for (const mp of Object.values(next)) for (const e of Object.values(mp)) {
+      if ((e.a ?? 0) > 0) newLearned++; if ((e.b ?? 0) > 0) newLearned++;
+    }
+    const delta = newLearned - oldLearned;
+    setUiPref("shasBoardProgress", next);
+    if (delta > 0) {
+      const today = new Date();
+      const k = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const log = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
+      setUiPref("shasBoardLog", { ...log, [k]: (log[k] ?? 0) + delta });
+    }
+  };
 
   // ----- Totals -----
   const totals = useMemo(() => {
@@ -366,6 +384,7 @@ export function ShasBoard() {
         <TabsList>
           <TabsTrigger value="hierarchy">לפי סדרים</TabsTrigger>
           <TabsTrigger value="flat">כל המסכתות</TabsTrigger>
+          <TabsTrigger value="planner">תכנון לסיום</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hierarchy" className="space-y-3">
@@ -416,6 +435,10 @@ export function ShasBoard() {
               );
             })}
           </div>
+        </TabsContent>
+
+        <TabsContent value="planner">
+          <ShasPlanner />
         </TabsContent>
       </Tabs>
     </div>
