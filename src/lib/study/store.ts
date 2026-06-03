@@ -3176,9 +3176,6 @@ export function useStudy() {
       srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
     } as Card;
     const profileBActive = isProfileBMode();
-    console.debug(
-      `[🔍 DECK-DEBUG addCard] כרטיס נוצר: id=${full.id.slice(0,8)} | deckId=${full.deckId??'null'} | tags=${JSON.stringify(full.tags)} | q="${(full.question??'').slice(0,70)}" | dueAt=${new Date(full.srs.dueAt).toLocaleString('he-IL')}`,
-    );
     setState((s) => ({ ...s, cards: [...s.cards, full] }));
     if (profileBActive) markProfileBCardCreated(userId, full.id);
     bg(supabase.from("cards").insert(cardToRow(full, userId)));
@@ -4771,8 +4768,6 @@ export function useStudy() {
       p.id === planId ? { ...p, ...patch } : p,
     );
     const savedPlan = updated.find((p) => p.id === planId);
-    console.log('[store:updateGeneralPlan] patch:', JSON.stringify(patch));
-    console.log('[store:updateGeneralPlan] saved plan anchorDate:', savedPlan?.anchorDate, 'anchorPosition:', JSON.stringify(savedPlan?.anchorPosition));
     setState((s) => ({ ...s, generalPlans: updated }));
     bg(supabase.from("user_settings").upsert(
       { user_id: userId, general_plans: updated as unknown as Json },

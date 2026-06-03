@@ -153,14 +153,17 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const currentMasechet = SHAS_BAVLI.find((m) => m.name === masechta);
   const totalPages = currentMasechet?.pages ?? 0;
 
-  // כדי שהטאב יופיע מיידית: דוחים את חישובי הספירות לרגע שאחרי הציור הראשון.
+  // כדי שהטאב יופיע מיידית: דוחים את חישובי הספירות לזמן idle אחרי הציור הראשון.
   useEffect(() => {
     setCountsReady(false);
-    const timer = window.setTimeout(() => setCountsReady(true), 0);
-    return () => window.clearTimeout(timer);
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
+    const schedule = w.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 0));
+    const cancel = (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback ?? window.clearTimeout;
+    const id = schedule(() => setCountsReady(true), { timeout: 250 });
+    return () => cancel(id as number);
   }, [state.cards, state.categories, masechta, totalPages]);
 
-  // ספירת כרטיסים פר-דף (לבחירה מהירה)
+  // ספירת כרטיסים פר-דף (לבחירה מהירה) — חישוב כבד, רץ רק כשהדפדפן פנוי
   const dafCounts = useMemo(
     () => (countsReady ? countCardsPerDaf(state.cards, state.categories, masechta, totalPages) : new Map()),
     [state.cards, state.categories, masechta, totalPages, countsReady],

@@ -1,90 +1,35 @@
 import type { Card, Category } from "./types";
 import { displayCategoryName, dafLabel } from "./shasGen";
 
-type DafBucket = { a: Set<string>; b: Set<string>; generic: Set<string> };
-
 /**
- * מסנן כרטיסים השייכים לדף/עמוד נתון של מסכת.
- * תומך גם בשיוך מובנה (masechta/daf/amud) וגם בתגיות `cat:<categoryName>` ישנות.
- * אם amud=null מחזיר את שני העמודים.
+ * אינדוקס קטגוריות לפי מסכת/דף/עמוד.
+ * נבנה פעם אחת לכל (categories, masechta, totalPages) ומשמש גם לסינון וגם לספירה.
+ * השדרוג: במקום לטייל בשרשרת הקטגוריות עבור כל כרטיס×כל באקט,
+ * נטייל פעם אחת לכל קטגוריה ונבנה lookup ב-O(1) לפי name/id.
  */
-export function filterCardsByDafAmud(
-  cards: Card[],
-  categories: Category[] | undefined,
-  masechta: string,
-  daf: number,
-  amud: 1 | 2 | null,
-): Card[] {
-  const amudLabel = amud === 1 ? 'ע"א' : amud === 2 ? 'ע"ב' : null;
-  const dafLbl = dafLabel(daf);
-  const dafNoDot = dafLbl.replace(".", "");
-  const dafWithPrefix = `דף ${dafNoDot}`;
-  const dafVariants = new Set([dafLbl, dafNoDot, dafWithPrefix]);
+type CatHit = { daf: number; amud: 0 | 1 | 2 }; // 0 = generic (ללא ע"א/ע"ב)
+type CatIndex = {
+  byName: Map<string, CatHit[]>;
+  byId: Map<string, CatHit[]>;
+  variantToDaf: Map<string, number>;
+};
 
-  // מצא את שמות הקטגוריות הרלוונטיות (הדף + העמודים שלו) — לחיפוש לפי תגיות
-  const cats = categories ?? [];
-  const catsById = new Map(cats.map((c) => [c.id, c]));
+const _indexCache = new WeakMap<Category[], Map<string, CatIndex>>();
 
-  const isInChain = (cat: Category, predicate: (leaf: string) => boolean): boolean => {
-    let cur: Category | undefined = cat;
-    let guard = 0;
-    while (cur && guard < 32) {
-      if (predicate(displayCategoryName(cur.name))) return true;
-      cur = cur.parentId ? catsById.get(cur.parentId) : undefined;
-      guard += 1;
-    }
-    return false;
-  };
-
-  // קטגוריה רלוונטית = יש לה אב מסכת + אב דף + (אם amud נבחר) האב/עצמה הוא העמוד
-  const matchingCatNames = new Set<string>();
-  const matchingCatIds = new Set<string>();
-  for (const cat of cats) {
-    const leaf = displayCategoryName(cat.name);
-    const hasMasechta = isInChain(cat, (l) => l === masechta);
-    const hasDaf = isInChain(cat, (l) => dafVariants.has(l));
-    if (!hasMasechta || !hasDaf) continue;
-    if (amudLabel) {
-      const hasAmud = isInChain(cat, (l) => l === amudLabel);
-      if (!hasAmud && !dafVariants.has(leaf)) continue;
-      // אם amud נבחר — לא לכלול כרטיסים של העמוד השני
-      const otherAmud = amudLabel === 'ע"א' ? 'ע"ב' : 'ע"א';
-      if (isInChain(cat, (l) => l === otherAmud)) continue;
-    }
-    // Keep fallback matching strict to concrete category names only.
-    // Generic leaf labels like "ב." or "דף ב" can exist across many masechtot
-    // and cause cross-tractate pollution in Daf Learning counts.
-    matchingCatNames.add(cat.name);
-    matchingCatIds.add(cat.id);
-  }
-
-  return cards.filter((c) => {
-    // 1) שיוך מובנה
-    if (c.masechta && c.masechta === masechta && c.daf === daf) {
-      if (!amud || !c.amud || c.amud === amud) return true;
-    }
-    // 2) תגיות קטגוריה ישנות
-    if (c.tags?.some((t) => {
-      if (!t.startsWith("cat:")) return false;
-      const payload = t.slice(4);
-      return matchingCatNames.has(payload) || matchingCatIds.has(payload);
-    })) {
-      return true;
-    }
-    return false;
-  });
-}
-
-/** מחזיר ספירת כרטיסים פר-עמוד למסכת — לשימוש ב-badges של בורר הדפים. */
-export function countCardsPerDaf(
-  cards: Card[],
+function buildCatIndex(
   categories: Category[] | undefined,
   masechta: string,
   totalPages: number,
-): Map<number, { a: number; b: number; total: number }> {
-  const out = new Map<number, { a: number; b: number; total: number }>();
+): CatIndex {
   const cats = categories ?? [];
-  const catsById = new Map(cats.map((c) => [c.id, c]));
+  let perCats = _indexCache.get(cats);
+  if (!perCats) {
+    perCats = new Map();
+    _indexCache.set(cats, perCats);
+  }
+  const key = `${masechta}::${totalPages}`;
+  const cached = perCats.get(key);
+  if (cached) return cached;
 
   const variantToDaf = new Map<string, number>();
   for (let d = 2; d <= totalPages + 1; d++) {
@@ -95,100 +40,136 @@ export function countCardsPerDaf(
     variantToDaf.set(`דף ${noDot}`, d);
   }
 
-  const buckets = new Map<number, DafBucket>();
-  const getBucket = (d: number): DafBucket => {
-    let b = buckets.get(d);
-    if (!b) {
-      b = { a: new Set<string>(), b: new Set<string>(), generic: new Set<string>() };
-      buckets.set(d, b);
-    }
-    return b;
-  };
+  const catsById = new Map(cats.map((c) => [c.id, c]));
+  const byName = new Map<string, CatHit[]>();
+  const byId = new Map<string, CatHit[]>();
 
   for (const cat of cats) {
     let cur: Category | undefined = cat;
     let guard = 0;
     let hasMasechta = false;
     let foundDaf: number | null = null;
-    let foundAmud: 1 | 2 | null = null;
-
+    let foundAmud: 0 | 1 | 2 = 0;
     while (cur && guard < 32) {
       const leaf = displayCategoryName(cur.name);
       if (leaf === masechta) hasMasechta = true;
-      if (leaf === 'ע"א') foundAmud = 1;
+      else if (leaf === 'ע"א') foundAmud = 1;
       else if (leaf === 'ע"ב') foundAmud = 2;
-
-      const d = variantToDaf.get(leaf);
-      if (d) foundDaf = d;
-
+      else {
+        const d = variantToDaf.get(leaf);
+        if (d && foundDaf === null) foundDaf = d;
+      }
       cur = cur.parentId ? catsById.get(cur.parentId) : undefined;
       guard += 1;
     }
-
-    if (!hasMasechta || !foundDaf) continue;
-    const bucket = getBucket(foundDaf);
-    if (foundAmud === 1) bucket.a.add(cat.name);
-    else if (foundAmud === 2) bucket.b.add(cat.name);
-    else bucket.generic.add(cat.name);
+    if (!hasMasechta || foundDaf === null) continue;
+    const hit: CatHit = { daf: foundDaf, amud: foundAmud };
+    const nameArr = byName.get(cat.name);
+    if (nameArr) nameArr.push(hit); else byName.set(cat.name, [hit]);
+    byId.set(cat.id, [hit]);
   }
 
+  const idx: CatIndex = { byName, byId, variantToDaf };
+  perCats.set(key, idx);
+  return idx;
+}
+
+/**
+ * מסנן כרטיסים השייכים לדף/עמוד נתון של מסכת.
+ * תומך גם בשיוך מובנה (masechta/daf/amud) וגם בתגיות `cat:<categoryName|id>`.
+ */
+export function filterCardsByDafAmud(
+  cards: Card[],
+  categories: Category[] | undefined,
+  masechta: string,
+  daf: number,
+  amud: 1 | 2 | null,
+): Card[] {
+  const totalPagesHint = Math.max(daf + 1, 200);
+  const idx = buildCatIndex(categories, masechta, totalPagesHint);
+
+  const matches = (hits: CatHit[] | undefined): boolean => {
+    if (!hits) return false;
+    for (const h of hits) {
+      if (h.daf !== daf) continue;
+      if (!amud) return true;
+      if (h.amud === 0 || h.amud === amud) return true;
+    }
+    return false;
+  };
+
+  const out: Card[] = [];
+  for (const c of cards) {
+    if (c.masechta === masechta && c.daf === daf) {
+      if (!amud || !c.amud || c.amud === amud) { out.push(c); continue; }
+    }
+    const tags = c.tags;
+    if (!tags || tags.length === 0) continue;
+    for (const t of tags) {
+      if (!t.startsWith("cat:")) continue;
+      const payload = t.slice(4);
+      if (matches(idx.byName.get(payload)) || matches(idx.byId.get(payload))) {
+        out.push(c);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** מחזיר ספירת כרטיסים פר-עמוד למסכת — לשימוש ב-badges של בורר הדפים. */
+export function countCardsPerDaf(
+  cards: Card[],
+  categories: Category[] | undefined,
+  masechta: string,
+  totalPages: number,
+): Map<number, { a: number; b: number; total: number }> {
+  const out = new Map<number, { a: number; b: number; total: number }>();
+  const idx = buildCatIndex(categories, masechta, totalPages);
+
+  const bump = (d: number, a: boolean, b: boolean) => {
+    const cur = out.get(d) ?? { a: 0, b: 0, total: 0 };
+    if (a) { cur.a += 1; cur.total += 1; }
+    if (b) { cur.b += 1; cur.total += 1; }
+    out.set(d, cur);
+  };
+
   for (const card of cards) {
-    const structuredMatch = card.masechta === masechta && !!card.daf;
-    if (structuredMatch) {
-      const d = card.daf as number;
+    if (card.masechta === masechta && card.daf) {
+      const d = card.daf;
       if (d >= 2 && d <= totalPages + 1) {
-        const current = out.get(d) ?? { a: 0, b: 0, total: 0 };
-        if (card.amud === 1) {
-          current.a += 1;
-          current.total += 1;
-        } else if (card.amud === 2) {
-          current.b += 1;
-          current.total += 1;
-        } else {
-          // Preserve legacy behavior where cards without explicit amud appear in both badges.
-          current.a += 1;
-          current.b += 1;
-          current.total += 2;
-        }
-        out.set(d, current);
+        if (card.amud === 1) bump(d, true, false);
+        else if (card.amud === 2) bump(d, false, true);
+        else bump(d, true, true);
       }
       continue;
     }
+    const tags = card.tags;
+    if (!tags || tags.length === 0) continue;
 
-    if (!card.tags || card.tags.length === 0) continue;
-
-    const byDafHit = new Map<number, { hasA: boolean; hasB: boolean }>();
-    for (const tag of card.tags) {
-      if (!tag.startsWith("cat:")) continue;
-      const catName = tag.slice(4);
-      for (const [d, bucket] of buckets) {
-        const hitA = bucket.a.has(catName) || bucket.generic.has(catName);
-        const hitB = bucket.b.has(catName) || bucket.generic.has(catName);
-        if (!hitA && !hitB) continue;
-        const hit = byDafHit.get(d) ?? { hasA: false, hasB: false };
-        if (hitA) hit.hasA = true;
-        if (hitB) hit.hasB = true;
-        byDafHit.set(d, hit);
+    // איסוף ייחודי של (daf,amud) לכרטיס כדי לא לספור פעמיים על אותה תגית
+    let perDaf: Map<number, { hasA: boolean; hasB: boolean }> | null = null;
+    for (const t of tags) {
+      if (!t.startsWith("cat:")) continue;
+      const payload = t.slice(4);
+      const hits = idx.byName.get(payload) ?? idx.byId.get(payload);
+      if (!hits) continue;
+      for (const h of hits) {
+        if (h.daf < 2 || h.daf > totalPages + 1) continue;
+        if (!perDaf) perDaf = new Map();
+        const e = perDaf.get(h.daf) ?? { hasA: false, hasB: false };
+        if (h.amud === 1) e.hasA = true;
+        else if (h.amud === 2) e.hasB = true;
+        else { e.hasA = true; e.hasB = true; }
+        perDaf.set(h.daf, e);
       }
     }
-
-    for (const [d, hit] of byDafHit) {
-      const current = out.get(d) ?? { a: 0, b: 0, total: 0 };
-      if (hit.hasA) {
-        current.a += 1;
-        current.total += 1;
-      }
-      if (hit.hasB) {
-        current.b += 1;
-        current.total += 1;
-      }
-      out.set(d, current);
-    }
+    if (!perDaf) continue;
+    for (const [d, hit] of perDaf) bump(d, hit.hasA, hit.hasB);
   }
 
-  for (const [d, counts] of Array.from(out.entries())) {
-    if (d < 2 || d > totalPages + 1 || counts.total === 0) out.delete(d);
+  for (const [d, c] of Array.from(out.entries())) {
+    if (c.total === 0) out.delete(d);
   }
-
   return out;
 }

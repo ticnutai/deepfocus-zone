@@ -73,22 +73,6 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     return queue.slice(0, 10).map((c) => c.id);
   }, [state.cards]);
 
-  // ── DEBUG: log deckStats whenever it changes ────────────────────────────────
-  useEffect(() => {
-    if (!deckStats.length) return;
-    console.groupCollapsed(
-      `%c[🔍 DECK-DEBUG StudyTab] deckStats עודכן — ${state.cards.length} כרטיסים בזיכרון`,
-      'color: #ff8a65; font-weight: bold',
-    );
-    deckStats.forEach(({ deck, total, dueCount }) => {
-      console.debug(
-        `[🔍 StudyTab] מערכת "${deck.name}": סה"כ=${total} לחזרה=${dueCount} | categoryIds=${JSON.stringify(deck.categoryIds??[])} includeSubCats=${deck.includeSubCategories??true}`,
-      );
-    });
-    console.debug('[🔍] quickReviewIds:', quickReviewIds.length, 'כרטיסים');
-    console.groupEnd();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deckStats, quickReviewIds]);
 
   if (session) {
     return (
