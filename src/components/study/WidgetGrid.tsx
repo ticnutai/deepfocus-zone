@@ -482,7 +482,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
 
   return (
     <div className="space-y-4 relative">
-      {!editingLocked && (
+      {!editingLocked && !(useMobileLayout && !editMode) && (
       <div
         className="flex items-center justify-between gap-2"
         onMouseEnter={() => setToolbarVisible(true)}
