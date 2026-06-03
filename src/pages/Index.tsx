@@ -1351,55 +1351,55 @@ const Index = () => {
         >
           {/* Topbar */}
           <header className="[--topbar-h:56px] sm:[--topbar-h:60px] flex items-center justify-end gap-2 border-b-2 border-gold/40 bg-background px-2 h-[56px] sm:px-4 sm:gap-3 sm:h-[60px] lg:px-8 overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)", height: "calc(var(--topbar-h) + env(safe-area-inset-top))" }}>
-            {/* Config buttons — placed at the LEFT end of the topbar (opposite the hamburger in RTL). Inline, never causes horizontal scroll. */}
-            {!profileBActive && (
-              <div
-                className="flex items-center shrink-0"
-                onMouseEnter={handleTabsMouseEnter}
-                onMouseLeave={handleTabsMouseLeave}
-                onTouchStart={handleTabsTouchStart}
-                onTouchEnd={handleTabsTouchCancel}
-                onTouchMove={handleTabsTouchCancel}
-                onTouchCancel={handleTabsTouchCancel}
-              >
-                <div
-                  className={cn(
-                    "flex items-center gap-1 rounded-xl border-2 border-gold/60 bg-card/90 backdrop-blur-sm p-0.5 transition-all duration-200 origin-left overflow-hidden",
-                    showTabsConfigIcon
-                      ? "opacity-100 scale-100 max-w-[120px] pointer-events-auto"
-                      : "opacity-0 scale-95 max-w-[28px] pointer-events-none border-transparent bg-transparent",
-                  )}
-                >
-                  <button
-                    onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
-                    title="הגדרת סיידבר"
-                    className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-all"
-                  >
-                    <Sliders className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
-                    title="הגדרת טאבים"
-                    className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-all"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </button>
-                </div>
-                {/* Always-present hover zone so the user can summon the buttons */}
-                <div className="w-3 h-10" aria-hidden />
-              </div>
-            )}
             <div className="flex-1 min-w-0 px-1 sm:px-4">
               <DedicationBanner />
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="hidden sm:block"><Logo size="sm" /></div>
               <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
-                    <Menu className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
+                {/* Hamburger + adjacent floating config icons (absolute so they NEVER widen the page) */}
+                <div
+                  className="relative shrink-0"
+                  onMouseEnter={handleTabsMouseEnter}
+                  onMouseLeave={handleTabsMouseLeave}
+                  onTouchStart={handleTabsTouchStart}
+                  onTouchEnd={handleTabsTouchCancel}
+                  onTouchMove={handleTabsTouchCancel}
+                  onTouchCancel={handleTabsTouchCancel}
+                >
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
+                      <Menu className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                  {!profileBActive && (
+                    <div
+                      className={cn(
+                        // Absolute → does not affect layout width. In RTL, right-full puts it to the LEFT of the hamburger (i.e. just inside the page, opposite the page edge).
+                        "absolute top-1/2 -translate-y-1/2 right-full mr-2 flex items-center gap-1 rounded-xl border-2 border-gold/60 bg-card/95 backdrop-blur-sm p-0.5 shadow-elegant transition-all duration-200 origin-right z-50",
+                        showTabsConfigIcon
+                          ? "opacity-100 scale-100 pointer-events-auto"
+                          : "opacity-0 scale-90 pointer-events-none",
+                      )}
+                    >
+                      <button
+                        onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        title="הגדרת סיידבר"
+                        className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
+                      >
+                        <Sliders className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        title="הגדרת טאבים"
+                        className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
+                      >
+                        <SlidersHorizontal className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
                   <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
                   <div className="flex-1 overflow-y-auto no-scrollbar">
