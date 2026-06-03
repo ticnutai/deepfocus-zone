@@ -74,6 +74,7 @@ const App = () => (
               <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
             </Suspense>
             <GlobalRestoreHost />
+            <OfflineBadge />
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>
