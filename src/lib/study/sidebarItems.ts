@@ -12,7 +12,7 @@ export const ALL_SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: "study", label: "חזרות לימוד" },
   { id: "daf", label: "לימוד דף" },
   { id: "cards", label: "קטגוריות ושאלות" },
-  { id: "categories", label: "קטגוריות ושאלות" },
+  { id: "categories", label: "קטגוריות ושאלות (טאב בית)" },
   { id: "analytics", label: "ניתוחים" },
   { id: "blocker", label: "בודק רצפים" },
   { id: "morning", label: "קימה בבוקר" },
