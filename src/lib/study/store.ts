@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
+import { perfMeter } from "@/lib/debug/perfMeter";
 import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./srs";
 import { toHebrewNum } from "./shasFormat";
 import { SHAS_BAVLI } from "./shasData";
@@ -334,6 +335,7 @@ const notify = () => {
   if (currentUserId === GUEST_ID) {
     try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
   }
+  perfMeter.bumpNotify(listeners.size);
   listeners.forEach((l) => l());
 };
 
@@ -349,7 +351,9 @@ const requestStoreNotify = () => {
     window.requestAnimationFrame(() => flush());
     return;
   }
-  window.setTimeout(() => flush(), 0);
+  // SSR / test fallback — flush asynchronously so multiple setState calls in the
+  // same microtask still coalesce into a single notify.
+  Promise.resolve().then(flush);
 };
 
 const markCloudSyncJobs = (count: number) => {
@@ -644,7 +648,11 @@ const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSyn
 
 function setState(updater: (s: StudyState) => StudyState) {
   memState = updater(memState);
-  notify();
+  perfMeter.bumpMutation();
+  // Batch consecutive mutations within the same frame into a single notify.
+  // Test/SSR fallback inside requestStoreNotify uses a microtask, so callers
+  // that read memState synchronously after setState still see fresh data.
+  requestStoreNotify();
   scheduleStateCachePersist();
 }
 

@@ -29,7 +29,8 @@ import {
 import { ReviewScheduleDialog } from "@/components/settings/ReviewScheduleSettings";
 import { PlanScheduleView } from "@/components/study/PlanScheduleView";
 import { useStudy } from "@/lib/study/store";
-import { cn, toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, calcEtaDate } from "@/lib/utils";
+import { cn, calcEtaDate } from "@/lib/utils";
+import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS } from "@/lib/hebrewDate";
 import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit, MishnaUnit } from "@/lib/study/types";
 import { getPlanUnitsForDate } from "@/lib/study/planSchedule";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";

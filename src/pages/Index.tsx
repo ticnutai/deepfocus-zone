@@ -816,8 +816,9 @@ const Index = () => {
     });
   }, []);
 
-  // Build the ordered tab list (from saved config or defaults)
-  const orderedTabs: (TabDef & { visible: boolean })[] = (() => {
+  // Build the ordered tab list (from saved config or defaults) — memoized so it
+  // does not recompute on every store mutation.
+  const orderedTabs: (TabDef & { visible: boolean })[] = useMemo(() => {
     const cfg = state.tabConfig ?? [];
     if (cfg.length === 0) return DEFAULT_TABS_ALL.map((t) => ({ ...t, visible: true }));
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
@@ -826,12 +827,11 @@ const Index = () => {
       const def = DEFAULT_TABS_ALL.find((t) => t.v === c.id);
       if (def) result.push({ ...def, visible: c.visible });
     }
-    // Append any new defaults not yet in config
     for (const def of DEFAULT_TABS_ALL) {
       if (!result.find((r) => r.v === def.v)) result.push({ ...def, visible: true });
     }
     return result;
-  })();
+  }, [state.tabConfig]);
 
   const isAllowedByPermission = useCallback((id: string) => {
     if (profileBActive) {
@@ -845,20 +845,21 @@ const Index = () => {
     return true;
   }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
 
-  const visibleTabs = orderedTabs.filter((t) => {
+  const visibleTabs = useMemo(() => orderedTabs.filter((t) => {
     if (!HOME_TAB_IDS.has(t.v)) return false;
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
-    // Sync with sidebar blocklist: hide top-bar tab if its matching sidebar id is blocked.
-    // Apply to admins too when previewing as a role.
     if (!isAdmin || previewRoleId) {
       const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
       if (blockedSidebarSet.has(sidebarId)) return false;
     }
     return isAllowedByPermission(t.v);
-  });
+  }), [orderedTabs, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
 
-  const visibleHomeTabs = visibleTabs.filter((tab) => HOME_TAB_IDS.has(tab.v));
+  const visibleHomeTabs = useMemo(
+    () => visibleTabs.filter((tab) => HOME_TAB_IDS.has(tab.v)),
+    [visibleTabs],
+  );
 
   useEffect(() => {
     if (permsLoading) return;
@@ -923,12 +924,12 @@ const Index = () => {
     return result;
   }, [state.sidebarConfig]);
 
-  const visibleSidebarItems = orderedSidebarItems.filter((item) => {
+  const visibleSidebarItems = useMemo(() => orderedSidebarItems.filter((item) => {
     if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
     if (!item.visible) return false;
     if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
     return isAllowedByPermission(item.id);
-  });
+  }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
 
   useEffect(() => {
     if (visibleSidebarItems.some((item) => item.id === active)) return;

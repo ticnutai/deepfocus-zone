@@ -10,7 +10,8 @@ import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { toHebrewNum, formatShasPosition, unitLabel, unitRhythmHint, unitsPerDaf, totalUnitsInMasechta, computeExpectedShasPosition } from "@/lib/study/shasFormat";
 import type { ShasPlan, ShasUnit } from "@/lib/study/types";
-import { cn, toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, calcEtaDate } from "@/lib/utils";
+import { cn, calcEtaDate } from "@/lib/utils";
+import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS } from "@/lib/hebrewDate";
 import { ShasReviewScheduleDialog, isShasDialogSkipped } from "./ShasReviewScheduleDialog";
 import { GridPickerPopover } from "./HebrewGridPicker";
 

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
-import { MigrationRunner } from "@/components/dev/MigrationRunner";
+// Dev-only — code-split out of the SettingsPanel chunk for production users.
+const MigrationRunner = lazy(() =>
+  import("@/components/dev/MigrationRunner").then((m) => ({ default: m.MigrationRunner })),
+);
 import { DevIconsSettings } from "./DevIconsSettings";
 import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
@@ -143,7 +146,7 @@ export function SettingsPanel() {
         {showDevTools && (
           <TabsContent value="dev" className="mt-4 space-y-4">
             <DevIconsSettings />
-            <MigrationRunner />
+            <Suspense fallback={null}><MigrationRunner /></Suspense>
           </TabsContent>
         )}
       </Tabs>

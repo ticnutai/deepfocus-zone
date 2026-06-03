@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { toHebrewDate } from "@/lib/utils";
+import { toHebrewDate } from "@/lib/hebrewDate";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";

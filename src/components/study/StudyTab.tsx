@@ -88,35 +88,39 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     );
   }
 
-  const activeDeck = state.decks.find((d) => d.id === activeDeckId);
-  const activeDeckLinkedIds = new Set((state.cardDecks ?? []).filter((l) => l.deckId === activeDeckId).map((l) => l.cardId));
-  // Expand subcategories for activeDeck
-  const _activeCatChildrenOf = new Map<string | null, string[]>();
-  (state.categories ?? []).forEach((c) => {
-    const key = c.parentId ?? null;
-    const arr = _activeCatChildrenOf.get(key) ?? [];
-    arr.push(c.id);
-    _activeCatChildrenOf.set(key, arr);
-  });
-  const _activeCatExpanded = new Set<string>(activeDeck?.categoryIds ?? []);
-  if (activeDeck?.includeSubCategories !== false) {
-    const stack = [...(activeDeck?.categoryIds ?? [])];
-    while (stack.length) {
-      const id = stack.pop()!;
-      (_activeCatChildrenOf.get(id) ?? []).forEach((childId) => {
-        if (!_activeCatExpanded.has(childId)) { _activeCatExpanded.add(childId); stack.push(childId); }
-      });
+  // Heavy derived data: memoize so it does not recompute on every store mutation.
+  const { activeDeck, activeDeckCards, activeDeckDue } = useMemo(() => {
+    const deck = state.decks.find((d) => d.id === activeDeckId);
+    if (!deck) return { activeDeck: undefined, activeDeckCards: [] as typeof state.cards, activeDeckDue: 0 };
+    const linkedIds = new Set((state.cardDecks ?? []).filter((l) => l.deckId === activeDeckId).map((l) => l.cardId));
+    const childrenOf = new Map<string | null, string[]>();
+    (state.categories ?? []).forEach((c) => {
+      const key = c.parentId ?? null;
+      const arr = childrenOf.get(key) ?? [];
+      arr.push(c.id);
+      childrenOf.set(key, arr);
+    });
+    const expanded = new Set<string>(deck.categoryIds ?? []);
+    if (deck.includeSubCategories !== false) {
+      const stack = [...(deck.categoryIds ?? [])];
+      while (stack.length) {
+        const id = stack.pop()!;
+        (childrenOf.get(id) ?? []).forEach((childId) => {
+          if (!expanded.has(childId)) { expanded.add(childId); stack.push(childId); }
+        });
+      }
     }
-  }
-  const activeDeckCatNames = new Set(
-    [..._activeCatExpanded].map((id) => state.categories?.find((c) => c.id === id)?.name).filter(Boolean) as string[]
-  );
-  const activeDeckCards = activeDeck ? state.cards.filter((c) =>
-    c.deckId === activeDeckId ||
-    activeDeckLinkedIds.has(c.id) ||
-    (activeDeckCatNames.size > 0 && c.tags?.some((t) => t.startsWith("cat:") && activeDeckCatNames.has(t.slice(4))))
-  ) : [];
-  const activeDeckDue = activeDeckCards.filter(isDue).length;
+    const catNames = new Set(
+      [...expanded].map((id) => state.categories?.find((c) => c.id === id)?.name).filter(Boolean) as string[]
+    );
+    const cards = state.cards.filter((c) =>
+      c.deckId === activeDeckId ||
+      linkedIds.has(c.id) ||
+      (catNames.size > 0 && c.tags?.some((t) => t.startsWith("cat:") && catNames.has(t.slice(4))))
+    );
+    return { activeDeck: deck, activeDeckCards: cards, activeDeckDue: cards.filter(isDue).length };
+  }, [state.decks, state.cards, state.cardDecks, state.categories, activeDeckId]);
+
   const totalDue = deckStats.reduce((s, d) => s + d.dueCount, 0);
   const displayedDecks = showAllDecks ? deckStats : deckStats.slice(0, 5);
 
