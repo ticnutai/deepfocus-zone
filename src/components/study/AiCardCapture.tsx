@@ -551,9 +551,10 @@ export function AiCardCapture() {
             : { left: FAB_PADDING, bottom: FAB_PADDING }),
           width: style.size,
           height: style.size,
+          aspectRatio: "1 / 1",
           background: style.bg,
           color: style.color,
-          borderRadius: style.shape === "circle" ? "9999px" : style.shape === "rounded" ? "16px" : "4px",
+          borderRadius: "9999px",
         }}
         className="z-40 shadow-2xl hover:scale-110 active:scale-95 transition-transform duration-150 select-none flex items-center justify-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
       >
