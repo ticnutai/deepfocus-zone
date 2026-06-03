@@ -37,6 +37,8 @@ export function ShasCalendar() {
   const customTarget = (state.uiPrefs as any)?.shasBoardDailyTarget as number | undefined;
 
   const [cursor, setCursor] = useState<Date>(startOfMonth(new Date()));
+  const [filterSedarim, setFilterSedarim] = useState<Set<string>>(new Set());
+  const [filterMasechtot, setFilterMasechtot] = useState<Set<string>>(new Set());
   const today = useMemo(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }, []);
 
   const pace = useMemo(() => computePace(log, 14), [log]);
@@ -44,12 +46,26 @@ export function ShasCalendar() {
   const perDay = customTarget && customTarget > 0 ? customTarget : autoPerDay;
   const targetSource = customTarget && customTarget > 0 ? "ידני" : "אוטומטי (קצב 14 ימים)";
 
+  const hasFilter = filterSedarim.size > 0 || filterMasechtot.size > 0;
+  const matchesFilter = (seder: string, masechta: string) => {
+    if (!hasFilter) return true;
+    if (filterMasechtot.size > 0 && filterMasechtot.has(masechta)) return true;
+    if (filterSedarim.size > 0 && filterMasechtot.size === 0 && filterSedarim.has(seder)) return true;
+    if (filterSedarim.size > 0 && filterMasechtot.size > 0 && filterSedarim.has(seder) && filterMasechtot.has(masechta)) return true;
+    // If only sedarim filter is set
+    if (filterMasechtot.size === 0) return filterSedarim.has(seder);
+    // If only masechtot filter is set
+    if (filterSedarim.size === 0) return filterMasechtot.has(masechta);
+    return false;
+  };
+
   // Build ordered list of remaining amudim across the entire Shas,
   // grouped by masechta/seder, so we can map (day index) -> which units.
   const remainingPlan = useMemo(() => {
     type Unit = { masechta: string; seder: string; daf: number; amud: "a" | "b" };
     const units: Unit[] = [];
     for (const m of SHAS_BAVLI) {
+      if (!matchesFilter(m.seder, m.name)) continue;
       const mp = progress[m.name] ?? {};
       for (let d = 2; d <= m.pages + 1; d++) {
         const e = mp[d] ?? {};
@@ -58,7 +74,8 @@ export function ShasCalendar() {
       }
     }
     return units;
-  }, [progress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress, filterSedarim, filterMasechtot]);
 
   const totalRemaining = remainingPlan.length;
 
