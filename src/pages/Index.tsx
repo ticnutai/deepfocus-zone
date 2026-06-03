@@ -1435,7 +1435,7 @@ const Index = () => {
               <Card className="gold-frame p-1.5 sm:p-2" onMouseEnter={handleTabsMouseEnter} onMouseLeave={handleTabsMouseLeave}>
                 <div className="flex items-start gap-2">
                   <TabsList
-                    className="flex-1 min-w-0 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-hide snap-x snap-mandatory px-0.5 -mx-0.5"
+                    className="flex-1 min-w-0 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-x snap-mandatory px-2 -mx-0.5"
                     dir="rtl"
                   >
                     {visibleTabs.map(({ v, l, I }) => (
