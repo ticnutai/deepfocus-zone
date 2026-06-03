@@ -115,7 +115,7 @@ export function UserPermOverrides() {
     if (!selectedUser) return;
     setBusy(true);
     const rows = ACTIONS.map((a) => ({
-      user_id: selectedUser, module, action: a, allowed, set_by: me?.id ?? null,
+      user_id: selectedUser, module: module as any, action: a, allowed, set_by: me?.id ?? null,
     }));
     const { data, error } = await supabase
       .from("user_permission_overrides")
@@ -136,7 +136,7 @@ export function UserPermOverrides() {
       .from("user_permission_overrides")
       .delete()
       .eq("user_id", selectedUser)
-      .eq("module", module);
+      .eq("module", module as any);
     if (error) { toast.error(error.message); setBusy(false); return; }
     setOverrides((arr) => arr.filter((o) => o.module !== module));
     setBusy(false);

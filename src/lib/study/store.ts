@@ -2815,7 +2815,7 @@ export function useStudy() {
   // One-time migration: rename legacy "ללא סיווג" → current UNCATEGORIZED_NAME
   useEffect(() => {
     const OLD = "ללא סיווג";
-    if (UNCATEGORIZED_NAME === OLD) return;
+    if ((UNCATEGORIZED_NAME as string) === OLD) return;
     const uid = user?.id ?? null;
     if (!uid) return;
     const old = (memState.categories ?? []).find((c) => c.parentId === null && c.name === OLD);
@@ -3041,7 +3041,7 @@ export function useStudy() {
   const ensureUncategorized = useCallback((): string => {
     // Migrate old name "ללא סיווג" → current UNCATEGORIZED_NAME
     const oldName = "ללא סיווג";
-    if (UNCATEGORIZED_NAME !== oldName) {
+    if ((UNCATEGORIZED_NAME as string) !== oldName) {
       const old = (memState.categories ?? []).find((c) => c.parentId === null && c.name === oldName);
       if (old) {
         setState((s) => ({
