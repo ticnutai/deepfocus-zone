@@ -32,9 +32,16 @@ function addDays(d: Date, n: number) { const o = new Date(d); o.setDate(o.getDat
 
 export function ShasCalendar() {
   const { state } = useStudy();
-  const progress = ((state.uiPrefs as any)?.shasBoardProgress ?? {}) as Record<string, Record<number, { a?: number; b?: number }>>;
-  const log = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
-  const customTarget = (state.uiPrefs as any)?.shasBoardDailyTarget as number | undefined;
+  const uiPrefs = state.uiPrefs as any;
+  const progress = useMemo(
+    () => (uiPrefs?.shasBoardProgress ?? {}) as Record<string, Record<number, { a?: number; b?: number }>>,
+    [uiPrefs?.shasBoardProgress],
+  );
+  const log = useMemo(
+    () => (uiPrefs?.shasBoardLog ?? {}) as Record<string, number>,
+    [uiPrefs?.shasBoardLog],
+  );
+  const customTarget = uiPrefs?.shasBoardDailyTarget as number | undefined;
 
   const [cursor, setCursor] = useState<Date>(startOfMonth(new Date()));
   const [filterSedarim, setFilterSedarim] = useState<Set<string>>(new Set());
