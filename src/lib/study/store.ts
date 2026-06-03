@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
+import { perfMeter } from "@/lib/debug/perfMeter";
 import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./srs";
 import { toHebrewNum } from "./shasFormat";
 import { SHAS_BAVLI } from "./shasData";
