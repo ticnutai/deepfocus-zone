@@ -31,7 +31,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { isProfileBMode } from "@/lib/study/profileBMode";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import { useMobileLayoutMode, resolveMobileMode } from "@/lib/study/mobileLayoutMode";
-import { PremiumStackLayout, CarouselLayout, MagazineLayout } from "./MobileWidgetLayouts";
+import { PremiumStackLayout, CarouselLayout, MagazineLayout, FocusedDashboardLayout } from "./MobileWidgetLayouts";
 import {
   GripVertical,
   EyeOff,
@@ -561,6 +561,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           }));
           if (mobileMode === "carousel") return <CarouselLayout items={items} />;
           if (mobileMode === "magazine") return <MagazineLayout items={items} />;
+          if (mobileMode === "focused") return <FocusedDashboardLayout items={items} />;
           return <PremiumStackLayout items={items} />;
         })()
       ) : inlineDrag ? (

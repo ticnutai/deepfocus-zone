@@ -1,7 +1,10 @@
-import { ReactNode, useState, useRef, useEffect } from "react";
+import { ReactNode, useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Flame, ListChecks, Target } from "lucide-react";
 import type { WidgetConfig } from "@/lib/study/types";
+import { useStudy } from "@/lib/study/store";
+import { isDue } from "@/lib/study/srs";
+import { dateKey, todayKey } from "@/lib/study/goals";
 
 interface RenderItem {
   cfg: WidgetConfig;
@@ -149,3 +152,92 @@ export function MagazineLayout({ items }: { items: RenderItem[] }) {
     </div>
   );
 }
+
+/* ─────────────────── Focused Dashboard ───────────────────
+   Mobile-first "פוקוס דשבורד": רצועת מצב יומית (סטריק / חזרות בתור / יעד)
+   ולאחריה הווידג'טים בעמודה אחת, כל אחד בכרטיס רחב-מסך עם מסגרת זהב
+   מוקפדת. ללא דלילה אופקית בכלל, היררכיה ברורה והגשה מקצועית. */
+function FocusedTodayStrip() {
+  const { state } = useStudy();
+  const today = todayKey();
+
+  const dueCount = useMemo(() => {
+    const srs = state.cards.filter(isDue).length;
+    const shas = (state.shasReviews ?? []).filter((r) => !r.isInitial && r.dueDate <= today && !r.doneAt).length;
+    const plan = (state.planReviews ?? []).filter((r) => r.dueDate <= today && !r.doneAt).length;
+    return srs + shas + plan;
+  }, [state.cards, state.shasReviews, state.planReviews, today]);
+
+  const doneTodayCount = useMemo(() => {
+    const logs = state.logs ?? [];
+    const todaysLogs = logs.filter((l) => dateKey(l.at) === today);
+    return new Set(todaysLogs.map((l) => l.cardId)).size;
+  }, [state.logs, today]);
+
+  const streak = useMemo(() => {
+    const logs = state.logs ?? [];
+    if (logs.length === 0) return 0;
+    const days = new Set(logs.map((l) => dateKey(l.at)));
+    let count = 0;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    // If nothing today, allow the streak to start from yesterday
+    if (!days.has(dateKey(d.getTime()))) d.setDate(d.getDate() - 1);
+    while (days.has(dateKey(d.getTime()))) {
+      count++;
+      d.setDate(d.getDate() - 1);
+    }
+    return count;
+  }, [state.logs]);
+
+  const tiles = [
+    { icon: Flame, label: "רצף ימים", value: streak, accent: "from-amber-500/15 to-gold/10" },
+    { icon: ListChecks, label: "חזרות בתור", value: dueCount, accent: "from-gold/15 to-amber-300/10" },
+    { icon: Target, label: "נלמדו היום", value: doneTodayCount, accent: "from-emerald-500/15 to-gold/10" },
+  ];
+
+  return (
+    <div className="grid grid-cols-3 gap-2 w-full" dir="rtl">
+      {tiles.map((t) => (
+        <div
+          key={t.label}
+          className={cn(
+            "relative rounded-2xl border-2 border-gold/40 bg-gradient-to-br p-3 shadow-[0_4px_18px_-10px_hsl(var(--primary)/0.3)] overflow-hidden",
+            t.accent,
+          )}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-card/80 border border-gold/40 text-gold">
+              <t.icon className="h-3.5 w-3.5" />
+            </span>
+          </div>
+          <div className="font-display text-2xl font-bold leading-none text-foreground">{t.value}</div>
+          <div className="text-[10px] font-semibold text-muted-foreground mt-1 leading-tight">{t.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function FocusedDashboardLayout({ items }: { items: RenderItem[] }) {
+  return (
+    <div className="flex flex-col gap-4 w-full" dir="rtl">
+      <FocusedTodayStrip />
+
+      <div className="flex flex-col gap-3 w-full">
+        {items.map((it, i) => (
+          <section
+            key={it.cfg.id}
+            className="w-full min-w-0 animate-in fade-in slide-in-from-bottom-1 duration-300 [&_*]:max-w-full"
+            style={{ animationDelay: `${Math.min(i * 50, 300)}ms` }}
+          >
+            <div className="rounded-2xl border-2 border-gold/30 bg-card shadow-[0_6px_22px_-12px_hsl(var(--primary)/0.35)] overflow-hidden">
+              {it.node}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
