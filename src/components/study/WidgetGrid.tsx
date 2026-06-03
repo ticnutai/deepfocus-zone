@@ -31,7 +31,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { isProfileBMode } from "@/lib/study/profileBMode";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import { useMobileLayoutMode, resolveMobileMode } from "@/lib/study/mobileLayoutMode";
-import { PremiumStackLayout, CarouselLayout, MagazineLayout } from "./MobileWidgetLayouts";
+import { PremiumStackLayout, CarouselLayout, MagazineLayout, FocusedDashboardLayout } from "./MobileWidgetLayouts";
 import {
   GripVertical,
   EyeOff,
