@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM, type Masechta } from "@/lib/study/shasData";
+import { ShasPlanner } from "./ShasPlanner";
 
 // ===== Types & helpers =====
 type AmudKey = "a" | "b";
@@ -86,7 +87,7 @@ export function ShasBoard() {
     [state.uiPrefs],
   );
 
-  const [view, setView] = useState<"hierarchy" | "flat">("hierarchy");
+  const [view, setView] = useState<"hierarchy" | "flat" | "planner">("hierarchy");
   const [selectedMasechta, setSelectedMasechta] = useState<string | null>(null);
   const [selectedSeder, setSelectedSeder] = useState<string | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set()); // "masechta:daf:amud"
@@ -383,6 +384,7 @@ export function ShasBoard() {
         <TabsList>
           <TabsTrigger value="hierarchy">לפי סדרים</TabsTrigger>
           <TabsTrigger value="flat">כל המסכתות</TabsTrigger>
+          <TabsTrigger value="planner">תכנון לסיום</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hierarchy" className="space-y-3">
@@ -433,6 +435,10 @@ export function ShasBoard() {
               );
             })}
           </div>
+        </TabsContent>
+
+        <TabsContent value="planner">
+          <ShasPlanner />
         </TabsContent>
       </Tabs>
     </div>
