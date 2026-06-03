@@ -43,6 +43,7 @@ const DafLearningTab = lazy(() => import("@/components/study/DafLearningTab").th
 const WeeklySummary = lazy(() => import("@/components/study/WeeklySummary").then(m => ({ default: m.WeeklySummary })));
 const GoalsManager = lazy(() => import("@/components/study/GoalsManager").then(m => ({ default: m.GoalsManager })));
 const ShasTracker = lazy(() => import("@/components/study/ShasTracker").then(m => ({ default: m.ShasTracker })));
+const ShasBoard = lazy(() => import("@/components/study/ShasBoard").then(m => ({ default: m.ShasBoard })));
 const BackupRestorePage = lazy(() => import("@/components/study/BackupRestorePage").then(m => ({ default: m.BackupRestorePage })));
 const ReminderSettings = lazy(() => import("@/components/study/ReminderSettings").then(m => ({ default: m.ReminderSettings })));
 const AdminPanel = lazy(() => import("@/components/admin/AdminPanel").then(m => ({ default: m.AdminPanel })));
@@ -1215,6 +1216,8 @@ const Index = () => {
         );
       case "backup-restore":
         return <BackupRestorePage />;
+      case "shas-board":
+        return <ShasBoard />;
       case "db-inspector":
         return <SupabaseInspectorPage />;
       case "perf":

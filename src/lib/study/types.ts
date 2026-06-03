@@ -275,6 +275,7 @@ export interface UiPrefs {
   categorySortMode?: "name" | "createdNew" | "createdOld" | "favorites" | "manual";
   // Mishnayot tracker: { [sederName]: { [masechetName]: { [perekIndex]: number[] of learned mishna indices (1-based) } } }
   mishnayotProgress?: Record<string, Record<string, Record<number, number[]>>>;
+  shasBoardProgress?: Record<string, Record<number, { a?: number; b?: number }>>;
   // Cloud-sync toggle (persisted to cloud so it roams across devices)
   syncEnabled?: boolean;
   // Floating AI button — position, appearance, and drag-enabled flag, synced across devices
