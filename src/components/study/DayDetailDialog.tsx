@@ -11,7 +11,8 @@ import { dateKey } from "@/lib/study/goals";
 import { buildPlanScheduleMap } from "@/lib/study/planSchedule";
 import { computeExpectedShasPosition, formatShasPosition } from "@/lib/study/shasFormat";
 import type { Card as StudyCard, ShasReview } from "@/lib/study/types";
-import { cn, toHebrewDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { toHebrewDate } from "@/lib/hebrewDate";
 import { SubjectPickerDialog, type SubjectMeta } from "./SubjectPickerDialog";
 
 interface Props {

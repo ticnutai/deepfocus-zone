@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2, Check, Calendar, X, Save } from "lucide-react";
-import { cn, toHebrewDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { toHebrewDate } from "@/lib/hebrewDate";
 import { toast } from "@/hooks/use-toast";
 
 const PRESETS_LS_KEY = "shas-review-preset-days-v1";
