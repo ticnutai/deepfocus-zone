@@ -5,17 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Hebrew date helpers moved to "@/lib/hebrewDate" so the heavy @hebcal/core
-// dependency is no longer dragged into the universal `cn()` bundle.
-// Re-export here for backwards compatibility — consumers still importing from
-// "@/lib/utils" keep working, while new imports should target "@/lib/hebrewDate".
-export {
-  toHebrewDate,
-  hebrewYearGematriya,
-  HEB_MONTHS,
-  fromHebrewDate,
-} from "./hebrewDate";
-
 /**
  * Calculates the calendar date after `daysNeeded` active study days,
  * skipping the specified weekdays (0=Sun…6=Sat) and recurring MM-DD dates.
