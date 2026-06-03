@@ -1452,15 +1452,7 @@ const Index = () => {
               }}
               className="w-full" dir="rtl"
             >
-              <Card
-                className="gold-frame p-1.5 sm:p-2 relative"
-                onMouseEnter={handleTabsMouseEnter}
-                onMouseLeave={handleTabsMouseLeave}
-                onTouchStart={handleTabsTouchStart}
-                onTouchEnd={handleTabsTouchCancel}
-                onTouchMove={handleTabsTouchCancel}
-                onTouchCancel={handleTabsTouchCancel}
-              >
+              <Card className="gold-frame p-1.5 sm:p-2 relative">
                 <TabsList
                   className="w-full bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
                   dir="rtl"
@@ -1480,33 +1472,6 @@ const Index = () => {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-
-                {/* Floating config overlay — appears on hover (~1s) / long-press */}
-                {!profileBActive && (
-                  <div
-                    className={cn(
-                      "absolute left-2 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1 rounded-xl border-2 border-gold/70 bg-card/95 backdrop-blur-sm shadow-elegant p-1 transition-all duration-200",
-                      showTabsConfigIcon
-                        ? "opacity-100 scale-100 pointer-events-auto"
-                        : "opacity-0 scale-95 pointer-events-none",
-                    )}
-                  >
-                    <button
-                      onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
-                      title="הגדרת סיידבר"
-                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
-                    >
-                      <Sliders className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
-                      title="הגדרת טאבים"
-                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
-                    >
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
               </Card>
 
               <TabsContent value="overview" className="mt-6">
