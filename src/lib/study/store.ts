@@ -646,7 +646,11 @@ const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSyn
 
 function setState(updater: (s: StudyState) => StudyState) {
   memState = updater(memState);
-  notify();
+  perfMeter.bumpMutation();
+  // Batch consecutive mutations within the same frame into a single notify.
+  // Test/SSR fallback inside requestStoreNotify uses a microtask, so callers
+  // that read memState synchronously after setState still see fresh data.
+  requestStoreNotify();
   scheduleStateCachePersist();
 }
 
