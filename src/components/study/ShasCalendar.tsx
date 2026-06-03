@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronLeft, CalendarDays, Flag } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Flag, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
@@ -37,6 +37,8 @@ export function ShasCalendar() {
   const customTarget = (state.uiPrefs as any)?.shasBoardDailyTarget as number | undefined;
 
   const [cursor, setCursor] = useState<Date>(startOfMonth(new Date()));
+  const [filterSedarim, setFilterSedarim] = useState<Set<string>>(new Set());
+  const [filterMasechtot, setFilterMasechtot] = useState<Set<string>>(new Set());
   const today = useMemo(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; }, []);
 
   const pace = useMemo(() => computePace(log, 14), [log]);
@@ -44,12 +46,26 @@ export function ShasCalendar() {
   const perDay = customTarget && customTarget > 0 ? customTarget : autoPerDay;
   const targetSource = customTarget && customTarget > 0 ? "ידני" : "אוטומטי (קצב 14 ימים)";
 
+  const hasFilter = filterSedarim.size > 0 || filterMasechtot.size > 0;
+  const matchesFilter = (seder: string, masechta: string) => {
+    const sederOk = filterSedarim.size === 0 || filterSedarim.has(seder);
+    const masechtaOk = filterMasechtot.size === 0 || filterMasechtot.has(masechta);
+    return sederOk && masechtaOk;
+  };
+
+  const toggleInSet = (s: Set<string>, val: string) => {
+    const next = new Set(s);
+    next.has(val) ? next.delete(val) : next.add(val);
+    return next;
+  };
+
   // Build ordered list of remaining amudim across the entire Shas,
   // grouped by masechta/seder, so we can map (day index) -> which units.
   const remainingPlan = useMemo(() => {
     type Unit = { masechta: string; seder: string; daf: number; amud: "a" | "b" };
     const units: Unit[] = [];
     for (const m of SHAS_BAVLI) {
+      if (!matchesFilter(m.seder, m.name)) continue;
       const mp = progress[m.name] ?? {};
       for (let d = 2; d <= m.pages + 1; d++) {
         const e = mp[d] ?? {};
@@ -58,7 +74,8 @@ export function ShasCalendar() {
       }
     }
     return units;
-  }, [progress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress, filterSedarim, filterMasechtot]);
 
   const totalRemaining = remainingPlan.length;
 
@@ -150,6 +167,79 @@ export function ShasCalendar() {
         )}
       </Card>
 
+      {/* Quick filters */}
+      <Card className="gold-frame p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-gold" />
+            <span className="font-semibold text-sm">סינון מהיר</span>
+            {hasFilter && (
+              <Badge variant="secondary" className="text-[10px]">
+                מציג {remainingPlan.length} עמ׳ נותרים
+              </Badge>
+            )}
+          </div>
+          {hasFilter && (
+            <Button variant="ghost" size="sm" onClick={() => { setFilterSedarim(new Set()); setFilterMasechtot(new Set()); }}>
+              <X className="h-3 w-3 ml-1" /> נקה הכל
+            </Button>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-muted-foreground">סדרים</div>
+          <div className="flex flex-wrap gap-1">
+            {SEDARIM.map((s) => {
+              const active = filterSedarim.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setFilterSedarim((prev) => toggleInSet(prev, s))}
+                  className={cn(
+                    "rounded-full border-2 px-3 py-1 text-xs transition-colors",
+                    active
+                      ? "bg-gold text-primary-foreground border-gold font-bold"
+                      : "border-gold/40 text-foreground hover:border-gold/70"
+                  )}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-muted-foreground">
+            מסכתות {filterSedarim.size > 0 && <span className="font-normal">(מסוננות לפי סדר)</span>}
+          </div>
+          <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+            {SHAS_BAVLI
+              .filter((m) => filterSedarim.size === 0 || filterSedarim.has(m.seder))
+              .map((m) => {
+                const active = filterMasechtot.has(m.name);
+                return (
+                  <button
+                    key={m.name}
+                    type="button"
+                    onClick={() => setFilterMasechtot((prev) => toggleInSet(prev, m.name))}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                      active
+                        ? "bg-gold/80 text-primary-foreground border-gold font-bold"
+                        : "border-gold/30 text-muted-foreground hover:border-gold/60 hover:text-foreground"
+                    )}
+                  >
+                    {m.name}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      </Card>
+
+
       {/* Month nav */}
       <Card className="gold-frame p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -233,7 +323,7 @@ export function ShasCalendar() {
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-bold">תאריך סיום צפוי — סדרים</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {SEDARIM.map((s) => {
+          {SEDARIM.filter((s) => filterSedarim.size === 0 || filterSedarim.has(s)).map((s) => {
             const iso = finishes.perSeder[s];
             const allDone = SHAS_BAVLI.filter(m => m.seder === s).every(m => {
               const t = m.pages * 2;
@@ -258,7 +348,7 @@ export function ShasCalendar() {
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-bold">תאריך סיום צפוי — מסכתות</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {SHAS_BAVLI.map((m) => {
+          {SHAS_BAVLI.filter((m) => matchesFilter(m.seder, m.name)).map((m) => {
             const iso = finishes.perMasechta[m.name];
             const total = m.pages * 2;
             const mp = progress[m.name] ?? {};
