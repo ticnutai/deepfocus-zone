@@ -348,7 +348,7 @@ export function ShasCalendar() {
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-bold">תאריך סיום צפוי — מסכתות</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {SHAS_BAVLI.map((m) => {
+          {SHAS_BAVLI.filter((m) => matchesFilter(m.seder, m.name)).map((m) => {
             const iso = finishes.perMasechta[m.name];
             const total = m.pages * 2;
             const mp = progress[m.name] ?? {};
