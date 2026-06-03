@@ -349,7 +349,9 @@ const requestStoreNotify = () => {
     window.requestAnimationFrame(() => flush());
     return;
   }
-  window.setTimeout(() => flush(), 0);
+  // SSR / test fallback — flush asynchronously so multiple setState calls in the
+  // same microtask still coalesce into a single notify.
+  Promise.resolve().then(flush);
 };
 
 const markCloudSyncJobs = (count: number) => {
