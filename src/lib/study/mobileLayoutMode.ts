@@ -43,6 +43,6 @@ export function useMobileLayoutMode(): MobileLayoutMode {
 /** Resolve "auto" to a concrete mode for mobile rendering. */
 export function resolveMobileMode(mode: MobileLayoutMode, isMobile: boolean): MobileLayoutMode {
   if (!isMobile) return "default";
-  if (mode === "auto") return "premium-stack";
+  if (mode === "auto") return "focused";
   return mode;
 }
