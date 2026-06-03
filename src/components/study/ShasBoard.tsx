@@ -6,7 +6,7 @@
  * - סיכומים פר סדר, מסכת, וכל הש"ס + כמה נשאר לסיום
  * - שמירה בענן דרך uiPrefs (shasBoardProgress)
  */
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -96,8 +96,8 @@ export function ShasBoard() {
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
 
-  const save = (next: ShasBoardProgress) => {
-    // Log delta of learned amudim to today's bucket for pace analysis
+  const save = useCallback((next: ShasBoardProgress) => {
+    // Compute delta of newly-learned amudim for today's pace log.
     let oldLearned = 0, newLearned = 0;
     for (const mp of Object.values(progress)) for (const e of Object.values(mp)) {
       if ((e.a ?? 0) > 0) oldLearned++; if ((e.b ?? 0) > 0) oldLearned++;
@@ -106,14 +106,17 @@ export function ShasBoard() {
       if ((e.a ?? 0) > 0) newLearned++; if ((e.b ?? 0) > 0) newLearned++;
     }
     const delta = newLearned - oldLearned;
+    // Always write progress first.
     setUiPref("shasBoardProgress", next);
     if (delta > 0) {
       const today = new Date();
       const k = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      const log = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
-      setUiPref("shasBoardLog", { ...log, [k]: (log[k] ?? 0) + delta });
+      // Defer the log write so it doesn't pile another synchronous store update onto the click.
+      const prevLog = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
+      const nextLog = { ...prevLog, [k]: (prevLog[k] ?? 0) + delta };
+      queueMicrotask(() => setUiPref("shasBoardLog", nextLog));
     }
-  };
+  }, [progress, state.uiPrefs, setUiPref]);
 
   // ----- Totals -----
   const totals = useMemo(() => {
@@ -140,14 +143,14 @@ export function ShasBoard() {
 
   // ----- Selection helpers -----
   const sKey = (m: string, daf: number, a: AmudKey) => `${m}:${daf}:${a}`;
-  const toggleSel = (m: string, daf: number, a: AmudKey) => {
+  const toggleSel = useCallback((m: string, daf: number, a: AmudKey) => {
     setSelection((prev) => {
       const next = new Set(prev);
-      const k = sKey(m, daf, a);
+      const k = `${m}:${daf}:${a}`;
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
-  };
+  }, []);
   const clearSel = () => setSelection(new Set());
   const selectAllInMasechta = (m: Masechta) => {
     const next = new Set(selection);
@@ -191,46 +194,32 @@ export function ShasBoard() {
     save(next);
   };
 
-  const singleClick = (m: string, daf: number, a: AmudKey) => {
+  const singleClick = useCallback((m: string, daf: number, a: AmudKey) => {
     const cur = progress[m]?.[daf]?.[a] ?? 0;
     save(setAmudReps(progress, m, daf, a, cur + 1));
-  };
-  const singleRightClick = (e: React.MouseEvent, m: string, daf: number, a: AmudKey) => {
+  }, [progress, save]);
+  const singleRightClick = useCallback((e: React.MouseEvent, m: string, daf: number, a: AmudKey) => {
     e.preventDefault();
     const cur = progress[m]?.[daf]?.[a] ?? 0;
     save(setAmudReps(progress, m, daf, a, Math.max(0, cur - 1)));
-  };
+  }, [progress, save]);
 
   // ----- Sub views -----
   const renderAmudButton = (m: Masechta, daf: number, a: AmudKey) => {
     const reps = progress[m.name]?.[daf]?.[a] ?? 0;
-    const learned = reps > 0;
     const isSel = selection.has(sKey(m.name, daf, a));
     return (
-      <button
+      <AmudButton
         key={`${daf}-${a}`}
-        onClick={() => singleClick(m.name, daf, a)}
-        onContextMenu={(e) => singleRightClick(e, m.name, daf, a)}
-        onDoubleClick={(e) => { e.preventDefault(); toggleSel(m.name, daf, a); }}
-        className={cn(
-          "relative h-11 rounded-md border-2 text-xs font-semibold transition-all flex flex-col items-center justify-center leading-tight",
-          learned
-            ? "bg-gradient-navy text-primary-foreground border-gold shadow-sm"
-            : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
-          isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
-        )}
-        title={`${m.name} ${heb(daf)} ${a === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, ימני: -1, דבל-קליק: בחירה)`}
-      >
-        <span className="text-[11px]">{heb(daf)}{a === "a" ? "." : ":"}</span>
-        {reps > 0 && (
-          <span className={cn(
-            "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-            reps >= 3 ? "bg-amber-500 text-black" : "bg-gold text-primary-foreground",
-          )}>
-            {reps}
-          </span>
-        )}
-      </button>
+        masechtaName={m.name}
+        daf={daf}
+        amud={a}
+        reps={reps}
+        isSel={isSel}
+        onClick={singleClick}
+        onRightClick={singleRightClick}
+        onToggleSel={toggleSel}
+      />
     );
   };
 
@@ -450,3 +439,45 @@ export function ShasBoard() {
     </div>
   );
 }
+
+// Memoized amud cell — prevents re-rendering all 300 cells on every click.
+type AmudButtonProps = {
+  masechtaName: string;
+  daf: number;
+  amud: AmudKey;
+  reps: number;
+  isSel: boolean;
+  onClick: (m: string, daf: number, a: AmudKey) => void;
+  onRightClick: (e: React.MouseEvent, m: string, daf: number, a: AmudKey) => void;
+  onToggleSel: (m: string, daf: number, a: AmudKey) => void;
+};
+const AmudButton = memo(function AmudButton({
+  masechtaName, daf, amud, reps, isSel, onClick, onRightClick, onToggleSel,
+}: AmudButtonProps) {
+  const learned = reps > 0;
+  return (
+    <button
+      onClick={() => onClick(masechtaName, daf, amud)}
+      onContextMenu={(e) => onRightClick(e, masechtaName, daf, amud)}
+      onDoubleClick={(e) => { e.preventDefault(); onToggleSel(masechtaName, daf, amud); }}
+      className={cn(
+        "relative h-11 rounded-md border-2 text-xs font-semibold transition-all flex flex-col items-center justify-center leading-tight",
+        learned
+          ? "bg-gradient-navy text-primary-foreground border-gold shadow-sm"
+          : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
+        isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
+      )}
+      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, ימני: -1, דבל-קליק: בחירה)`}
+    >
+      <span className="text-[11px]">{heb(daf)}{amud === "a" ? "." : ":"}</span>
+      {reps > 0 && (
+        <span className={cn(
+          "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
+          reps >= 3 ? "bg-amber-500 text-black" : "bg-gold text-primary-foreground",
+        )}>
+          {reps}
+        </span>
+      )}
+    </button>
+  );
+});
