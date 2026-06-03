@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronLeft, CalendarDays, Flag } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Flag, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
