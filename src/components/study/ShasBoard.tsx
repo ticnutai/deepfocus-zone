@@ -283,13 +283,28 @@ export function ShasBoard() {
         <Progress value={pct} className="h-2" />
         {BulkBar}
         <Card className="gold-frame p-4">
-          <div
-            className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14 gap-2"
-            style={{ contentVisibility: "auto", containIntrinsicSize: `${Math.ceil(m.pages * 2 / 4) * 48}px` } as React.CSSProperties}
-          >
-            {Array.from({ length: m.pages }, (_, i) => i + 2).flatMap((daf) =>
-              amudKeys().map((a) => renderAmudButton(m, daf, a)),
-            )}
+          <div className="space-y-2">
+            {(() => {
+              // Chunk amudim into rows of ~28 cells so each row can opt into
+              // content-visibility virtualization independently.
+              const allCells: Array<{ daf: number; a: AmudKey }> = [];
+              for (let d = 2; d <= m.pages + 1; d++) {
+                allCells.push({ daf: d, a: "a" });
+                allCells.push({ daf: d, a: "b" });
+              }
+              const ROW = 28;
+              const rows: typeof allCells[] = [];
+              for (let i = 0; i < allCells.length; i += ROW) rows.push(allCells.slice(i, i + ROW));
+              return rows.map((row, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14 gap-2"
+                  style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
+                >
+                  {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
+                </div>
+              ));
+            })()}
           </div>
         </Card>
       </div>
