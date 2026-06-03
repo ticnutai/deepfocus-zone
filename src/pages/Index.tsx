@@ -759,7 +759,7 @@ const Index = () => {
 
   const handleTabsMouseEnter = useCallback(() => {
     if (tabsHoverTimer.current) window.clearTimeout(tabsHoverTimer.current);
-    tabsHoverTimer.current = window.setTimeout(() => setShowTabsConfigIcon(true), 2000);
+    tabsHoverTimer.current = window.setTimeout(() => setShowTabsConfigIcon(true), 1000);
   }, []);
 
   const handleTabsMouseLeave = useCallback(() => {
@@ -767,6 +767,25 @@ const Index = () => {
     tabsHoverTimer.current = null;
     setShowTabsConfigIcon(false);
   }, []);
+
+  const handleTabsTouchStart = useCallback(() => {
+    if (tabsHoverTimer.current) window.clearTimeout(tabsHoverTimer.current);
+    tabsHoverTimer.current = window.setTimeout(() => setShowTabsConfigIcon(true), 600);
+  }, []);
+
+  const handleTabsTouchCancel = useCallback(() => {
+    if (tabsHoverTimer.current) {
+      window.clearTimeout(tabsHoverTimer.current);
+      tabsHoverTimer.current = null;
+    }
+  }, []);
+
+  // Auto-hide the overlay shortly after it appears (touch users have no mouseleave)
+  useEffect(() => {
+    if (!showTabsConfigIcon) return;
+    const t = window.setTimeout(() => setShowTabsConfigIcon(false), 5000);
+    return () => window.clearTimeout(t);
+  }, [showTabsConfigIcon]);
 
   // Global Ctrl+K / Cmd+K to open Smart Search
   useEffect(() => {
