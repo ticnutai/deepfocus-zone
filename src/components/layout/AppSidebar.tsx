@@ -119,15 +119,15 @@ const SidebarFooter = ({
   isAdmin: boolean;
 }) => (
   <div className="border-t-2 border-gold/40 p-2 flex-shrink-0">
-    <div className="flex items-center gap-1.5 rounded-full border-2 border-gold/50 bg-card px-2 py-1.5">
-      {/* Left: small round action icons (gold border, white bg, navy icon) */}
+    <div className="flex items-center gap-2 rounded-full border-2 border-gold/50 bg-card px-2 py-1.5">
+      {/* Left: tiny round action icons */}
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onSignOut}
           title="התנתקות"
-          className="flex items-center justify-center h-7 w-7 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+          className="flex aspect-square items-center justify-center h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
         >
-          <LogOut className="h-3.5 w-3.5" />
+          <LogOut className="h-3 w-3" />
         </button>
         <ThemeSwitcher />
       </div>
@@ -140,12 +140,12 @@ const SidebarFooter = ({
         dir="ltr"
       >
         <div className="flex-1 min-w-0 text-right" dir="rtl">
-          <div className="text-[11px] font-medium text-navy leading-tight truncate" dir="ltr">{userLabel}</div>
+          <div className="text-[10px] font-medium text-navy leading-tight truncate" dir="ltr">{userLabel}</div>
           <div className={cn("text-[9px] font-semibold leading-tight", isAdmin ? "text-yellow-600" : "text-muted-foreground")}>
             {isAdmin ? "👑 מנהל" : "משתמש"}
           </div>
         </div>
-        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border-2 border-gold/70 bg-gradient-navy text-primary-foreground text-[11px] font-bold">
+        <div className="flex aspect-square h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-gold/70 bg-gradient-navy text-primary-foreground text-[10px] font-bold">
           {userInitial}
         </div>
       </button>
