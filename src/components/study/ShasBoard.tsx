@@ -6,7 +6,7 @@
  * - סיכומים פר סדר, מסכת, וכל הש"ס + כמה נשאר לסיום
  * - שמירה בענן דרך uiPrefs (shasBoardProgress)
  */
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
