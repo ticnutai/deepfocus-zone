@@ -48,15 +48,15 @@ export function ShasCalendar() {
 
   const hasFilter = filterSedarim.size > 0 || filterMasechtot.size > 0;
   const matchesFilter = (seder: string, masechta: string) => {
-    if (!hasFilter) return true;
-    if (filterMasechtot.size > 0 && filterMasechtot.has(masechta)) return true;
-    if (filterSedarim.size > 0 && filterMasechtot.size === 0 && filterSedarim.has(seder)) return true;
-    if (filterSedarim.size > 0 && filterMasechtot.size > 0 && filterSedarim.has(seder) && filterMasechtot.has(masechta)) return true;
-    // If only sedarim filter is set
-    if (filterMasechtot.size === 0) return filterSedarim.has(seder);
-    // If only masechtot filter is set
-    if (filterSedarim.size === 0) return filterMasechtot.has(masechta);
-    return false;
+    const sederOk = filterSedarim.size === 0 || filterSedarim.has(seder);
+    const masechtaOk = filterMasechtot.size === 0 || filterMasechtot.has(masechta);
+    return sederOk && masechtaOk;
+  };
+
+  const toggleInSet = (s: Set<string>, val: string) => {
+    const next = new Set(s);
+    next.has(val) ? next.delete(val) : next.add(val);
+    return next;
   };
 
   // Build ordered list of remaining amudim across the entire Shas,
