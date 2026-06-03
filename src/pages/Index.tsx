@@ -924,12 +924,12 @@ const Index = () => {
     return result;
   }, [state.sidebarConfig]);
 
-  const visibleSidebarItems = orderedSidebarItems.filter((item) => {
+  const visibleSidebarItems = useMemo(() => orderedSidebarItems.filter((item) => {
     if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
     if (!item.visible) return false;
     if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
     return isAllowedByPermission(item.id);
-  });
+  }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
 
   useEffect(() => {
     if (visibleSidebarItems.some((item) => item.id === active)) return;
