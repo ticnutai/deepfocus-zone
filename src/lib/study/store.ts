@@ -335,6 +335,7 @@ const notify = () => {
   if (currentUserId === GUEST_ID) {
     try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
   }
+  perfMeter.bumpNotify(listeners.size);
   listeners.forEach((l) => l());
 };
 
