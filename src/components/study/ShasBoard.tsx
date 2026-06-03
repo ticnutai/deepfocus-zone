@@ -283,7 +283,10 @@ export function ShasBoard() {
         <Progress value={pct} className="h-2" />
         {BulkBar}
         <Card className="gold-frame p-4">
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14 gap-2">
+          <div
+            className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14 gap-2"
+            style={{ contentVisibility: "auto", containIntrinsicSize: `${Math.ceil(m.pages * 2 / 4) * 48}px` } as React.CSSProperties}
+          >
             {Array.from({ length: m.pages }, (_, i) => i + 2).flatMap((daf) =>
               amudKeys().map((a) => renderAmudButton(m, daf, a)),
             )}
