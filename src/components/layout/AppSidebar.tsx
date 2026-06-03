@@ -118,32 +118,37 @@ const SidebarFooter = ({
   userInitial: string;
   isAdmin: boolean;
 }) => (
-  <div className="border-t-2 border-gold/40 p-3 space-y-2 flex-shrink-0">
-    <button
-      onClick={onOpenSettings}
-      className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-3 py-2 hover:bg-secondary transition-colors text-right"
-      title="הגדרות משתמש"
-    >
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
-        {userInitial}
+  <div className="border-t-2 border-gold/40 p-2 flex-shrink-0">
+    <div className="flex items-center gap-1.5 rounded-full border-2 border-gold/50 bg-card px-2 py-1.5">
+      {/* Left: small round action icons (gold border, white bg, navy icon) */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          onClick={onSignOut}
+          title="התנתקות"
+          className="flex items-center justify-center h-7 w-7 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
+        <ThemeSwitcher />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-foreground truncate">{userLabel}</div>
-        <div className={cn("text-[10px] font-semibold", isAdmin ? "text-yellow-500" : "text-muted-foreground")}>
-          {isAdmin ? "👑 מנהל" : "משתמש"}
-        </div>
-      </div>
-      <Settings className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-    </button>
-    <div className="flex items-center justify-between gap-1">
+
+      {/* Middle: user identity (clickable → settings) */}
       <button
-        onClick={onSignOut}
-        title="התנתקות"
-        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+        onClick={onOpenSettings}
+        title="הגדרות משתמש"
+        className="flex-1 min-w-0 flex items-center gap-2 px-1 text-right hover:opacity-80 transition-opacity"
+        dir="ltr"
       >
-        <LogOut className="h-4 w-4" />
+        <div className="flex-1 min-w-0 text-right" dir="rtl">
+          <div className="text-[11px] font-medium text-navy leading-tight truncate" dir="ltr">{userLabel}</div>
+          <div className={cn("text-[9px] font-semibold leading-tight", isAdmin ? "text-yellow-600" : "text-muted-foreground")}>
+            {isAdmin ? "👑 מנהל" : "משתמש"}
+          </div>
+        </div>
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border-2 border-gold/70 bg-gradient-navy text-primary-foreground text-[11px] font-bold">
+          {userInitial}
+        </div>
       </button>
-      <ThemeSwitcher />
     </div>
   </div>
 );
