@@ -1356,49 +1356,88 @@ const Index = () => {
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="hidden sm:block"><Logo size="sm" /></div>
-              <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
-                    <Menu className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
-                  <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
-                  <div className="flex-1 overflow-y-auto no-scrollbar">
-                    <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
-                  </div>
-                  <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
-                    <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
-                      <button
-                        onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
-                        className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
-                        style={{ flex: `0 0 ${userInfoMobileWidthPct}%` }}
-                        title="הגדרות משתמש"
-                      >
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
-                          {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => startUserInfoResize(e, userFooterMobileRef.current, userInfoMobileWidthPct, setUserInfoMobileWidthPct)}
-                        title="שנה רוחב שם משתמש"
-                        className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
-                        aria-label="שנה רוחב שם משתמש"
-                      />
-                      <ThemeSwitcher />
-                      <button
-                        onClick={() => { signOut(); setMobileSidebarOpen(false); }}
-                        title={isGuest ? "יציאה" : "התנתקות"}
-                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                      >
-                        <LogOut className="h-4 w-4" />
-                      </button>
+              <div
+                className="relative"
+                onMouseEnter={handleTabsMouseEnter}
+                onMouseLeave={handleTabsMouseLeave}
+                onTouchStart={handleTabsTouchStart}
+                onTouchEnd={handleTabsTouchCancel}
+                onTouchMove={handleTabsTouchCancel}
+                onTouchCancel={handleTabsTouchCancel}
+              >
+                <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
+                      <Menu className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
+                    <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar">
+                      <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
                     </div>
+                    <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
+                      <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
+                        <button
+                          onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
+                          className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
+                          style={{ flex: `0 0 ${userInfoMobileWidthPct}%` }}
+                          title="הגדרות משתמש"
+                        >
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
+                            {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => startUserInfoResize(e, userFooterMobileRef.current, userInfoMobileWidthPct, setUserInfoMobileWidthPct)}
+                          title="שנה רוחב שם משתמש"
+                          className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
+                          aria-label="שנה רוחב שם משתמש"
+                        />
+                        <ThemeSwitcher />
+                        <button
+                          onClick={() => { signOut(); setMobileSidebarOpen(false); }}
+                          title={isGuest ? "יציאה" : "התנתקות"}
+                          className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+                        >
+                          <LogOut className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+
+                {/* Floating config buttons — appear on hover (~1s) / long-press over the menu */}
+                {!profileBActive && (
+                  <div
+                    className={cn(
+                      "absolute top-full right-0 mt-2 z-40 flex items-center gap-1 rounded-xl border-2 border-gold/70 bg-card/95 backdrop-blur-sm shadow-elegant p-1 transition-all duration-200",
+                      showTabsConfigIcon
+                        ? "opacity-100 scale-100 pointer-events-auto"
+                        : "opacity-0 scale-95 pointer-events-none",
+                    )}
+                    onMouseEnter={handleTabsMouseEnter}
+                    onMouseLeave={handleTabsMouseLeave}
+                  >
+                    <button
+                      onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
+                      title="הגדרת סיידבר"
+                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
+                    >
+                      <Sliders className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
+                      title="הגדרת טאבים"
+                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </button>
                   </div>
-                </SheetContent>
-              </Sheet>
+                )}
+              </div>
             </div>
           </header>
 
@@ -1452,15 +1491,7 @@ const Index = () => {
               }}
               className="w-full" dir="rtl"
             >
-              <Card
-                className="gold-frame p-1.5 sm:p-2 relative"
-                onMouseEnter={handleTabsMouseEnter}
-                onMouseLeave={handleTabsMouseLeave}
-                onTouchStart={handleTabsTouchStart}
-                onTouchEnd={handleTabsTouchCancel}
-                onTouchMove={handleTabsTouchCancel}
-                onTouchCancel={handleTabsTouchCancel}
-              >
+              <Card className="gold-frame p-1.5 sm:p-2 relative">
                 <TabsList
                   className="w-full bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
                   dir="rtl"
@@ -1480,33 +1511,6 @@ const Index = () => {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-
-                {/* Floating config overlay — appears on hover (~1s) / long-press */}
-                {!profileBActive && (
-                  <div
-                    className={cn(
-                      "absolute left-2 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1 rounded-xl border-2 border-gold/70 bg-card/95 backdrop-blur-sm shadow-elegant p-1 transition-all duration-200",
-                      showTabsConfigIcon
-                        ? "opacity-100 scale-100 pointer-events-auto"
-                        : "opacity-0 scale-95 pointer-events-none",
-                    )}
-                  >
-                    <button
-                      onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
-                      title="הגדרת סיידבר"
-                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
-                    >
-                      <Sliders className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
-                      title="הגדרת טאבים"
-                      className="flex items-center justify-center h-9 w-9 rounded-lg text-navy hover:bg-secondary transition-all"
-                    >
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
               </Card>
 
               <TabsContent value="overview" className="mt-6">
