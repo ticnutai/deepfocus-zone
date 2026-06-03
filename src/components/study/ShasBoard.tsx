@@ -439,3 +439,45 @@ export function ShasBoard() {
     </div>
   );
 }
+
+// Memoized amud cell — prevents re-rendering all 300 cells on every click.
+type AmudButtonProps = {
+  masechtaName: string;
+  daf: number;
+  amud: AmudKey;
+  reps: number;
+  isSel: boolean;
+  onClick: (m: string, daf: number, a: AmudKey) => void;
+  onRightClick: (e: React.MouseEvent, m: string, daf: number, a: AmudKey) => void;
+  onToggleSel: (m: string, daf: number, a: AmudKey) => void;
+};
+const AmudButton = memo(function AmudButton({
+  masechtaName, daf, amud, reps, isSel, onClick, onRightClick, onToggleSel,
+}: AmudButtonProps) {
+  const learned = reps > 0;
+  return (
+    <button
+      onClick={() => onClick(masechtaName, daf, amud)}
+      onContextMenu={(e) => onRightClick(e, masechtaName, daf, amud)}
+      onDoubleClick={(e) => { e.preventDefault(); onToggleSel(masechtaName, daf, amud); }}
+      className={cn(
+        "relative h-11 rounded-md border-2 text-xs font-semibold transition-all flex flex-col items-center justify-center leading-tight",
+        learned
+          ? "bg-gradient-navy text-primary-foreground border-gold shadow-sm"
+          : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
+        isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
+      )}
+      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, ימני: -1, דבל-קליק: בחירה)`}
+    >
+      <span className="text-[11px]">{heb(daf)}{amud === "a" ? "." : ":"}</span>
+      {reps > 0 && (
+        <span className={cn(
+          "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
+          reps >= 3 ? "bg-amber-500 text-black" : "bg-gold text-primary-foreground",
+        )}>
+          {reps}
+        </span>
+      )}
+    </button>
+  );
+});
