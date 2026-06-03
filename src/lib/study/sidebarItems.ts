@@ -11,7 +11,7 @@ export const ALL_SIDEBAR_ITEMS: SidebarItemMeta[] = [
   { id: "summary", label: "סיכום" },
   { id: "study", label: "חזרות לימוד" },
   { id: "daf", label: "לימוד דף" },
-  { id: "cards", label: "שאלות חזרה" },
+  { id: "cards", label: "קטגוריות ושאלות" },
   { id: "categories", label: "קטגוריות ושאלות" },
   { id: "analytics", label: "ניתוחים" },
   { id: "blocker", label: "בודק רצפים" },
