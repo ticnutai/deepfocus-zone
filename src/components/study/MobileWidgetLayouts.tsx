@@ -1,7 +1,10 @@
-import { ReactNode, useState, useRef, useEffect } from "react";
+import { ReactNode, useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, Flame, ListChecks, Target } from "lucide-react";
 import type { WidgetConfig } from "@/lib/study/types";
+import { useStudy } from "@/lib/study/store";
+import { isDue } from "@/lib/study/srs";
+import { dateKey, todayKey } from "@/lib/study/goals";
 
 interface RenderItem {
   cfg: WidgetConfig;
