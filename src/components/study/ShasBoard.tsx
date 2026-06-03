@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM, type Masechta } from "@/lib/study/shasData";
 import { ShasPlanner } from "./ShasPlanner";
+import { ShasCalendar } from "./ShasCalendar";
 
 // ===== Types & helpers =====
 type AmudKey = "a" | "b";
@@ -87,7 +88,7 @@ export function ShasBoard() {
     [state.uiPrefs],
   );
 
-  const [view, setView] = useState<"hierarchy" | "flat" | "planner">("hierarchy");
+  const [view, setView] = useState<"hierarchy" | "flat" | "planner" | "calendar">("hierarchy");
   const [selectedMasechta, setSelectedMasechta] = useState<string | null>(null);
   const [selectedSeder, setSelectedSeder] = useState<string | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set()); // "masechta:daf:amud"
@@ -385,6 +386,7 @@ export function ShasBoard() {
           <TabsTrigger value="hierarchy">לפי סדרים</TabsTrigger>
           <TabsTrigger value="flat">כל המסכתות</TabsTrigger>
           <TabsTrigger value="planner">תכנון לסיום</TabsTrigger>
+          <TabsTrigger value="calendar">לוח שנה</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hierarchy" className="space-y-3">
@@ -439,6 +441,10 @@ export function ShasBoard() {
 
         <TabsContent value="planner">
           <ShasPlanner />
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          <ShasCalendar />
         </TabsContent>
       </Tabs>
     </div>
