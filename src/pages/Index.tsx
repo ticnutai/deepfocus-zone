@@ -1437,11 +1437,14 @@ const Index = () => {
             >
               <Card className="gold-frame p-1.5 sm:p-2" onMouseEnter={handleTabsMouseEnter} onMouseLeave={handleTabsMouseLeave}>
                 <div className="flex items-start gap-2">
-                  <TabsList className="flex-1 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-wrap" dir="rtl">
+                  <TabsList
+                    className="flex-1 min-w-0 bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-hide snap-x snap-mandatory px-0.5 -mx-0.5"
+                    dir="rtl"
+                  >
                     {visibleTabs.map(({ v, l, I }) => (
                       <TabsTrigger
                         key={v} value={v}
-                        className="flex-1 min-w-[88px] sm:min-w-[110px] justify-center gap-1.5 sm:gap-2 rounded-xl px-2 sm:px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant"
+                        className="shrink-0 sm:flex-1 snap-start min-w-[7.5rem] sm:min-w-[110px] justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
                       >
                         <span className="relative">
                           {l}
