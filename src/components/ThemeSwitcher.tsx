@@ -199,10 +199,10 @@ export const ThemeSwitcher = () => {
         <PopoverTrigger asChild>
           <Button
             variant="outline" size="icon"
-            className="h-7 w-7 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary [&_svg]:size-3.5"
+            className="aspect-square h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary [&_svg]:size-3"
             aria-label="בחר ערכת נושא"
           >
-            <Palette className="h-3.5 w-3.5" />
+            <Palette className="h-3 w-3" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80 border-2 border-gold rounded-2xl shadow-elegant">
