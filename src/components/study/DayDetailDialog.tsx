@@ -25,6 +25,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
   const {
     state, toggleGoalDate, setDayNote,
     completeGeneralPlanUnit, uncompleteSpecificUnit,
+    markPlanReviewDone, undoPlanReviewDone,
     markShasReviewDone, unmarkShasReviewDone,
     rescheduleShasReview, setShasReviewNote, deleteShasReview,
     addLearningSession, deleteLearningSession,
@@ -172,29 +173,6 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
     return state.shasPlan ?? null;
   }, [state.shasPlans, state.activeShasPlanId, state.shasPlan]);
 
-  const plannedLearningToday = useMemo(() => {
-    if (!dateKeyStr) return [] as string[];
-    const d = new Date(`${dateKeyStr}T00:00:00`);
-    const labels: string[] = [];
-
-    (state.generalPlans ?? []).forEach((plan) => {
-      if (plan.planType === "masechta_review") return;
-      const map = buildPlanScheduleMap(plan, d, d);
-      const dayUnits = map.get(dateKeyStr) ?? [];
-      if (dayUnits.length === 0) return;
-      const done = new Set(plan.completedUnits ?? []);
-      dayUnits.forEach((u) => {
-        if (!done.has(u)) labels.push(u);
-      });
-    });
-
-    const plannedShas = activeShasPlan ? computeExpectedShasPosition(activeShasPlan, dateKeyStr) : null;
-    if (plannedShas) {
-      labels.push(formatShasPosition(plannedShas.masechta, plannedShas.daf, plannedShas.amud, null));
-    }
-    return Array.from(new Set(labels));
-  }, [dateKeyStr, state.generalPlans, activeShasPlan]);
-
   const plannedPlanUnitsToday = useMemo(() => {
     if (!dateKeyStr) return [] as Array<{ planId: string; planTitle: string; unit: string; done: boolean }>;
     const d = new Date(`${dateKeyStr}T00:00:00`);
@@ -219,22 +197,48 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
     return rows;
   }, [dateKeyStr, state.generalPlans]);
 
-  const plannedReviewsToday = useMemo(() => {
-    if (!dateKeyStr) return [] as string[];
-    const labels: string[] = [];
+  const topChecklistRows = useMemo(() => {
+    if (!dateKeyStr) {
+      return [] as Array<
+        | { kind: "plan"; key: string; unit: string; subLabel: string; done: boolean; planId: string }
+        | { kind: "planReview"; key: string; unit: string; subLabel: string; done: boolean; reviewId: string }
+        | { kind: "review"; key: string; unit: string; subLabel: string; done: boolean; reviewId: string }
+      >;
+    }
 
-    (state.planReviews ?? []).forEach((r) => {
-      if (r.dueDate === dateKeyStr && !r.doneAt) labels.push(r.unit);
-    });
+    const planRows = plannedPlanUnitsToday.map((row) => ({
+      kind: "plan" as const,
+      key: `plan:${row.planId}:${row.unit}`,
+      unit: row.unit,
+      subLabel: row.planTitle,
+      done: row.done,
+      planId: row.planId,
+    }));
 
-    (state.shasReviews ?? []).forEach((r) => {
-      if (r.dueDate === dateKeyStr && !r.doneAt && !r.isInitial) {
-        labels.push(formatShasPosition(r.masechta, r.daf, r.amud, r.half ?? null));
-      }
-    });
+    const planReviewRows = (state.planReviews ?? [])
+      .filter((r) => r.dueDate === dateKeyStr)
+      .map((r) => ({
+        kind: "planReview" as const,
+        key: `planReview:${r.id}`,
+        unit: r.unit,
+        subLabel: `חזרה ${r.reviewIndex} — ${r.planTitle}`,
+        done: r.doneAt === dateKeyStr,
+        reviewId: r.id,
+      }));
 
-    return Array.from(new Set(labels));
-  }, [dateKeyStr, state.planReviews, state.shasReviews]);
+    const reviewRows = dayShasReviews
+      .filter((r) => r.dueDate === dateKeyStr)
+      .map((r) => ({
+        kind: "review" as const,
+        key: `review:${r.id}`,
+        unit: formatShasPosition(r.masechta, r.daf, r.amud, r.unit === "half" ? (r.half ?? 1) : null),
+        subLabel: r.isInitial ? 'לימוד ראשון — ש"ס בבלי' : `חזרה ${Math.max(1, r.reviewIndex - 1)} — ש"ס בבלי`,
+        done: r.doneAt === dateKeyStr,
+        reviewId: r.id,
+      }));
+
+    return [...planRows, ...planReviewRows, ...reviewRows];
+  }, [dateKeyStr, plannedPlanUnitsToday, state.planReviews, dayShasReviews]);
 
   const PRESET_DAYS = [1, 7, 14, 30, 90];
 
@@ -332,26 +336,28 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 text-right">
-          {/* Day stats */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg border-2 border-gold/40 p-2 bg-card">
-              <div className="text-[10px] text-muted-foreground">חזרות</div>
-              <div className="font-display text-xl font-semibold">{dayLogs.length}</div>
-            </div>
-            <div className="rounded-lg border-2 border-gold/40 p-2 bg-card">
-              <div className="text-[10px] text-muted-foreground">נכון</div>
-              <div className="font-display text-xl font-semibold text-emerald-600 dark:text-emerald-400">
-                {totalCorrect}
+        <div className="space-y-5 sm:space-y-6 text-right">
+          {/* Day stats for card/question reviews only */}
+          {dayLogs.length > 0 && (
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="rounded-lg border-2 border-gold/40 p-2.5 bg-card">
+                <div className="text-[10px] text-muted-foreground">חזרות</div>
+                <div className="font-display text-xl font-semibold">{dayLogs.length}</div>
+              </div>
+              <div className="rounded-lg border-2 border-gold/40 p-2.5 bg-card">
+                <div className="text-[10px] text-muted-foreground">נכון</div>
+                <div className="font-display text-xl font-semibold text-emerald-600 dark:text-emerald-400">
+                  {totalCorrect}
+                </div>
+              </div>
+              <div className="rounded-lg border-2 border-gold/40 p-2.5 bg-card">
+                <div className="text-[10px] text-muted-foreground">שגיאות</div>
+                <div className="font-display text-xl font-semibold text-destructive">
+                  {totalIncorrect}
+                </div>
               </div>
             </div>
-            <div className="rounded-lg border-2 border-gold/40 p-2 bg-card">
-              <div className="text-[10px] text-muted-foreground">שגיאות</div>
-              <div className="font-display text-xl font-semibold text-destructive">
-                {totalIncorrect}
-              </div>
-            </div>
-          </div>
+          )}
           {dayLogs.length > 0 && (
             <div className="text-xs text-muted-foreground">
               אחוז הצלחה ביום זה: <span className="font-semibold text-foreground">{successRate}%</span>
@@ -446,23 +452,35 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
             </div>
           )}
 
-          {/* Planned plan-units toggle (synced with PlanDetail units table) */}
-          {plannedPlanUnitsToday.length > 0 && (
+          {/* Top actionable checklist for both learning and review */}
+          {topChecklistRows.length > 0 && (
             <div className="space-y-2">
-              <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-start">
-                יחידות מתוכננות ליום זה <BookOpen className="h-4 w-4 text-gold" />
+              <h4 className="w-full text-sm font-semibold text-right">
+                <span className="inline-flex items-center gap-1">
+                  <BookOpen className="h-4 w-4 text-gold" /> לימוד וחזרה מתוכננים ליום זה
+                </span>
               </h4>
               <p className="text-[11px] text-muted-foreground text-right">
-                אפשר לסמן כנלמד או להסיר סימון. המצב מסונכרן אוטומטית עם טבלת היחידות בתוכנית.
+                כאן מסמנים את שניהם: גם לימוד וגם חזרה. כל פריט מופיע פעם אחת בלבד.
               </p>
               <div className="space-y-1.5">
-                {plannedPlanUnitsToday.map((row) => (
+                {topChecklistRows.map((row) => (
                   <button
-                    key={`${row.planId}:${row.unit}`}
+                    key={row.key}
                     type="button"
                     onClick={() => {
-                      if (row.done) uncompleteSpecificUnit(row.planId, row.unit);
-                      else completeGeneralPlanUnit(row.planId, row.unit);
+                      if (row.kind === "plan") {
+                        if (row.done) uncompleteSpecificUnit(row.planId, row.unit);
+                        else completeGeneralPlanUnit(row.planId, row.unit);
+                        return;
+                      }
+                      if (row.kind === "planReview") {
+                        if (row.done) undoPlanReviewDone(row.reviewId);
+                        else markPlanReviewDone(row.reviewId, 3);
+                        return;
+                      }
+                      if (row.done) unmarkShasReviewDone(row.reviewId);
+                      else markShasReviewDone(row.reviewId, dateKeyStr!);
                     }}
                     className={cn(
                       "w-full flex items-center justify-between gap-2 rounded-lg border-2 p-2.5 transition-colors",
@@ -470,7 +488,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                         ? "border-emerald-500/60 bg-emerald-500/10"
                         : "border-gold/30 bg-card hover:border-gold/60"
                     )}
-                    title={row.done ? "הסר סימון" : "סמן כנלמד"}
+                    title={row.done ? "הסר סימון" : "סמן שבוצע"}
                   >
                     <div className="h-6 w-6 flex items-center justify-center shrink-0">
                       {row.done ? (
@@ -488,7 +506,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                     </div>
                     <div className="flex-1 text-right min-w-0">
                       <div className={cn("text-sm font-semibold truncate", row.done && "line-through text-muted-foreground")}>{row.unit}</div>
-                      <div className="text-[10px] text-muted-foreground truncate">{row.planTitle}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{row.subLabel}</div>
                     </div>
                   </button>
                 ))}
@@ -497,8 +515,14 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
           )}
 
           {/* Learning sessions section */}
-          <div className="space-y-2">
-            <div className="flex flex-row-reverse items-center justify-between gap-2">
+          <div className="space-y-3">
+            <div className="h-px bg-gradient-to-l from-transparent via-gold/35 to-transparent" aria-hidden="true" />
+            <h4 className="w-full text-sm font-semibold text-right">
+              <span className="inline-flex items-center gap-1">
+                <BookOpen className="h-4 w-4 text-gold" /> לימוד וחזרות
+              </span>
+            </h4>
+            <div className="flex items-center justify-end">
               <Button
                 size="sm"
                 onClick={() => setShowAddForm((v) => !v)}
@@ -507,14 +531,11 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                 <Plus className="h-3 w-3 opacity-80" />
                 הוסף לימוד / חזרה
               </Button>
-              <h4 className="flex-1 w-full text-sm font-semibold flex items-center gap-1 justify-start">
-                לימוד וחזרות <BookOpen className="h-4 w-4 text-gold" />
-              </h4>
             </div>
 
             {/* Inline add form */}
             {showAddForm && (
-              <div className="rounded-xl border-2 border-gold/40 bg-card p-3 space-y-3">
+              <div className="rounded-xl border-2 border-gold/40 bg-card p-4 space-y-3.5">
                 {/* Subject */}
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground block text-right">נושא *</label>
@@ -692,11 +713,11 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
 
             {/* Existing sessions for this day */}
             {dayLearningSessions.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {dayLearningSessions.map((s) => (
                   <div
                     key={s.id}
-                    className="rounded-lg border-2 border-gold/30 bg-card p-2.5 text-right"
+                    className="rounded-lg border-2 border-gold/30 bg-card p-3 text-right"
                     dir="rtl"
                   >
                     <div className="flex items-start gap-2 flex-row-reverse">
@@ -760,25 +781,10 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
               </div>
             )}
 
-            {dayLearningSessions.length === 0 && !showAddForm && (
-              (plannedLearningToday.length > 0 || plannedReviewsToday.length > 0) ? (
-                <div className="rounded-md bg-sky-500/10 border border-sky-500/30 px-2 py-1.5 text-right space-y-1">
-                  {plannedLearningToday.length > 0 && (
-                    <div className="text-[11px] text-foreground/90 truncate">
-                      <span className="font-semibold">לימוד: </span>{plannedLearningToday[0]}
-                    </div>
-                  )}
-                  {plannedReviewsToday.length > 0 && (
-                    <div className="text-[11px] text-foreground/90 truncate">
-                      <span className="font-semibold">חזרה: </span>{plannedReviewsToday[0]}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-[11px] text-muted-foreground text-right">
-                  לא נרשם לימוד ביום זה. לחץ על "הוסף" לתיעוד.
-                </p>
-              )
+            {dayLearningSessions.length === 0 && !showAddForm && topChecklistRows.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-right">
+                לא נרשם לימוד ביום זה. לחץ על "הוסף" לתיעוד.
+              </p>
             )}
 
             {/* Post-add CTA: offer to create a flashcard for the new learning */}
@@ -797,42 +803,6 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                 </button>
               </div>
             )}
-          </div>
-
-          {/* Note */}
-          <div className="space-y-2">
-            <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-end">
-              הערות יומיות <NotebookPen className="h-4 w-4 text-gold" />
-            </h4>
-            <Textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="לדוגמה: היום סיימתי משנה ה' של פרק ב'..."
-              className="border-2 border-gold/40 text-right min-h-[100px]"
-              dir="rtl"
-            />
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                onClick={handleSaveNote}
-                className="bg-gradient-navy text-primary-foreground rounded-xl"
-              >
-                <Save className="h-4 w-4" /> שמור
-              </Button>
-              {existingNote && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setNote("");
-                    if (dateKeyStr) setDayNote(dateKeyStr, "");
-                    onOpenChange(false);
-                  }}
-                  className="text-destructive"
-                >
-                  <X className="h-4 w-4" /> מחק הערה
-                </Button>
-              )}
-            </div>
           </div>
 
           {/* Shas reviews for this day */}
@@ -1142,6 +1112,44 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
               </div>
             </div>
           )}
+
+          {/* Note */}
+          <div className="space-y-2.5 text-right">
+            <h4 className="w-full text-sm font-semibold text-right">
+              <span className="inline-flex items-center gap-1">
+                <NotebookPen className="h-4 w-4 text-gold" /> הערות יומיות
+              </span>
+            </h4>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="לדוגמה: היום סיימתי משנה ה' של פרק ב'..."
+              className="w-full border-2 border-gold/40 text-right min-h-[100px]"
+              dir="rtl"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                onClick={handleSaveNote}
+                className="bg-gradient-navy text-primary-foreground rounded-xl"
+              >
+                <Save className="h-4 w-4" /> שמור
+              </Button>
+              {existingNote && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setNote("");
+                    if (dateKeyStr) setDayNote(dateKeyStr, "");
+                    onOpenChange(false);
+                  }}
+                  className="text-destructive"
+                >
+                  <X className="h-4 w-4" /> מחק הערה
+                </Button>
+              )}
+            </div>
+          </div>
 
           {dayLogs.length === 0 && manualGoals.length === 0 && !existingNote && dayShasReviews.length === 0 && (
             <div className="text-center text-xs text-muted-foreground py-2">

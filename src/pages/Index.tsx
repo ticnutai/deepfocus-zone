@@ -431,7 +431,7 @@ const StaticLazyPanelPreview = ({ compact = false }: { compact?: boolean }) => (
 type TabDef = { v: string; l: string; I: typeof Gauge };
 type SortableConfigDef = { id: string; label: string; icon: typeof Gauge };
 const DEFAULT_TABS: TabDef[] = [
-  { v: "overview",      l: "סקירה כללית",  I: Gauge },
+  { v: "overview",      l: "כללי",  I: Gauge },
   { v: "summary",       l: "סיכום",         I: LineChart },
   { v: "study",         l: "חזרות לימוד",  I: GraduationCap },
   { v: "daf",           l: "לימוד דף",      I: BookOpen },
@@ -1495,13 +1495,14 @@ const Index = () => {
             >
               <Card className="gold-frame p-1.5 sm:p-2 relative">
                 <TabsList
-                  className="w-full bg-transparent justify-start gap-3 sm:gap-4 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
+                  className="grid w-full bg-transparent gap-3 sm:gap-4 h-auto px-1"
                   dir="rtl"
+                  style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
                 >
                   {visibleTabs.map(({ v, l, I }) => (
                     <TabsTrigger
                       key={v} value={v}
-                      className="shrink-0 sm:flex-1 snap-item min-w-[7.5rem] sm:min-w-[110px] justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
+                      className="w-full min-w-0 justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
                     >
                       <span className="relative">
                         {l}

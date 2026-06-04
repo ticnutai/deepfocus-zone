@@ -323,7 +323,13 @@
   .gold-icon-circle {
     @apply inline-flex h-9 w-9 items-center justify-center rounded-full border-2 bg-card;
     border-color: hsl(var(--gold));
-    color: hsl(var(--navy));
+    /* Use semantic foreground color so icon stays visible across custom themes */
+    color: hsl(var(--foreground));
+  }
+
+  .gold-icon-circle svg {
+    /* Subtle contrast halo to keep thin strokes visible on close-tone backgrounds */
+    filter: drop-shadow(0 0 0.5px hsl(var(--background) / 0.9));
   }
 
   /* Smooth theme interpolation for ShasBoard premium palettes */

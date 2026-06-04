@@ -6,7 +6,7 @@
  * - סיכומים פר סדר, מסכת, וכל הש"ס + כמה נשאר לסיום
  * - שמירה בענן דרך uiPrefs (shasBoardProgress)
  */
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +87,29 @@ function countMasechtaLearned(p: ShasBoardProgress, name: string): { learned: nu
     if ((entry.b ?? 0) > 0) { learned++; reps += entry.b!; }
   }
   return { learned, reps };
+}
+
+function setAmudReps(
+  prev: ShasBoardProgress,
+  masechtaName: string,
+  daf: number,
+  amud: AmudKey,
+  reps: number,
+): ShasBoardProgress {
+  const next = { ...prev };
+  const masechtaProgress: MasechtaProgress = { ...(next[masechtaName] ?? {}) };
+  const dafEntry: DafEntry = { ...(masechtaProgress[daf] ?? {}) };
+
+  if (reps > 0) dafEntry[amud] = reps;
+  else delete dafEntry[amud];
+
+  if ((dafEntry.a ?? 0) === 0 && (dafEntry.b ?? 0) === 0) delete masechtaProgress[daf];
+  else masechtaProgress[daf] = dafEntry;
+
+  if (Object.keys(masechtaProgress).length === 0) delete next[masechtaName];
+  else next[masechtaName] = masechtaProgress;
+
+  return next;
 }
 
 function themeVarsStyleFromTokens(tokens: Record<string, string> | undefined): React.CSSProperties {
@@ -416,12 +439,11 @@ export function ShasBoard() {
     save(next);
   };
 
-  const singleClick = useCallback((m: string, daf: number, a: AmudKey) => {
+  const incrementReps = useCallback((m: string, daf: number, a: AmudKey) => {
     const cur = progress[m]?.[daf]?.[a] ?? 0;
     save(setAmudReps(progress, m, daf, a, cur + 1));
   }, [progress, save]);
-  const singleRightClick = useCallback((e: React.MouseEvent, m: string, daf: number, a: AmudKey) => {
-    e.preventDefault();
+  const decrementReps = useCallback((m: string, daf: number, a: AmudKey) => {
     const cur = progress[m]?.[daf]?.[a] ?? 0;
     save(setAmudReps(progress, m, daf, a, Math.max(0, cur - 1)));
   }, [progress, save]);
@@ -438,8 +460,8 @@ export function ShasBoard() {
         amud={a}
         reps={reps}
         isSel={isSel}
-        onClick={singleClick}
-        onRightClick={singleRightClick}
+        onIncrement={incrementReps}
+        onDecrement={decrementReps}
         onToggleSel={toggleSel}
       />
     );
@@ -988,19 +1010,54 @@ type AmudButtonProps = {
   amud: AmudKey;
   reps: number;
   isSel: boolean;
-  onClick: (m: string, daf: number, a: AmudKey) => void;
-  onRightClick: (e: React.MouseEvent, m: string, daf: number, a: AmudKey) => void;
+  onIncrement: (m: string, daf: number, a: AmudKey) => void;
+  onDecrement: (m: string, daf: number, a: AmudKey) => void;
   onToggleSel: (m: string, daf: number, a: AmudKey) => void;
 };
 const AmudButton = memo(function AmudButton({
-  masechtaName, daf, amud, reps, isSel, onClick, onRightClick, onToggleSel,
+  masechtaName, daf, amud, reps, isSel, onIncrement, onDecrement, onToggleSel,
 }: AmudButtonProps) {
   const learned = reps > 0;
+  const clickTimerRef = useRef<number | null>(null);
+
+  const clearPendingClick = () => {
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      clearPendingClick();
+      onToggleSel(masechtaName, daf, amud);
+      return;
+    }
+
+    clearPendingClick();
+    clickTimerRef.current = window.setTimeout(() => {
+      onIncrement(masechtaName, daf, amud);
+      clickTimerRef.current = null;
+    }, 220);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    clearPendingClick();
+    onDecrement(masechtaName, daf, amud);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    clearPendingClick();
+    onDecrement(masechtaName, daf, amud);
+  };
+
   return (
     <button
-      onClick={() => onClick(masechtaName, daf, amud)}
-      onContextMenu={(e) => onRightClick(e, masechtaName, daf, amud)}
-      onDoubleClick={(e) => { e.preventDefault(); onToggleSel(masechtaName, daf, amud); }}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
+      onDoubleClick={handleDoubleClick}
       className={cn(
         "relative h-11 rounded-md border-2 text-xs font-semibold transition-all flex flex-col items-center justify-center leading-tight",
         learned
@@ -1008,7 +1065,7 @@ const AmudButton = memo(function AmudButton({
           : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
         isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
       )}
-      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, ימני: -1, דבל-קליק: בחירה)`}
+      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, דאבל-קליק: -1, שיפט+לחיצה: בחירה)`}
     >
       <span className="text-[11px]">{heb(daf)}{amud === "a" ? "." : ":"}</span>
       {reps > 0 && (
