@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { useColorFavorites } from "@/lib/study/colorFavorites";
 import {
   Check,
+  Copy,
+  Edit2,
   RotateCcw,
   ChevronDown,
   ChevronUp,
@@ -93,11 +95,12 @@ export interface SavedTheme {
   name: string;
   theme: CustomQuizTheme;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
-const SAVED_THEMES_KEY = "quiz_saved_themes";
+export const SAVED_THEMES_KEY = "quiz_saved_themes";
 
 function loadSavedThemes(): SavedTheme[] {
   try {
@@ -310,10 +313,12 @@ function ColorField({
 function SavedThemeCard({
   saved,
   onLoad,
+  onEdit,
   onDelete,
 }: {
   saved: SavedTheme;
   onLoad: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const colors = saved.theme.optionColors.slice(0, 4);
@@ -350,6 +355,15 @@ function SavedThemeCard({
           onClick={onLoad}
         >
           <FolderOpen className="h-3 w-3" /> טען
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs gap-1 border-gold/40"
+          onClick={onEdit}
+          title="ערוך ושמור על הערכה הזו"
+        >
+          <Edit2 className="h-3 w-3" /> ערוך
         </Button>
         <Button
           size="sm"
@@ -506,6 +520,8 @@ interface Props {
   open: boolean;
   value: CustomQuizTheme;
   onSave: (v: CustomQuizTheme) => void;
+  savedThemes?: SavedTheme[];
+  onSavedThemesChange?: (themes: SavedTheme[]) => void;
   onPreview?: (v: CustomQuizTheme) => void;
   onClose: () => void;
 }
@@ -514,6 +530,8 @@ export function QuizThemeEditorDialog({
   open,
   value,
   onSave,
+  savedThemes: syncedSavedThemes,
+  onSavedThemesChange,
   onPreview,
   onClose,
 }: Props) {
@@ -525,7 +543,8 @@ export function QuizThemeEditorDialog({
   const originalValueRef = useRef<CustomQuizTheme>(value);
 
   // Saved themes
-  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
+  const [localSavedThemes, setLocalSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
+  const savedThemes = syncedSavedThemes ?? localSavedThemes;
   const {
     favorites: palette,
     addFavorite: addPaletteColor,
@@ -536,6 +555,7 @@ export function QuizThemeEditorDialog({
   // Save-as-name flow
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [editingSavedId, setEditingSavedId] = useState<string | null>(null);
 
   const handleOpenChange = (o: boolean) => {
     if (o) {
@@ -543,6 +563,7 @@ export function QuizThemeEditorDialog({
       setDraft(value);
       setShowSaveName(false);
       setSaveName("");
+      setEditingSavedId(null);
     } else onClose();
   };
 
@@ -586,24 +607,47 @@ export function QuizThemeEditorDialog({
       name,
       theme: { ...draft },
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
-    setSavedThemes((prev) => {
-      const next = [entry, ...prev];
-      storeSavedThemes(next);
-      return next;
-    });
+    const next = [entry, ...savedThemes];
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
     setShowSaveName(false);
     setSaveName("");
+    setEditingSavedId(entry.id);
     setTab("saved");
-  }, [draft, saveName]);
+  }, [draft, onSavedThemesChange, saveName, savedThemes]);
 
   const handleDeleteSaved = useCallback((id: string) => {
-    setSavedThemes((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      storeSavedThemes(next);
-      return next;
-    });
+    const next = savedThemes.filter((t) => t.id !== id);
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
+    if (editingSavedId === id) setEditingSavedId(null);
+  }, [editingSavedId, onSavedThemesChange, savedThemes]);
+
+  const handleEditSaved = useCallback((saved: SavedTheme) => {
+    setDraft({ ...DEFAULT_CUSTOM_THEME, ...saved.theme });
+    setEditingSavedId(saved.id);
+    setSaveName(saved.name);
+    setShowSaveName(false);
+    setTab("edit");
   }, []);
+
+  const handleOverwriteSaved = useCallback(() => {
+    if (!editingSavedId) return;
+    const now = Date.now();
+    const next = savedThemes.map((t) => t.id === editingSavedId
+      ? { ...t, name: saveName.trim() || t.name, theme: { ...draft }, updatedAt: now }
+      : t,
+    );
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
+    onSave(draft);
+    onClose();
+  }, [draft, editingSavedId, onClose, onSave, onSavedThemesChange, saveName, savedThemes]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
@@ -1035,8 +1079,10 @@ export function QuizThemeEditorDialog({
                     saved={s}
                     onLoad={() => {
                       setDraft({ ...DEFAULT_CUSTOM_THEME, ...s.theme });
+                      setEditingSavedId(null);
                       setTab("edit");
                     }}
+                    onEdit={() => handleEditSaved(s)}
                     onDelete={() => handleDeleteSaved(s.id)}
                   />
                 ))}
@@ -1109,6 +1155,16 @@ export function QuizThemeEditorDialog({
             </div>
           ) : (
             <div className="flex gap-2 justify-end">
+              {editingSavedId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOverwriteSaved}
+                  className="gap-1 border-gold/60"
+                >
+                  <Save className="h-3.5 w-3.5" /> שמור ודרוס
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -1126,10 +1182,11 @@ export function QuizThemeEditorDialog({
                 onClick={() => {
                   setShowSaveName(true);
                   setSaveName("");
+                  setEditingSavedId(null);
                 }}
                 className="gap-1"
               >
-                <Save className="h-3.5 w-3.5" /> שמור בשם…
+                <Copy className="h-3.5 w-3.5" /> שכפל ושמור…
               </Button>
               <Button
                 variant="outline"

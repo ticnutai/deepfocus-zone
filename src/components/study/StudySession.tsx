@@ -36,7 +36,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   QuizThemeEditorDialog,
   CustomQuizTheme,
+  SavedTheme,
   DEFAULT_CUSTOM_THEME,
+  SAVED_THEMES_KEY,
   FONT_FAMILY_MAP,
   FONT_SIZE_MAP,
   FONT_WEIGHT_MAP,
@@ -662,6 +664,15 @@ export function StudySession({
       }
     },
   );
+  const savedQuizThemes = useMemo<SavedTheme[]>(() => {
+    const synced = state.uiPrefs?.studySavedQuizThemes;
+    if (Array.isArray(synced)) return synced as unknown as SavedTheme[];
+    try {
+      return JSON.parse(localStorage.getItem(SAVED_THEMES_KEY) ?? "[]") as SavedTheme[];
+    } catch {
+      return [];
+    }
+  }, [state.uiPrefs?.studySavedQuizThemes]);
   const saveCustomTheme = useCallback(
     (t: CustomQuizTheme) => {
       setCustomQuizTheme(t);
@@ -678,6 +689,18 @@ export function StudySession({
     },
     [setUiPref],
   );
+  const saveSavedQuizThemes = useCallback((themes: SavedTheme[]) => {
+    try {
+      localStorage.setItem(SAVED_THEMES_KEY, JSON.stringify(themes));
+    } catch {
+      /* noop */
+    }
+    try {
+      setUiPref("studySavedQuizThemes", themes as unknown as never);
+    } catch {
+      /* guest */
+    }
+  }, [setUiPref]);
 
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -3546,6 +3569,8 @@ export function StudySession({
         open={themeEditorOpen}
         value={customQuizTheme}
         onSave={saveCustomTheme}
+        savedThemes={savedQuizThemes}
+        onSavedThemesChange={saveSavedQuizThemes}
         onPreview={(t) => setCustomQuizTheme(t)}
         onClose={() => setThemeEditorOpen(false)}
       />
