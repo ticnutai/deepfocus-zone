@@ -312,7 +312,7 @@ function PlanReviewMiniCalendar({
               onClick={() => setSelected(isSelected ? null : iso)}
               className={cn(
                 "relative flex flex-col items-center justify-center rounded-lg h-9 text-xs font-medium transition-all",
-                isSelected ? "bg-gold/20 ring-2 ring-gold" : isToday ? "bg-sky-500/10 ring-1 ring-sky-400" : "hover:bg-secondary",
+                isSelected ? "bg-gold/20 ring-2 ring-gold" : isToday ? "bg-sky-500/10 ring-2 ring-gold ring-offset-2 ring-offset-background border border-gold" : "hover:bg-secondary",
                 dayReviews.length === 0 && "text-muted-foreground/60",
               )}
             >

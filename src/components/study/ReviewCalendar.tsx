@@ -593,14 +593,12 @@ export function ReviewCalendar({ deckId, showTodayBadge = true }: Props) {
                   className={cn(
                     "relative aspect-square rounded-md border text-xs flex flex-col items-center justify-center transition-all hover:ring-2 hover:ring-gold/60 overflow-hidden p-0.5",
                     isToday &&
-                      "border-navy border-2 font-bold ring-1 ring-navy/40",
-                    isToday &&
-                      showTodayBadge &&
-                      completed &&
-                      "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background shadow-[0_0_8px_2px_hsl(145_70%_50%/0.35)]",
+                      "!border-emerald-600 border-[1.5px] font-bold",
                     !isToday && "border-gold/30",
                     completed
-                      ? "bg-[rgba(52,178,104,0.30)] border-[rgba(52,178,104,0.40)] text-foreground"
+                      ? isToday
+                        ? "bg-[rgba(52,178,104,0.30)] text-foreground"
+                        : "bg-[rgba(52,178,104,0.30)] border-[rgba(52,178,104,0.40)] text-foreground"
                       : "text-foreground bg-card",
                     holiday && !completed && showHoliday && "bg-gold/10",
                     !completed &&

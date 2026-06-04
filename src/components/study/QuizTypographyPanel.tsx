@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColorFavoritesRow } from "@/components/ui/color-favorites-row";
 import { cn } from "@/lib/utils";
+import { useColorFavorites } from "@/lib/study/colorFavorites";
 import {
   AlignRight, AlignCenter, AlignLeft, AlignJustify, RotateCcw, Type,
   Bold, Minus, Plus, CaseSensitive, WrapText,
@@ -186,6 +188,7 @@ interface Props {
 
 export function QuizTypographyPanel({ value, onChange, storageKey = QUIZ_TYPOGRAPHY_KEY, title = "עיצוב טקסט שאלה", previewText = "מה הפסוק שאמר משה לבני ישראל במדבר?", buttonTitle = "עיצוב טיפוגרפיה של שאלה" }: Props) {
   const [open, setOpen] = useState(false);
+  const { favorites, addFavorite, removeFavorite, moveFavorite } = useColorFavorites();
 
   const upd = useCallback(
     <K extends keyof QuizTypography>(key: K, val: QuizTypography[K]) => {
@@ -362,7 +365,8 @@ export function QuizTypographyPanel({ value, onChange, storageKey = QUIZ_TYPOGRA
 
         {/* Text colour */}
         <Row label="צבע טקסט">
-          <div className="flex items-center gap-2">
+          <div className="flex-1 space-y-1.5">
+            <div className="flex items-center gap-2">
             <input
               type="color"
               value={value.textColor || "#1a1a2e"}
@@ -373,12 +377,23 @@ export function QuizTypographyPanel({ value, onChange, storageKey = QUIZ_TYPOGRA
             {value.textColor && (
               <button type="button" onClick={() => upd("textColor", "")} className="text-[10px] text-muted-foreground hover:text-foreground underline">נקה</button>
             )}
+            </div>
+            <ColorFavoritesRow
+              favorites={favorites}
+              currentColor={value.textColor || "#1a1a2e"}
+              onAddCurrent={() => addFavorite(value.textColor || "#1a1a2e")}
+              onPick={(color) => upd("textColor", color)}
+              onRemove={removeFavorite}
+              onMove={moveFavorite}
+              className="pt-0.5"
+            />
           </div>
         </Row>
 
         {/* Background colour */}
         <Row label="רקע שאלה">
-          <div className="flex items-center gap-2">
+          <div className="flex-1 space-y-1.5">
+            <div className="flex items-center gap-2">
             <input
               type="color"
               value={value.bgColor || "#f8f6f0"}
@@ -389,6 +404,16 @@ export function QuizTypographyPanel({ value, onChange, storageKey = QUIZ_TYPOGRA
             {value.bgColor && (
               <button type="button" onClick={() => upd("bgColor", "")} className="text-[10px] text-muted-foreground hover:text-foreground underline">נקה</button>
             )}
+            </div>
+            <ColorFavoritesRow
+              favorites={favorites}
+              currentColor={value.bgColor || "#f8f6f0"}
+              onAddCurrent={() => addFavorite(value.bgColor || "#f8f6f0")}
+              onPick={(color) => upd("bgColor", color)}
+              onRemove={removeFavorite}
+              onMove={moveFavorite}
+              className="pt-0.5"
+            />
           </div>
         </Row>
 

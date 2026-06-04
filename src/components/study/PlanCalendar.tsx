@@ -351,7 +351,7 @@ export function PlanCalendar({ plan, reviews, onToggle }: Props) {
             <div
               className={cn(
                 "relative aspect-square rounded-md border text-xs flex flex-col items-center justify-center overflow-hidden p-0.5 select-none transition-all hover:ring-2 hover:ring-gold/60",
-                isToday && "border-navy border-2 font-bold",
+                isToday && "!border-gold border-2 font-bold ring-2 ring-gold ring-offset-2 ring-offset-background",
                 !isToday && "border-gold/20",
                 !hasTask && "text-muted-foreground/60 bg-card",
                 hasTask &&

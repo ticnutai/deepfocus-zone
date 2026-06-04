@@ -1,9 +1,28 @@
 import { spawnSync } from "node:child_process";
 
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    stdio: "inherit",
+function quoteForCmd(arg) {
+  if (!/[\s"]/u.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '""')}"`;
+}
+
+function spawnCrossPlatform(command, args, options = {}) {
+  if (process.platform === "win32" && (command === "npm" || command === "npx")) {
+    const cmdLine = [command, ...args].map(quoteForCmd).join(" ");
+    return spawnSync("cmd.exe", ["/d", "/s", "/c", cmdLine], {
+      shell: false,
+      ...options,
+    });
+  }
+
+  return spawnSync(command, args, {
     shell: false,
+    ...options,
+  });
+}
+
+function run(command, args, options = {}) {
+  const result = spawnCrossPlatform(command, args, {
+    stdio: "inherit",
     ...options,
   });
 
@@ -17,9 +36,8 @@ function run(command, args, options = {}) {
 }
 
 function runQuiet(command, args) {
-  const result = spawnSync(command, args, {
+  const result = spawnCrossPlatform(command, args, {
     stdio: "ignore",
-    shell: false,
   });
 
   if (result.error) {

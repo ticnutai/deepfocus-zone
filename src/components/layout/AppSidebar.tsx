@@ -274,7 +274,7 @@ export function AppShellSidebar() {
       </aside>
 
       {/* Mobile trigger + sheet */}
-      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen} modal={false}>
         <SheetTrigger asChild>
           <Button
             variant="outline"
@@ -285,7 +285,7 @@ export function AppShellSidebar() {
             <Menu className="h-4 w-4" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
+        <SheetContent side="right" showOverlay={false} className="w-72 p-0 border-l-2 border-gold flex flex-col">
           <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <NavList

@@ -788,10 +788,16 @@ const Index = () => {
     return () => window.clearTimeout(t);
   }, [showTabsConfigIcon]);
 
-  // Global Ctrl+K / Cmd+K to open Smart Search
+  // Global shortcuts to open Smart Search
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      const key = e.key.toLowerCase();
+      const code = e.code;
+      const hasPrimary = e.ctrlKey || e.metaKey;
+      const isOpenSearchShortcut =
+        (hasPrimary && (key === "k" || code === "KeyK")) ||
+        (hasPrimary && e.shiftKey && (key === "t" || code === "KeyT"));
+      if (isOpenSearchShortcut) {
         e.preventDefault();
         setSearchModalOpen((v) => !v);
       }
@@ -1355,7 +1361,7 @@ const Index = () => {
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="hidden sm:block"><Logo size="sm" /></div>
-              <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+              <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen} modal={false}>
                 {/* Hamburger + adjacent floating config icons (absolute so they NEVER widen the page) */}
                 <div
                   className="relative shrink-0"
@@ -1399,7 +1405,7 @@ const Index = () => {
                   )}
                 </div>
 
-                <SheetContent side="right" className="w-72 p-0 border-l-2 border-gold flex flex-col">
+                <SheetContent side="right" showOverlay={false} className="w-72 p-0 border-l-2 border-gold flex flex-col">
                   <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
                   <div className="flex-1 overflow-y-auto no-scrollbar">
                     <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
@@ -1451,7 +1457,7 @@ const Index = () => {
               <div className="space-y-6">
                 <div className="text-center space-y-1 animate-fade-in">
                   <h1 className="font-display text-2xl font-bold text-gold">חיפוש חכם</h1>
-                  <p className="text-muted-foreground text-sm">חפש שאלות, תשובות, תגיות, קטגוריות ומערכות · קיצור: Ctrl+K</p>
+                  <p className="text-muted-foreground text-sm">חפש שאלות, תשובות, תגיות, קטגוריות ומערכות · קיצור: Ctrl+K (וגם Ctrl+Shift+T)</p>
                 </div>
                 <Suspense fallback={<StaticLazyPanelPreview compact />}>
                   <SmartSearch variant="page" />

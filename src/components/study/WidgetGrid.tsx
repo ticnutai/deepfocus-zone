@@ -21,6 +21,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
@@ -51,7 +54,15 @@ import {
   ChevronUp,
   ChevronDown,
   Settings2,
+  SlidersHorizontal,
 } from "lucide-react";
+
+const MIN_WIDGET_HEIGHT = 150;
+
+function normalizeWidgetTitle(value: string): string | undefined {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
 
 // Drag handle that appears on the right edge — drags left/right to toggle half ↔ full width
 function ResizeHandleRight({ size, onSetSize }: { size: "half" | "full"; onSetSize: (s: "half" | "full") => void }) {
@@ -96,6 +107,48 @@ function ResizeHandleRight({ size, onSetSize }: { size: "half" | "full"; onSetSi
   );
 }
 
+function ResizeHandleLeft({ size, onSetSize }: { size: "half" | "full"; onSetSize: (s: "half" | "full") => void }) {
+  const startX = useRef(0);
+  const startSize = useRef<"half" | "full">("half");
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
+    startSize.current = size;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const delta = e.clientX - startX.current;
+    if (startSize.current === "half" && delta < -50) {
+      onSetSize("full");
+      startX.current = e.clientX;
+      startSize.current = "full";
+    } else if (startSize.current === "full" && delta > 50) {
+      onSetSize("half");
+      startX.current = e.clientX;
+      startSize.current = "half";
+    }
+  };
+
+  return (
+    <div
+      title={size === "half" ? "גרור שמאלה להרחיב" : "גרור ימינה להצר"}
+      className="absolute inset-y-0 left-0 w-5 z-30 flex items-center justify-start cursor-ew-resize select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={(e) => (e.target as HTMLElement).releasePointerCapture(e.pointerId)}
+    >
+      <div className="flex flex-col items-center gap-0.5 ml-0.5">
+        <ChevronsLeftRight className="h-3.5 w-3.5 text-gold/70 hover:text-gold" />
+        <div className="w-1 h-8 rounded-full bg-gold/50 hover:bg-gold transition-colors" />
+      </div>
+    </div>
+  );
+}
+
 // Drag handle that appears on the bottom edge — drags up/down to resize height
 function ResizeHandleBottom({ onSetHeight }: { onSetHeight: (h: number | undefined) => void }) {
   const startY = useRef(0);
@@ -112,7 +165,7 @@ function ResizeHandleBottom({ onSetHeight }: { onSetHeight: (h: number | undefin
   const onPointerMove = (e: React.PointerEvent) => {
     if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
     const delta = e.clientY - startY.current;
-    const newH = Math.max(150, startH.current + delta);
+    const newH = Math.max(MIN_WIDGET_HEIGHT, startH.current + delta);
     onSetHeight(newH);
   };
 
@@ -127,6 +180,41 @@ function ResizeHandleBottom({ onSetHeight }: { onSetHeight: (h: number | undefin
       <div className="flex flex-col items-center gap-0.5 mb-0.5">
         <div className="h-1 w-10 rounded-full bg-gold/50 hover:bg-gold transition-colors" />
         <ChevronsUpDown className="h-3.5 w-3.5 text-gold/70 hover:text-gold" />
+      </div>
+    </div>
+  );
+}
+
+function ResizeHandleTop({ onSetHeight }: { onSetHeight: (h: number | undefined) => void }) {
+  const startY = useRef(0);
+  const startH = useRef(0);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startY.current = e.clientY;
+    startH.current = (e.currentTarget.parentElement as HTMLElement)?.offsetHeight ?? 300;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!(e.target as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const delta = e.clientY - startY.current;
+    const newH = Math.max(MIN_WIDGET_HEIGHT, startH.current - delta);
+    onSetHeight(newH);
+  };
+
+  return (
+    <div
+      title="גרור למעלה/למטה לשנות גובה"
+      className="absolute inset-x-0 top-0 h-5 z-30 flex justify-center items-start cursor-ns-resize select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={(e) => (e.target as HTMLElement).releasePointerCapture(e.pointerId)}
+    >
+      <div className="flex flex-col items-center gap-0.5 mt-0.5">
+        <ChevronsUpDown className="h-3.5 w-3.5 text-gold/70 hover:text-gold" />
+        <div className="h-1 w-10 rounded-full bg-gold/50 hover:bg-gold transition-colors" />
       </div>
     </div>
   );
@@ -180,7 +268,9 @@ function SortableWidget({ cfg, editMode, label, children, canMovePrev, canMoveNe
       {editMode && !collapsed && <div className="absolute inset-0 top-10 z-10 rounded-b-xl border-2 border-t-0 border-dashed border-gold/60 pointer-events-none" />}
       {editMode && !collapsed && (
         <>
+          <ResizeHandleLeft size={cfg.size} onSetSize={onSetSize} />
           <ResizeHandleRight size={cfg.size} onSetSize={onSetSize} />
+          <ResizeHandleTop onSetHeight={onSetHeight} />
           <ResizeHandleBottom onSetHeight={onSetHeight} />
         </>
       )}
@@ -344,6 +434,70 @@ function DragOverlayItem({ label }: { label: string }) {
   );
 }
 
+interface SortableManagerRowProps {
+  cfg: WidgetConfig;
+  label: string;
+  draftTitle: string;
+  onDraftChange: (value: string) => void;
+  onCommitTitle: () => void;
+  onToggleVisible: (next: boolean) => void;
+}
+
+function SortableManagerRow({ cfg, label, draftTitle, onDraftChange, onCommitTitle, onToggleVisible }: SortableManagerRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cfg.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "rounded-xl border bg-card p-3 space-y-2",
+        cfg.visible ? "border-gold/40" : "border-border",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            {...attributes}
+            {...listeners}
+            className="h-8 w-8 shrink-0 rounded-lg border border-gold/40 bg-background text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+            title="גרור לשינוי סדר"
+            aria-label="גרור לשינוי סדר"
+          >
+            <GripVertical className="h-4 w-4 mx-auto" />
+          </button>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{label}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{cfg.id}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-muted-foreground">הצג</span>
+          <Switch checked={cfg.visible} onCheckedChange={onToggleVisible} />
+        </div>
+      </div>
+      <Input
+        value={draftTitle}
+        onChange={(e) => onDraftChange(e.target.value)}
+        onBlur={onCommitTitle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onCommitTitle();
+          }
+        }}
+        className="h-9"
+        placeholder="שם מותאם לווידג׳ט"
+      />
+    </div>
+  );
+}
+
 interface WidgetGridProps {
   tabId: string;
   widgetMap: Record<string, ReactNode>;
@@ -358,9 +512,11 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const [editMode, setEditMode] = useState(false);
   const [quickLayoutId, setQuickLayoutId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [managerActiveId, setManagerActiveId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({});
   const [showHiddenTray, setShowHiddenTray] = useState(false);
   const [toolbarVisible, setToolbarVisible] = useState(false);
-  const toolbarHoverTimer = useRef<number | null>(null);
   const editingLocked = lockEditing || isProfileBMode();
 
   const defs = WIDGET_DEFS[tabId] ?? [];
@@ -388,6 +544,12 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
     setWidgetLayout(fullLayout);
   }, [state.widgetLayout, tabId, setWidgetLayout]);
 
+  const resolveWidgetLabel = useCallback((cfg: WidgetConfig) => {
+    const customTitle = normalizeWidgetTitle(cfg.title ?? "");
+    if (customTitle) return customTitle;
+    return defs.find((d) => d.id === cfg.id)?.label ?? cfg.id;
+  }, [defs]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 5 } }),
@@ -396,7 +558,18 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
 
   const visibleWidgets = tabLayout.filter((w) => w.visible);
   const hiddenWidgets = tabLayout.filter((w) => !w.visible);
-  const activeLabel = activeId ? (defs.find((d) => d.id === activeId)?.label ?? activeId) : "";
+  const activeLabel = activeId
+    ? (() => {
+      const activeWidget = tabLayout.find((w) => w.id === activeId);
+      return activeWidget ? resolveWidgetLabel(activeWidget) : (defs.find((d) => d.id === activeId)?.label ?? activeId);
+    })()
+    : "";
+  const managerActiveLabel = managerActiveId
+    ? (() => {
+      const activeWidget = tabLayout.find((w) => w.id === managerActiveId);
+      return activeWidget ? resolveWidgetLabel(activeWidget) : managerActiveId;
+    })()
+    : "";
 
   const mobileModePref = useMobileLayoutMode();
   const mobileMode = resolveMobileMode(mobileModePref, isMobile);
@@ -424,8 +597,13 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
     save(tabLayout.map((w) => w.id === id ? { ...w, collapsed: !w.collapsed } : w));
   };
 
-  const toggleVisibility = (id: string) => {
-    save(tabLayout.map((w) => w.id === id ? { ...w, visible: !w.visible } : w));
+  const setVisibility = (id: string, visible: boolean) => {
+    save(tabLayout.map((w) => w.id === id ? { ...w, visible } : w));
+  };
+
+  const setWidgetTitle = (id: string, title: string) => {
+    const normalized = normalizeWidgetTitle(title);
+    save(tabLayout.map((w) => w.id === id ? { ...w, title: normalized } : w));
   };
 
   const hideWidget = (id: string) => {
@@ -469,6 +647,24 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
     save([...arranged, ...hidden]);
   };
 
+  const openManagerDialog = () => {
+    setTitleDrafts(
+      Object.fromEntries(tabLayout.map((w) => [w.id, w.title ?? ""])),
+    );
+    setManagerOpen(true);
+  };
+
+  const handleManagerDragStart = (e: DragStartEvent) => setManagerActiveId(e.active.id as string);
+  const handleManagerDragEnd = (e: DragEndEvent) => {
+    setManagerActiveId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = tabLayout.findIndex((w) => w.id === active.id);
+    const newIndex = tabLayout.findIndex((w) => w.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    save(arrayMove(tabLayout, oldIndex, newIndex));
+  };
+
   const handleInlineDragStart = (e: DragStartEvent) => setActiveId(e.active.id as string);
   const handleInlineDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
@@ -500,6 +696,13 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           >
             {editMode ? <><Check className="h-3.5 w-3.5" /> סיום עריכה</> : <><Pencil className="h-3.5 w-3.5" /> ערוך פריסה</>}
           </Button>
+          <button
+            onClick={openManagerDialog}
+            title="ניהול ווידג׳טים"
+            className="flex items-center justify-center h-9 w-9 shrink-0 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
           <button
             onClick={autoArrangeLayout}
             title="סידור אוטומטי"
@@ -536,7 +739,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           <p className="text-xs text-muted-foreground text-right">רכיבים מוסתרים — לחץ להחזיר:</p>
           <div className="flex flex-wrap gap-2">
             {hiddenWidgets.map((w) => {
-              const label = defs.find((d) => d.id === w.id)?.label ?? w.id;
+              const label = resolveWidgetLabel(w);
               return (
                 <button
                   key={w.id}
@@ -556,7 +759,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
         (() => {
           const items = visibleWidgets.map((cfg) => ({
             cfg,
-            label: defs.find((d) => d.id === cfg.id)?.label ?? cfg.id,
+            label: resolveWidgetLabel(cfg),
             node: widgetMap[cfg.id] ?? null,
           }));
           if (mobileMode === "carousel") return <CarouselLayout items={items} />;
@@ -574,7 +777,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           <SortableContext items={visibleWidgets.map((w) => w.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {visibleWidgets.map((cfg, index) => {
-                const label = defs.find((d) => d.id === cfg.id)?.label ?? cfg.id;
+                const label = resolveWidgetLabel(cfg);
                 return (
                   <SortableWidget
                     key={cfg.id}
@@ -603,14 +806,16 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {visibleWidgets.map((cfg, index) => {
-            const label = defs.find((d) => d.id === cfg.id)?.label ?? cfg.id;
+            const label = resolveWidgetLabel(cfg);
             const collapsed = !!cfg.collapsed;
             return (
               <div key={cfg.id} style={{ gridColumn: cfg.size === "full" ? "1 / -1" : undefined, minHeight: collapsed ? undefined : (cfg.height ? `${cfg.height}px` : undefined) }} className={cn("relative group", !collapsed && (editMode ? "pt-10" : "pt-8"))}>
                 {editMode && !collapsed && <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-gold/60 pointer-events-none" />}
                 {editMode && !collapsed && (
                   <>
+                    <ResizeHandleLeft size={cfg.size} onSetSize={(size) => setSize(cfg.id, size)} />
                     <ResizeHandleRight size={cfg.size} onSetSize={(size) => setSize(cfg.id, size)} />
+                    <ResizeHandleTop onSetHeight={(h) => setHeight(cfg.id, h)} />
                     <ResizeHandleBottom onSetHeight={(h) => setHeight(cfg.id, h)} />
                   </>
                 )}
@@ -771,7 +976,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           <p className="text-xs text-muted-foreground text-right">רכיבים מוסתרים — לחץ להחזיר:</p>
           <div className="flex flex-wrap gap-2">
             {hiddenWidgets.map((w) => {
-              const label = defs.find((d) => d.id === w.id)?.label ?? w.id;
+              const label = resolveWidgetLabel(w);
               return (
                 <button
                   key={w.id}
@@ -786,6 +991,62 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           </div>
         </div>
       )}
+
+      <Dialog modal={false} open={managerOpen} onOpenChange={setManagerOpen}>
+        <DialogContent
+          showOverlay={false}
+          trapFocus={false}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-3xl max-h-[85vh] overflow-y-auto"
+        >
+          <DialogHeader>
+            <DialogTitle>ניהול ווידג׳טים</DialogTitle>
+            <DialogDescription>
+              גרירה לשינוי סדר, טוגל להצגה/הסתרה, ושינוי שם שנשמר מקומית ובענן לפי חותמת הזמן האחרונה.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleManagerDragStart}
+            onDragEnd={handleManagerDragEnd}
+          >
+            <SortableContext items={tabLayout.map((w) => w.id)} strategy={rectSortingStrategy}>
+              <div className="space-y-2">
+                {tabLayout.map((cfg) => {
+                  const label = resolveWidgetLabel(cfg);
+                  const draftTitle = titleDrafts[cfg.id] ?? cfg.title ?? "";
+                  return (
+                    <SortableManagerRow
+                      key={cfg.id}
+                      cfg={cfg}
+                      label={label}
+                      draftTitle={draftTitle}
+                      onDraftChange={(value) => {
+                        setTitleDrafts((prev) => ({ ...prev, [cfg.id]: value }));
+                      }}
+                      onCommitTitle={() => {
+                        const nextTitle = titleDrafts[cfg.id] ?? cfg.title ?? "";
+                        setWidgetTitle(cfg.id, nextTitle);
+                        const normalized = normalizeWidgetTitle(nextTitle) ?? "";
+                        setTitleDrafts((prev) => ({ ...prev, [cfg.id]: normalized }));
+                      }}
+                      onToggleVisible={(next) => setVisibility(cfg.id, next)}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+            <DragOverlay>{managerActiveId ? <DragOverlayItem label={managerActiveLabel} /> : null}</DragOverlay>
+          </DndContext>
+
+          <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground">
+            <span>מוצגים: {visibleWidgets.length}</span>
+            <span>מוסתרים: {hiddenWidgets.length}</span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

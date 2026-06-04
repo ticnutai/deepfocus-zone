@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ColorFavoritesRow } from "@/components/ui/color-favorites-row";
 import { cn } from "@/lib/utils";
+import { useColorFavorites } from "@/lib/study/colorFavorites";
 import {
   Check,
   RotateCcw,
@@ -96,7 +98,6 @@ export interface SavedTheme {
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
 const SAVED_THEMES_KEY = "quiz_saved_themes";
-const SAVED_COLORS_KEY = "quiz_saved_palette";
 
 function loadSavedThemes(): SavedTheme[] {
   try {
@@ -110,22 +111,6 @@ function loadSavedThemes(): SavedTheme[] {
 function storeSavedThemes(themes: SavedTheme[]) {
   try {
     localStorage.setItem(SAVED_THEMES_KEY, JSON.stringify(themes));
-  } catch {
-    /* quota */
-  }
-}
-function loadSavedColors(): string[] {
-  try {
-    return JSON.parse(
-      localStorage.getItem(SAVED_COLORS_KEY) ?? "[]",
-    ) as string[];
-  } catch {
-    return [];
-  }
-}
-function storeSavedColors(colors: string[]) {
-  try {
-    localStorage.setItem(SAVED_COLORS_KEY, JSON.stringify(colors));
   } catch {
     /* quota */
   }
@@ -541,9 +526,12 @@ export function QuizThemeEditorDialog({
 
   // Saved themes
   const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
-
-  // Saved colors palette
-  const [palette, setPalette] = useState<string[]>(loadSavedColors);
+  const {
+    favorites: palette,
+    addFavorite: addPaletteColor,
+    removeFavorite: removePaletteColor,
+    moveFavorite: movePaletteColor,
+  } = useColorFavorites();
 
   // Save-as-name flow
   const [showSaveName, setShowSaveName] = useState(false);
@@ -583,21 +571,12 @@ export function QuizThemeEditorDialog({
   );
 
   const handlePaletteAdd = useCallback((color: string) => {
-    setPalette((prev) => {
-      if (prev.includes(color)) return prev;
-      const next = [color, ...prev].slice(0, 40);
-      storeSavedColors(next);
-      return next;
-    });
-  }, []);
+    addPaletteColor(color);
+  }, [addPaletteColor]);
 
   const handlePaletteDelete = useCallback((color: string) => {
-    setPalette((prev) => {
-      const next = prev.filter((c) => c !== color);
-      storeSavedColors(next);
-      return next;
-    });
-  }, []);
+    removePaletteColor(color);
+  }, [removePaletteColor]);
 
   const handleSaveNamed = useCallback(() => {
     const name = saveName.trim();
@@ -1082,32 +1061,14 @@ export function QuizThemeEditorDialog({
               ) : (
                 <div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    לחץ X למחיקה · צבעים אלו מוצעים בכל שדה צבע בעריכה
+                    גרור כדי לשנות סדר · לחץ X למחיקה · צבעים אלו זמינים בכל בוררי הצבע באפליקציה
                   </p>
-                  <div className="flex flex-wrap gap-3">
-                    {palette.map((c) => (
-                      <div
-                        key={c}
-                        className="relative group flex flex-col items-center gap-0.5"
-                      >
-                        <div
-                          className="w-9 h-9 rounded-lg border-2 border-border shadow-sm cursor-default"
-                          style={{ backgroundColor: c }}
-                          title={c}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handlePaletteDelete(c)}
-                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground hidden group-hover:flex items-center justify-center shadow"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                        <span className="text-[9px] font-mono text-muted-foreground">
-                          {c.slice(1).toUpperCase()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <ColorFavoritesRow
+                    favorites={palette}
+                    onRemove={handlePaletteDelete}
+                    onMove={movePaletteColor}
+                    emptyText="אין צבעים מועדפים עדיין"
+                  />
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -27,9 +27,10 @@ export function TextPromptDialog({ open, onOpenChange, title, defaultValue = "",
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" dir="rtl" aria-describedby={undefined}>
+      <DialogContent className="max-w-sm" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">{title}</DialogTitle>
+          <DialogDescription className="sr-only">הזינו טקסט ואשרו כדי להמשיך</DialogDescription>
         </DialogHeader>
         <Input
           autoFocus

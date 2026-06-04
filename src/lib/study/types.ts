@@ -212,6 +212,7 @@ export interface WidgetConfig {
   order: number;
   height?: number;
   collapsed?: boolean; // when true, render only header strip
+  title?: string; // optional custom display title, synced via widget_layout
 }
 export type WidgetLayout = Record<string, WidgetConfig[]>;
 
@@ -296,6 +297,8 @@ export interface UiPrefs {
   heatmapPrefs?: { mode?: string; view?: string; source?: string; deckId?: string; cardType?: string; tag?: string };
   // WeeklySummary: filter preferences (synced across devices)
   weeklySummaryPrefs?: { deckFilter?: string; rangeDays?: string };
+  // Global color favorites for color pickers (synced across devices)
+  colorFavorites?: string[];
   // DeckCreateDialog: last custom geometry (synced across devices)
   deckCreateDialogGeometry?: { width: number; height: number; left: number; top: number };
   // DeckCreateDialog: classification view mode and expanded branch state (synced across devices)

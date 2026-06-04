@@ -191,9 +191,33 @@ function FocusedTodayStrip() {
   }, [state.logs]);
 
   const tiles = [
-    { icon: Flame, label: "רצף ימים", value: streak, accent: "from-amber-500/15 to-gold/10" },
-    { icon: ListChecks, label: "חזרות בתור", value: dueCount, accent: "from-gold/15 to-amber-300/10" },
-    { icon: Target, label: "נלמדו היום", value: doneTodayCount, accent: "from-emerald-500/15 to-gold/10" },
+    {
+      icon: Flame,
+      label: "רצף ימים",
+      value: streak,
+      from: "focus-streak-from",
+      to: "focus-streak-to",
+      iconToken: "focus-streak-icon",
+      iconBorderToken: "focus-streak-icon-border",
+    },
+    {
+      icon: ListChecks,
+      label: "חזרות בתור",
+      value: dueCount,
+      from: "focus-due-from",
+      to: "focus-due-to",
+      iconToken: "focus-due-icon",
+      iconBorderToken: "focus-due-icon-border",
+    },
+    {
+      icon: Target,
+      label: "נלמדו היום",
+      value: doneTodayCount,
+      from: "focus-learned-from",
+      to: "focus-learned-to",
+      iconToken: "focus-learned-icon",
+      iconBorderToken: "focus-learned-icon-border",
+    },
   ];
 
   return (
@@ -201,13 +225,19 @@ function FocusedTodayStrip() {
       {tiles.map((t) => (
         <div
           key={t.label}
-          className={cn(
-            "relative rounded-2xl border-2 border-gold/40 bg-gradient-to-br p-3 shadow-[0_4px_18px_-10px_hsl(var(--primary)/0.3)] overflow-hidden",
-            t.accent,
-          )}
+          className="relative rounded-2xl border-2 border-gold/40 p-3 shadow-[0_4px_18px_-10px_hsl(var(--primary)/0.3)] overflow-hidden"
+          style={{
+            backgroundImage: `linear-gradient(135deg, hsl(var(--${t.from}) / 0.16), hsl(var(--${t.to}) / 0.12))`,
+          }}
         >
           <div className="flex items-center justify-between mb-1">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-card/80 border border-gold/40 text-gold">
+            <span
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-card/80 border"
+              style={{
+                color: `hsl(var(--${t.iconToken}))`,
+                borderColor: `hsl(var(--${t.iconBorderToken}))`,
+              }}
+            >
               <t.icon className="h-3.5 w-3.5" />
             </span>
           </div>

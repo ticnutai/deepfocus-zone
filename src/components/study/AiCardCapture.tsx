@@ -10,7 +10,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
+import { ColorFavoritesRow } from "@/components/ui/color-favorites-row";
 import { useStudy } from "@/lib/study/store";
+import { useColorFavorites } from "@/lib/study/colorFavorites";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -117,6 +119,7 @@ const EMPTY_CATEGORY_OPTIONS: { id: string; label: string; name: string }[] = []
 
 export function AiCardCapture() {
   const { state, addCard, setUiPref } = useStudy();
+  const { favorites, addFavorite, removeFavorite, moveFavorite } = useColorFavorites();
   const { user, isGuest } = useAuth();
   const initialStyle = normalizeStyle(
     readStorageJson<IconStyle>(STYLE_KEY_V2) ?? state.uiPrefs?.aiButtonStyle ?? DEFAULT_STYLE,
@@ -608,10 +611,26 @@ export function AiCardCapture() {
                     <div className="space-y-1">
                       <Label className="text-xs">צבע רקע</Label>
                       <input type="color" value={style.bg} onChange={(e) => setStyle({ ...style, bg: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+                      <ColorFavoritesRow
+                        favorites={favorites}
+                        currentColor={style.bg}
+                        onAddCurrent={() => addFavorite(style.bg)}
+                        onPick={(color) => setStyle({ ...style, bg: color })}
+                        onRemove={removeFavorite}
+                        onMove={moveFavorite}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">צבע איקון</Label>
                       <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-8 w-full rounded cursor-pointer" />
+                      <ColorFavoritesRow
+                        favorites={favorites}
+                        currentColor={style.color}
+                        onAddCurrent={() => addFavorite(style.color)}
+                        onPick={(color) => setStyle({ ...style, color })}
+                        onRemove={removeFavorite}
+                        onMove={moveFavorite}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">גודל ({style.size}px)</Label>
