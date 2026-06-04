@@ -1079,8 +1079,10 @@ export function QuizThemeEditorDialog({
                     saved={s}
                     onLoad={() => {
                       setDraft({ ...DEFAULT_CUSTOM_THEME, ...s.theme });
+                      setEditingSavedId(null);
                       setTab("edit");
                     }}
+                    onEdit={() => handleEditSaved(s)}
                     onDelete={() => handleDeleteSaved(s.id)}
                   />
                 ))}
