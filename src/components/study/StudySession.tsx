@@ -1918,7 +1918,7 @@ export function StudySession({
       {/* ── Desktop toolbar (hidden on mobile) ── */}
       <div
         className={cn(
-          "flex items-center gap-3 flex-wrap",
+          "flex items-center gap-2 flex-wrap",
           isMobile && "hidden",
         )}
       >

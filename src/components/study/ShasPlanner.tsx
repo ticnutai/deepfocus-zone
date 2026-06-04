@@ -16,6 +16,7 @@ import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { computePace, estimateFinishDate } from "@/lib/study/shasBoardLog";
 
 const TOTAL_AMUDIM = SHAS_BAVLI.reduce((s, m) => s + m.pages * 2, 0);
+export type ShasPlannerViewMode = "rich" | "compact" | "focus";
 
 function fmtDate(d: Date | null): string {
   if (!d) return "—";
@@ -23,7 +24,7 @@ function fmtDate(d: Date | null): string {
 }
 function fmtNum(n: number) { return n.toLocaleString("he-IL"); }
 
-export function ShasPlanner() {
+export function ShasPlanner({ viewMode = "rich" }: { viewMode?: ShasPlannerViewMode }) {
   const { state, setUiPref } = useStudy();
   const progress = ((state.uiPrefs as any)?.shasBoardProgress ?? {}) as Record<string, Record<number, { a?: number; b?: number }>>;
   const log = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
@@ -71,10 +72,13 @@ export function ShasPlanner() {
     { label: "7 שנים (דף יומי)", days: 7 * 365 },
   ];
 
+  const compact = viewMode === "compact";
+  const focus = viewMode === "focus";
+
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className={compact ? "space-y-3" : "space-y-4"} dir="rtl">
       {/* Pace summary */}
-      <Card className="gold-frame p-5 space-y-3">
+      <Card className={compact ? "gold-frame p-4 space-y-2" : "gold-frame p-5 space-y-3"}>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="gold-icon-circle"><TrendingUp className="h-5 w-5" /></span>
           <h2 className="font-display text-2xl font-bold">תכנון לסיום ש"ס</h2>
@@ -129,7 +133,7 @@ export function ShasPlanner() {
       </Card>
 
       {/* Daily target setter */}
-      <Card className="gold-frame p-5 space-y-3">
+      <Card className={compact ? "gold-frame p-4 space-y-2" : "gold-frame p-5 space-y-3"}>
         <div className="flex items-center gap-2">
           <span className="gold-icon-circle"><Target className="h-5 w-5" /></span>
           <h3 className="font-display text-lg font-bold">יעד יומי מותאם אישית</h3>
@@ -179,7 +183,8 @@ export function ShasPlanner() {
       </Card>
 
       {/* What-if horizons */}
-      <Card className="gold-frame p-5 space-y-3">
+      {!focus && (
+      <Card className={compact ? "gold-frame p-4 space-y-2" : "gold-frame p-5 space-y-3"}>
         <div className="flex items-center gap-2">
           <span className="gold-icon-circle"><Sparkles className="h-5 w-5" /></span>
           <h3 className="font-display text-lg font-bold">מה צריך כדי לסיים בתוך…</h3>
@@ -214,9 +219,10 @@ export function ShasPlanner() {
           })}
         </div>
       </Card>
+      )}
 
       {/* Per-seder breakdown */}
-      <Card className="gold-frame p-4 space-y-3">
+      <Card className={compact ? "gold-frame p-3 space-y-2" : "gold-frame p-4 space-y-3"}>
         <h3 className="font-display text-lg font-bold">סדרים — מה נשאר</h3>
         <div className="space-y-2">
           {SEDARIM.map((s) => {
@@ -245,7 +251,8 @@ export function ShasPlanner() {
       </Card>
 
       {/* Per-masechta remaining list (top remaining first) */}
-      <Card className="gold-frame p-4 space-y-3">
+      {!focus && (
+      <Card className={compact ? "gold-frame p-3 space-y-2" : "gold-frame p-4 space-y-3"}>
         <h3 className="font-display text-lg font-bold">מסכתות — מיון לפי מה שנשאר</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {[...stats.perMasechta].sort((a, b) => b.remaining - a.remaining).map((m) => {
@@ -269,6 +276,7 @@ export function ShasPlanner() {
           })}
         </div>
       </Card>
+      )}
     </div>
   );
 }

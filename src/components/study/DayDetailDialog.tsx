@@ -382,11 +382,11 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
           {/* Due reviews — sessions scheduled for review today */}
           {dueReviews.length > 0 && (
             <div className="rounded-xl border-2 border-blue-500/40 bg-blue-50/60 dark:bg-blue-950/20 p-3 space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-1 justify-end text-blue-700 dark:text-blue-400">
+              <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-start text-blue-700 dark:text-blue-400">
                 ממתינים לחזרה היום <Repeat className="h-4 w-4" />
               </h4>
               {dueReviews.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-2 rounded-lg border border-blue-400/30 bg-card p-2">
+                <div key={s.id} className="flex flex-row-reverse items-center justify-between gap-2 rounded-lg border border-blue-400/30 bg-card p-2">
                   <Button
                     size="sm" variant="outline"
                     className="h-7 px-2 text-xs border-blue-500/50 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
@@ -403,7 +403,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
           {/* Manual goal completion */}
           {manualGoals.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+              <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-start">
                 סימון יעדים <Target className="h-4 w-4 text-gold" />
               </h4>
               <p className="text-[11px] text-muted-foreground">
@@ -449,7 +449,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
           {/* Planned plan-units toggle (synced with PlanDetail units table) */}
           {plannedPlanUnitsToday.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+              <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-start">
                 יחידות מתוכננות ליום זה <BookOpen className="h-4 w-4 text-gold" />
               </h4>
               <p className="text-[11px] text-muted-foreground text-right">
@@ -498,16 +498,16 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
 
           {/* Learning sessions section */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-row-reverse items-center justify-between gap-2">
               <Button
                 size="sm"
                 onClick={() => setShowAddForm((v) => !v)}
                 className="h-7 px-2 text-xs bg-gradient-navy text-primary-foreground rounded-xl"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3 w-3 opacity-80" />
                 הוסף לימוד / חזרה
               </Button>
-              <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+              <h4 className="flex-1 w-full text-sm font-semibold flex items-center gap-1 justify-start">
                 לימוד וחזרות <BookOpen className="h-4 w-4 text-gold" />
               </h4>
             </div>
@@ -518,7 +518,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                 {/* Subject */}
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground block text-right">נושא *</label>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-row-reverse gap-1.5">
                     <button
                       type="button"
                       onClick={() => setSubjectPickerOpen(true)}
@@ -710,7 +710,8 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <div className="flex w-full items-center gap-1.5 flex-wrap justify-start text-right">
+                          <span className="text-sm font-semibold">{s.subject}</span>
                           <Badge
                             variant="outline"
                             className={cn(
@@ -722,9 +723,8 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                           >
                             {s.sessionType === "initial" ? "לימוד ראשוני" : "חזרה"}
                           </Badge>
-                          <span className="text-sm font-semibold">{s.subject}</span>
                         </div>
-                        <div className="flex items-center gap-2 justify-end mt-1 flex-wrap">
+                        <div className="flex items-center gap-2 justify-start mt-1 flex-wrap">
                           {/* Stars */}
                           <div className="flex gap-0.5">
                             {([1, 2, 3, 4, 5] as const).map((q) => (
@@ -783,25 +783,25 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
 
             {/* Post-add CTA: offer to create a flashcard for the new learning */}
             {lastAddedSubject && (
-              <div className="rounded-xl border-2 border-gold/50 bg-gold/5 p-2.5 flex items-center justify-between gap-2">
-                <button onClick={() => setLastAddedSubject(null)} className="text-muted-foreground hover:text-foreground shrink-0">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-                <div className="flex-1 text-right">
+              <div className="rounded-xl border-2 border-gold/50 bg-gold/5 p-2.5 flex items-center gap-2">
+                <div className="flex-1 text-right min-w-0">
                   <p className="text-xs font-medium">רוצה להוסיף כרטיסייה לחזרה?</p>
-                  <p className="text-[10px] text-muted-foreground">{lastAddedSubject}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{lastAddedSubject}</p>
                 </div>
                 <Button size="sm" onClick={handleCreateFlashcard}
                   className="h-7 px-2 text-xs bg-gradient-navy text-primary-foreground shrink-0">
                   <Plus className="h-3 w-3" /> הוסף כרטיסייה
                 </Button>
+                <button onClick={() => setLastAddedSubject(null)} className="text-muted-foreground hover:text-foreground shrink-0" title="סגור">
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
             )}
           </div>
 
           {/* Note */}
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+            <h4 className="w-full text-sm font-semibold flex items-center gap-1 justify-end">
               הערות יומיות <NotebookPen className="h-4 w-4 text-gold" />
             </h4>
             <Textarea
@@ -811,7 +811,13 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
               className="border-2 border-gold/40 text-right min-h-[100px]"
               dir="rtl"
             />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                onClick={handleSaveNote}
+                className="bg-gradient-navy text-primary-foreground rounded-xl"
+              >
+                <Save className="h-4 w-4" /> שמור
+              </Button>
               {existingNote && (
                 <Button
                   variant="ghost"
@@ -826,19 +832,13 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                   <X className="h-4 w-4" /> מחק הערה
                 </Button>
               )}
-              <Button
-                onClick={handleSaveNote}
-                className="bg-gradient-navy text-primary-foreground rounded-xl ml-auto"
-              >
-                <Save className="h-4 w-4" /> שמור
-              </Button>
             </div>
           </div>
 
           {/* Shas reviews for this day */}
           {dayShasReviews.length > 0 && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex flex-row-reverse items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
@@ -939,7 +939,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <h4 className="text-sm font-semibold flex items-center gap-1 justify-end">
+                <h4 className="flex-1 w-full text-sm font-semibold flex items-center gap-1 justify-start">
                   לימוד / חזרות ש"ס ביום זה <Repeat className="h-4 w-4 text-gold" />
                 </h4>
               </div>
@@ -986,7 +986,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                           )}
                         </button>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap justify-start">
+                          <div className="flex w-full items-center gap-1.5 flex-wrap justify-start text-right">
                             <div className="text-sm font-semibold">{label}</div>
                             <Badge variant="outline" className="text-[10px] border-gold/40">{tag}</Badge>
                             {(() => {

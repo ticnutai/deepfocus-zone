@@ -14,6 +14,7 @@ import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { computePace } from "@/lib/study/shasBoardLog";
 
 const DOW = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+export type ShasCalendarViewMode = "month" | "timeline" | "milestones";
 
 function isoKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -30,7 +31,7 @@ function sameDay(a: Date, b: Date) {
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function addDays(d: Date, n: number) { const o = new Date(d); o.setDate(o.getDate() + n); return o; }
 
-export function ShasCalendar() {
+export function ShasCalendar({ viewMode = "month" }: { viewMode?: ShasCalendarViewMode }) {
   const { state } = useStudy();
   const uiPrefs = state.uiPrefs as any;
   const progress = useMemo(
@@ -155,6 +156,22 @@ export function ShasCalendar() {
   const monthTotal = weeks.flat().filter(d => d.getMonth() === cursor.getMonth())
     .reduce((s, d) => s + (schedule.get(isoKey(d))?.count ?? 0), 0);
 
+  const upcomingTimeline = useMemo(() => {
+    const days: Array<{ date: Date; iso: string; count: number; cum: number; finishedMasechtot: string[]; finishedSedarim: string[] }> = [];
+    for (let i = 0; i < 90; i++) {
+      const d = addDays(today, i);
+      const iso = isoKey(d);
+      const info = schedule.get(iso);
+      if (!info || info.count <= 0) continue;
+      days.push({ date: d, iso, count: info.count, cum: info.cum, finishedMasechtot: info.finishedMasechtot, finishedSedarim: info.finishedSedarim });
+    }
+    return days;
+  }, [schedule, today]);
+
+  const milestoneDays = useMemo(() => {
+    return upcomingTimeline.filter((d) => d.finishedMasechtot.length > 0 || d.finishedSedarim.length > 0);
+  }, [upcomingTimeline]);
+
   return (
     <div className="space-y-4" dir="rtl">
       {/* Header */}
@@ -248,6 +265,7 @@ export function ShasCalendar() {
 
 
       {/* Month nav */}
+      {viewMode === "month" && (
       <Card className="gold-frame p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={() => setCursor(addDays(startOfMonth(cursor), -1))}>
@@ -325,6 +343,63 @@ export function ShasCalendar() {
           <span className="flex items-center gap-1"><Flag className="h-3 w-3 text-gold" /> = יום שמסיים מסכת/סדר</span>
         </div>
       </Card>
+      )}
+
+      {viewMode === "timeline" && (
+      <Card className="gold-frame p-4 space-y-3">
+        <h3 className="font-display text-lg font-bold">ציר זמן יעדים (90 ימים)</h3>
+        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+          {upcomingTimeline.length === 0 && (
+            <div className="text-sm text-muted-foreground p-3 rounded-md border border-gold/30">
+              אין יעדים להצגה כרגע.
+            </div>
+          )}
+          {upcomingTimeline.map((d) => (
+            <div key={d.iso} className="rounded-md border border-gold/30 p-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold">{fmtDate(d.date)}</div>
+                <div className="text-xs text-muted-foreground">
+                  יעד מצטבר: {d.cum.toLocaleString("he-IL")}/{totalRemaining.toLocaleString("he-IL")}
+                </div>
+              </div>
+              <div className="text-end">
+                <div className="font-bold text-gold">{d.count} עמ׳</div>
+                {(d.finishedMasechtot.length > 0 || d.finishedSedarim.length > 0) && (
+                  <div className="text-[11px] text-muted-foreground">
+                    {d.finishedMasechtot.length > 0 ? `סיום מסכת: ${d.finishedMasechtot.join(", ")}` : ""}
+                    {d.finishedSedarim.length > 0 ? ` ${d.finishedSedarim.length > 0 && d.finishedMasechtot.length > 0 ? "·" : ""} סיום סדר: ${d.finishedSedarim.join(", ")}` : ""}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      )}
+
+      {viewMode === "milestones" && (
+      <Card className="gold-frame p-4 space-y-3">
+        <h3 className="font-display text-lg font-bold">אבני דרך קרובות</h3>
+        <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+          {milestoneDays.length === 0 && (
+            <div className="text-sm text-muted-foreground p-3 rounded-md border border-gold/30">
+              אין אבני דרך בטווח הקרוב.
+            </div>
+          )}
+          {milestoneDays.map((d) => (
+            <div key={d.iso} className="rounded-md border border-gold/40 bg-secondary/40 p-3">
+              <div className="font-semibold">{fmtDate(d.date)}</div>
+              {d.finishedMasechtot.length > 0 && (
+                <div className="text-xs mt-1">סיום מסכת: <span className="text-gold font-semibold">{d.finishedMasechtot.join(", ")}</span></div>
+              )}
+              {d.finishedSedarim.length > 0 && (
+                <div className="text-xs mt-1">סיום סדר: <span className="text-gold font-semibold">{d.finishedSedarim.join(", ")}</span></div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+      )}
 
       {/* Expected finish per Seder */}
       <Card className="gold-frame p-4 space-y-2">

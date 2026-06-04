@@ -53,16 +53,16 @@ export function CategoryTemplatesDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent dir="rtl" className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-row-reverse items-center justify-between gap-2">
+            <DialogTitle className="flex items-center gap-2 text-right">
+              <Sparkles className="h-5 w-5 text-gold" />
+              תבניות קטגוריות
+            </DialogTitle>
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={openNew} className="bg-gradient-navy text-primary-foreground gap-1">
                 <Plus className="h-4 w-4" /> תבנית חדשה
               </Button>
             </div>
-            <DialogTitle className="flex items-center gap-2 text-right">
-              <Sparkles className="h-5 w-5 text-gold" />
-              תבניות קטגוריות
-            </DialogTitle>
           </div>
           <DialogDescription className="text-right">
             בחר תבנית מוכנה, צור תבנית אישית, או ערוך תבנית קיימת. אפשר להפעיל כמה שתרצה.
@@ -77,7 +77,7 @@ export function CategoryTemplatesDialog({ open, onOpenChange }: Props) {
                 const childCount = tpl.roots.reduce((sum, r) => sum + (r.children?.length ?? 0), 0);
                 return (
                   <Card key={tpl.id} className="p-4 border-2 border-gold/40 bg-gold/5 space-y-2 text-right">
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-row-reverse items-start justify-between gap-2">
                       <Badge variant="outline" className="border-gold/50 text-[10px]">
                         {tpl.roots.length} ראשיות · {childCount} פריטים
                       </Badge>
@@ -89,7 +89,7 @@ export function CategoryTemplatesDialog({ open, onOpenChange }: Props) {
                     {tpl.description && (
                       <p className="text-xs text-muted-foreground leading-snug">{tpl.description}</p>
                     )}
-                    <div className="flex justify-between gap-1 pt-2">
+                    <div className="flex flex-row-reverse justify-between gap-1 pt-2">
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" onClick={() => openEdit(tpl)} className="h-7 px-2 gap-1">
                           <Pencil className="h-3 w-3" /> ערוך
@@ -124,7 +124,7 @@ export function CategoryTemplatesDialog({ open, onOpenChange }: Props) {
                   "p-4 border-2 border-gold/30 hover:border-gold/70 transition-all space-y-2 text-right",
                 )}
               >
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-row-reverse items-start justify-between gap-2">
                   <Badge variant="outline" className="border-gold/50 text-[10px]">
                     {tpl.roots.length} ראשיות · {childCount} פריטים
                   </Badge>

@@ -865,10 +865,19 @@ function ThemeEditorDialog({ open, onOpenChange, themeId }: EditorProps) {
   );
 }
 
-export const ThemeSwitcher = () => {
+export { ThemeEditorDialog };
+
+interface ThemeSwitcherProps {
+  activeThemeId?: string;
+  onThemeSelect?: (id: string) => void;
+}
+
+export const ThemeSwitcher = ({ activeThemeId, onThemeSelect }: ThemeSwitcherProps = {}) => {
   const { theme, setTheme, allThemes, deleteCustomTheme } = useTheme();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const resolvedActiveThemeId = activeThemeId ?? theme;
+  const pickTheme = onThemeSelect ?? setTheme;
 
   const openEditor = (id: string) => { setEditingId(id); setEditorOpen(true); };
 
@@ -890,13 +899,13 @@ export const ThemeSwitcher = () => {
             <p className="text-xs text-muted-foreground mb-3">בחר, ערוך, או שכפל</p>
             <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
               {allThemes.map((t: ThemeDef) => {
-                const active = t.id === theme;
+                const active = t.id === resolvedActiveThemeId;
                 return (
                   <div key={t.id} className={cn(
                     "flex items-center gap-2 p-2 rounded-xl border-2 transition-all",
                     active ? "border-gold bg-secondary shadow-gold" : "border-transparent hover:border-gold/40 hover:bg-secondary/60",
                   )}>
-                    <button onClick={() => setTheme(t.id)} className="flex-1 flex items-center gap-2 text-right">
+                    <button onClick={() => pickTheme(t.id)} className="flex-1 flex items-center gap-2 text-right">
                       <div className="flex -space-x-1 rtl:space-x-reverse">
                         {t.swatch.map((c, i) => (
                           <span key={i} className="h-6 w-6 rounded-full border-2 border-card" style={{ background: c }} />

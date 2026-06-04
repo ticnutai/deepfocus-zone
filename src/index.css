@@ -325,6 +325,29 @@
     border-color: hsl(var(--gold));
     color: hsl(var(--navy));
   }
+
+  /* Smooth theme interpolation for ShasBoard premium palettes */
+  .shas-theme-shell,
+  .shas-theme-shell .gold-frame,
+  .shas-theme-shell .gold-icon-circle,
+  .shas-theme-shell button,
+  .shas-theme-shell [role="progressbar"],
+  .shas-theme-shell .inline-flex {
+    transition-property: background-color, border-color, color, box-shadow, background-image;
+    transition-duration: 360ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shas-theme-shell,
+    .shas-theme-shell .gold-frame,
+    .shas-theme-shell .gold-icon-circle,
+    .shas-theme-shell button,
+    .shas-theme-shell [role="progressbar"],
+    .shas-theme-shell .inline-flex {
+      transition: none;
+    }
+  }
 }
 
 @layer utilities {

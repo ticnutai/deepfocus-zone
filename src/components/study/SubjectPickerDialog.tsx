@@ -402,7 +402,7 @@ export function SubjectPickerDialog({ open, onOpenChange, onSelect, planMasechto
               ))}
             </div>
             {shasSelectedDaf && (
-              <div className="flex items-center justify-between border-t border-gold/20 pt-3">
+              <div className="flex flex-row-reverse items-center justify-between border-t border-gold/20 pt-3">
                 <Button onClick={handleConfirmShas} className="bg-gradient-navy text-primary-foreground rounded-xl">
                   בחר
                 </Button>
@@ -470,7 +470,7 @@ export function SubjectPickerDialog({ open, onOpenChange, onSelect, planMasechto
               ))}
             </div>
             {mishnaSelectedPerek && (
-              <div className="flex items-center justify-between border-t border-gold/20 pt-3">
+              <div className="flex flex-row-reverse items-center justify-between border-t border-gold/20 pt-3">
                 <Button onClick={handleConfirmMishna} className="bg-gradient-navy text-primary-foreground rounded-xl">
                   בחר
                 </Button>
@@ -517,7 +517,7 @@ export function SubjectPickerDialog({ open, onOpenChange, onSelect, planMasechto
               ))}
             </div>
             {torahSelectedParasha && (
-              <div className="flex items-center justify-between border-t border-gold/20 pt-3">
+              <div className="flex flex-row-reverse items-center justify-between border-t border-gold/20 pt-3">
                 <Button onClick={handleConfirmTorah} className="bg-gradient-navy text-primary-foreground rounded-xl">
                   בחר
                 </Button>
@@ -556,7 +556,7 @@ export function SubjectPickerDialog({ open, onOpenChange, onSelect, planMasechto
               </div>
             )}
             {freeText && (
-              <div className="flex items-center justify-between border-t border-gold/20 pt-3">
+              <div className="flex flex-row-reverse items-center justify-between border-t border-gold/20 pt-3">
                 <Button onClick={handleConfirmFree} className="bg-gradient-navy text-primary-foreground rounded-xl">
                   בחר
                 </Button>
