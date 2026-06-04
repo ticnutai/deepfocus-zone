@@ -3569,6 +3569,8 @@ export function StudySession({
         open={themeEditorOpen}
         value={customQuizTheme}
         onSave={saveCustomTheme}
+        savedThemes={savedQuizThemes}
+        onSavedThemesChange={saveSavedQuizThemes}
         onPreview={(t) => setCustomQuizTheme(t)}
         onClose={() => setThemeEditorOpen(false)}
       />
