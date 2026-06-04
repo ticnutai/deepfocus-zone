@@ -139,7 +139,7 @@ function collectTokenCandidatesFromElement(
   while (node && depth < 7) {
     const style = window.getComputedStyle(node);
     for (const prop of colorProps) {
-      const normalized = normalizeCssColor(style[prop] ?? "");
+      const normalized = normalizeCssColor(String(style[prop] ?? ""));
       if (!normalized) continue;
       for (const token of THEME_TOKEN_KEYS) {
         if (tokenRgbMap[token] === normalized && !seen.has(token)) {
@@ -274,7 +274,7 @@ function ThemeEditorDialog({ open, onOpenChange, themeId }: EditorProps) {
     for (const el of all) {
       const style = frameDoc.defaultView?.getComputedStyle(el);
       if (!style) continue;
-      const isMatch = colorProps.some((p) => normalizeCssColor(style[p] ?? "") === needle);
+      const isMatch = colorProps.some((p) => normalizeCssColor(String(style[p] ?? "")) === needle);
       if (isMatch) matched.push(el);
       if (matched.length >= 150) break;
     }
