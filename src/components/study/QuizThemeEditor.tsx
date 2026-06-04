@@ -555,6 +555,7 @@ export function QuizThemeEditorDialog({
   // Save-as-name flow
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [editingSavedId, setEditingSavedId] = useState<string | null>(null);
 
   const handleOpenChange = (o: boolean) => {
     if (o) {
@@ -562,6 +563,7 @@ export function QuizThemeEditorDialog({
       setDraft(value);
       setShowSaveName(false);
       setSaveName("");
+      setEditingSavedId(null);
     } else onClose();
   };
 
@@ -605,24 +607,47 @@ export function QuizThemeEditorDialog({
       name,
       theme: { ...draft },
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
-    setSavedThemes((prev) => {
-      const next = [entry, ...prev];
-      storeSavedThemes(next);
-      return next;
-    });
+    const next = [entry, ...savedThemes];
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
     setShowSaveName(false);
     setSaveName("");
+    setEditingSavedId(entry.id);
     setTab("saved");
-  }, [draft, saveName]);
+  }, [draft, onSavedThemesChange, saveName, savedThemes]);
 
   const handleDeleteSaved = useCallback((id: string) => {
-    setSavedThemes((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      storeSavedThemes(next);
-      return next;
-    });
+    const next = savedThemes.filter((t) => t.id !== id);
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
+    if (editingSavedId === id) setEditingSavedId(null);
+  }, [editingSavedId, onSavedThemesChange, savedThemes]);
+
+  const handleEditSaved = useCallback((saved: SavedTheme) => {
+    setDraft({ ...DEFAULT_CUSTOM_THEME, ...saved.theme });
+    setEditingSavedId(saved.id);
+    setSaveName(saved.name);
+    setShowSaveName(false);
+    setTab("edit");
   }, []);
+
+  const handleOverwriteSaved = useCallback(() => {
+    if (!editingSavedId) return;
+    const now = Date.now();
+    const next = savedThemes.map((t) => t.id === editingSavedId
+      ? { ...t, name: saveName.trim() || t.name, theme: { ...draft }, updatedAt: now }
+      : t,
+    );
+    storeSavedThemes(next);
+    onSavedThemesChange?.(next);
+    if (!onSavedThemesChange) setLocalSavedThemes(next);
+    onSave(draft);
+    onClose();
+  }, [draft, editingSavedId, onClose, onSave, onSavedThemesChange, saveName, savedThemes]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
