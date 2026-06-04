@@ -100,7 +100,7 @@ export interface SavedTheme {
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 
-const SAVED_THEMES_KEY = "quiz_saved_themes";
+export const SAVED_THEMES_KEY = "quiz_saved_themes";
 
 function loadSavedThemes(): SavedTheme[] {
   try {
