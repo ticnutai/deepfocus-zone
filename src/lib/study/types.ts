@@ -231,6 +231,8 @@ export interface UiPrefs {
   studyOptLayout?: "letters" | "grid" | "list";
   studyAnswerMode?: "instant" | "button";
   studyQuizTheme?: "classic" | "millionaire" | "navy" | "dark" | "colorful" | "custom";
+  // Desktop study toolbar: whether the extra tools row is expanded (synced local + cloud)
+  studyToolsOpen?: boolean;
   // CardEditor: pinned category names (synced)
   pinnedCats?: string[];
   // CardEditor: last selected create-mode question types (synced)

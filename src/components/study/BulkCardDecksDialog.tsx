@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Layers, BookOpen } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Layers, BookOpen, Pencil, Check as CheckIcon, X as XIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStudy } from "@/lib/study/store";
 import type { Card as StudyCardType } from "@/lib/study/types";
@@ -21,13 +22,21 @@ interface Props {
 }
 
 export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
-  const { state, setCardDecks } = useStudy();
+  const { state, setCardDecks, renameDeck } = useStudy();
   const [activeTab, setActiveTab] = useState<DialogTab>("existing");
   const [contentReady, setContentReady] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set());
   const [deckCreateOpen, setDeckCreateOpen] = useState(false);
   const [newQuestionBaseCardIds, setNewQuestionBaseCardIds] = useState<Set<string>>(new Set());
+  // Inline deck rename state
+  const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
+  const [editingDeckName, setEditingDeckName] = useState("");
+
+  // Ref so we can read latest state.cards without making it a useEffect dependency.
+  // This prevents the dialog from resetting every time a background sync updates state.cards.
+  const stateCardsRef = useRef(state.cards);
+  stateCardsRef.current = state.cards;
 
   useEffect(() => {
     if (!open) return;
@@ -41,17 +50,19 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
     setActiveTab("existing");
     setSelectedCardIds(new Set(cards.map((c) => c.id)));
     setSelectedDeckIds(new Set());
-    setNewQuestionBaseCardIds(new Set(state.cards.map((c) => c.id)));
+    // Read via ref — no dependency on state.cards so sync polls won't reset the dialog
+    setNewQuestionBaseCardIds(new Set(stateCardsRef.current.map((c) => c.id)));
     return () => {
       window.cancelAnimationFrame(raf1);
       window.cancelAnimationFrame(raf2);
     };
-  }, [open, cards, state.cards]);
+  }, [open, cards]); // intentionally omit state.cards — use ref instead
 
+  // Capture baseline when switching to new-questions tab
   useEffect(() => {
     if (!open || activeTab !== "new-questions") return;
-    setNewQuestionBaseCardIds(new Set(state.cards.map((c) => c.id)));
-  }, [open, cards]);
+    setNewQuestionBaseCardIds(new Set(stateCardsRef.current.map((c) => c.id)));
+  }, [open, activeTab]); // fixed: was [open, cards] which was incorrect
 
   const linkedDeckIdsByCard = useMemo(() => {
     const out = new Map<string, Set<string>>();
@@ -67,26 +78,49 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
 
   const selectedCount = selectedCardIds.size;
 
-  const toggleCard = (cardId: string) => {
+  const toggleCard = useCallback((cardId: string) => {
     setSelectedCardIds((prev) => {
       const next = new Set(prev);
       if (next.has(cardId)) next.delete(cardId);
       else next.add(cardId);
       return next;
     });
-  };
+  }, []);
 
-  const toggleDeck = (deckId: string) => {
+  const toggleDeck = useCallback((deckId: string) => {
     setSelectedDeckIds((prev) => {
       const next = new Set(prev);
       if (next.has(deckId)) next.delete(deckId);
       else next.add(deckId);
       return next;
     });
-  };
+  }, []);
 
-  const selectAll = () => setSelectedCardIds(new Set(cards.map((c) => c.id)));
-  const clearAll = () => setSelectedCardIds(new Set());
+  const selectAll = useCallback(() => setSelectedCardIds(new Set(cards.map((c) => c.id))), [cards]);
+  const clearAll = useCallback(() => setSelectedCardIds(new Set()), []);
+
+  const startEditDeck = useCallback((deckId: string, currentName: string) => {
+    setEditingDeckId(deckId);
+    setEditingDeckName(currentName);
+  }, []);
+
+  const cancelEditDeck = useCallback(() => {
+    setEditingDeckId(null);
+    setEditingDeckName("");
+  }, []);
+
+  const saveEditDeck = useCallback(() => {
+    if (!editingDeckId) return;
+    const trimmed = editingDeckName.trim();
+    if (!trimmed) {
+      toast({ title: "שם ריק", description: "יש להזין שם לערכה." });
+      return;
+    }
+    renameDeck(editingDeckId, trimmed);
+    toast({ title: "שם הערכה עודכן", description: `הערכה נקראת כעת "${trimmed}".` });
+    setEditingDeckId(null);
+    setEditingDeckName("");
+  }, [editingDeckId, editingDeckName, renameDeck]);
 
   const applyClassification = () => {
     if (selectedCardIds.size === 0) {
@@ -217,15 +251,61 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
               <div className="max-h-[24vh] overflow-y-auto space-y-1">
                 {state.decks.map((d) => {
                   const checked = selectedDeckIds.has(d.id);
+                  const isEditing = editingDeckId === d.id;
                   return (
-                    <label
+                    <div
                       key={d.id}
-                      className="flex items-center gap-2 p-2 rounded-lg border-2 border-gold/30 hover:bg-secondary cursor-pointer"
+                      className="flex items-center gap-2 p-2 rounded-lg border-2 border-gold/30 hover:bg-secondary"
                     >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleDeck(d.id)} />
-                      <BookOpen className="h-4 w-4 text-navy" />
-                      <span className="flex-1 text-right text-sm">{d.name}</span>
-                    </label>
+                      {isEditing ? (
+                        <>
+                          <BookOpen className="h-4 w-4 text-navy shrink-0" />
+                          <Input
+                            value={editingDeckName}
+                            onChange={(e) => setEditingDeckName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); saveEditDeck(); }
+                              else if (e.key === "Escape") { e.preventDefault(); cancelEditDeck(); }
+                            }}
+                            autoFocus
+                            className="h-7 flex-1 text-sm text-right"
+                            dir="rtl"
+                          />
+                          <button
+                            type="button"
+                            title="שמור"
+                            className="shrink-0 p-1 rounded text-emerald-600 hover:bg-secondary"
+                            onClick={saveEditDeck}
+                          >
+                            <CheckIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="ביטול"
+                            className="shrink-0 p-1 rounded text-muted-foreground hover:bg-secondary"
+                            onClick={cancelEditDeck}
+                          >
+                            <XIcon className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <label className="flex flex-1 items-center gap-2 cursor-pointer min-w-0">
+                            <Checkbox checked={checked} onCheckedChange={() => toggleDeck(d.id)} />
+                            <BookOpen className="h-4 w-4 text-navy shrink-0" />
+                            <span className="flex-1 text-right text-sm truncate">{d.name}</span>
+                          </label>
+                          <button
+                            type="button"
+                            title="ערוך שם ערכה"
+                            className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
+                            onClick={() => startEditDeck(d.id, d.name)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   );
                 })}
                 {state.decks.length === 0 && (

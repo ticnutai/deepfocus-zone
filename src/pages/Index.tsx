@@ -1495,7 +1495,7 @@ const Index = () => {
             >
               <Card className="gold-frame p-1.5 sm:p-2 relative">
                 <TabsList
-                  className="w-full bg-transparent justify-start gap-1.5 sm:gap-2 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
+                  className="w-full bg-transparent justify-start gap-3 sm:gap-4 h-auto flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible no-scrollbar snap-list-x sm:snap-none px-1 scroll-px-2"
                   dir="rtl"
                 >
                   {visibleTabs.map(({ v, l, I }) => (

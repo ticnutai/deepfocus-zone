@@ -86,6 +86,7 @@ const CUSTOM_QUIZ_THEME_KEY = "study-quiz-custom-theme-v1";
 const QUESTION_ALIGN_KEY = "study-question-align-v1";
 const QUIZ_HISTORY_KEY = "study-quiz-history-v1";
 const LAST_QUICK_DECK_KEY = "study-last-quick-deck-id-v1";
+const TOOLS_OPEN_KEY = "study-desktop-tools-open-v1";
 
 type ComboPref = "flash" | "multi" | "both";
 type ViewMode = "classic" | "flip" | "list" | "test";
@@ -707,7 +708,30 @@ export function StudySession({
   const [mobileSettingsDropdownOpen, setMobileSettingsDropdownOpen] =
     useState(false);
   const [deckDialogOpen, setDeckDialogOpen] = useState(false);
-  const [desktopToolsOpen, setDesktopToolsOpen] = useState(true);
+  // Desktop tools row open/close — synced via uiPrefs (localStorage + cloud, last-write-wins)
+  const desktopToolsOpen: boolean =
+    (state.uiPrefs?.studyToolsOpen as boolean | undefined) ??
+    (() => {
+      if (typeof window === "undefined") return true;
+      const v = localStorage.getItem(TOOLS_OPEN_KEY);
+      return v === null ? true : v === "1";
+    })();
+  const setDesktopToolsOpen = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const value = typeof next === "function" ? next(desktopToolsOpen) : next;
+      try {
+        localStorage.setItem(TOOLS_OPEN_KEY, value ? "1" : "0");
+      } catch {
+        /* noop */
+      }
+      try {
+        setUiPref("studyToolsOpen", value);
+      } catch {
+        /* guest / not signed in */
+      }
+    },
+    [desktopToolsOpen, setUiPref],
+  );
 
   const [typography, setTypography] = useState<QuizTypography>(loadTypography);
   const [answerTypography, setAnswerTypography] =
