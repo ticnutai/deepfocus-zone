@@ -520,6 +520,8 @@ interface Props {
   open: boolean;
   value: CustomQuizTheme;
   onSave: (v: CustomQuizTheme) => void;
+  savedThemes?: SavedTheme[];
+  onSavedThemesChange?: (themes: SavedTheme[]) => void;
   onPreview?: (v: CustomQuizTheme) => void;
   onClose: () => void;
 }
@@ -528,6 +530,8 @@ export function QuizThemeEditorDialog({
   open,
   value,
   onSave,
+  savedThemes: syncedSavedThemes,
+  onSavedThemesChange,
   onPreview,
   onClose,
 }: Props) {
@@ -539,7 +543,8 @@ export function QuizThemeEditorDialog({
   const originalValueRef = useRef<CustomQuizTheme>(value);
 
   // Saved themes
-  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
+  const [localSavedThemes, setLocalSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
+  const savedThemes = syncedSavedThemes ?? localSavedThemes;
   const {
     favorites: palette,
     addFavorite: addPaletteColor,
