@@ -312,6 +312,13 @@ export interface UiPrefs {
   studyAnswerTypography?: Record<string, unknown>;
   studyQuestionAlign?: string;
   studyCustomTheme?: Record<string, unknown>;
+  studySavedQuizThemes?: Array<{
+    id: string;
+    name: string;
+    theme: Record<string, unknown>;
+    createdAt: number;
+    updatedAt?: number;
+  }>;
   // Bookkeeping for last-write-wins between local cache and cloud
   updatedAt?: number;
 }
