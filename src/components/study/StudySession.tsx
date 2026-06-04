@@ -43,7 +43,7 @@ import {
   BORDER_RADIUS_MAP,
 } from "./QuizThemeEditor";
 import {
-  QuizTypographyPanel,
+  CombinedTypographyDialog,
   QuizTypography,
   loadTypography,
   storeTypography,
@@ -2138,10 +2138,10 @@ export function StudySession({
               <AlignLeft className="h-3.5 w-3.5 text-gold" />
             )}
           </Button>
-          {/* Typography (T) floating panel */}
-          <QuizTypographyPanel
-            value={typography}
-            onChange={(t) => {
+          {/* Combined typography dialog — one T button for questions + answers */}
+          <CombinedTypographyDialog
+            questionValue={typography}
+            onQuestionChange={(t) => {
               setTypography(t);
               try {
                 setUiPref(
@@ -2152,11 +2152,8 @@ export function StudySession({
                 /* guest */
               }
             }}
-          />
-          {/* Answer typography (T) panel — separate styling for answers including justify */}
-          <QuizTypographyPanel
-            value={answerTypography}
-            onChange={(t) => {
+            answerValue={answerTypography}
+            onAnswerChange={(t) => {
               setAnswerTypography(t);
               try {
                 setUiPref(
@@ -2167,10 +2164,6 @@ export function StudySession({
                 /* guest */
               }
             }}
-            storageKey={ANSWER_TYPOGRAPHY_KEY}
-            title="עיצוב טקסט תשובות"
-            buttonTitle="עיצוב טיפוגרפיה של תשובות"
-            previewText="דוגמה לתשובה במבחן"
           />
           {/* Answer-mode toggle */}
           <Button
