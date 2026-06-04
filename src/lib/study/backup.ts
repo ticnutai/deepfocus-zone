@@ -31,10 +31,34 @@ export interface BackupSnapshot {
     learningSessions: StudyState["learningSessions"];
     generalPlans:     StudyState["generalPlans"];
     reviewIntervals:  StudyState["reviewIntervals"];
+    /** Shas board preferences/data kept in uiPrefs + active main tab in localStorage */
+    shasBoard?: {
+      progress?: unknown;
+      viewPrefs?: unknown;
+      activeTab?: string | null;
+    };
   };
 }
 
 export const BACKUP_VERSION = 2;
+
+function readActiveMainTab(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("active-tab");
+  } catch {
+    return null;
+  }
+}
+
+function extractShasBoardData(state: StudyState): NonNullable<BackupSnapshot["data"]["shasBoard"]> {
+  const uiPrefs = (state.uiPrefs ?? {}) as Record<string, unknown>;
+  return {
+    progress: uiPrefs.shasBoardProgress,
+    viewPrefs: uiPrefs.shasBoardViewPrefs,
+    activeTab: readActiveMainTab(),
+  };
+}
 
 // ─── Cloud helpers for card↔category associations ─────────────────────────
 
@@ -218,6 +242,7 @@ export function buildSnapshot(state: StudyState, exportedBy?: string): BackupSna
       learningSessions: state.learningSessions ?? [],
       generalPlans:     state.generalPlans ?? [],
       reviewIntervals:  state.reviewIntervals ?? [1, 3, 7, 14, 30],
+      shasBoard:        extractShasBoardData(state),
     },
   };
 }
@@ -322,6 +347,7 @@ export async function buildSnapshotAsync(
       learningSessions,
       generalPlans,
       reviewIntervals,
+      shasBoard: extractShasBoardData(state),
     },
   };
 }
@@ -733,6 +759,7 @@ export function buildTopicSnapshot(
       generalPlans: opts.includePlans ? (state.generalPlans ?? []) : [],
       dayNotes: opts.includeDayNotes ? (state.dayNotes ?? []) : [],
       reviewIntervals: state.reviewIntervals ?? [1, 3, 7, 14, 30],
+      shasBoard: extractShasBoardData(state),
     } as BackupSnapshot["data"],
   };
 }
@@ -1137,6 +1164,8 @@ export async function deleteCloudBackup(
 
 export const SETTINGS_VERSION = 1;
 
+export const SHAS_BOARD_SETTINGS_VERSION = 1;
+
 export interface SettingsSnapshot {
   version: number;
   exportedAt: string;
@@ -1146,6 +1175,17 @@ export interface SettingsSnapshot {
     tabConfig?: TabConfig[];
     sidebarConfig?: SidebarConfig[];
     widgetLayout?: WidgetLayout;
+  };
+}
+
+export interface ShasBoardSettingsSnapshot {
+  version: number;
+  exportedAt: string;
+  exportedBy?: string;
+  shasBoard: {
+    progress?: unknown;
+    viewPrefs?: unknown;
+    activeTab?: string | null;
   };
 }
 
@@ -1174,4 +1214,27 @@ export function parseSettingsBackup(text: string): SettingsSnapshot {
   if (typeof parsed !== "object" || parsed === null) throw new Error("Invalid settings backup file");
   if (!parsed.version || !parsed.settings) throw new Error("Invalid settings backup format");
   return parsed as SettingsSnapshot;
+}
+
+export function buildShasBoardSettingsSnapshot(state: StudyState, exportedBy?: string): ShasBoardSettingsSnapshot {
+  const shasBoard = extractShasBoardData(state);
+  return {
+    version: SHAS_BOARD_SETTINGS_VERSION,
+    exportedAt: new Date().toISOString(),
+    exportedBy,
+    shasBoard,
+  };
+}
+
+export function exportShasBoardSettingsJson(state: StudyState, exportedBy?: string): void {
+  const snap = buildShasBoardSettingsSnapshot(state, exportedBy);
+  const json = JSON.stringify(snap, null, 2);
+  downloadBlob(json, `shas_board_backup_${dateSuffix()}.json`, "application/json");
+}
+
+export function parseShasBoardSettingsBackup(text: string): ShasBoardSettingsSnapshot {
+  const parsed = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null) throw new Error("Invalid shas-board backup file");
+  if (!parsed.version || !parsed.shasBoard) throw new Error("Invalid shas-board backup format");
+  return parsed as ShasBoardSettingsSnapshot;
 }

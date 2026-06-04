@@ -47,6 +47,7 @@ type MasechtaProgress = Record<number, DafEntry>;      // daf (2..pages+1) -> en
 type ShasBoardProgress = Record<string, MasechtaProgress>; // masechta name -> ...
 type HierarchyLayout = "cards" | "table" | "compact" | "kanban";
 type FlatLayout = "grid" | "table" | "compact";
+type MasechtaDetailLayout = "grid" | "compact" | "table" | "focus";
 type FlatSort = "name-asc" | "name-desc" | "progress-desc" | "progress-asc" | "remaining-desc" | "remaining-asc";
 type ShasBoardThemeMode = "global" | "separate";
 
@@ -137,6 +138,7 @@ export function ShasBoard() {
   const [view, setView] = useState<"hierarchy" | "flat" | "planner" | "calendar">(viewPrefs.activeTab ?? "hierarchy");
   const [hierarchyLayout, setHierarchyLayout] = useState<HierarchyLayout>(viewPrefs.hierarchyLayout ?? "cards");
   const [flatLayout, setFlatLayout] = useState<FlatLayout>(viewPrefs.flatLayout ?? "grid");
+  const [masechtaDetailLayout, setMasechtaDetailLayout] = useState<MasechtaDetailLayout>(viewPrefs.masechtaDetailLayout ?? "grid");
   const [plannerLayout, setPlannerLayout] = useState<ShasPlannerViewMode>(viewPrefs.plannerLayout ?? "rich");
   const [calendarLayout, setCalendarLayout] = useState<ShasCalendarViewMode>(viewPrefs.calendarLayout ?? "month");
   const [flatSort, setFlatSort] = useState<FlatSort>(viewPrefs.flatSort ?? "progress-desc");
@@ -157,6 +159,7 @@ export function ShasBoard() {
       activeTab: view,
       hierarchyLayout,
       flatLayout,
+      masechtaDetailLayout,
       plannerLayout,
       calendarLayout,
       flatSort,
@@ -168,7 +171,7 @@ export function ShasBoard() {
     if (JSON.stringify(currentPrefs) !== JSON.stringify(nextPrefs)) {
       setUiPref("shasBoardViewPrefs", nextPrefs as any);
     }
-  }, [view, hierarchyLayout, flatLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, setUiPref, state.uiPrefs]);
+  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, setUiPref, state.uiPrefs]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -508,6 +511,49 @@ export function ShasBoard() {
     const { learned, reps } = countMasechtaLearned(progress, m.name);
     const pct = Math.round((learned / total) * 100);
 
+    const MasechtaLayoutMenu = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 border border-gold/40 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary"
+            title="תצוגת עמודים"
+            aria-label="תצוגת עמודים"
+          >
+            {masechtaDetailLayout === "grid"
+              ? <LayoutGrid className="h-4 w-4" />
+              : masechtaDetailLayout === "compact"
+                ? <Rows3 className="h-4 w-4" />
+                : masechtaDetailLayout === "table"
+                  ? <Table2 className="h-4 w-4" />
+                  : <ListIcon className="h-4 w-4" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-44 text-right">
+          <DropdownMenuLabel className="text-right">תצוגת עמודים</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setMasechtaDetailLayout("grid")} className="gap-2 flex-row-reverse justify-end text-right">
+            רשת {masechtaDetailLayout === "grid" ? "✓" : ""}
+            <LayoutGrid className="h-4 w-4" />
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMasechtaDetailLayout("compact")} className="gap-2 flex-row-reverse justify-end text-right">
+            קומפקטי {masechtaDetailLayout === "compact" ? "✓" : ""}
+            <Rows3 className="h-4 w-4" />
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMasechtaDetailLayout("table")} className="gap-2 flex-row-reverse justify-end text-right">
+            טבלה {masechtaDetailLayout === "table" ? "✓" : ""}
+            <Table2 className="h-4 w-4" />
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMasechtaDetailLayout("focus")} className="gap-2 flex-row-reverse justify-end text-right">
+            פוקוס {masechtaDetailLayout === "focus" ? "✓" : ""}
+            <ListIcon className="h-4 w-4" />
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+
     return (
       <div className="space-y-4 shas-theme-shell" dir="rtl" style={boardThemeStyle}>
         <div className="flex items-center gap-2 flex-wrap">
@@ -522,35 +568,76 @@ export function ShasBoard() {
               {allInMasechtaSelected(m) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
               <span className="mr-1">{allInMasechtaSelected(m) ? "נקה הכל" : "בחר הכל במסכת"}</span>
             </Button>
+            {MasechtaLayoutMenu}
           </div>
           {ThemeControls}
         </div>
         <Progress value={pct} className="h-2" />
         {BulkBar}
         <Card className="gold-frame p-4">
-          <div className="space-y-2">
-            {(() => {
-              // Chunk amudim into rows of ~28 cells so each row can opt into
-              // content-visibility virtualization independently.
-              const allCells: Array<{ daf: number; a: AmudKey }> = [];
-              for (let d = 2; d <= m.pages + 1; d++) {
-                allCells.push({ daf: d, a: "a" });
-                allCells.push({ daf: d, a: "b" });
-              }
-              const ROW = 28;
-              const rows: typeof allCells[] = [];
-              for (let i = 0; i < allCells.length; i += ROW) rows.push(allCells.slice(i, i + ROW));
-              return rows.map((row, idx) => (
-                <div
-                  key={idx}
-                  className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14 gap-2"
-                  style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
-                >
-                  {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
-                </div>
-              ));
-            })()}
-          </div>
+          {(masechtaDetailLayout === "grid" || masechtaDetailLayout === "compact") && (
+            <div className="space-y-2">
+              {(() => {
+                // Chunk amudim into rows so each row can opt into virtualization independently.
+                const allCells: Array<{ daf: number; a: AmudKey }> = [];
+                for (let d = 2; d <= m.pages + 1; d++) {
+                  allCells.push({ daf: d, a: "a" });
+                  allCells.push({ daf: d, a: "b" });
+                }
+                const ROW = masechtaDetailLayout === "compact" ? 42 : 28;
+                const rows: typeof allCells[] = [];
+                for (let i = 0; i < allCells.length; i += ROW) rows.push(allCells.slice(i, i + ROW));
+                return rows.map((row, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "grid gap-2",
+                      masechtaDetailLayout === "compact"
+                        ? "grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-[repeat(18,minmax(0,1fr))]"
+                        : "grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14",
+                    )}
+                    style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
+                  >
+                    {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+
+          {masechtaDetailLayout === "focus" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Array.from({ length: m.pages }, (_, i) => i + 2).flatMap((d) => [
+                <div key={`${d}-a`} className="[&>button]:h-14 [&>button]:text-sm [&>button]:rounded-lg">
+                  {renderAmudButton(m, d, "a")}
+                </div>,
+                <div key={`${d}-b`} className="[&>button]:h-14 [&>button]:text-sm [&>button]:rounded-lg">
+                  {renderAmudButton(m, d, "b")}
+                </div>,
+              ])}
+            </div>
+          )}
+
+          {masechtaDetailLayout === "table" && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">דף</TableHead>
+                  <TableHead className="text-right">עמוד א</TableHead>
+                  <TableHead className="text-right">עמוד ב</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: m.pages }, (_, i) => i + 2).map((d) => (
+                  <TableRow key={d}>
+                    <TableCell className="font-semibold">{heb(d)}</TableCell>
+                    <TableCell>{renderAmudButton(m, d, "a")}</TableCell>
+                    <TableCell>{renderAmudButton(m, d, "b")}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
         {BoardThemeEditor}
       </div>

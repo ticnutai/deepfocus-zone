@@ -15,6 +15,8 @@ export interface AutoBackupTopics {
   categories: boolean;
   /** תוכניות, יעדים, סשנים, הערות, חזרות ש"ס */
   plans: boolean;
+  /** לוח ש"ס בלבד: התקדמות, תצוגה, טאב פעיל + תוכנית/חזרות ש"ס */
+  shasBoard: boolean;
   /** הגדרות ממשק: טאבים, סיידבר, ווידג'טים, uiPrefs */
   settings: boolean;
   /** גיבוי מלא — מחליף את שאר הנושאים */
@@ -52,7 +54,7 @@ export const DEFAULT_AUTO_BACKUP_CONFIG: AutoBackupConfig = {
   cloudEnabled: false,
   lastRunAt: null,
   folderName: null,
-  topics: { categories: true, plans: true, settings: false, full: false },
+  topics: { categories: true, plans: true, shasBoard: true, settings: false, full: false },
 };
 
 // ─── Config persistence ────────────────────────────────────────────────────
@@ -210,7 +212,7 @@ export function buildAutoSnapshot(
     includePlans:    topics.plans,
     includeSessions: topics.plans,
     includeDayNotes: topics.plans,
-    includeShasPlan: topics.plans,
+    includeShasPlan: topics.plans || topics.shasBoard,
     exportedBy,
   });
 
@@ -219,6 +221,19 @@ export function buildAutoSnapshot(
     snap.data.decks       = [];
     snap.data.cards       = [];
     snap.data.categories  = [];
+  }
+
+  // Keep only shas-related planning fields when shasBoard topic is selected without "plans"
+  if (!topics.plans && topics.shasBoard) {
+    snap.data.goals = [];
+    snap.data.generalPlans = [];
+    snap.data.learningSessions = [];
+    snap.data.dayNotes = [];
+  }
+
+  // If both plans + shas-board are off, clear shas planning artifacts too.
+  if (!topics.plans && !topics.shasBoard) {
+    snap.data.shasPlan = null;
     snap.data.shasReviews = [];
     snap.data.reviewIntervals = [];
   }

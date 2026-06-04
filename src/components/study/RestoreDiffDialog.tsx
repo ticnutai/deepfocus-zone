@@ -409,7 +409,7 @@ function CategoryQuickPicker({
 }
 
 export function RestoreDiffDialog({ open, onOpenChange, snapshot, onRuntimeStatusChange, backgroundCommand }: Props) {
-  const { state, bulkAddDecks, bulkAddCards, addCategory, requestCloudSyncNow } = useStudy();
+  const { state, bulkAddDecks, bulkAddCards, addCategory, requestCloudSyncNow, setUiPref } = useStudy();
   const { user } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
   const [isComputing, setIsComputing] = useState(false);
@@ -702,6 +702,17 @@ export function RestoreDiffDialog({ open, onOpenChange, snapshot, onRuntimeStatu
       setRestorePercent(100);
       setRestorePhase("הושלם");
 
+      const shasBoard = snapshot.data.shasBoard;
+      if (shasBoard?.progress !== undefined) {
+        setUiPref("shasBoardProgress", shasBoard.progress as never);
+      }
+      if (shasBoard?.viewPrefs !== undefined) {
+        setUiPref("shasBoardViewPrefs", shasBoard.viewPrefs as never);
+      }
+      if (typeof window !== "undefined" && shasBoard?.activeTab) {
+        localStorage.setItem("active-tab", shasBoard.activeTab);
+      }
+
       if (user?.id) {
         const restoredSnapshot: BackupSnapshot = {
           version: snapshot.version,
@@ -847,6 +858,7 @@ export function RestoreDiffDialog({ open, onOpenChange, snapshot, onRuntimeStatu
     addCategory,
     bulkAddDecks,
     bulkAddCards,
+    setUiPref,
     onOpenChange,
     perfMode,
   ]);

@@ -8,8 +8,9 @@ import {
   parseJsonBackup, autoSaveSnapshot, loadAutoSaveMeta,
   listCloudBackups, loadCloudBackup, deleteCloudBackup, saveCloudBackup,
   buildSettingsSnapshot, exportSettingsJson, parseSettingsBackup,
+  exportShasBoardSettingsJson, parseShasBoardSettingsBackup,
   buildTopicSnapshot, parseCsvCards, parseXlsxCards,
-  type BackupSnapshot, type AutoSaveMeta, type CloudBackupRecord, type CloudTransferProgress, type SettingsSnapshot, type ImportedCard,
+  type BackupSnapshot, type AutoSaveMeta, type CloudBackupRecord, type CloudTransferProgress, type SettingsSnapshot, type ImportedCard, type ShasBoardSettingsSnapshot,
 } from "@/lib/study/backup";
 import {
   loadAutoBackupConfig, saveAutoBackupConfig,
@@ -508,14 +509,17 @@ function PlansSection({ state }: { state: ReturnType<typeof useStudy>["state"] }
 // ─── Section: Settings ────────────────────────────────────────────────────
 
 function SettingsSection({
-  state, user, onRestore,
+  state, user, onRestore, onRestoreShasBoard,
 }: {
   state: ReturnType<typeof useStudy>["state"];
   user: { email?: string | null };
   onRestore: (snap: SettingsSnapshot) => void;
+  onRestoreShasBoard: (snap: ShasBoardSettingsSnapshot) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const shasFileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shasError, setShasError] = useState<string | null>(null);
 
   const snap = buildSettingsSnapshot(state, user.email ?? undefined);
 
@@ -529,6 +533,17 @@ function SettingsSection({
       setError(e instanceof Error ? e.message : "שגיאה בקריאת הקובץ");
     }
   }, [onRestore]);
+
+  const handleShasFile = useCallback(async (f: File) => {
+    setShasError(null);
+    try {
+      const text = await f.text();
+      const parsed = parseShasBoardSettingsBackup(text);
+      onRestoreShasBoard(parsed);
+    } catch (e) {
+      setShasError(e instanceof Error ? e.message : "שגיאה בקריאת הקובץ");
+    }
+  }, [onRestoreShasBoard]);
 
   const tabCount   = state.tabConfig?.length ?? 0;
   const sideCount  = state.sidebarConfig?.length ?? 0;
@@ -563,6 +578,40 @@ function SettingsSection({
           <Download className="h-4 w-4" />
           ייצא הגדרות (JSON)
         </Button>
+      </div>
+
+      <div className="rounded-xl border-2 border-gold/20 bg-card/60 p-4 space-y-3">
+        <p className="text-sm font-semibold text-right text-foreground">לוח ש"ס בלבד</p>
+        <p className="text-xs text-muted-foreground text-right">
+          הגיבוי כולל את מצב טאב לוח ש"ס, מוני החזרות ותצוגת הלוח. מתאים לגיבוי נקודתי של לוח ש"ס בלבד.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => exportShasBoardSettingsJson(state, user.email ?? undefined)} className="bg-gradient-navy text-primary-foreground hover:opacity-90 gap-2">
+            <Download className="h-4 w-4" />
+            ייצא לוח ש"ס
+          </Button>
+          <Button
+            variant="outline"
+            className="border-gold/60 gap-2"
+            onClick={() => shasFileRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            טען לוח ש"ס
+          </Button>
+        </div>
+        {shasError && (
+          <div className="flex items-center gap-2 text-xs text-rose-500">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {shasError}
+          </div>
+        )}
+        <input
+          ref={shasFileRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleShasFile(f); }}
+        />
       </div>
 
       <div className="rounded-xl border-2 border-gold/30 bg-card/60 p-4 space-y-3">
@@ -1450,6 +1499,7 @@ function AutoBackupSection({
             { key: "full" as const,       label: "גיבוי מלא",         sub: "כל הנתונים",            icon: Package     },
             { key: "categories" as const, label: "קטגוריות ומערכות",  sub: "כרטיסים + SRS",          icon: FolderOpen  },
             { key: "plans" as const,      label: "תוכניות ולמידה",    sub: "יעדים, סשנים, ש\"ס",    icon: Library     },
+            { key: "shasBoard" as const,  label: "לוח ש\"ס",          sub: "טאב + תצוגה + חזרות",    icon: BookOpen    },
             { key: "settings" as const,   label: "הגדרות וממשק",      sub: "טאבים, סיידבר, ווידג׳",  icon: Settings    },
           ].map(({ key, label, sub, icon: Ico }) => {
             const active = topics[key];
@@ -1806,6 +1856,20 @@ function BackupRestorePage() {
     toast({ title: "הגדרות שוחזרו", description: `קובץ הגדרות מ-${fmtDate(snap.exportedAt)} הוחל בהצלחה` });
   }, [setTabConfig, setSidebarConfig, setWidgetLayout, setUiPref]);
 
+  const handleRestoreShasBoard = useCallback((snap: ShasBoardSettingsSnapshot) => {
+    const shas = snap.shasBoard ?? {};
+    if (shas.progress !== undefined) {
+      setUiPref("shasBoardProgress" as keyof UiPrefs, shas.progress as never);
+    }
+    if (shas.viewPrefs !== undefined) {
+      setUiPref("shasBoardViewPrefs" as keyof UiPrefs, shas.viewPrefs as never);
+    }
+    if (typeof window !== "undefined" && shas.activeTab) {
+      localStorage.setItem("active-tab", shas.activeTab);
+    }
+    toast({ title: "לוח ש\"ס שוחזר", description: `קובץ מ-${fmtDate(snap.exportedAt)} הוחל בהצלחה` });
+  }, [setUiPref]);
+
   const renderSection = () => {
     switch (activeSection) {
       case "dashboard":
@@ -1836,6 +1900,7 @@ function BackupRestorePage() {
             state={state}
             user={user ?? {}}
             onRestore={handleRestoreSettings}
+            onRestoreShasBoard={handleRestoreShasBoard}
           />
         );
       case "full":
