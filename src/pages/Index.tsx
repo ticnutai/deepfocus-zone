@@ -540,9 +540,10 @@ const Index = () => {
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const { user, signOut, isGuest, guestProfile } = useAuth();
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
-  const displayEmail = isGuest
-    ? (isAdmin ? `אורח · ADMIN` : (guestProfile?.roleName ? `אורח · ${guestProfile.roleName}` : "אורח"))
-    : (isAdmin ? `${user?.email} · ADMIN` : user?.email);
+  const displayUserPrimary = isGuest ? "אורח" : (user?.email ?? "");
+  const displayUserRole = isAdmin
+    ? "ADMIN"
+    : (isGuest ? (guestProfile?.roleName ?? "") : "");
   const previewRoleId = useMemo(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";
@@ -1305,29 +1306,27 @@ const Index = () => {
               <button
                 onClick={() => setActive("settings")}
                 className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
-                style={{ flex: `0 0 ${userInfoDesktopWidthPct}%` }}
+                style={{ flex: "1 1 auto" }}
                 title="הגדרות משתמש"
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                   {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
+                <div className="flex-1 min-w-0 leading-tight text-foreground">
+                  <div className="text-[11px] font-medium break-all">{displayUserPrimary}</div>
+                  {displayUserRole ? <div className="text-[10px] font-semibold text-gold/90">{displayUserRole}</div> : null}
+                </div>
               </button>
-              <button
-                type="button"
-                onMouseDown={(e) => startUserInfoResize(e, userFooterDesktopRef.current, userInfoDesktopWidthPct, setUserInfoDesktopWidthPct)}
-                title="שנה רוחב שם משתמש"
-                className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
-                aria-label="שנה רוחב שם משתמש"
-              />
-              <ThemeSwitcher />
-              <button
-                onClick={() => signOut()}
-                title={isGuest ? "יציאה" : "התנתקות"}
-                className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
+              <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
+                <ThemeSwitcher />
+                <button
+                  onClick={() => signOut()}
+                  title={isGuest ? "יציאה" : "התנתקות"}
+                  className="flex items-center justify-center aspect-square h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors [&_svg]:size-3"
+                >
+                  <LogOut className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           </div>
           <button
@@ -1410,29 +1409,27 @@ const Index = () => {
                       <button
                         onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
                         className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
-                        style={{ flex: `0 0 ${userInfoMobileWidthPct}%` }}
+                        style={{ flex: "1 1 auto" }}
                         title="הגדרות משתמש"
                       >
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
                           {isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0 text-xs font-medium text-foreground">{displayEmail ?? ""}</div>
+                        <div className="flex-1 min-w-0 leading-tight text-foreground">
+                          <div className="text-[11px] font-medium break-all">{displayUserPrimary}</div>
+                          {displayUserRole ? <div className="text-[10px] font-semibold text-gold/90">{displayUserRole}</div> : null}
+                        </div>
                       </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => startUserInfoResize(e, userFooterMobileRef.current, userInfoMobileWidthPct, setUserInfoMobileWidthPct)}
-                        title="שנה רוחב שם משתמש"
-                        className="h-8 w-px bg-gold/40 hover:bg-gold/70 cursor-col-resize transition-colors"
-                        aria-label="שנה רוחב שם משתמש"
-                      />
-                      <ThemeSwitcher />
-                      <button
-                        onClick={() => { signOut(); setMobileSidebarOpen(false); }}
-                        title={isGuest ? "יציאה" : "התנתקות"}
-                        className="flex items-center justify-center h-9 w-9 rounded-full border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
-                      >
-                        <LogOut className="h-4 w-4" />
-                      </button>
+                      <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
+                        <ThemeSwitcher />
+                        <button
+                          onClick={() => { signOut(); setMobileSidebarOpen(false); }}
+                          title={isGuest ? "יציאה" : "התנתקות"}
+                          className="flex items-center justify-center aspect-square h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors [&_svg]:size-3"
+                        >
+                          <LogOut className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </SheetContent>
