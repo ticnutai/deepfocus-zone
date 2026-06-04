@@ -1871,20 +1871,10 @@ export function StudySession({
       {/* ── Desktop toolbar (hidden on mobile) ── */}
       <div
         className={cn(
-          "flex items-center justify-between gap-2 flex-wrap",
+          "flex items-center gap-2 flex-wrap",
           isMobile && "hidden",
         )}
       >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-muted-foreground hover:text-foreground gap-1"
-          title="סגור מצב שאלות וחזור לתצוגה מפוצלת (Esc)"
-          onClick={onExit}
-        >
-          <X className="h-3.5 w-3.5" />
-          <span className="text-xs">יציאה</span>
-        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -2244,6 +2234,15 @@ export function StudySession({
         </div>
           </>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 ms-auto text-muted-foreground hover:text-foreground"
+          title="סגור מצב שאלות וחזור לתצוגה מפוצלת (Esc)"
+          onClick={onExit}
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </div>
       <Progress
         value={progress}

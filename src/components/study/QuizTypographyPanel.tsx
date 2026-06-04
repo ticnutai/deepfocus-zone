@@ -749,7 +749,7 @@ export function CombinedTypographyDialog({
             <TabsTrigger value="question" className="flex-1">שאלות</TabsTrigger>
             <TabsTrigger value="answer" className="flex-1">תשובות</TabsTrigger>
           </TabsList>
-          <TabsContent value="question" className="mt-4 max-h-[70vh] overflow-y-auto px-1">
+          <TabsContent value="question" className="mt-4 px-1">
             <TypographyControlsPanel
               value={questionValue}
               onChange={onQuestionChange}
@@ -758,7 +758,7 @@ export function CombinedTypographyDialog({
               previewText="מה הפסוק שאמר משה לבני ישראל במדבר?"
             />
           </TabsContent>
-          <TabsContent value="answer" className="mt-4 max-h-[70vh] overflow-y-auto px-1">
+          <TabsContent value="answer" className="mt-4 px-1">
             <TypographyControlsPanel
               value={answerValue}
               onChange={onAnswerChange}
