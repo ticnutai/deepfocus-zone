@@ -815,22 +815,22 @@ export function ShasBoard() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-right">מיון</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setFlatSort("progress-desc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("progress-desc")} className="gap-2 flex-row-reverse justify-end text-right">
                     התקדמות: גבוה לנמוך {flatSort === "progress-desc" ? "✓" : ""}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("progress-asc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("progress-asc")} className="gap-2 flex-row-reverse justify-end text-right">
                     התקדמות: נמוך לגבוה {flatSort === "progress-asc" ? "✓" : ""}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("remaining-desc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("remaining-desc")} className="gap-2 flex-row-reverse justify-end text-right">
                     נשאר: גבוה לנמוך {flatSort === "remaining-desc" ? "✓" : ""}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("remaining-asc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("remaining-asc")} className="gap-2 flex-row-reverse justify-end text-right">
                     נשאר: נמוך לגבוה {flatSort === "remaining-asc" ? "✓" : ""}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("name-asc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("name-asc")} className="gap-2 flex-row-reverse justify-end text-right">
                     שם: א-ת {flatSort === "name-asc" ? "✓" : ""}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("name-desc")} className="justify-end text-right">
+                  <DropdownMenuItem onClick={() => setFlatSort("name-desc")} className="gap-2 flex-row-reverse justify-end text-right">
                     שם: ת-א {flatSort === "name-desc" ? "✓" : ""}
                   </DropdownMenuItem>
                 </>
