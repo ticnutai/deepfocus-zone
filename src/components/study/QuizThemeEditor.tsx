@@ -1155,6 +1155,16 @@ export function QuizThemeEditorDialog({
             </div>
           ) : (
             <div className="flex gap-2 justify-end">
+              {editingSavedId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOverwriteSaved}
+                  className="gap-1 border-gold/60"
+                >
+                  <Save className="h-3.5 w-3.5" /> שמור ודרוס
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -1172,10 +1182,11 @@ export function QuizThemeEditorDialog({
                 onClick={() => {
                   setShowSaveName(true);
                   setSaveName("");
+                  setEditingSavedId(null);
                 }}
                 className="gap-1"
               >
-                <Save className="h-3.5 w-3.5" /> שמור בשם…
+                <Copy className="h-3.5 w-3.5" /> שכפל ושמור…
               </Button>
               <Button
                 variant="outline"
