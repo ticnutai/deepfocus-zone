@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { useColorFavorites } from "@/lib/study/colorFavorites";
 import {
   Check,
+  Copy,
+  Edit2,
   RotateCcw,
   ChevronDown,
   ChevronUp,
@@ -93,6 +95,7 @@ export interface SavedTheme {
   name: string;
   theme: CustomQuizTheme;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // ─── Storage helpers ──────────────────────────────────────────────────────────
@@ -310,10 +313,12 @@ function ColorField({
 function SavedThemeCard({
   saved,
   onLoad,
+  onEdit,
   onDelete,
 }: {
   saved: SavedTheme;
   onLoad: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const colors = saved.theme.optionColors.slice(0, 4);
@@ -350,6 +355,15 @@ function SavedThemeCard({
           onClick={onLoad}
         >
           <FolderOpen className="h-3 w-3" /> טען
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs gap-1 border-gold/40"
+          onClick={onEdit}
+          title="ערוך ושמור על הערכה הזו"
+        >
+          <Edit2 className="h-3 w-3" /> ערוך
         </Button>
         <Button
           size="sm"
