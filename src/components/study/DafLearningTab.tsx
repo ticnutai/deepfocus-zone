@@ -192,6 +192,29 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setLayout("split");
   };
 
+  // === הצמדות לגישה מהירה ===
+  type DafPin = NonNullable<typeof state.uiPrefs>["dafLearningPins"] extends Array<infer P> | undefined ? P : never;
+  const pins: DafPin[] = state.uiPrefs?.dafLearningPins ?? [];
+  const pinId = (m: string, d: number, a: 1 | 2) => `${m}::${d}::${a}`;
+  const currentPinId = pinId(masechta, daf, amud);
+  const isCurrentPinned = pins.some((p) => p.id === currentPinId);
+
+  const togglePinCurrent = useCallback(() => {
+    const exists = pins.some((p) => p.id === currentPinId);
+    const next = exists
+      ? pins.filter((p) => p.id !== currentPinId)
+      : [...pins, { id: currentPinId, seder, masechta, daf, amud, createdAt: Date.now() }];
+    setUiPref("dafLearningPins", next);
+  }, [pins, currentPinId, seder, masechta, daf, amud, setUiPref]);
+
+  const jumpToPin = useCallback((p: DafPin) => {
+    setSeder(p.seder);
+    setMasechta(p.masechta);
+    setDaf(p.daf);
+    setAmud(p.amud);
+  }, []);
+
+
   const openNavDialog = (startStep: NavStep) => {
     setNavSeder(seder);
     setNavMasechta(masechta);
