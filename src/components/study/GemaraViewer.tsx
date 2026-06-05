@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FileText, BookOpen, Loader2, Settings2 } from "lucide-react";
+import { ExternalLink, FileText, BookOpen, Loader2, Settings2, ChevronRight, ChevronLeft, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
