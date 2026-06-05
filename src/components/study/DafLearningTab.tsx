@@ -59,7 +59,7 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
 }
 
 function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
-  const { state } = useStudy();
+  const { state, setUiPref } = useStudy();
   const navigate = useNavigate();
   const location = useLocation();
   const saved = useMemo(() => loadSaved(), []);
