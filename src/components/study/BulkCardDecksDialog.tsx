@@ -12,8 +12,9 @@ import { toast } from "@/hooks/use-toast";
 const CardEditor = lazy(() => import("./CardEditor").then((m) => ({ default: m.CardEditor })));
 const DeckCreateDialog = lazy(() => import("./DeckCreateDialog").then((m) => ({ default: m.DeckCreateDialog })));
 const StudyPlansCard = lazy(() => import("./StudyPlansCard").then((m) => ({ default: m.StudyPlansCard })));
+const CardQuickEditor = lazy(() => import("./CardQuickEditor").then((m) => ({ default: m.CardQuickEditor })));
 
-type DialogTab = "existing" | "new-questions" | "new-deck" | "reviews";
+type DialogTab = "existing" | "new-questions" | "edit" | "new-deck" | "reviews";
 
 interface Props {
   cards: StudyCardType[];
