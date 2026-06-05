@@ -1164,7 +1164,7 @@ interface CardRow {
   masechta?: string | null; daf?: number | null; amud?: number | null;
 }
 const cardFromRow = (r: CardRow): Card => {
-  const rawStats = (r.stats as (StatsData & { editHistory?: BaseCard["editHistory"] }) | null) ?? null;
+  const rawStats = (r.stats as (StatsData & { editHistory?: Card["editHistory"] }) | null) ?? null;
   const editHistory = rawStats?.editHistory;
   const stats: StatsData = rawStats
     ? { totalReviews: rawStats.totalReviews ?? 0, correct: rawStats.correct ?? 0, incorrect: rawStats.incorrect ?? 0 }
