@@ -86,6 +86,34 @@ export function CardQuickEditor({ card, onClose }: Props) {
     setSavedAt(null);
   }, [cardId]);
 
+  // Build a snapshot of the editable fields from a draft (for history records)
+  const draftToSnapshot = (d: Draft) => {
+    const snap: NonNullable<StudyCardType["editHistory"]>[number]["snapshot"] = {
+      question: d.question,
+      tags: [...d.tags],
+    };
+    if (card.type === "flashcard" || card.type === "combo") snap.answer = d.answer;
+    if (card.type === "multiple" || card.type === "combo") {
+      snap.options = [...d.options];
+      snap.correctIndices = [...d.correctIndices];
+    }
+    if (card.type === "boolean") snap.correct = d.correctBoolean;
+    if (card.type !== "flashcard") snap.explanation = d.explanation;
+    return snap;
+  };
+
+  const commitSave = (nextDraft: Draft) => {
+    const patch = stripPatchByType(card, nextDraft) as Partial<StudyCardType>;
+    // Record the PREVIOUS version into editHistory (cap to 20 entries)
+    const prevSnap = draftToSnapshot(initialRef.current);
+    const prevHistory = Array.isArray(card.editHistory) ? card.editHistory : [];
+    const newHistory = [{ at: Date.now(), snapshot: prevSnap }, ...prevHistory].slice(0, 20);
+    (patch as { editHistory?: StudyCardType["editHistory"] }).editHistory = newHistory;
+    updateCard(cardId, patch);
+    initialRef.current = nextDraft;
+    setSavedAt(Date.now());
+  };
+
   // Autosave (debounced) — only when something actually changed
   useEffect(() => {
     const changed = JSON.stringify(draft) !== JSON.stringify(initialRef.current);
@@ -93,22 +121,35 @@ export function CardQuickEditor({ card, onClose }: Props) {
     setSaving(true);
     const t = window.setTimeout(() => {
       try {
-        updateCard(cardId, stripPatchByType(card, draft));
-        initialRef.current = draft;
-        setSavedAt(Date.now());
+        commitSave(draft);
       } finally {
         setSaving(false);
       }
     }, 700);
     return () => window.clearTimeout(t);
-  }, [draft, cardId, card, updateCard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, cardId]);
 
   const saveNow = () => {
-    updateCard(cardId, stripPatchByType(card, draft));
-    initialRef.current = draft;
-    setSavedAt(Date.now());
+    commitSave(draft);
     toast({ title: "נשמר", description: "השינויים נשמרו בענן ובמכשיר" });
     onClose?.();
+  };
+
+  const restoreVersion = (idx: number) => {
+    const h = card.editHistory?.[idx];
+    if (!h) return;
+    const s = h.snapshot;
+    setDraft((d) => ({
+      question: s.question ?? d.question,
+      answer: s.answer ?? d.answer,
+      explanation: s.explanation ?? d.explanation,
+      options: Array.isArray(s.options) ? [...s.options] : d.options,
+      correctIndices: Array.isArray(s.correctIndices) ? [...s.correctIndices] : d.correctIndices,
+      correctBoolean: typeof s.correct === "boolean" ? s.correct : d.correctBoolean,
+      tags: Array.isArray(s.tags) ? [...s.tags] : d.tags,
+    }));
+    toast({ title: "שוחזר", description: "הגרסה נטענה. לחץ \"שמור\" כדי לשמור אותה." });
   };
 
   const setOption = (i: number, v: string) => {
