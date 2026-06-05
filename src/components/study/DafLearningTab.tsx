@@ -386,19 +386,45 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         </Select>
 
         <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-2 py-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <Button onClick={goPrev} disabled={isFirst} variant="outline" size="sm" className="h-8 gap-1 px-2">
-                <ChevronRight className="h-4 w-4" /> הקודם
-              </Button>
-              <Button onClick={goNext} disabled={isLast} variant="outline" size="sm" className="h-8 gap-1 px-2">
-                הבא <ChevronLeft className="h-4 w-4" />
-              </Button>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+              {pins.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={togglePinCurrent}
+                  className="text-xs text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
+                  title="הצמד את העמוד הנוכחי לגישה מהירה"
+                >
+                  📌 הצמד עמוד לגישה מהירה
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 whitespace-nowrap" dir="rtl">
+                  {pins.map((p) => {
+                    const isActive = p.masechta === masechta && p.daf === daf && p.amud === amud;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => jumpToPin(p)}
+                        className={cn(
+                          "h-7 px-2 rounded-md border text-[11px] transition-colors shrink-0",
+                          isActive
+                            ? "bg-navy text-cream border-navy"
+                            : "border-gold/40 text-navy hover:bg-gold/10",
+                        )}
+                        title={`${p.masechta} · דף ${dafLabel(p.daf).replace(".", "")} · ${p.amud === 1 ? 'ע"א' : 'ע"ב'}`}
+                      >
+                        {p.masechta} {dafLabel(p.daf).replace(".", "")}{p.amud === 1 ? "." : ":"}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             {layout === "split" && (
               <button
                 type="button"
-                className="h-6 w-6 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
+                className="h-6 w-6 shrink-0 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
                 title={isStandaloneSplitPage ? "חזור למסך הראשי" : "פתח בעמוד נפרד"}
                 onClick={handleSplitPageToggle}
               >
