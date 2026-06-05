@@ -12,8 +12,9 @@ import { toast } from "@/hooks/use-toast";
 const CardEditor = lazy(() => import("./CardEditor").then((m) => ({ default: m.CardEditor })));
 const DeckCreateDialog = lazy(() => import("./DeckCreateDialog").then((m) => ({ default: m.DeckCreateDialog })));
 const StudyPlansCard = lazy(() => import("./StudyPlansCard").then((m) => ({ default: m.StudyPlansCard })));
+const CardQuickEditor = lazy(() => import("./CardQuickEditor").then((m) => ({ default: m.CardQuickEditor })));
 
-type DialogTab = "existing" | "new-questions" | "new-deck" | "reviews";
+type DialogTab = "existing" | "new-questions" | "edit" | "new-deck" | "reviews";
 
 interface Props {
   cards: StudyCardType[];
@@ -207,9 +208,10 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
           <>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DialogTab)}>
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="existing">שאלות קיימות</TabsTrigger>
             <TabsTrigger value="new-questions">שאלות חדשות</TabsTrigger>
+            <TabsTrigger value="edit">עריכה</TabsTrigger>
             <TabsTrigger value="new-deck">הוספת ערכה</TabsTrigger>
             <TabsTrigger value="reviews">חזרות</TabsTrigger>
           </TabsList>
@@ -326,6 +328,10 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
             </div>
           </TabsContent>
 
+          <TabsContent value="edit" className="space-y-3">
+            <EditQuestionsPane cards={cards.filter((c) => selectedCardIds.has(c.id))} fallback={cards} />
+          </TabsContent>
+
           <TabsContent value="new-deck" className="space-y-3">
             <div className="text-xs text-muted-foreground text-right">
               יצירת ערכה חדשה באמצעות הדיאלוג הקיים. לאחר יצירה, הערכה תסומן אוטומטית.
@@ -380,5 +386,47 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
         </Suspense>
       )}
     </>
+  );
+}
+
+function EditQuestionsPane({ cards, fallback }: { cards: StudyCardType[]; fallback: StudyCardType[] }) {
+  const list = cards.length > 0 ? cards : fallback;
+  const [activeId, setActiveId] = useState<string | null>(list[0]?.id ?? null);
+  useEffect(() => {
+    if (!list.find((c) => c.id === activeId)) setActiveId(list[0]?.id ?? null);
+  }, [list, activeId]);
+  const active = list.find((c) => c.id === activeId) ?? null;
+
+  if (list.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-6">אין שאלות לעריכה</p>;
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-2">
+      <div className="col-span-4 max-h-[58vh] overflow-y-auto space-y-1 pr-1 border-l border-gold/20 pl-2">
+        {list.map((c, i) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => setActiveId(c.id)}
+            className={`w-full text-right text-xs p-2 rounded-lg border-2 ${
+              c.id === activeId ? "border-gold bg-gold/10" : "border-gold/20 hover:bg-secondary"
+            }`}
+          >
+            <span className="text-gold font-bold ml-1">{i + 1}.</span>
+            <span className="line-clamp-2">{c.question}</span>
+          </button>
+        ))}
+      </div>
+      <div className="col-span-8 max-h-[58vh] overflow-y-auto rounded-lg border border-gold/30 p-2">
+        {active ? (
+          <Suspense fallback={<div className="text-sm text-muted-foreground p-4 text-center">טוען עורך...</div>}>
+            <CardQuickEditor key={active.id} card={active} />
+          </Suspense>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-6">בחר שאלה לעריכה</p>
+        )}
+      </div>
+    </div>
   );
 }

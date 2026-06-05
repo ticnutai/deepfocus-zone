@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Save, Trash2, X, Check, Loader2 } from "lucide-react";
+import { Plus, Save, Trash2, X, Check, Loader2, History, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,6 +86,34 @@ export function CardQuickEditor({ card, onClose }: Props) {
     setSavedAt(null);
   }, [cardId]);
 
+  // Build a snapshot of the editable fields from a draft (for history records)
+  const draftToSnapshot = (d: Draft) => {
+    const snap: NonNullable<StudyCardType["editHistory"]>[number]["snapshot"] = {
+      question: d.question,
+      tags: [...d.tags],
+    };
+    if (card.type === "flashcard" || card.type === "combo") snap.answer = d.answer;
+    if (card.type === "multiple" || card.type === "combo") {
+      snap.options = [...d.options];
+      snap.correctIndices = [...d.correctIndices];
+    }
+    if (card.type === "boolean") snap.correct = d.correctBoolean;
+    if (card.type !== "flashcard") snap.explanation = d.explanation;
+    return snap;
+  };
+
+  const commitSave = (nextDraft: Draft) => {
+    const patch = stripPatchByType(card, nextDraft) as Partial<StudyCardType>;
+    // Record the PREVIOUS version into editHistory (cap to 20 entries)
+    const prevSnap = draftToSnapshot(initialRef.current);
+    const prevHistory = Array.isArray(card.editHistory) ? card.editHistory : [];
+    const newHistory = [{ at: Date.now(), snapshot: prevSnap }, ...prevHistory].slice(0, 20);
+    (patch as { editHistory?: StudyCardType["editHistory"] }).editHistory = newHistory;
+    updateCard(cardId, patch);
+    initialRef.current = nextDraft;
+    setSavedAt(Date.now());
+  };
+
   // Autosave (debounced) — only when something actually changed
   useEffect(() => {
     const changed = JSON.stringify(draft) !== JSON.stringify(initialRef.current);
@@ -93,22 +121,35 @@ export function CardQuickEditor({ card, onClose }: Props) {
     setSaving(true);
     const t = window.setTimeout(() => {
       try {
-        updateCard(cardId, stripPatchByType(card, draft));
-        initialRef.current = draft;
-        setSavedAt(Date.now());
+        commitSave(draft);
       } finally {
         setSaving(false);
       }
     }, 700);
     return () => window.clearTimeout(t);
-  }, [draft, cardId, card, updateCard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, cardId]);
 
   const saveNow = () => {
-    updateCard(cardId, stripPatchByType(card, draft));
-    initialRef.current = draft;
-    setSavedAt(Date.now());
+    commitSave(draft);
     toast({ title: "נשמר", description: "השינויים נשמרו בענן ובמכשיר" });
     onClose?.();
+  };
+
+  const restoreVersion = (idx: number) => {
+    const h = card.editHistory?.[idx];
+    if (!h) return;
+    const s = h.snapshot;
+    setDraft((d) => ({
+      question: s.question ?? d.question,
+      answer: s.answer ?? d.answer,
+      explanation: s.explanation ?? d.explanation,
+      options: Array.isArray(s.options) ? [...s.options] : d.options,
+      correctIndices: Array.isArray(s.correctIndices) ? [...s.correctIndices] : d.correctIndices,
+      correctBoolean: typeof s.correct === "boolean" ? s.correct : d.correctBoolean,
+      tags: Array.isArray(s.tags) ? [...s.tags] : d.tags,
+    }));
+    toast({ title: "שוחזר", description: "הגרסה נטענה. לחץ \"שמור\" כדי לשמור אותה." });
   };
 
   const setOption = (i: number, v: string) => {
@@ -260,6 +301,38 @@ export function CardQuickEditor({ card, onClose }: Props) {
           <Button variant="outline" size="sm" onClick={addTag}>הוסף</Button>
         </div>
       </div>
+
+      {Array.isArray(card.editHistory) && card.editHistory.length > 0 && (
+        <details className="rounded-lg border border-gold/30 bg-secondary/30 p-2">
+          <summary className="cursor-pointer text-xs font-medium flex items-center gap-1.5 text-right">
+            <History className="h-3.5 w-3.5" />
+            היסטוריית גרסאות ({card.editHistory.length})
+          </summary>
+          <div className="mt-2 space-y-1.5 max-h-[200px] overflow-y-auto">
+            {card.editHistory.map((h, i) => {
+              const d = new Date(h.at);
+              const dateStr = d.toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+              return (
+                <div key={`${h.at}-${i}`} className="flex items-start justify-between gap-2 rounded border border-gold/20 p-2 bg-card">
+                  <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={() => restoreVersion(i)}>
+                    <RotateCcw className="h-3 w-3 ml-1" /> שחזר
+                  </Button>
+                  <div className="flex-1 text-right text-xs space-y-0.5 min-w-0">
+                    <div className="text-muted-foreground">{dateStr}</div>
+                    {h.snapshot.question && (
+                      <div className="line-clamp-2 text-foreground"><b>ש:</b> {h.snapshot.question}</div>
+                    )}
+                    {h.snapshot.answer && (
+                      <div className="line-clamp-2 text-foreground"><b>ת:</b> {h.snapshot.answer}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
 
       <div className="flex items-center justify-between pt-2 border-t border-gold/20">
         <span className="text-xs text-muted-foreground flex items-center gap-1">

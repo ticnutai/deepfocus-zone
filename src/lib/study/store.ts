@@ -1164,15 +1164,21 @@ interface CardRow {
   masechta?: string | null; daf?: number | null; amud?: number | null;
 }
 const cardFromRow = (r: CardRow): Card => {
+  const rawStats = (r.stats as (StatsData & { editHistory?: Card["editHistory"] }) | null) ?? null;
+  const editHistory = rawStats?.editHistory;
+  const stats: StatsData = rawStats
+    ? { totalReviews: rawStats.totalReviews ?? 0, correct: rawStats.correct ?? 0, incorrect: rawStats.incorrect ?? 0 }
+    : { totalReviews: 0, correct: 0, incorrect: 0 };
   const base = {
     id: r.id, deckId: r.deck_id ?? null, type: r.type, question: r.question,
     tags: (r.tags as string[] | null) ?? [], createdAt: new Date(r.created_at).getTime(),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
     srs: (r.srs as SrsData | null) ?? defaultSrs(),
-    stats: (r.stats as StatsData | null) ?? { totalReviews: 0, correct: 0, incorrect: 0 },
+    stats,
     masechta: r.masechta ?? null,
     daf: r.daf ?? null,
     amud: (r.amud as 1 | 2 | null | undefined) ?? null,
+    ...(editHistory ? { editHistory } : {}),
   };
   if (r.type === "flashcard") return { ...base, type: "flashcard", answer: r.answer ?? "" };
   if (r.type === "multiple") {
@@ -1188,6 +1194,9 @@ const cardFromRow = (r: CardRow): Card => {
 
 const cardToRow = (c: Card, userId: string) => {
   const ac = c as AnyCard;
+  const statsWithHistory = c.editHistory && c.editHistory.length > 0
+    ? { ...c.stats, editHistory: c.editHistory }
+    : c.stats;
   return {
     id: c.id, user_id: userId, deck_id: c.deckId, type: c.type, question: c.question,
     updated_at: new Date((c.updatedAt ?? Date.now())).toISOString(),
@@ -1196,7 +1205,7 @@ const cardToRow = (c: Card, userId: string) => {
     correct_indices: ac.correctIndices ?? null,
     correct_boolean: c.type === "boolean" ? ac.correct : null,
     explanation: ac.explanation ?? null,
-    tags: c.tags, srs: c.srs, stats: c.stats,
+    tags: c.tags, srs: c.srs, stats: statsWithHistory,
     masechta: c.masechta ?? null,
     daf: c.daf ?? null,
     amud: c.amud ?? null,
