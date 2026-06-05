@@ -1718,6 +1718,16 @@ export function StudySession({
             >
               <Layers className="h-3.5 w-3.5 text-gold" />
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              title="עריכת שאלה ותשובה"
+              onClick={() => setEditorOpen(true)}
+              disabled={!card}
+            >
+              <Edit2 className="h-3.5 w-3.5 text-gold" />
+            </Button>
             <DropdownMenu
               open={mobileSettingsDropdownOpen}
               onOpenChange={setMobileSettingsDropdownOpen}
