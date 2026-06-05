@@ -59,7 +59,7 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
 }
 
 function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
-  const { state } = useStudy();
+  const { state, setUiPref } = useStudy();
   const navigate = useNavigate();
   const location = useLocation();
   const saved = useMemo(() => loadSaved(), []);
@@ -191,6 +191,29 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setStudyOpen(false);
     setLayout("split");
   };
+
+  // === הצמדות לגישה מהירה ===
+  type DafPin = NonNullable<typeof state.uiPrefs>["dafLearningPins"] extends Array<infer P> | undefined ? P : never;
+  const pins: DafPin[] = state.uiPrefs?.dafLearningPins ?? [];
+  const pinId = (m: string, d: number, a: 1 | 2) => `${m}::${d}::${a}`;
+  const currentPinId = pinId(masechta, daf, amud);
+  const isCurrentPinned = pins.some((p) => p.id === currentPinId);
+
+  const togglePinCurrent = useCallback(() => {
+    const exists = pins.some((p) => p.id === currentPinId);
+    const next = exists
+      ? pins.filter((p) => p.id !== currentPinId)
+      : [...pins, { id: currentPinId, seder, masechta, daf, amud, createdAt: Date.now() }];
+    setUiPref("dafLearningPins", next);
+  }, [pins, currentPinId, seder, masechta, daf, amud, setUiPref]);
+
+  const jumpToPin = useCallback((p: DafPin) => {
+    setSeder(p.seder);
+    setMasechta(p.masechta);
+    setDaf(p.daf);
+    setAmud(p.amud);
+  }, []);
+
 
   const openNavDialog = (startStep: NavStep) => {
     setNavSeder(seder);
@@ -386,19 +409,45 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         </Select>
 
         <div className="col-span-2 lg:col-span-1 rounded-md border border-gold/20 px-2 py-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <Button onClick={goPrev} disabled={isFirst} variant="outline" size="sm" className="h-8 gap-1 px-2">
-                <ChevronRight className="h-4 w-4" /> הקודם
-              </Button>
-              <Button onClick={goNext} disabled={isLast} variant="outline" size="sm" className="h-8 gap-1 px-2">
-                הבא <ChevronLeft className="h-4 w-4" />
-              </Button>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+              {pins.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={togglePinCurrent}
+                  className="text-xs text-muted-foreground hover:text-gold transition-colors whitespace-nowrap"
+                  title="הצמד את העמוד הנוכחי לגישה מהירה"
+                >
+                  📌 הצמד עמוד לגישה מהירה
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 whitespace-nowrap" dir="rtl">
+                  {pins.map((p) => {
+                    const isActive = p.masechta === masechta && p.daf === daf && p.amud === amud;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => jumpToPin(p)}
+                        className={cn(
+                          "h-7 px-2 rounded-md border text-[11px] transition-colors shrink-0",
+                          isActive
+                            ? "bg-navy text-cream border-navy"
+                            : "border-gold/40 text-navy hover:bg-gold/10",
+                        )}
+                        title={`${p.masechta} · דף ${dafLabel(p.daf).replace(".", "")} · ${p.amud === 1 ? 'ע"א' : 'ע"ב'}`}
+                      >
+                        {p.masechta} {dafLabel(p.daf).replace(".", "")}{p.amud === 1 ? "." : ":"}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             {layout === "split" && (
               <button
                 type="button"
-                className="h-6 w-6 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
+                className="h-6 w-6 shrink-0 rounded-sm border border-gold/40 text-navy hover:bg-gold/10 transition-colors"
                 title={isStandaloneSplitPage ? "חזור למסך הראשי" : "פתח בעמוד נפרד"}
                 onClick={handleSplitPageToggle}
               >
@@ -411,7 +460,21 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Card>
   );
 
-  const gemara = <GemaraViewer masechta={masechta} daf={daf} amud={amud} className="h-full" isActive={isVisible} />;
+  const gemara = (
+    <GemaraViewer
+      masechta={masechta}
+      daf={daf}
+      amud={amud}
+      className="h-full"
+      isActive={isVisible}
+      onPrev={goPrev}
+      onNext={goNext}
+      canPrev={!isFirst}
+      canNext={!isLast}
+      onTogglePin={togglePinCurrent}
+      isPinned={isCurrentPinned}
+    />
+  );
 
   const startPractice = () => setStudyOpen(true);
   const practiceModeMenu = (

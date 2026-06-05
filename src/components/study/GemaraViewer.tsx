@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FileText, BookOpen, Loader2, Settings2 } from "lucide-react";
+import { ExternalLink, FileText, BookOpen, Loader2, Settings2, ChevronRight, ChevronLeft, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,6 +20,12 @@ interface Props {
   amud: 1 | 2;
   className?: string;
   isActive?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+  canPrev?: boolean;
+  canNext?: boolean;
+  onTogglePin?: () => void;
+  isPinned?: boolean;
 }
 
 const FONT_FAMILY_VALUE: Record<"heebo" | "assistant" | "frank" | "arial" | "david", string> = {
@@ -33,7 +39,7 @@ const FONT_FAMILY_VALUE: Record<"heebo" | "assistant" | "frank" | "arial" | "dav
 const CANTILLATION_RE = /[\u0591-\u05AF]/g;
 const VOWELS_RE = /[\u05B0-\u05BC\u05BD\u05BF\u05C1\u05C2\u05C7]/g;
 
-export function GemaraViewer({ masechta, daf, amud, className, isActive = true }: Props) {
+export function GemaraViewer({ masechta, daf, amud, className, isActive = true, onPrev, onNext, canPrev, canNext, onTogglePin, isPinned }: Props) {
   const { state, setUiPref } = useStudy();
   const [source, setSource] = useState<Source>("pdf");
   const [pdfExists, setPdfExists] = useState<boolean | null>(null);
@@ -130,11 +136,48 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true }
   return (
     <div className={cn("flex flex-col h-full bg-card border-2 border-gold/30 rounded-xl overflow-hidden", className)} dir="rtl">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gold/30 bg-gold/5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <BookOpen className="h-4 w-4 text-gold" />
-          {masechta} · דף {dafLabel} · {amudLabel}
+        <div className="flex items-center gap-1">
+          {onPrev && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="עמוד קודם"
+              onClick={onPrev}
+              disabled={!canPrev}
+            >
+              <ChevronRight className="h-4 w-4 text-gold" />
+            </Button>
+          )}
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <BookOpen className="h-4 w-4 text-gold" />
+            {masechta} · דף {dafLabel} · {amudLabel}
+          </div>
+          {onNext && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="עמוד הבא"
+              onClick={onNext}
+              disabled={!canNext}
+            >
+              <ChevronLeft className="h-4 w-4 text-gold" />
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          {onTogglePin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title={isPinned ? "הסר הצמדה" : "הצמד עמוד זה"}
+              onClick={onTogglePin}
+            >
+              {isPinned ? <PinOff className="h-4 w-4 text-gold" /> : <Pin className="h-4 w-4 text-gold" />}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
