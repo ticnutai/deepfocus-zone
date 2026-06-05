@@ -208,9 +208,10 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
           <>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DialogTab)}>
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="existing">שאלות קיימות</TabsTrigger>
             <TabsTrigger value="new-questions">שאלות חדשות</TabsTrigger>
+            <TabsTrigger value="edit">עריכה</TabsTrigger>
             <TabsTrigger value="new-deck">הוספת ערכה</TabsTrigger>
             <TabsTrigger value="reviews">חזרות</TabsTrigger>
           </TabsList>
