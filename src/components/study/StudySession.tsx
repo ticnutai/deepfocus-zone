@@ -56,6 +56,8 @@ import {
   DEFAULT_QUIZ_TYPOGRAPHY,
 } from "./QuizTypographyPanel";
 import { CardDecksDialog } from "./CardDecksDialog";
+import { CardQuickEditor } from "./CardQuickEditor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -708,6 +710,7 @@ export function StudySession({
   const [mobileSettingsDropdownOpen, setMobileSettingsDropdownOpen] =
     useState(false);
   const [deckDialogOpen, setDeckDialogOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   // Desktop tools row open/close — synced via uiPrefs (localStorage + cloud, last-write-wins)
   const desktopToolsOpen: boolean =
     (state.uiPrefs?.studyToolsOpen as boolean | undefined) ??
@@ -1714,6 +1717,16 @@ export function StudySession({
               disabled={!card}
             >
               <Layers className="h-3.5 w-3.5 text-gold" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              title="עריכת שאלה ותשובה"
+              onClick={() => setEditorOpen(true)}
+              disabled={!card}
+            >
+              <Edit2 className="h-3.5 w-3.5 text-gold" />
             </Button>
             <DropdownMenu
               open={mobileSettingsDropdownOpen}
@@ -3596,6 +3609,17 @@ export function StudySession({
         open={deckDialogOpen}
         onOpenChange={setDeckDialogOpen}
       />
+
+      <Dialog open={editorOpen && !!card} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>עריכה — שאלה ותשובה</DialogTitle>
+          </DialogHeader>
+          {card && (
+            <CardQuickEditor card={card} onClose={() => setEditorOpen(false)} />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
