@@ -20,6 +20,12 @@ interface Props {
   amud: 1 | 2;
   className?: string;
   isActive?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+  canPrev?: boolean;
+  canNext?: boolean;
+  onTogglePin?: () => void;
+  isPinned?: boolean;
 }
 
 const FONT_FAMILY_VALUE: Record<"heebo" | "assistant" | "frank" | "arial" | "david", string> = {
