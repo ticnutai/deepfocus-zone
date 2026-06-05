@@ -328,6 +328,10 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
             </div>
           </TabsContent>
 
+          <TabsContent value="edit" className="space-y-3">
+            <EditQuestionsPane cards={cards.filter((c) => selectedCardIds.has(c.id))} fallback={cards} />
+          </TabsContent>
+
           <TabsContent value="new-deck" className="space-y-3">
             <div className="text-xs text-muted-foreground text-right">
               יצירת ערכה חדשה באמצעות הדיאלוג הקיים. לאחר יצירה, הערכה תסומן אוטומטית.
