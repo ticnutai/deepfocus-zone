@@ -3609,6 +3609,17 @@ export function StudySession({
         open={deckDialogOpen}
         onOpenChange={setDeckDialogOpen}
       />
+
+      <Dialog open={editorOpen && !!card} onOpenChange={setEditorOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>עריכה — שאלה ותשובה</DialogTitle>
+          </DialogHeader>
+          {card && (
+            <CardQuickEditor card={card} onClose={() => setEditorOpen(false)} />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
