@@ -136,11 +136,48 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
   return (
     <div className={cn("flex flex-col h-full bg-card border-2 border-gold/30 rounded-xl overflow-hidden", className)} dir="rtl">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gold/30 bg-gold/5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <BookOpen className="h-4 w-4 text-gold" />
-          {masechta} · דף {dafLabel} · {amudLabel}
+        <div className="flex items-center gap-1">
+          {onPrev && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="עמוד קודם"
+              onClick={onPrev}
+              disabled={!canPrev}
+            >
+              <ChevronRight className="h-4 w-4 text-gold" />
+            </Button>
+          )}
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <BookOpen className="h-4 w-4 text-gold" />
+            {masechta} · דף {dafLabel} · {amudLabel}
+          </div>
+          {onNext && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="עמוד הבא"
+              onClick={onNext}
+              disabled={!canNext}
+            >
+              <ChevronLeft className="h-4 w-4 text-gold" />
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          {onTogglePin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title={isPinned ? "הסר הצמדה" : "הצמד עמוד זה"}
+              onClick={onTogglePin}
+            >
+              {isPinned ? <PinOff className="h-4 w-4 text-gold" /> : <Pin className="h-4 w-4 text-gold" />}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
