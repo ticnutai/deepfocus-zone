@@ -39,7 +39,7 @@ const FONT_FAMILY_VALUE: Record<"heebo" | "assistant" | "frank" | "arial" | "dav
 const CANTILLATION_RE = /[\u0591-\u05AF]/g;
 const VOWELS_RE = /[\u05B0-\u05BC\u05BD\u05BF\u05C1\u05C2\u05C7]/g;
 
-export function GemaraViewer({ masechta, daf, amud, className, isActive = true }: Props) {
+export function GemaraViewer({ masechta, daf, amud, className, isActive = true, onPrev, onNext, canPrev, canNext, onTogglePin, isPinned }: Props) {
   const { state, setUiPref } = useStudy();
   const [source, setSource] = useState<Source>("pdf");
   const [pdfExists, setPdfExists] = useState<boolean | null>(null);
