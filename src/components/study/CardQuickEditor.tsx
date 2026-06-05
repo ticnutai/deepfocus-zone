@@ -302,6 +302,38 @@ export function CardQuickEditor({ card, onClose }: Props) {
         </div>
       </div>
 
+      {Array.isArray(card.editHistory) && card.editHistory.length > 0 && (
+        <details className="rounded-lg border border-gold/30 bg-secondary/30 p-2">
+          <summary className="cursor-pointer text-xs font-medium flex items-center gap-1.5 text-right">
+            <History className="h-3.5 w-3.5" />
+            היסטוריית גרסאות ({card.editHistory.length})
+          </summary>
+          <div className="mt-2 space-y-1.5 max-h-[200px] overflow-y-auto">
+            {card.editHistory.map((h, i) => {
+              const d = new Date(h.at);
+              const dateStr = d.toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+              return (
+                <div key={`${h.at}-${i}`} className="flex items-start justify-between gap-2 rounded border border-gold/20 p-2 bg-card">
+                  <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={() => restoreVersion(i)}>
+                    <RotateCcw className="h-3 w-3 ml-1" /> שחזר
+                  </Button>
+                  <div className="flex-1 text-right text-xs space-y-0.5 min-w-0">
+                    <div className="text-muted-foreground">{dateStr}</div>
+                    {h.snapshot.question && (
+                      <div className="line-clamp-2 text-foreground"><b>ש:</b> {h.snapshot.question}</div>
+                    )}
+                    {h.snapshot.answer && (
+                      <div className="line-clamp-2 text-foreground"><b>ת:</b> {h.snapshot.answer}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+
       <div className="flex items-center justify-between pt-2 border-t border-gold/20">
         <span className="text-xs text-muted-foreground flex items-center gap-1">
           {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : savedAt ? <Check className="h-3 w-3 text-green-600" /> : null}
