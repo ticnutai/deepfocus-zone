@@ -460,7 +460,21 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Card>
   );
 
-  const gemara = <GemaraViewer masechta={masechta} daf={daf} amud={amud} className="h-full" isActive={isVisible} />;
+  const gemara = (
+    <GemaraViewer
+      masechta={masechta}
+      daf={daf}
+      amud={amud}
+      className="h-full"
+      isActive={isVisible}
+      onPrev={goPrev}
+      onNext={goNext}
+      canPrev={!isFirst}
+      canNext={!isLast}
+      onTogglePin={togglePinCurrent}
+      isPinned={isCurrentPinned}
+    />
+  );
 
   const startPractice = () => setStudyOpen(true);
   const practiceModeMenu = (
