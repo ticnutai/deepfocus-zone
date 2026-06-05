@@ -321,6 +321,8 @@ export interface UiPrefs {
     createdAt: number;
     updatedAt?: number;
   }>;
+  // ShasBoard: view preferences (synced)
+  shasBoardViewPrefs?: Record<string, unknown>;
   // DafLearningTab: pinned shortcuts to specific (seder/masechta/daf/amud) — synced across devices
   dafLearningPins?: Array<{
     id: string;
