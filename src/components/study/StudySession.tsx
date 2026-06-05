@@ -710,6 +710,7 @@ export function StudySession({
   const [mobileSettingsDropdownOpen, setMobileSettingsDropdownOpen] =
     useState(false);
   const [deckDialogOpen, setDeckDialogOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   // Desktop tools row open/close — synced via uiPrefs (localStorage + cloud, last-write-wins)
   const desktopToolsOpen: boolean =
     (state.uiPrefs?.studyToolsOpen as boolean | undefined) ??
