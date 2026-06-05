@@ -31,6 +31,19 @@ export interface BaseCard {
     correct: number;
     incorrect: number;
   };
+  /** ערכי גרסאות קודמות של השאלה/תשובה — לאפשר שחזור. נשמרים מקומית ובענן. */
+  editHistory?: Array<{
+    at: number;
+    snapshot: {
+      question?: string;
+      answer?: string;
+      options?: string[];
+      correctIndices?: number[];
+      correct?: boolean;
+      explanation?: string;
+      tags?: string[];
+    };
+  }>;
 }
 
 export interface FlashcardCard extends BaseCard {
