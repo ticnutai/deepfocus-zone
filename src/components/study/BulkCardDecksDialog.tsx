@@ -388,3 +388,45 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
     </>
   );
 }
+
+function EditQuestionsPane({ cards, fallback }: { cards: StudyCardType[]; fallback: StudyCardType[] }) {
+  const list = cards.length > 0 ? cards : fallback;
+  const [activeId, setActiveId] = useState<string | null>(list[0]?.id ?? null);
+  useEffect(() => {
+    if (!list.find((c) => c.id === activeId)) setActiveId(list[0]?.id ?? null);
+  }, [list, activeId]);
+  const active = list.find((c) => c.id === activeId) ?? null;
+
+  if (list.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-6">אין שאלות לעריכה</p>;
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-2">
+      <div className="col-span-4 max-h-[58vh] overflow-y-auto space-y-1 pr-1 border-l border-gold/20 pl-2">
+        {list.map((c, i) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => setActiveId(c.id)}
+            className={`w-full text-right text-xs p-2 rounded-lg border-2 ${
+              c.id === activeId ? "border-gold bg-gold/10" : "border-gold/20 hover:bg-secondary"
+            }`}
+          >
+            <span className="text-gold font-bold ml-1">{i + 1}.</span>
+            <span className="line-clamp-2">{c.question}</span>
+          </button>
+        ))}
+      </div>
+      <div className="col-span-8 max-h-[58vh] overflow-y-auto rounded-lg border border-gold/30 p-2">
+        {active ? (
+          <Suspense fallback={<div className="text-sm text-muted-foreground p-4 text-center">טוען עורך...</div>}>
+            <CardQuickEditor key={active.id} card={active} />
+          </Suspense>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-6">בחר שאלה לעריכה</p>
+        )}
+      </div>
+    </div>
+  );
+}
