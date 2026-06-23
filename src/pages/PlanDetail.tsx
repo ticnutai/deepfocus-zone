@@ -823,7 +823,7 @@ function ReviewScheduleTab({ planId }: { planId: string }) {
 function PlanDetailInner() {
   const { planId } = useParams<{ planId: string }>();
   const navigate = useNavigate();
-  const { state, completeGeneralPlanUnit, undoLastGeneralPlanUnit, uncompleteSpecificUnit, setPlanUnitNote } = useStudy();
+  const { state, completeGeneralPlanUnit, undoLastGeneralPlanUnit, uncompleteSpecificUnit, setPlanUnitNote, setGeneralPlanProgressTo } = useStudy();
   const plans = state.generalPlans ?? [];
   const plan = plans.find((p) => p.id === planId);
 
