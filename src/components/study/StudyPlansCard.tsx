@@ -2702,8 +2702,8 @@ export function StudyPlansCard({
           </div>
         ) : (
         <div className={cn(
-          planView === "grid2" && "grid grid-cols-1 md:grid-cols-2 gap-3",
-          planView === "grid3" && "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3",
+          planView === "grid2" && "grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch",
+          planView === "grid3" && "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch",
           planView === "compact" ? "space-y-2" : "space-y-3",
           planView !== "grid2" && planView !== "grid3" && "space-y-3",
         )}>
