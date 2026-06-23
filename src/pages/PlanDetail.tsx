@@ -1004,11 +1004,16 @@ function PlanDetailInner() {
               <PlanCalendar
                 plan={plan}
                 reviews={planReviews}
-                onToggle={(unit, currentlyDone) =>
-                  currentlyDone
-                    ? uncompleteSpecificUnit(plan.id, unit)
-                    : completeGeneralPlanUnit(plan.id, unit)
-                }
+                onToggle={(unit, currentlyDone) => {
+                  const idx = plan.units.indexOf(unit);
+                  if (idx < 0) {
+                    // fallback to previous behavior
+                    return currentlyDone
+                      ? uncompleteSpecificUnit(plan.id, unit)
+                      : completeGeneralPlanUnit(plan.id, unit);
+                  }
+                  setGeneralPlanProgressTo(plan.id, currentlyDone ? idx : idx + 1);
+                }}
               />
             </div>
 
@@ -1027,10 +1032,7 @@ function PlanDetailInner() {
                   const isNext = !isDone && idx === stats.done;
                   const noteText = plan.unitNotes?.[unit] ?? "";
                   const hasNote = noteText.length > 0;
-                  const toggle = () =>
-                    isDone
-                      ? uncompleteSpecificUnit(plan.id, unit)
-                      : completeGeneralPlanUnit(plan.id, unit);
+                  const toggle = () => setGeneralPlanProgressTo(plan.id, isDone ? idx : idx + 1);
                   return (
                     <div
                       key={idx}
