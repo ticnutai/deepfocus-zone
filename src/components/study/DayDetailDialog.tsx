@@ -471,8 +471,15 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
                     type="button"
                     onClick={() => {
                       if (row.kind === "plan") {
-                        if (row.done) uncompleteSpecificUnit(row.planId, row.unit);
-                        else completeGeneralPlanUnit(row.planId, row.unit);
+                        const plan = (state.generalPlans ?? []).find((p) => p.id === row.planId);
+                        const idx = plan?.units.indexOf(row.unit) ?? -1;
+                        if (idx >= 0) {
+                          setGeneralPlanProgressTo(row.planId, row.done ? idx : idx + 1);
+                        } else if (row.done) {
+                          uncompleteSpecificUnit(row.planId, row.unit);
+                        } else {
+                          completeGeneralPlanUnit(row.planId, row.unit);
+                        }
                         return;
                       }
                       if (row.kind === "planReview") {
