@@ -2360,7 +2360,10 @@ export function StudyPlansCard({
   const [reviewScheduleOpen, setReviewScheduleOpen] = useState(false);
   const [scheduleOpenPlans, setScheduleOpenPlans] = useState<Set<string>>(new Set());
   const [forceDeckReviewAdd, setForceDeckReviewAdd] = useState(false);
-  const [planView, setPlanView] = useState<"classic" | "grid2" | "grid3" | "table" | "compact">(() => {
+  type PlanViewMode = "classic" | "grid2" | "grid3" | "table" | "compact";
+  const cloudPlanView = state.uiPrefs?.studyPlansView;
+  const [planView, setPlanViewState] = useState<PlanViewMode>(() => {
+    if (cloudPlanView === "grid2" || cloudPlanView === "grid3" || cloudPlanView === "table" || cloudPlanView === "compact" || cloudPlanView === "classic") return cloudPlanView;
     try {
       const raw = localStorage.getItem(PLAN_VIEW_KEY);
       if (raw === "grid2" || raw === "grid3" || raw === "table" || raw === "compact" || raw === "classic") return raw;
@@ -2370,9 +2373,18 @@ export function StudyPlansCard({
     return "classic";
   });
 
+  // Adopt cloud value when it arrives/changes from another device
   useEffect(() => {
-    try { localStorage.setItem(PLAN_VIEW_KEY, planView); } catch { /* ignore */ }
-  }, [planView]);
+    if (!cloudPlanView) return;
+    if (cloudPlanView !== planView) setPlanViewState(cloudPlanView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudPlanView]);
+
+  const setPlanView = useCallback((v: PlanViewMode) => {
+    setPlanViewState(v);
+    try { localStorage.setItem(PLAN_VIEW_KEY, v); } catch { /* ignore */ }
+    setUiPref("studyPlansView", v);
+  }, [setUiPref]);
 
   useEffect(() => {
     if (createDeckReviewSignal == null || contextDeckId == null) return;
