@@ -25,6 +25,7 @@ export function DayDetailDialog({ open, onOpenChange, dateKeyStr }: Props) {
   const {
     state, toggleGoalDate, setDayNote,
     completeGeneralPlanUnit, uncompleteSpecificUnit,
+    setGeneralPlanProgressTo,
     markPlanReviewDone, undoPlanReviewDone,
     markShasReviewDone, unmarkShasReviewDone,
     rescheduleShasReview, setShasReviewNote, deleteShasReview,
