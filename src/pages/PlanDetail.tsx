@@ -938,7 +938,16 @@ function PlanDetailInner() {
             <Card className="gold-frame p-5 space-y-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">התקדמות כללית</span>
-                <span className="font-semibold">{stats.done} / {stats.total} יחידות</span>
+                {(() => {
+                  const upd = plan.shasUnit === "amud" ? 2 : plan.shasUnit === "half" ? 4 : 1;
+                  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+                  return (
+                    <span className="font-semibold">
+                      {stats.done} / {stats.total} עמודים
+                      <span className="text-muted-foreground font-normal"> · {fmt(stats.done / upd)} / {fmt(stats.total / upd)} דפים</span>
+                    </span>
+                  );
+                })()}
               </div>
               <div className="h-3 rounded-full bg-muted overflow-hidden">
                 <div
