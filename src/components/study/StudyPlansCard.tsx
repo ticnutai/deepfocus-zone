@@ -2344,7 +2344,7 @@ export function StudyPlansCard({
   showOnlyContextDeckReview?: boolean;
   createDeckReviewSignal?: number;
 } = {}) {
-  const { state, addGeneralPlan, addCategoriesBulk, setShasPlan, deleteGeneralPlan, archiveGeneralPlan, unarchiveGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit, addMasecthaReviewPlan, addDeckReviewPlan } = useStudy();
+  const { state, addGeneralPlan, addCategoriesBulk, setShasPlan, deleteGeneralPlan, archiveGeneralPlan, unarchiveGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit, addMasecthaReviewPlan, addDeckReviewPlan, setUiPref } = useStudy();
   const navigate = useNavigate();
   const plans = state.generalPlans ?? [];
   const activePlans = plans.filter((p) => !p.archivedAt);
@@ -2360,7 +2360,10 @@ export function StudyPlansCard({
   const [reviewScheduleOpen, setReviewScheduleOpen] = useState(false);
   const [scheduleOpenPlans, setScheduleOpenPlans] = useState<Set<string>>(new Set());
   const [forceDeckReviewAdd, setForceDeckReviewAdd] = useState(false);
-  const [planView, setPlanView] = useState<"classic" | "grid2" | "grid3" | "table" | "compact">(() => {
+  type PlanViewMode = "classic" | "grid2" | "grid3" | "table" | "compact";
+  const cloudPlanView = state.uiPrefs?.studyPlansView;
+  const [planView, setPlanViewState] = useState<PlanViewMode>(() => {
+    if (cloudPlanView === "grid2" || cloudPlanView === "grid3" || cloudPlanView === "table" || cloudPlanView === "compact" || cloudPlanView === "classic") return cloudPlanView;
     try {
       const raw = localStorage.getItem(PLAN_VIEW_KEY);
       if (raw === "grid2" || raw === "grid3" || raw === "table" || raw === "compact" || raw === "classic") return raw;
@@ -2370,9 +2373,18 @@ export function StudyPlansCard({
     return "classic";
   });
 
+  // Adopt cloud value when it arrives/changes from another device
   useEffect(() => {
-    try { localStorage.setItem(PLAN_VIEW_KEY, planView); } catch { /* ignore */ }
-  }, [planView]);
+    if (!cloudPlanView) return;
+    if (cloudPlanView !== planView) setPlanViewState(cloudPlanView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudPlanView]);
+
+  const setPlanView = useCallback((v: PlanViewMode) => {
+    setPlanViewState(v);
+    try { localStorage.setItem(PLAN_VIEW_KEY, v); } catch { /* ignore */ }
+    setUiPref("studyPlansView", v);
+  }, [setUiPref]);
 
   useEffect(() => {
     if (createDeckReviewSignal == null || contextDeckId == null) return;
@@ -2690,8 +2702,8 @@ export function StudyPlansCard({
           </div>
         ) : (
         <div className={cn(
-          planView === "grid2" && "grid grid-cols-1 md:grid-cols-2 gap-3",
-          planView === "grid3" && "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3",
+          planView === "grid2" && "grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch",
+          planView === "grid3" && "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch",
           planView === "compact" ? "space-y-2" : "space-y-3",
           planView !== "grid2" && planView !== "grid3" && "space-y-3",
         )}>
@@ -2729,6 +2741,7 @@ export function StudyPlansCard({
                 key={plan.id}
                 className={cn(
                   "group rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
+                  (planView === "grid2" || planView === "grid3") && "h-full flex flex-col",
                   isDarkCard
                     ? "border-gold/80 bg-gradient-to-br from-[hsl(var(--navy))] to-[hsl(var(--navy-soft))] text-primary-foreground hover:border-gold [&_.text-muted-foreground]:!text-primary-foreground/85 [&_.text-foreground]:!text-primary-foreground [&_.text-navy]:!text-primary-foreground [&_.hover\\:text-navy:hover]:!text-gold [&_.border-gold\\/15]:!border-white/25 [&_.border-gold\\/10]:!border-white/20"
                     : "border-gold/40 bg-card hover:border-gold/70",

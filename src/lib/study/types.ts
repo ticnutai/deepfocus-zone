@@ -252,6 +252,8 @@ export interface UiPrefs {
   cardEditorLastCreateTypes?: CardType[];
   // CardsManager: deck list view mode (synced)
   cardsDeckView?: "list" | "grid" | "compact";
+  // StudyPlansCard: plans list view mode (synced local + cloud)
+  studyPlansView?: "classic" | "grid2" | "grid3" | "table" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)
   pinnedCategoryNames?: string[];
   // Pinned question ids for Pinned widget (synced)
