@@ -2344,7 +2344,7 @@ export function StudyPlansCard({
   showOnlyContextDeckReview?: boolean;
   createDeckReviewSignal?: number;
 } = {}) {
-  const { state, addGeneralPlan, addCategoriesBulk, setShasPlan, deleteGeneralPlan, archiveGeneralPlan, unarchiveGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit, addMasecthaReviewPlan, addDeckReviewPlan } = useStudy();
+  const { state, addGeneralPlan, addCategoriesBulk, setShasPlan, deleteGeneralPlan, archiveGeneralPlan, unarchiveGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit, addMasecthaReviewPlan, addDeckReviewPlan, setUiPref } = useStudy();
   const navigate = useNavigate();
   const plans = state.generalPlans ?? [];
   const activePlans = plans.filter((p) => !p.archivedAt);
