@@ -5299,6 +5299,29 @@ export function useStudy() {
     _applyPreviewLayout,
     setUiPref,
     addGeneralPlan, deleteGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit,
+    /**
+     * Cumulative progress setter — marks units[0..targetCount-1] as done and
+     * un-marks the rest. Used to keep "כל היחידות" and "לוח ביצוע" perfectly
+     * in sync: clicking any unit (or any calendar day) sets the progress to
+     * that point.
+     */
+    setGeneralPlanProgressTo: (planId: string, targetCount: number): void => {
+      const plan = (memState.generalPlans ?? []).find((p) => p.id === planId);
+      if (!plan) return;
+      const max = plan.units.length;
+      const target = Math.max(0, Math.min(targetCount, max));
+      const current = plan.completedUnits.length;
+      if (target === current) return;
+      if (target > current) {
+        for (let i = current; i < target; i++) {
+          completeGeneralPlanUnit(planId, plan.units[i]);
+        }
+      } else {
+        for (let i = 0; i < current - target; i++) {
+          undoLastGeneralPlanUnit(planId);
+        }
+      }
+    },
     addMasecthaReviewPlan,
     addDeckReviewPlan,
     markPlanReviewDone, undoPlanReviewDone, postponePlanReview, setPlanReviewNote,
