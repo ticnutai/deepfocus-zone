@@ -1035,7 +1035,22 @@ const Index = () => {
     saveTabConfig(next);
   }, [orderedSidebarItems, orderedTabs, saveTabConfig]);
 
+  const requireSettingsAuth = useCallback((): boolean => {
+    try {
+      if (sessionStorage.getItem("settings-unlocked") === "1") return true;
+    } catch { /* ignore */ }
+    const input = window.prompt("להזנת אזור ההגדרות יש להזין סיסמה:");
+    if (input === null) return false;
+    if (input === "543211") {
+      try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
+      return true;
+    }
+    window.alert("סיסמה שגויה");
+    return false;
+  }, []);
+
   const selectSidebarItem = useCallback((id: string) => {
+    if (id === "settings" && !requireSettingsAuth()) return;
     if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
       setActive("home");
       setActiveTab(id);
@@ -1044,7 +1059,7 @@ const Index = () => {
       return;
     }
     setActive(id);
-  }, []);
+  }, [requireSettingsAuth]);
 
   const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
     ? activeTab
