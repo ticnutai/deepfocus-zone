@@ -205,7 +205,23 @@ export function AppShellSidebar() {
       .filter((i) => (isAdmin && !previewRoleId) || !blockedSet.has(i.id));
   }, [state.sidebarConfig, isAdmin, previewRoleId, blocklist]);
 
+  const SETTINGS_PW = "543211";
+  const requireSettingsAuth = (): boolean => {
+    try {
+      if (sessionStorage.getItem("settings-unlocked") === "1") return true;
+    } catch { /* ignore */ }
+    const input = window.prompt("להזנת אזור ההגדרות יש להזין סיסמה:");
+    if (input === null) return false;
+    if (input === SETTINGS_PW) {
+      try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
+      return true;
+    }
+    window.alert("סיסמה שגויה");
+    return false;
+  };
+
   const goSection = (id: string) => {
+    if (id === "settings" && !requireSettingsAuth()) return;
     if (pathname !== "/") {
       navigate(`/?section=${id}`);
     } else {
