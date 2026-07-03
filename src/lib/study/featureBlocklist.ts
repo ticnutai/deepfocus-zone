@@ -197,15 +197,8 @@ export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignmen
   updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY[scope], normalized);
 }
 
-const mergeBlocklists = (base: FeatureBlocklist, extra: FeatureBlocklist | null): FeatureBlocklist => {
-  if (!extra) return base;
-  const sections = Array.from(new Set([...(base.sections ?? []), ...(extra.sections ?? [])]));
-  const widgets: Record<string, string[]> = { ...base.widgets };
-  for (const [tabId, ids] of Object.entries(extra.widgets ?? {})) {
-    widgets[tabId] = Array.from(new Set([...(widgets[tabId] ?? []), ...(ids ?? [])]));
-  }
-  return { sections, widgets };
-};
+// mergeBlocklists intentionally removed: role-assigned profiles fully
+// override the global blocklist (see resolveRoleFeatureBlocklist).
 
 export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
   const scope = opts?.scope ?? "desktop";
