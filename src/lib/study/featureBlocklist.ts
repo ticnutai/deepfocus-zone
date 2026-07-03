@@ -197,15 +197,8 @@ export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignmen
   updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY[scope], normalized);
 }
 
-const mergeBlocklists = (base: FeatureBlocklist, extra: FeatureBlocklist | null): FeatureBlocklist => {
-  if (!extra) return base;
-  const sections = Array.from(new Set([...(base.sections ?? []), ...(extra.sections ?? [])]));
-  const widgets: Record<string, string[]> = { ...base.widgets };
-  for (const [tabId, ids] of Object.entries(extra.widgets ?? {})) {
-    widgets[tabId] = Array.from(new Set([...(widgets[tabId] ?? []), ...(ids ?? [])]));
-  }
-  return { sections, widgets };
-};
+// mergeBlocklists intentionally removed: role-assigned profiles fully
+// override the global blocklist (see resolveRoleFeatureBlocklist).
 
 export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
   const scope = opts?.scope ?? "desktop";
@@ -224,7 +217,12 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
   if (!assignment) return globalBlocklist;
 
   const profile = profiles.find((row) => row.id === assignment.profileId) ?? null;
-  return mergeBlocklists(globalBlocklist, profile?.blocklist ?? null);
+  // When a role has an assigned blocklist profile, that profile fully defines
+  // what's blocked for the role — do NOT union with the global blocklist,
+  // otherwise a broad global blocklist (e.g. all overview widgets) would
+  // override the per-role profile and make tabs appear empty.
+  if (profile) return profile.blocklist;
+  return globalBlocklist;
 }
 
 export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureBlocklist {
