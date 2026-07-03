@@ -230,8 +230,6 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
   // override the per-role profile and make tabs appear empty.
   if (profile) return profile.blocklist;
   return globalBlocklist;
-  // (mergeBlocklists retained for callers that explicitly need union semantics)
-  void mergeBlocklists;
 }
 
 export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureBlocklist {
