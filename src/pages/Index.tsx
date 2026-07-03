@@ -1403,14 +1403,14 @@ const Index = () => {
                       )}
                     >
                       <button
-                        onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת סיידבר"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
                         <Sliders className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setTabConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת טאבים"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
