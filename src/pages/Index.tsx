@@ -1302,7 +1302,7 @@ const Index = () => {
           <div className="px-4 h-[60px] border-b-2 border-gold/40 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setSidebarConfigOpen(true)}
+                onClick={() => { if (requireSettingsAuth()) setSidebarConfigOpen(true); }}
                 title="הגדרת סיידבר"
                 className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-secondary text-gold hover:text-navy transition-colors"
                 style={{ display: profileBActive ? "none" : undefined }}
