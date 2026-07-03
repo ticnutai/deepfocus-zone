@@ -224,7 +224,14 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
   if (!assignment) return globalBlocklist;
 
   const profile = profiles.find((row) => row.id === assignment.profileId) ?? null;
-  return mergeBlocklists(globalBlocklist, profile?.blocklist ?? null);
+  // When a role has an assigned blocklist profile, that profile fully defines
+  // what's blocked for the role — do NOT union with the global blocklist,
+  // otherwise a broad global blocklist (e.g. all overview widgets) would
+  // override the per-role profile and make tabs appear empty.
+  if (profile) return profile.blocklist;
+  return globalBlocklist;
+  // (mergeBlocklists retained for callers that explicitly need union semantics)
+  void mergeBlocklists;
 }
 
 export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureBlocklist {
