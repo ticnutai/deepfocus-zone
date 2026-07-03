@@ -1302,7 +1302,7 @@ const Index = () => {
           <div className="px-4 h-[60px] border-b-2 border-gold/40 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setSidebarConfigOpen(true)}
+                onClick={() => { if (requireSettingsAuth()) setSidebarConfigOpen(true); }}
                 title="הגדרת סיידבר"
                 className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-secondary text-gold hover:text-navy transition-colors"
                 style={{ display: profileBActive ? "none" : undefined }}
@@ -1403,14 +1403,14 @@ const Index = () => {
                       )}
                     >
                       <button
-                        onClick={() => { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת סיידבר"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
                         <Sliders className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => { setTabConfigOpen(true); setShowTabsConfigIcon(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setTabConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת טאבים"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
