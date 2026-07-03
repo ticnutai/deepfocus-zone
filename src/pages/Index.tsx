@@ -1428,7 +1428,7 @@ const Index = () => {
                   <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
                     <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
                       <button
-                        onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setActive("settings"); setMobileSidebarOpen(false); } }}
                         className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                         style={{ flex: "1 1 auto" }}
                         title="הגדרות משתמש"
