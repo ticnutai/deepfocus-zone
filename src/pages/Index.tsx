@@ -1035,7 +1035,22 @@ const Index = () => {
     saveTabConfig(next);
   }, [orderedSidebarItems, orderedTabs, saveTabConfig]);
 
+  const requireSettingsAuth = useCallback((): boolean => {
+    try {
+      if (sessionStorage.getItem("settings-unlocked") === "1") return true;
+    } catch { /* ignore */ }
+    const input = window.prompt("להזנת אזור ההגדרות יש להזין סיסמה:");
+    if (input === null) return false;
+    if (input === "543211") {
+      try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
+      return true;
+    }
+    window.alert("סיסמה שגויה");
+    return false;
+  }, []);
+
   const selectSidebarItem = useCallback((id: string) => {
+    if (id === "settings" && !requireSettingsAuth()) return;
     if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
       setActive("home");
       setActiveTab(id);
@@ -1044,7 +1059,7 @@ const Index = () => {
       return;
     }
     setActive(id);
-  }, []);
+  }, [requireSettingsAuth]);
 
   const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
     ? activeTab
@@ -1310,7 +1325,7 @@ const Index = () => {
           <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
             <div ref={userFooterDesktopRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
               <button
-                onClick={() => setActive("settings")}
+                onClick={() => { if (requireSettingsAuth()) setActive("settings"); }}
                 className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                 style={{ flex: "1 1 auto" }}
                 title="הגדרות משתמש"
@@ -1413,7 +1428,7 @@ const Index = () => {
                   <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
                     <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
                       <button
-                        onClick={() => { setActive("settings"); setMobileSidebarOpen(false); }}
+                        onClick={() => { if (requireSettingsAuth()) { setActive("settings"); setMobileSidebarOpen(false); } }}
                         className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                         style={{ flex: "1 1 auto" }}
                         title="הגדרות משתמש"
