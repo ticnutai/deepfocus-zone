@@ -315,23 +315,11 @@ export function RoleDefaultsTab() {
     setLayoutProfileName(profile.name);
   }, [layoutProfiles, selectedRoleLayoutAssignment?.profileId]);
 
-  const setSelectedRoleLayoutProfile = (profileId: string) => {
-    if (!selectedRole) return;
-    setLayoutAssignments((prev) => {
-      const existingRow = prev.find((row) => row.roleId === selectedRole);
-      if (profileId === "__none") {
-        return prev.filter((row) => row.roleId !== selectedRole);
-      }
-      if (existingRow) {
-        return prev.map((row) => (row.id === existingRow.id ? { ...row, profileId } : row));
-      }
-      return [...prev, { id: uid(), roleId: selectedRole, profileId }];
-    });
-    if (profileId !== "__none") loadLayoutProfilePreview(profileId);
-  };
-
-  const persistLayoutAssignments = async (successMessage = "שיוכי פריסה נשמרו") => {
-    const valid = layoutAssignments.filter((row) => row.roleId && row.profileId);
+  const persistLayoutAssignmentsList = useCallback(async (
+    rows: RoleLayoutProfileAssignment[],
+    successMessage = "שיוכי פריסה נשמרו",
+  ) => {
+    const valid = rows.filter((row) => row.roleId && row.profileId);
     setSavingLayoutAssignments(true);
     try {
       await saveRoleLayoutProfileAssignments(valid, { scope: layoutScope });
@@ -342,7 +330,31 @@ export function RoleDefaultsTab() {
     } finally {
       setSavingLayoutAssignments(false);
     }
+  }, [layoutScope]);
+
+  const setSelectedRoleLayoutProfile = (profileId: string) => {
+    if (!selectedRole) return;
+    const existingRow = layoutAssignments.find((row) => row.roleId === selectedRole);
+    let next: RoleLayoutProfileAssignment[];
+    if (profileId === "__none") {
+      next = layoutAssignments.filter((row) => row.roleId !== selectedRole);
+    } else if (existingRow) {
+      next = layoutAssignments.map((row) => (row.id === existingRow.id ? { ...row, profileId } : row));
+    } else {
+      next = [...layoutAssignments, { id: uid(), roleId: selectedRole, profileId }];
+    }
+    setLayoutAssignments(next);
+    if (profileId !== "__none") loadLayoutProfilePreview(profileId);
+    // Auto-persist so the user does not need a separate save click.
+    const roleName = roleLabel(roles.find((r) => r.id === selectedRole)?.name ?? "");
+    const msg = profileId === "__none"
+      ? `בוטל שיוך פריסה מתפקיד "${roleName}"`
+      : `שיוך הפריסה נשמר לתפקיד "${roleName}"`;
+    void persistLayoutAssignmentsList(next, msg);
   };
+
+  const persistLayoutAssignments = async (successMessage = "שיוכי פריסה נשמרו") =>
+    persistLayoutAssignmentsList(layoutAssignments, successMessage);
 
   const toggleSection = (id: string) => {
     setBlocklist((b) => {
