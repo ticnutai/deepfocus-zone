@@ -151,6 +151,8 @@ export function ShasBoard() {
   const [selectedMasechta, setSelectedMasechta] = useState<string | null>(null);
   const [selectedSeder, setSelectedSeder] = useState<string | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set()); // "masechta:daf:amud"
+  const [selectMode, setSelectMode] = useState<boolean>(viewPrefs.selectMode ?? false);
+  const [lastSelKey, setLastSelKey] = useState<string | null>(null);
   const [defaultReps, setDefaultReps] = useState<number>(1); // increment value for "סמן +N"
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
