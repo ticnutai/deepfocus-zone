@@ -635,10 +635,13 @@ export function ShasBoard() {
           <Badge variant="outline" className="border-gold/60">{learned}/{total} עמודים ({pct}%)</Badge>
           <Badge variant="secondary">סך חזרות: {reps}</Badge>
           <div className="flex items-center gap-1 mr-auto">
-            <Button size="sm" variant="outline" onClick={() => allInMasechtaSelected(m) ? clearAllInMasechta(m) : selectAllInMasechta(m)}>
-              {allInMasechtaSelected(m) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-              <span className="mr-1">{allInMasechtaSelected(m) ? "נקה הכל" : "בחר הכל במסכת"}</span>
-            </Button>
+            {SelectModeToggle}
+            {selectMode && (
+              <Button size="sm" variant="outline" onClick={() => allInMasechtaSelected(m) ? clearAllInMasechta(m) : selectAllInMasechta(m)}>
+                {allInMasechtaSelected(m) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                <span className="mr-1">{allInMasechtaSelected(m) ? "נקה הכל" : "בחר הכל במסכת"}</span>
+              </Button>
+            )}
             {MasechtaLayoutMenu}
           </div>
           {ThemeControls}
@@ -658,20 +661,43 @@ export function ShasBoard() {
                 const ROW = masechtaDetailLayout === "compact" ? 42 : 28;
                 const rows: typeof allCells[] = [];
                 for (let i = 0; i < allCells.length; i += ROW) rows.push(allCells.slice(i, i + ROW));
-                return rows.map((row, idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "grid gap-2",
-                      masechtaDetailLayout === "compact"
-                        ? "grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-[repeat(18,minmax(0,1fr))]"
-                        : "grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14",
-                    )}
-                    style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
-                  >
-                    {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
-                  </div>
-                ));
+                return rows.map((row, idx) => {
+                  const rowKeys = row.map((c) => sKey(m.name, c.daf, c.a));
+                  const allInRow = rowKeys.every((k) => selection.has(k));
+                  const someInRow = !allInRow && rowKeys.some((k) => selection.has(k));
+                  return (
+                    <div key={idx} className="flex items-stretch gap-2">
+                      {selectMode && (
+                        <button
+                          type="button"
+                          onClick={() => toggleRowSel(row, m.name)}
+                          title="בחר שורה שלמה"
+                          className={cn(
+                            "shrink-0 h-11 w-8 rounded-md border-2 flex items-center justify-center transition-all",
+                            allInRow
+                              ? "bg-gold text-primary-foreground border-gold"
+                              : someInRow
+                                ? "bg-gold/20 border-gold/60 text-gold"
+                                : "bg-card border-gold/30 text-muted-foreground hover:border-gold hover:text-gold",
+                          )}
+                        >
+                          {allInRow ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                        </button>
+                      )}
+                      <div
+                        className={cn(
+                          "grid gap-2 flex-1",
+                          masechtaDetailLayout === "compact"
+                            ? "grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-[repeat(18,minmax(0,1fr))]"
+                            : "grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14",
+                        )}
+                        style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
+                      >
+                        {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
+                      </div>
+                    </div>
+                  );
+                });
               })()}
             </div>
           )}
