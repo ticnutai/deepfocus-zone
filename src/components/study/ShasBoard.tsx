@@ -1194,12 +1194,13 @@ type AmudButtonProps = {
   amud: AmudKey;
   reps: number;
   isSel: boolean;
+  selectMode: boolean;
   onIncrement: (m: string, daf: number, a: AmudKey) => void;
   onDecrement: (m: string, daf: number, a: AmudKey) => void;
-  onToggleSel: (m: string, daf: number, a: AmudKey) => void;
+  onToggleSel: (m: string, daf: number, a: AmudKey, shift: boolean) => void;
 };
 const AmudButton = memo(function AmudButton({
-  masechtaName, daf, amud, reps, isSel, onIncrement, onDecrement, onToggleSel,
+  masechtaName, daf, amud, reps, isSel, selectMode, onIncrement, onDecrement, onToggleSel,
 }: AmudButtonProps) {
   const learned = reps > 0;
   const clickTimerRef = useRef<number | null>(null);
@@ -1212,9 +1213,9 @@ const AmudButton = memo(function AmudButton({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (e.shiftKey) {
+    if (selectMode || e.shiftKey) {
       clearPendingClick();
-      onToggleSel(masechtaName, daf, amud);
+      onToggleSel(masechtaName, daf, amud, e.shiftKey);
       return;
     }
 
@@ -1228,12 +1229,14 @@ const AmudButton = memo(function AmudButton({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     clearPendingClick();
+    if (selectMode) return;
     onDecrement(masechtaName, daf, amud);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     clearPendingClick();
+    if (selectMode) return;
     onDecrement(masechtaName, daf, amud);
   };
 
@@ -1249,8 +1252,25 @@ const AmudButton = memo(function AmudButton({
           : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
         isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
       )}
-      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, דאבל-קליק: -1, שיפט+לחיצה: בחירה)`}
+      title={
+        selectMode
+          ? `${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — לחיצה: בחירה, Shift+לחיצה: טווח`
+          : `${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, דאבל-קליק: -1, שיפט+לחיצה: בחירה)`
+      }
     >
+      {selectMode && (
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full flex items-center justify-center border transition-colors",
+            isSel
+              ? "bg-gold border-gold text-primary-foreground"
+              : learned ? "bg-primary/40 border-primary-foreground/60" : "bg-background/70 border-gold/50",
+          )}
+          aria-hidden="true"
+        >
+          {isSel && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+        </span>
+      )}
       <span className="text-[11px]">{heb(daf)}{amud === "a" ? "." : ":"}</span>
       {reps > 0 && (
         <span className={cn(
