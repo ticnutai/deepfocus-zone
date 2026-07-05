@@ -719,19 +719,45 @@ export function ShasBoard() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {selectMode && <TableHead className="w-8" />}
                   <TableHead className="text-right">דף</TableHead>
                   <TableHead className="text-right">עמוד א</TableHead>
                   <TableHead className="text-right">עמוד ב</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {Array.from({ length: m.pages }, (_, i) => i + 2).map((d) => (
-                  <TableRow key={d}>
-                    <TableCell className="font-semibold">{heb(d)}</TableCell>
-                    <TableCell>{renderAmudButton(m, d, "a")}</TableCell>
-                    <TableCell>{renderAmudButton(m, d, "b")}</TableCell>
-                  </TableRow>
-                ))}
+                {Array.from({ length: m.pages }, (_, i) => i + 2).map((d) => {
+                  const rowCells: Array<{ daf: number; a: AmudKey }> = [{ daf: d, a: "a" }, { daf: d, a: "b" }];
+                  const rowKeys = rowCells.map((c) => sKey(m.name, c.daf, c.a));
+                  const allInRow = rowKeys.every((k) => selection.has(k));
+                  const someInRow = !allInRow && rowKeys.some((k) => selection.has(k));
+                  return (
+                    <TableRow key={d}>
+                      {selectMode && (
+                        <TableCell className="w-8 p-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleRowSel(rowCells, m.name)}
+                            title="בחר דף שלם"
+                            className={cn(
+                              "h-7 w-7 rounded-full border-2 flex items-center justify-center transition-all",
+                              allInRow
+                                ? "bg-gold text-primary-foreground border-gold"
+                                : someInRow
+                                  ? "bg-gold/20 border-gold/60 text-gold"
+                                  : "bg-card border-gold/30 text-muted-foreground hover:border-gold hover:text-gold",
+                            )}
+                          >
+                            {allInRow ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                          </button>
+                        </TableCell>
+                      )}
+                      <TableCell className="font-semibold">{heb(d)}</TableCell>
+                      <TableCell>{renderAmudButton(m, d, "a")}</TableCell>
+                      <TableCell>{renderAmudButton(m, d, "b")}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
