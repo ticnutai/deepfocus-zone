@@ -31,7 +31,7 @@ import {
 import {
   ChevronLeft, BookOpen, Layers, Plus, Minus, RotateCcw,
   CheckSquare, Square, Sparkles, LayoutGrid, Rows3, Table2, List as ListIcon, Flag, Columns3, Palette, Pencil,
-  MousePointerClick, Circle, CheckCircle2, Check, X,
+  MousePointerClick, Circle, CheckCircle2, Check, X, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
@@ -40,6 +40,7 @@ import { ShasPlanner, type ShasPlannerViewMode } from "./ShasPlanner";
 import { ShasCalendar, type ShasCalendarViewMode } from "./ShasCalendar";
 import { ThemeEditorDialog } from "@/components/ThemeSwitcher";
 import { useTheme, THEME_TOKEN_KEYS } from "@/theme/ThemeProvider";
+import { ShasExportDialog } from "./ShasExportDialog";
 
 // ===== Types & helpers =====
 type AmudKey = "a" | "b";
@@ -154,6 +155,7 @@ export function ShasBoard() {
   const [selectMode, setSelectMode] = useState<boolean>(viewPrefs.selectMode ?? false);
   const [lastSelKey, setLastSelKey] = useState<string | null>(null);
   const [defaultReps, setDefaultReps] = useState<number>(1); // increment value for "סמן +N"
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
 
@@ -381,17 +383,36 @@ export function ShasBoard() {
 
   const ThemeControls = (
     <div className="flex items-center gap-1">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 border border-gold/40 rounded-md text-muted-foreground hover:text-gold hover:bg-secondary"
+        onClick={() => setExportDialogOpen(true)}
+        title="הורדת לוח הש״ס (PDF / Word / Excel / CSV / JSON)"
+        aria-label="הורדת לוח הש״ס"
+      >
+        <Download className="h-4 w-4" />
+      </Button>
       {ThemeMenu}
     </div>
   );
 
-  const BoardThemeEditor = editingThemeId ? (
-    <ThemeEditorDialog
-      open={themeEditorOpen}
-      onOpenChange={setThemeEditorOpen}
-      themeId={editingThemeId}
-    />
-  ) : null;
+  const BoardThemeEditor = (
+    <>
+      {editingThemeId ? (
+        <ThemeEditorDialog
+          open={themeEditorOpen}
+          onOpenChange={setThemeEditorOpen}
+          themeId={editingThemeId}
+        />
+      ) : null}
+      <ShasExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        progress={progress}
+      />
+    </>
+  );
 
   // ----- Selection helpers -----
   const sKey = (m: string, daf: number, a: AmudKey) => `${m}:${daf}:${a}`;
