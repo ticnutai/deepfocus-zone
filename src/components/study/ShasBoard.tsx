@@ -31,6 +31,7 @@ import {
 import {
   ChevronLeft, BookOpen, Layers, Plus, Minus, RotateCcw,
   CheckSquare, Square, Sparkles, LayoutGrid, Rows3, Table2, List as ListIcon, Flag, Columns3, Palette, Pencil,
+  MousePointerClick, Circle, CheckCircle2, Check, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
@@ -150,6 +151,8 @@ export function ShasBoard() {
   const [selectedMasechta, setSelectedMasechta] = useState<string | null>(null);
   const [selectedSeder, setSelectedSeder] = useState<string | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set()); // "masechta:daf:amud"
+  const [selectMode, setSelectMode] = useState<boolean>(viewPrefs.selectMode ?? false);
+  const [lastSelKey, setLastSelKey] = useState<string | null>(null);
   const [defaultReps, setDefaultReps] = useState<number>(1); // increment value for "סמן +N"
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
@@ -166,12 +169,13 @@ export function ShasBoard() {
       boardThemeMode,
       boardThemeId,
       boardLocalThemeIds,
+      selectMode,
     };
     const currentPrefs = (state.uiPrefs as any)?.shasBoardViewPrefs ?? {};
     if (JSON.stringify(currentPrefs) !== JSON.stringify(nextPrefs)) {
       setUiPref("shasBoardViewPrefs", nextPrefs as any);
     }
-  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, setUiPref, state.uiPrefs]);
+  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, selectMode, setUiPref, state.uiPrefs]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -392,14 +396,52 @@ export function ShasBoard() {
   // ----- Selection helpers -----
   const sKey = (m: string, daf: number, a: AmudKey) => `${m}:${daf}:${a}`;
   const toggleSel = useCallback((m: string, daf: number, a: AmudKey) => {
+    const k = `${m}:${daf}:${a}`;
     setSelection((prev) => {
       const next = new Set(prev);
-      const k = `${m}:${daf}:${a}`;
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
+    setLastSelKey(k);
   }, []);
-  const clearSel = () => setSelection(new Set());
+  // Ordered amud keys of a masechta ("m:d:a", "m:d:b", ...)
+  const masechtaKeys = useCallback((m: Masechta) => {
+    const keys: string[] = [];
+    for (let d = 2; d <= m.pages + 1; d++) {
+      keys.push(sKey(m.name, d, "a"));
+      keys.push(sKey(m.name, d, "b"));
+    }
+    return keys;
+  }, []);
+  const rangeSel = useCallback((m: Masechta, daf: number, a: AmudKey) => {
+    const target = sKey(m.name, daf, a);
+    if (!lastSelKey || !lastSelKey.startsWith(`${m.name}:`)) {
+      toggleSel(m.name, daf, a);
+      return;
+    }
+    const keys = masechtaKeys(m);
+    const i1 = keys.indexOf(lastSelKey);
+    const i2 = keys.indexOf(target);
+    if (i1 < 0 || i2 < 0) { toggleSel(m.name, daf, a); return; }
+    const [lo, hi] = i1 < i2 ? [i1, i2] : [i2, i1];
+    setSelection((prev) => {
+      const next = new Set(prev);
+      for (let i = lo; i <= hi; i++) next.add(keys[i]);
+      return next;
+    });
+    setLastSelKey(target);
+  }, [lastSelKey, toggleSel, masechtaKeys]);
+  const toggleRowSel = useCallback((cells: Array<{ daf: number; a: AmudKey }>, mName: string) => {
+    const keys = cells.map((c) => sKey(mName, c.daf, c.a));
+    setSelection((prev) => {
+      const allIn = keys.every((k) => prev.has(k));
+      const next = new Set(prev);
+      if (allIn) keys.forEach((k) => next.delete(k));
+      else keys.forEach((k) => next.add(k));
+      return next;
+    });
+  }, []);
+  const clearSel = () => { setSelection(new Set()); setLastSelKey(null); };
   const selectAllInMasechta = (m: Masechta) => {
     const next = new Set(selection);
     for (let d = 2; d <= m.pages + 1; d++) {
@@ -463,21 +505,31 @@ export function ShasBoard() {
         amud={a}
         reps={reps}
         isSel={isSel}
+        selectMode={selectMode}
         onIncrement={incrementReps}
         onDecrement={decrementReps}
-        onToggleSel={toggleSel}
+        onToggleSel={(mm, dd, aa, shift) => {
+          if (shift) rangeSel(m, dd, aa);
+          else toggleSel(mm, dd, aa);
+        }}
       />
     );
   };
 
   // ---- Bulk toolbar ----
-  const BulkBar = (
+  const BulkBar = selectMode ? (
     <Card className="sticky top-2 z-20 gold-frame p-3 flex flex-wrap items-center gap-2 bg-card/95 backdrop-blur">
       <Badge variant="outline" className="border-gold/60">
         נבחרו: {selection.size.toLocaleString("he-IL")}
       </Badge>
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground">ערך:</span>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => { bulkApply("set", 1); }} className="gap-1">
+        <Check className="h-3 w-3" /> סמן כלמד
+      </Button>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="gap-1 text-destructive">
+        <X className="h-3 w-3" /> סמן כלא נלמד
+      </Button>
+      <div className="flex items-center gap-1 border-r border-gold/30 pr-2 mr-1">
+        <span className="text-xs text-muted-foreground">חזרות:</span>
         <Button size="sm" variant="ghost" onClick={() => setDefaultReps((v) => Math.max(1, v - 1))}>
           <Minus className="h-3 w-3" />
         </Button>
@@ -487,7 +539,7 @@ export function ShasBoard() {
         </Button>
       </div>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("inc")}>
-        <Plus className="h-3 w-3 mr-1" /> +{defaultReps} חזרה
+        <Plus className="h-3 w-3 mr-1" /> +{defaultReps}
       </Button>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("dec")}>
         <Minus className="h-3 w-3 mr-1" /> -{defaultReps}
@@ -495,13 +547,32 @@ export function ShasBoard() {
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("set", defaultReps)}>
         קבע = {defaultReps}
       </Button>
-      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="text-destructive">
-        <RotateCcw className="h-3 w-3 mr-1" /> איפוס
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="text-destructive gap-1">
+        <RotateCcw className="h-3 w-3" /> איפוס
       </Button>
       <Button size="sm" variant="ghost" disabled={selection.size === 0} onClick={clearSel} className="mr-auto">
         נקה בחירה
       </Button>
     </Card>
+  ) : null;
+
+  // Toggle for select-mode
+  const SelectModeToggle = (
+    <Button
+      size="sm"
+      variant={selectMode ? "default" : "outline"}
+      onClick={() => {
+        setSelectMode((v) => {
+          if (v) { setSelection(new Set()); setLastSelKey(null); }
+          return !v;
+        });
+      }}
+      className={cn("gap-1", selectMode && "bg-gold text-primary-foreground hover:bg-gold/90")}
+      title="מצב בחירה מרובה"
+    >
+      <MousePointerClick className="h-4 w-4" />
+      {selectMode ? "יציאה מבחירה" : "מצב בחירה"}
+    </Button>
   );
 
   // ===== VIEW: Masechta detail =====
@@ -564,10 +635,13 @@ export function ShasBoard() {
           <Badge variant="outline" className="border-gold/60">{learned}/{total} עמודים ({pct}%)</Badge>
           <Badge variant="secondary">סך חזרות: {reps}</Badge>
           <div className="flex items-center gap-1 mr-auto">
-            <Button size="sm" variant="outline" onClick={() => allInMasechtaSelected(m) ? clearAllInMasechta(m) : selectAllInMasechta(m)}>
-              {allInMasechtaSelected(m) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-              <span className="mr-1">{allInMasechtaSelected(m) ? "נקה הכל" : "בחר הכל במסכת"}</span>
-            </Button>
+            {SelectModeToggle}
+            {selectMode && (
+              <Button size="sm" variant="outline" onClick={() => allInMasechtaSelected(m) ? clearAllInMasechta(m) : selectAllInMasechta(m)}>
+                {allInMasechtaSelected(m) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                <span className="mr-1">{allInMasechtaSelected(m) ? "נקה הכל" : "בחר הכל במסכת"}</span>
+              </Button>
+            )}
             {MasechtaLayoutMenu}
           </div>
           {ThemeControls}
@@ -587,20 +661,43 @@ export function ShasBoard() {
                 const ROW = masechtaDetailLayout === "compact" ? 42 : 28;
                 const rows: typeof allCells[] = [];
                 for (let i = 0; i < allCells.length; i += ROW) rows.push(allCells.slice(i, i + ROW));
-                return rows.map((row, idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "grid gap-2",
-                      masechtaDetailLayout === "compact"
-                        ? "grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-[repeat(18,minmax(0,1fr))]"
-                        : "grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14",
-                    )}
-                    style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
-                  >
-                    {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
-                  </div>
-                ));
+                return rows.map((row, idx) => {
+                  const rowKeys = row.map((c) => sKey(m.name, c.daf, c.a));
+                  const allInRow = rowKeys.every((k) => selection.has(k));
+                  const someInRow = !allInRow && rowKeys.some((k) => selection.has(k));
+                  return (
+                    <div key={idx} className="flex items-stretch gap-2">
+                      {selectMode && (
+                        <button
+                          type="button"
+                          onClick={() => toggleRowSel(row, m.name)}
+                          title="בחר שורה שלמה"
+                          className={cn(
+                            "shrink-0 h-11 w-8 rounded-md border-2 flex items-center justify-center transition-all",
+                            allInRow
+                              ? "bg-gold text-primary-foreground border-gold"
+                              : someInRow
+                                ? "bg-gold/20 border-gold/60 text-gold"
+                                : "bg-card border-gold/30 text-muted-foreground hover:border-gold hover:text-gold",
+                          )}
+                        >
+                          {allInRow ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                        </button>
+                      )}
+                      <div
+                        className={cn(
+                          "grid gap-2 flex-1",
+                          masechtaDetailLayout === "compact"
+                            ? "grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-[repeat(18,minmax(0,1fr))]"
+                            : "grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-14",
+                        )}
+                        style={{ contentVisibility: "auto", containIntrinsicSize: "auto 96px" } as React.CSSProperties}
+                      >
+                        {row.map(({ daf, a }) => renderAmudButton(m, daf, a))}
+                      </div>
+                    </div>
+                  );
+                });
               })()}
             </div>
           )}
@@ -622,19 +719,45 @@ export function ShasBoard() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {selectMode && <TableHead className="w-8" />}
                   <TableHead className="text-right">דף</TableHead>
                   <TableHead className="text-right">עמוד א</TableHead>
                   <TableHead className="text-right">עמוד ב</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {Array.from({ length: m.pages }, (_, i) => i + 2).map((d) => (
-                  <TableRow key={d}>
-                    <TableCell className="font-semibold">{heb(d)}</TableCell>
-                    <TableCell>{renderAmudButton(m, d, "a")}</TableCell>
-                    <TableCell>{renderAmudButton(m, d, "b")}</TableCell>
-                  </TableRow>
-                ))}
+                {Array.from({ length: m.pages }, (_, i) => i + 2).map((d) => {
+                  const rowCells: Array<{ daf: number; a: AmudKey }> = [{ daf: d, a: "a" }, { daf: d, a: "b" }];
+                  const rowKeys = rowCells.map((c) => sKey(m.name, c.daf, c.a));
+                  const allInRow = rowKeys.every((k) => selection.has(k));
+                  const someInRow = !allInRow && rowKeys.some((k) => selection.has(k));
+                  return (
+                    <TableRow key={d}>
+                      {selectMode && (
+                        <TableCell className="w-8 p-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleRowSel(rowCells, m.name)}
+                            title="בחר דף שלם"
+                            className={cn(
+                              "h-7 w-7 rounded-full border-2 flex items-center justify-center transition-all",
+                              allInRow
+                                ? "bg-gold text-primary-foreground border-gold"
+                                : someInRow
+                                  ? "bg-gold/20 border-gold/60 text-gold"
+                                  : "bg-card border-gold/30 text-muted-foreground hover:border-gold hover:text-gold",
+                            )}
+                          >
+                            {allInRow ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                          </button>
+                        </TableCell>
+                      )}
+                      <TableCell className="font-semibold">{heb(d)}</TableCell>
+                      <TableCell>{renderAmudButton(m, d, "a")}</TableCell>
+                      <TableCell>{renderAmudButton(m, d, "b")}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -1097,12 +1220,13 @@ type AmudButtonProps = {
   amud: AmudKey;
   reps: number;
   isSel: boolean;
+  selectMode: boolean;
   onIncrement: (m: string, daf: number, a: AmudKey) => void;
   onDecrement: (m: string, daf: number, a: AmudKey) => void;
-  onToggleSel: (m: string, daf: number, a: AmudKey) => void;
+  onToggleSel: (m: string, daf: number, a: AmudKey, shift: boolean) => void;
 };
 const AmudButton = memo(function AmudButton({
-  masechtaName, daf, amud, reps, isSel, onIncrement, onDecrement, onToggleSel,
+  masechtaName, daf, amud, reps, isSel, selectMode, onIncrement, onDecrement, onToggleSel,
 }: AmudButtonProps) {
   const learned = reps > 0;
   const clickTimerRef = useRef<number | null>(null);
@@ -1115,9 +1239,9 @@ const AmudButton = memo(function AmudButton({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (e.shiftKey) {
+    if (selectMode || e.shiftKey) {
       clearPendingClick();
-      onToggleSel(masechtaName, daf, amud);
+      onToggleSel(masechtaName, daf, amud, e.shiftKey);
       return;
     }
 
@@ -1131,12 +1255,14 @@ const AmudButton = memo(function AmudButton({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     clearPendingClick();
+    if (selectMode) return;
     onDecrement(masechtaName, daf, amud);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     clearPendingClick();
+    if (selectMode) return;
     onDecrement(masechtaName, daf, amud);
   };
 
@@ -1152,8 +1278,25 @@ const AmudButton = memo(function AmudButton({
           : "bg-card text-foreground border-gold/30 hover:border-gold hover:bg-secondary",
         isSel && "ring-2 ring-gold ring-offset-1 ring-offset-background",
       )}
-      title={`${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, דאבל-קליק: -1, שיפט+לחיצה: בחירה)`}
+      title={
+        selectMode
+          ? `${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — לחיצה: בחירה, Shift+לחיצה: טווח`
+          : `${masechtaName} ${heb(daf)} ${amud === "a" ? "ע״א" : "ע״ב"} — ${reps > 0 ? `נלמד ${reps}×` : "לא נלמד"} (לחיצה: +1, דאבל-קליק: -1, שיפט+לחיצה: בחירה)`
+      }
     >
+      {selectMode && (
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full flex items-center justify-center border transition-colors",
+            isSel
+              ? "bg-gold border-gold text-primary-foreground"
+              : learned ? "bg-primary/40 border-primary-foreground/60" : "bg-background/70 border-gold/50",
+          )}
+          aria-hidden="true"
+        >
+          {isSel && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+        </span>
+      )}
       <span className="text-[11px]">{heb(daf)}{amud === "a" ? "." : ":"}</span>
       {reps > 0 && (
         <span className={cn(
