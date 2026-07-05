@@ -31,6 +31,7 @@ import {
 import {
   ChevronLeft, BookOpen, Layers, Plus, Minus, RotateCcw,
   CheckSquare, Square, Sparkles, LayoutGrid, Rows3, Table2, List as ListIcon, Flag, Columns3, Palette, Pencil,
+  MousePointerClick, Circle, CheckCircle2, Check, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStudy } from "@/lib/study/store";
