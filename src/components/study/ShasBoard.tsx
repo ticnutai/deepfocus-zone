@@ -169,12 +169,13 @@ export function ShasBoard() {
       boardThemeMode,
       boardThemeId,
       boardLocalThemeIds,
+      selectMode,
     };
     const currentPrefs = (state.uiPrefs as any)?.shasBoardViewPrefs ?? {};
     if (JSON.stringify(currentPrefs) !== JSON.stringify(nextPrefs)) {
       setUiPref("shasBoardViewPrefs", nextPrefs as any);
     }
-  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, setUiPref, state.uiPrefs]);
+  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, selectMode, setUiPref, state.uiPrefs]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
