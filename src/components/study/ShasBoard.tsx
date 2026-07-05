@@ -522,29 +522,47 @@ export function ShasBoard() {
       <Badge variant="outline" className="border-gold/60">
         נבחרו: {selection.size.toLocaleString("he-IL")}
       </Badge>
+      {selection.size === 0 && (
+        <span className="text-xs text-muted-foreground">בחר עמודים כדי להפעיל פעולות ↓</span>
+      )}
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => { bulkApply("set", 1); }} className="gap-1">
         <Check className="h-3 w-3" /> סמן כלמד
       </Button>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="gap-1 text-destructive">
         <X className="h-3 w-3" /> סמן כלא נלמד
       </Button>
-      <div className="flex items-center gap-1 border-r border-gold/30 pr-2 mr-1">
-        <span className="text-xs text-muted-foreground">חזרות:</span>
-        <Button size="sm" variant="ghost" onClick={() => setDefaultReps((v) => Math.max(1, v - 1))}>
+      <div
+        className="flex items-center gap-0.5 border border-gold/40 rounded-md p-0.5 bg-background/60"
+        title="קבע כמה חזרות להוסיף/להחסיר בפעולה הבאה"
+      >
+        <span className="text-[11px] text-muted-foreground px-1">חזרות:</span>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={() => setDefaultReps((v) => Math.max(1, v - 1))}
+          title="הפחת ערך חזרות"
+        >
           <Minus className="h-3 w-3" />
         </Button>
-        <span className="font-bold text-gold min-w-[1.5rem] text-center">{defaultReps}</span>
-        <Button size="sm" variant="ghost" onClick={() => setDefaultReps((v) => v + 1)}>
+        <span className="font-bold text-gold min-w-[1.5rem] text-center text-sm">{defaultReps}</span>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={() => setDefaultReps((v) => v + 1)}
+          title="הגדל ערך חזרות"
+        >
           <Plus className="h-3 w-3" />
         </Button>
       </div>
-      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("inc")}>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("inc")} title="הוסף חזרות לעמודים הנבחרים">
         <Plus className="h-3 w-3 mr-1" /> +{defaultReps}
       </Button>
-      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("dec")}>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("dec")} title="הפחת חזרות מהעמודים הנבחרים">
         <Minus className="h-3 w-3 mr-1" /> -{defaultReps}
       </Button>
-      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("set", defaultReps)}>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("set", defaultReps)} title="קבע ערך חזרות מדויק">
         קבע = {defaultReps}
       </Button>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="text-destructive gap-1">
