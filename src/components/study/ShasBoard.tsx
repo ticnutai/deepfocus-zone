@@ -40,6 +40,7 @@ import { ShasPlanner, type ShasPlannerViewMode } from "./ShasPlanner";
 import { ShasCalendar, type ShasCalendarViewMode } from "./ShasCalendar";
 import { ThemeEditorDialog } from "@/components/ThemeSwitcher";
 import { useTheme, THEME_TOKEN_KEYS } from "@/theme/ThemeProvider";
+import { ShasExportDialog } from "./ShasExportDialog";
 
 // ===== Types & helpers =====
 type AmudKey = "a" | "b";
