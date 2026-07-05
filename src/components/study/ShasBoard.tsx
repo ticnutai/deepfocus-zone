@@ -383,6 +383,16 @@ export function ShasBoard() {
 
   const ThemeControls = (
     <div className="flex items-center gap-1">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 border border-gold/40 rounded-md text-muted-foreground hover:text-gold hover:bg-secondary"
+        onClick={() => setExportDialogOpen(true)}
+        title="הורדת לוח הש״ס (PDF / Word / Excel / CSV / JSON)"
+        aria-label="הורדת לוח הש״ס"
+      >
+        <Download className="h-4 w-4" />
+      </Button>
       {ThemeMenu}
     </div>
   );
