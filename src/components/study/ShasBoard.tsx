@@ -397,13 +397,22 @@ export function ShasBoard() {
     </div>
   );
 
-  const BoardThemeEditor = editingThemeId ? (
-    <ThemeEditorDialog
-      open={themeEditorOpen}
-      onOpenChange={setThemeEditorOpen}
-      themeId={editingThemeId}
-    />
-  ) : null;
+  const BoardThemeEditor = (
+    <>
+      {editingThemeId ? (
+        <ThemeEditorDialog
+          open={themeEditorOpen}
+          onOpenChange={setThemeEditorOpen}
+          themeId={editingThemeId}
+        />
+      ) : null}
+      <ShasExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        progress={progress}
+      />
+    </>
+  );
 
   // ----- Selection helpers -----
   const sKey = (m: string, daf: number, a: AmudKey) => `${m}:${daf}:${a}`;
