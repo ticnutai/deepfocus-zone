@@ -396,14 +396,52 @@ export function ShasBoard() {
   // ----- Selection helpers -----
   const sKey = (m: string, daf: number, a: AmudKey) => `${m}:${daf}:${a}`;
   const toggleSel = useCallback((m: string, daf: number, a: AmudKey) => {
+    const k = `${m}:${daf}:${a}`;
     setSelection((prev) => {
       const next = new Set(prev);
-      const k = `${m}:${daf}:${a}`;
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
+    setLastSelKey(k);
   }, []);
-  const clearSel = () => setSelection(new Set());
+  // Ordered amud keys of a masechta ("m:d:a", "m:d:b", ...)
+  const masechtaKeys = useCallback((m: Masechta) => {
+    const keys: string[] = [];
+    for (let d = 2; d <= m.pages + 1; d++) {
+      keys.push(sKey(m.name, d, "a"));
+      keys.push(sKey(m.name, d, "b"));
+    }
+    return keys;
+  }, []);
+  const rangeSel = useCallback((m: Masechta, daf: number, a: AmudKey) => {
+    const target = sKey(m.name, daf, a);
+    if (!lastSelKey || !lastSelKey.startsWith(`${m.name}:`)) {
+      toggleSel(m.name, daf, a);
+      return;
+    }
+    const keys = masechtaKeys(m);
+    const i1 = keys.indexOf(lastSelKey);
+    const i2 = keys.indexOf(target);
+    if (i1 < 0 || i2 < 0) { toggleSel(m.name, daf, a); return; }
+    const [lo, hi] = i1 < i2 ? [i1, i2] : [i2, i1];
+    setSelection((prev) => {
+      const next = new Set(prev);
+      for (let i = lo; i <= hi; i++) next.add(keys[i]);
+      return next;
+    });
+    setLastSelKey(target);
+  }, [lastSelKey, toggleSel, masechtaKeys]);
+  const toggleRowSel = useCallback((cells: Array<{ daf: number; a: AmudKey }>, mName: string) => {
+    const keys = cells.map((c) => sKey(mName, c.daf, c.a));
+    setSelection((prev) => {
+      const allIn = keys.every((k) => prev.has(k));
+      const next = new Set(prev);
+      if (allIn) keys.forEach((k) => next.delete(k));
+      else keys.forEach((k) => next.add(k));
+      return next;
+    });
+  }, []);
+  const clearSel = () => { setSelection(new Set()); setLastSelKey(null); };
   const selectAllInMasechta = (m: Masechta) => {
     const next = new Set(selection);
     for (let d = 2; d <= m.pages + 1; d++) {
