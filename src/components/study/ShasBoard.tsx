@@ -154,6 +154,7 @@ export function ShasBoard() {
   const [selectMode, setSelectMode] = useState<boolean>(viewPrefs.selectMode ?? false);
   const [lastSelKey, setLastSelKey] = useState<string | null>(null);
   const [defaultReps, setDefaultReps] = useState<number>(1); // increment value for "סמן +N"
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   useEffect(() => { document.title = "לוח ש\"ס | מעקב למידה"; }, []);
 
