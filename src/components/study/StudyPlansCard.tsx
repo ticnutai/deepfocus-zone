@@ -2704,7 +2704,7 @@ export function StudyPlansCard({
         <div className={cn(
           planView === "grid2" && "grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch",
           planView === "grid3" && "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch",
-          planView === "compact" ? "space-y-2" : "space-y-3",
+          planView === "compact" && "space-y-2",
           planView !== "grid2" && planView !== "grid3" && "space-y-3",
         )}>
           {contextActivePlans.map((plan) => {
@@ -2740,7 +2740,7 @@ export function StudyPlansCard({
               <div
                 key={plan.id}
                 className={cn(
-                  "group rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
+                  "study-plan-card rounded-xl border-2 p-3 space-y-2.5 cursor-pointer transition-colors",
                   (planView === "grid2" || planView === "grid3") && "h-full flex flex-col",
                   isDarkCard
                     ? "border-gold/80 bg-gradient-to-br from-[hsl(var(--navy))] to-[hsl(var(--navy-soft))] text-primary-foreground hover:border-gold [&_.text-muted-foreground]:!text-primary-foreground/85 [&_.text-foreground]:!text-primary-foreground [&_.text-navy]:!text-primary-foreground [&_.hover\\:text-navy:hover]:!text-gold [&_.border-gold\\/15]:!border-white/25 [&_.border-gold\\/10]:!border-white/20"
@@ -2771,7 +2771,7 @@ export function StudyPlansCard({
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div className="study-plan-card-actions flex items-center gap-1 opacity-0 focus-within:opacity-100 transition-opacity">
                       {dueReviewsCount > 0 && (
                         <button
                           onClick={() => setQuickReviewPlanId(plan.id)}

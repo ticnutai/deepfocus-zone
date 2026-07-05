@@ -332,6 +332,10 @@
     filter: drop-shadow(0 0 0.5px hsl(var(--background) / 0.9));
   }
 
+  .study-plan-card:hover .study-plan-card-actions {
+    opacity: 1;
+  }
+
   /* Smooth theme interpolation for ShasBoard premium palettes */
   .shas-theme-shell,
   .shas-theme-shell .gold-frame,
