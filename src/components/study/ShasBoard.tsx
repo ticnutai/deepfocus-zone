@@ -505,21 +505,31 @@ export function ShasBoard() {
         amud={a}
         reps={reps}
         isSel={isSel}
+        selectMode={selectMode}
         onIncrement={incrementReps}
         onDecrement={decrementReps}
-        onToggleSel={toggleSel}
+        onToggleSel={(mm, dd, aa, shift) => {
+          if (shift) rangeSel(m, dd, aa);
+          else toggleSel(mm, dd, aa);
+        }}
       />
     );
   };
 
   // ---- Bulk toolbar ----
-  const BulkBar = (
+  const BulkBar = selectMode ? (
     <Card className="sticky top-2 z-20 gold-frame p-3 flex flex-wrap items-center gap-2 bg-card/95 backdrop-blur">
       <Badge variant="outline" className="border-gold/60">
         נבחרו: {selection.size.toLocaleString("he-IL")}
       </Badge>
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground">ערך:</span>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => { bulkApply("set", 1); }} className="gap-1">
+        <Check className="h-3 w-3" /> סמן כלמד
+      </Button>
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="gap-1 text-destructive">
+        <X className="h-3 w-3" /> סמן כלא נלמד
+      </Button>
+      <div className="flex items-center gap-1 border-r border-gold/30 pr-2 mr-1">
+        <span className="text-xs text-muted-foreground">חזרות:</span>
         <Button size="sm" variant="ghost" onClick={() => setDefaultReps((v) => Math.max(1, v - 1))}>
           <Minus className="h-3 w-3" />
         </Button>
@@ -529,7 +539,7 @@ export function ShasBoard() {
         </Button>
       </div>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("inc")}>
-        <Plus className="h-3 w-3 mr-1" /> +{defaultReps} חזרה
+        <Plus className="h-3 w-3 mr-1" /> +{defaultReps}
       </Button>
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("dec")}>
         <Minus className="h-3 w-3 mr-1" /> -{defaultReps}
@@ -537,13 +547,32 @@ export function ShasBoard() {
       <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("set", defaultReps)}>
         קבע = {defaultReps}
       </Button>
-      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="text-destructive">
-        <RotateCcw className="h-3 w-3 mr-1" /> איפוס
+      <Button size="sm" variant="outline" disabled={selection.size === 0} onClick={() => bulkApply("reset")} className="text-destructive gap-1">
+        <RotateCcw className="h-3 w-3" /> איפוס
       </Button>
       <Button size="sm" variant="ghost" disabled={selection.size === 0} onClick={clearSel} className="mr-auto">
         נקה בחירה
       </Button>
     </Card>
+  ) : null;
+
+  // Toggle for select-mode
+  const SelectModeToggle = (
+    <Button
+      size="sm"
+      variant={selectMode ? "default" : "outline"}
+      onClick={() => {
+        setSelectMode((v) => {
+          if (v) { setSelection(new Set()); setLastSelKey(null); }
+          return !v;
+        });
+      }}
+      className={cn("gap-1", selectMode && "bg-gold text-primary-foreground hover:bg-gold/90")}
+      title="מצב בחירה מרובה"
+    >
+      <MousePointerClick className="h-4 w-4" />
+      {selectMode ? "יציאה מבחירה" : "מצב בחירה"}
+    </Button>
   );
 
   // ===== VIEW: Masechta detail =====
