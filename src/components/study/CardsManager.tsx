@@ -923,15 +923,25 @@ function CardsManager() {
                         deckId={deck.id}
                         isActive={isActive}
                         isDraggingCard={!!draggedCardId}
-                        onClick={() => startDeckPractice(deck.id)}
+                        onClick={() => setActiveDeckId(deck.id)}
                       >
                 <div className="flex flex-col items-center text-center gap-2 w-full h-full min-w-0">
-                          <span className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-full border-2",
-                            isActive ? "border-gold bg-card/10 text-gold" : "border-gold/70 bg-card text-navy",
-                          )}>
-                            <BookOpen className="h-5 w-5" />
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startDeckPractice(deck.id);
+                            }}
+                            title={`התחל תרגול: ${deck.name}`}
+                            aria-label={`התחל תרגול: ${deck.name}`}
+                            className={cn(
+                              "group/practice flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-gold shadow-sm transition-all hover:scale-105 hover:bg-gold hover:text-navy hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2",
+                              isActive ? "bg-card/10 text-gold" : "bg-gold/10 text-navy",
+                            )}
+                          >
+                            <BookOpen className="h-6 w-6 group-hover/practice:hidden group-focus-visible/practice:hidden" />
+                            <Play className="hidden h-6 w-6 fill-current group-hover/practice:block group-focus-visible/practice:block" />
+                          </button>
                           <div className="font-medium text-xs leading-tight line-clamp-2 min-h-[2.4em] flex items-center justify-center break-words w-full">
                             {deck.name}
                           </div>
@@ -1010,10 +1020,25 @@ function CardsManager() {
                         deckId={deck.id}
                         isActive={isActive}
                         isDraggingCard={!!draggedCardId}
-                        onClick={() => startDeckPractice(deck.id)}
+                        onClick={() => setActiveDeckId(deck.id)}
                       >
                         <div className="flex items-center gap-2 w-full">
-                          <BookOpen className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-gold" : "text-navy")} />
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startDeckPractice(deck.id);
+                            }}
+                            title={`התחל תרגול: ${deck.name}`}
+                            aria-label={`התחל תרגול: ${deck.name}`}
+                            className={cn(
+                              "group/practice flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold transition-all hover:bg-gold hover:text-navy",
+                              isActive ? "text-gold" : "bg-gold/10 text-navy",
+                            )}
+                          >
+                            <BookOpen className="h-3.5 w-3.5 group-hover/practice:hidden" />
+                            <Play className="hidden h-3.5 w-3.5 fill-current group-hover/practice:block" />
+                          </button>
                           <span className="text-xs font-medium truncate flex-1 text-right">{deck.name}</span>
                           <span className={cn("text-[10px] shrink-0", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
                             {deckStats.size}/{deckStats.due}
@@ -1058,13 +1083,25 @@ function CardsManager() {
                       deckId={deck.id}
                       isActive={isActive}
                       isDraggingCard={!!draggedCardId}
-                      onClick={() => startDeckPractice(deck.id)}
+                      onClick={() => setActiveDeckId(deck.id)}
                     >
                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
-                          isActive ? "border-gold bg-card/10 text-gold" : "border-gold/70 bg-card text-navy")}>
-                          <BookOpen className="h-4 w-4" />
-                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            startDeckPractice(deck.id);
+                          }}
+                          title={`התחל תרגול: ${deck.name}`}
+                          aria-label={`התחל תרגול: ${deck.name}`}
+                          className={cn(
+                            "group/practice flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold transition-all hover:scale-105 hover:bg-gold hover:text-navy",
+                            isActive ? "bg-card/10 text-gold" : "bg-gold/10 text-navy",
+                          )}
+                        >
+                          <BookOpen className="h-4 w-4 group-hover/practice:hidden" />
+                          <Play className="hidden h-4 w-4 fill-current group-hover/practice:block" />
+                        </button>
                         <div className="text-right min-w-0 flex-1">
                           <div className="font-medium text-sm truncate">{deck.name}</div>
                           <div className={cn("text-xs truncate", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
