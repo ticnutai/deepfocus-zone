@@ -26,6 +26,7 @@ import {
   type LayoutScope,
 } from "./layoutProfiles";
 import { supabase } from "@/integrations/supabase/client";
+import { loadBundledOfflineLibrary } from "./offlineLibrary";
 
 /** Active guest profile's pinned source user id, or null to use the global guest_source. */
 const getActiveGuestSourceUserId = (): string | null => {
@@ -130,8 +131,9 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
   const stateHasData = hasMeaningfulStudyData(state);
   const stateIsUsable = isStudyStateStructurallyUsable(state);
   const seedAppliedKey = GUEST_PROFILE_SEED_APPLIED_KEY(activeProfile.id);
-  const seedWasApplied = localStorage.getItem(seedAppliedKey) === "1";
-  if (stateHasData && stateIsUsable) return state;
+  const seedVersion = String(seed.seededAt);
+  const seedWasApplied = localStorage.getItem(seedAppliedKey) === seedVersion;
+  if (seedWasApplied && stateHasData && stateIsUsable) return state;
   if (seedWasApplied && stateHasData && !stateIsUsable) {
     return clearStudyDataCollections(state);
   }
@@ -140,15 +142,28 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
     return stateHasData && !stateIsUsable ? clearStudyDataCollections(state) : state;
   }
 
+  // Bundle data is the baseline; local rows win so offline learning progress
+  // and locally-created questions survive future library updates.
+  const mergeById = <T extends { id: string }>(baseline: T[], local: T[]): T[] => {
+    const merged = new Map<string, T>();
+    for (const item of baseline) merged.set(item.id, item);
+    for (const item of local) merged.set(item.id, item);
+    return [...merged.values()];
+  };
+  const linkKey = (link: { cardId: string; deckId: string }) => `${link.cardId}::${link.deckId}`;
+  const cardDeckMap = new Map<string, NonNullable<StudyState["cardDecks"]>[number]>();
+  for (const link of seed.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
+  for (const link of state.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
+
   const seededState = applyBidirectionalDedupeGuards({
     ...state,
-    categories: Array.isArray(seed.categories) ? seed.categories : [],
-    decks: Array.isArray(seed.decks) ? seed.decks : [],
-    cards: Array.isArray(seed.cards) ? seed.cards : [],
-    cardDecks: Array.isArray(seed.cardDecks) ? seed.cardDecks : [],
+    categories: mergeById(Array.isArray(seed.categories) ? seed.categories : [], state.categories ?? []),
+    decks: mergeById(Array.isArray(seed.decks) ? seed.decks : [], state.decks ?? []),
+    cards: mergeById(Array.isArray(seed.cards) ? seed.cards : [], state.cards ?? []),
+    cardDecks: [...cardDeckMap.values()],
     deckCategories:
       seed.deckCategories && typeof seed.deckCategories === "object" && !Array.isArray(seed.deckCategories)
-        ? seed.deckCategories
+        ? { ...seed.deckCategories, ...(state.deckCategories ?? {}) }
         : (state.deckCategories ?? {}),
   });
 
@@ -157,12 +172,43 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
   }
 
   try {
-    localStorage.setItem(seedAppliedKey, "1");
+    localStorage.setItem(seedAppliedKey, seedVersion);
   } catch {
     // ignore storage errors
   }
   return seededState;
 };
+
+async function applyBundledLibraryToAuthenticatedState(state: StudyState): Promise<StudyState> {
+  const library = await loadBundledOfflineLibrary();
+  const seed = library?.seed;
+  if (!seed || !isGuestStudySeedStructurallyUsable(seed)) return state;
+
+  const mergeById = <T extends { id: string }>(baseline: T[], local: T[]): T[] => {
+    const merged = new Map<string, T>();
+    for (const item of baseline) merged.set(item.id, item);
+    for (const item of local) merged.set(item.id, item);
+    return [...merged.values()];
+  };
+  for (const category of seed.categories) sourceOwnedCategoryIds.add(category.id);
+  for (const deck of seed.decks) sourceOwnedDeckIds.add(deck.id);
+  for (const card of seed.cards) sourceOwnedCardIds.add(card.id);
+  sourceOverlaySourceUserId = library.sourceUserId;
+
+  const cardDeckMap = new Map<string, NonNullable<StudyState["cardDecks"]>[number]>();
+  const linkKey = (link: { cardId: string; deckId: string }) => `${link.cardId}::${link.deckId}`;
+  for (const link of seed.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
+  for (const link of state.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
+
+  return applyBidirectionalDedupeGuards({
+    ...state,
+    categories: mergeById(seed.categories, state.categories ?? []),
+    decks: mergeById(seed.decks, state.decks ?? []),
+    cards: mergeById(seed.cards, state.cards ?? []),
+    cardDecks: [...cardDeckMap.values()],
+    deckCategories: { ...(seed.deckCategories ?? {}), ...(state.deckCategories ?? {}) },
+  });
+}
 
 function runWhenBrowserIdle(fn: () => void, timeout = 1500): void {
   const ric = (window as typeof window & {
@@ -2357,6 +2403,7 @@ async function hydrateGuestFromCloud(): Promise<void> {
  */
 async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
   if (uid === GUEST_ID || !uid) return;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
   if (sourceOverlayHydrateInFlight) return;
   if (sourceOverlayHydratedFor === uid) return;
   sourceOverlayHydrateInFlight = true;
@@ -2438,6 +2485,7 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
     sourceOverlayHydratedFor = uid;
     sourceOverlaySourceUserId = typeof payload.source_user_id === "string" ? payload.source_user_id : null;
     void ccR; // card_categories not directly used yet
+    await saveStudyStateCache(uid, memState);
     requestStoreNotify();
   } finally {
     sourceOverlayHydrateInFlight = false;
@@ -2465,6 +2513,7 @@ async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<
     offset += PAGE;
     if (rows.length < PAGE) break;
   }
+  if (currentUserId === uid) await saveStudyStateCache(uid, memState);
 }
 
 
@@ -2563,7 +2612,10 @@ export function useStudy() {
       try {
         perf.log("store:hydrate.start", `user=${uid}`, "store", hydrateTraceId);
 
-        const needsHardReset = localStorage.getItem(BROWSER_CACHE_RESET_KEY) !== "1";
+        const isCurrentlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
+        // Never destroy a usable IndexedDB snapshot while there is no network
+        // available to rebuild it.
+        const needsHardReset = !isCurrentlyOffline && localStorage.getItem(BROWSER_CACHE_RESET_KEY) !== "1";
         if (needsHardReset) {
           const stopReset = perf.startTimer("store:hydrate.hard_reset", "store", hydrateTraceId);
           await clearLegacyBrowserCachesForUser(uid);
@@ -2625,6 +2677,15 @@ export function useStudy() {
           perf.log("store:hydrate.cache_applied", "indexeddb snapshot applied", "store", hydrateTraceId);
           // Source overlay: fetch in parallel with cloud refresh.
           void hydrateSourceOverlayForAuthUser(uid).catch((e) => console.warn("[source-overlay]", e));
+        }
+
+        if (isCurrentlyOffline) {
+          memState = await applyBundledLibraryToAuthenticatedState(memState);
+          isHydrated = true;
+          await saveStudyStateCache(uid, memState);
+          notify();
+          perf.log("store:hydrate.done", "offline cache + bundled library applied", "store", hydrateTraceId);
+          return;
         }
 
         if (hasCache) {
@@ -2856,6 +2917,9 @@ export function useStudy() {
       }
       void runPendingCloudSync(uid);
       void flushPendingDeletes(uid);
+      void hydrateSourceOverlayForAuthUser(uid)
+        .then(() => saveStudyStateCache(uid, memState))
+        .catch((error) => console.warn("[source-overlay] reconnect refresh failed", error));
     };
     window.addEventListener("online", onOnline);
     return () => {

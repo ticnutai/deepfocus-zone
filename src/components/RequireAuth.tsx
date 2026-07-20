@@ -34,7 +34,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     if (fetchingFor.current === user.id) return; // already in-flight
     fetchingFor.current = user.id;
     if (!cached) setStatusLoading(true);
-    supabase.from("profiles").select("status").eq("id", user.id).maybeSingle()
+    Promise.resolve(supabase.from("profiles").select("status").eq("id", user.id).maybeSingle())
       .then(({ data }) => {
         const s = data?.status ?? "approved";
         profileStatusCache.set(user.id, s);

@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, Eye, EyeOff, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +19,7 @@ import {
   saveGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
+import { loadBundledOfflineLibrary } from "@/lib/study/offlineLibrary";
 
 const LOCAL_OFFLINE_PROFILE_ID = "local-offline";
 const LOCAL_OFFLINE_MATRIX = Object.fromEntries(
@@ -28,10 +28,12 @@ const LOCAL_OFFLINE_MATRIX = Object.fromEntries(
   ),
 );
 
-function ensureLocalOfflineProfile(): GuestViewProfile {
+async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
   const existing = listGuestViewProfiles().find((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID);
-  if (existing) return existing;
+  const bundledLibrary = await loadBundledOfflineLibrary();
+  if (existing?.studySeed?.seededAt === bundledLibrary?.seed.seededAt) return existing;
   return saveGuestViewProfile({
+    ...existing,
     id: LOCAL_OFFLINE_PROFILE_ID,
     label: "עבודה מקומית (אופליין)",
     // Local mode can fully operate on study data, but intentionally receives
@@ -39,6 +41,7 @@ function ensureLocalOfflineProfile(): GuestViewProfile {
     isAdmin: false,
     roles: [{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }],
     matrix: LOCAL_OFFLINE_MATRIX,
+    studySeed: bundledLibrary?.seed,
   });
 }
 
@@ -59,12 +62,12 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [guestProfiles, setGuestProfiles] = useState<GuestViewProfile[]>([]);
-  const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(null);
   const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
+  const [offlineLibraryCount, setOfflineLibraryCount] = useState<number | null>(null);
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
 
@@ -85,30 +88,44 @@ export default function Auth() {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
+      let localOfflineProfile = await ensureLocalOfflineProfile();
+      setOfflineLibraryCount(localOfflineProfile.studySeed?.cards.length ?? 0);
+      // Make offline entry available immediately. Cloud profile discovery may
+      // replace this selection later when connectivity is available.
+      setSelectedGuestProfileId(localOfflineProfile.id);
       try {
         const { profiles, defaultProfileId } = await hydrateGuestProfilesFromSiteSettings();
         if (cancelled) return;
+        // Cloud profile hydration replaces the lightweight local catalogue.
+        // Re-register the bundled profile so its in-memory seed remains selectable.
+        localOfflineProfile = await ensureLocalOfflineProfile();
         const effectiveProfiles = profiles.length > 0 ? profiles : listGuestViewProfiles();
+        if (!effectiveProfiles.some((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID)) {
+          effectiveProfiles.push(localOfflineProfile);
+        }
         const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
-        if (effectiveProfiles.length === 0) effectiveProfiles.push(ensureLocalOfflineProfile());
-        const hasActive = !!activeId && effectiveProfiles.some((p) => p.id === activeId);
-        const chosen = hasActive
+        const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+        const hasActive = !isOffline && !!activeId && effectiveProfiles.some((p) => p.id === activeId);
+        const chosen = isOffline
+          ? localOfflineProfile
+          : hasActive
           ? (effectiveProfiles.find((p) => p.id === activeId) ?? effectiveProfiles[0])
           : effectiveProfiles[0];
-        setGuestProfiles(effectiveProfiles);
         setSelectedGuestProfileId(chosen.id);
-        setGuestProfile(chosen);
       } catch {
         const fallbackProfiles = listGuestViewProfiles();
+        if (!fallbackProfiles.some((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID)) {
+          fallbackProfiles.push(localOfflineProfile);
+        }
         const activeId = getActiveGuestViewProfileId();
-        if (fallbackProfiles.length === 0) fallbackProfiles.push(ensureLocalOfflineProfile());
-        const hasActive = !!activeId && fallbackProfiles.some((p) => p.id === activeId);
-        const chosen = hasActive
+        const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+        const hasActive = !isOffline && !!activeId && fallbackProfiles.some((p) => p.id === activeId);
+        const chosen = isOffline
+          ? localOfflineProfile
+          : hasActive
           ? (fallbackProfiles.find((p) => p.id === activeId) ?? fallbackProfiles[0])
           : fallbackProfiles[0];
-        setGuestProfiles(fallbackProfiles);
         setSelectedGuestProfileId(chosen.id);
-        setGuestProfile(chosen);
       }
     };
     void run();
@@ -128,6 +145,10 @@ export default function Auth() {
   };
 
   const signIn = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("אין חיבור לאינטרנט. התחברות ראשונה לחשבון דורשת רשת; אפשר להיכנס כעת למצב האופליין.");
+      return;
+    }
     setBusy(true);
     void import("./Index");
     let loginEmail = email.trim();
@@ -150,12 +171,21 @@ export default function Auth() {
   };
 
   const signUp = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("הרשמה חדשה דורשת חיבור לאינטרנט. מצב האופליין זמין מיד ואינו דורש הרשמה.");
+      return;
+    }
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9_.]{3,}$/.test(cleanUsername)) {
+      toast.error("שם המשתמש חייב להכיל לפחות 3 תווים באנגלית, מספרים, נקודה או קו תחתון.");
+      return;
+    }
     setBusy(true);
     const { data, error } = await supabase.auth.signUp({
       email, password,
       options: {
         emailRedirectTo: `${REDIRECT_ORIGIN}/`,
-        data: { display_name: name || email.split("@")[0] },
+        data: { display_name: name || cleanUsername, username: cleanUsername },
       },
     });
     setBusy(false);
@@ -215,6 +245,7 @@ export default function Auth() {
 
           <TabsContent value="signup" className="space-y-3 mt-4">
             <Input placeholder="שם תצוגה" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input dir="ltr" placeholder="username (שם משתמש)" value={username} onChange={(e) => setUsername(e.target.value)} />
             <Input dir="ltr" placeholder="email@example.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             <PasswordField value={password} onChange={setPassword} show={showPwd} onToggle={() => setShowPwd((v) => !v)} placeholder="סיסמה (לפחות 6 תווים)" />
             <div className="flex items-center gap-2">
@@ -256,10 +287,12 @@ export default function Auth() {
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />
-          כניסה כאורח
+          כניסה למצב אופליין
         </Button>
         <p className="text-xs text-muted-foreground text-center">
-          מצב אורח שומר נתונים רק על המכשיר הזה, ללא סנכרון. פרופילי אורח נוצרים ממסך ניהול תפקידים.
+          {offlineLibraryCount && offlineLibraryCount > 0
+            ? `כולל ${offlineLibraryCount.toLocaleString("he-IL")} שאלות מובנות. ההתקדמות נשמרת במחשב ללא צורך באינטרנט.`
+            : "ההתקדמות נשמרת במחשב הזה ללא צורך באינטרנט."}
         </p>
       </Card>
     </div>

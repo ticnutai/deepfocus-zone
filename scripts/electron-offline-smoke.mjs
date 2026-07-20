@@ -50,18 +50,26 @@ const authState = await send("Runtime.evaluate", {
     href: location.href,
     rootChildren: document.querySelector('#root')?.childElementCount ?? 0,
     text: document.body.innerText.slice(0, 2000),
-    buttons: [...document.querySelectorAll('button')].map((b) => b.innerText.trim())
+    buttons: [...document.querySelectorAll('button')].map((b) => ({
+      label: b.innerText.trim(),
+      disabled: b.disabled
+    }))
   }))()`,
   returnByValue: true,
 });
 const auth = authState.result.value;
 if (!auth.rootChildren) throw new Error("Offline reload rendered an empty root");
 
-const guestButton = auth.buttons.find((label) => label.includes("כניסה כאורח"));
+if (!auth.text.includes("22,699")) {
+  throw new Error("Bundled offline question count is not visible on the auth screen");
+}
+
+const guestButton = auth.buttons.find(({ label }) => label.includes("כניסה למצב אופליין"));
 if (guestButton) {
+  if (guestButton.disabled) throw new Error("Offline mode button is disabled");
   await send("Runtime.evaluate", {
     expression: `(() => {
-      const button = [...document.querySelectorAll('button')].find((b) => b.innerText.includes('כניסה כאורח'));
+      const button = [...document.querySelectorAll('button')].find((b) => b.innerText.includes('כניסה למצב אופליין'));
       if (!button || button.disabled) return false;
       button.click();
       return true;
@@ -69,6 +77,8 @@ if (guestButton) {
     returnByValue: true,
   });
   await new Promise((resolve) => setTimeout(resolve, 4000));
+} else {
+  throw new Error("Offline mode button was not rendered");
 }
 
 const finalState = await send("Runtime.evaluate", {

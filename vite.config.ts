@@ -29,7 +29,9 @@ export default defineConfig(({ mode }) => ({
         navigateFallbackDenylist: [/^\/~oauth/, /^\/api\//],
         globPatterns: ["**/*.{js,css,html,woff2,svg,png,ico,json}"],
         globIgnores: ["**/data/reports/full_shas_qna_report.json"],
-        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        // Includes the generated shared question library so the installed PWA
+        // can start from a completely cold cache without a network connection.
+        maximumFileSizeToCacheInBytes: 80 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
