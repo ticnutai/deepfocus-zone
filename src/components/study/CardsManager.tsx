@@ -400,6 +400,28 @@ function CardsManager() {
     return stats;
   }, [state.decks, getCardsForDeck]);
 
+  const startDeckPractice = (deckId: string) => {
+    const deck = state.decks.find((candidate) => candidate.id === deckId);
+    if (!deck) return;
+
+    const cards = getCardsForDeck(deck);
+    setActiveDeckId(deckId);
+
+    if (cards.length === 0) {
+      toast({
+        title: "אין שאלות לתרגול",
+        description: `במערכת "${deck.name}" עדיין אין שאלות.`,
+      });
+      return;
+    }
+
+    setSession({
+      deckId,
+      mode: "practice",
+      cardIds: cards.map((card) => card.id),
+    });
+  };
+
   // Sorted decks for display
   const sortedDecks = useMemo(() => {
     if (deckSort === "manual") return state.decks;
@@ -900,7 +922,7 @@ function CardsManager() {
                         deckId={deck.id}
                         isActive={isActive}
                         isDraggingCard={!!draggedCardId}
-                        onClick={() => setActiveDeckId(deck.id)}
+                        onClick={() => startDeckPractice(deck.id)}
                       >
                 <div className="flex flex-col items-center text-center gap-2 w-full h-full min-w-0">
                           <span className={cn(
@@ -987,7 +1009,7 @@ function CardsManager() {
                         deckId={deck.id}
                         isActive={isActive}
                         isDraggingCard={!!draggedCardId}
-                        onClick={() => setActiveDeckId(deck.id)}
+                        onClick={() => startDeckPractice(deck.id)}
                       >
                         <div className="flex items-center gap-2 w-full">
                           <BookOpen className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-gold" : "text-navy")} />
@@ -1035,7 +1057,7 @@ function CardsManager() {
                       deckId={deck.id}
                       isActive={isActive}
                       isDraggingCard={!!draggedCardId}
-                      onClick={() => setActiveDeckId(deck.id)}
+                      onClick={() => startDeckPractice(deck.id)}
                     >
                        <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
