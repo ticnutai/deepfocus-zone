@@ -183,56 +183,27 @@ function buildShasHierarchyChips(card: Pick<StudyCardType, "masechta" | "daf" | 
 
 function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [booting, setBooting] = useState(false);
-
-  useEffect(() => {
-    console.debug("[DECK-CREATE] state", { open, booting });
-  }, [open, booting]);
-
-  useEffect(() => {
-    if (open) setBooting(false);
-  }, [open]);
-
-  const openDialog = () => {
-    console.debug("[DECK-CREATE] openDialog:buttonClick");
-    setBooting(true);
-    window.setTimeout(() => setOpen(true), 0);
-  };
 
   return (
     <>
       <Button
         type="button"
-        onClick={openDialog}
+        onClick={() => setOpen(true)}
         className="bg-gradient-navy text-primary-foreground rounded-xl flex-1 gap-2"
-        title="הוסף מערכת חדשה"
+        title="יצירת מערכת מבחן"
       >
         <Plus className="h-4 w-4" />
-        מערכת חדשה
+        יצירת מערכת מבחן
       </Button>
 
-      <Dialog open={booting && !open} onOpenChange={(o) => { if (!o) setBooting(false); }} modal={false}>
-        <DialogContent showOverlay={false} trapFocus={false} disableOutsidePointerEvents={false} className="max-w-sm" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="text-right">טוען מערכת חדשה...</DialogTitle>
-          </DialogHeader>
-          <div className="text-sm text-muted-foreground text-right">מכין את חלון הסיווג</div>
-        </DialogContent>
-      </Dialog>
-
-      {open && (
-        <DeckCreateDialog
-          open={open}
-          onOpenChange={(next) => {
-            console.debug("[DECK-CREATE] onOpenChange", { next });
-            setOpen(next);
-          }}
-          onCreated={(id) => {
-            onCreated(id);
-            toast({ title: "המערכת נוספה" });
-          }}
-        />
-      )}
+      <DeckCreateDialog
+        open={open}
+        onOpenChange={setOpen}
+        onCreated={(id) => {
+          onCreated(id);
+          toast({ title: "המערכת נוספה" });
+        }}
+      />
     </>
   );
 }
@@ -274,6 +245,7 @@ function CardsManager() {
     const syncedPref = state.uiPrefs?.cardsDeckView;
     if ((syncedPref === "grid" || syncedPref === "compact" || syncedPref === "list") && syncedPref !== deckView) {
       setDeckView(syncedPref);
+      try { localStorage.setItem(DECK_VIEW_KEY, syncedPref); } catch { /* storage unavailable */ }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.uiPrefs?.cardsDeckView]);

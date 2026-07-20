@@ -34,7 +34,7 @@ export function ApprovalTab() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [{ data: p }, { data: ae }] = await Promise.all([
+    const [{ data: p, error: pendingError }, { data: ae, error: emailsError }] = await Promise.all([
       supabase
         .from("profiles")
         .select("id, display_name, email, created_at, status")
@@ -45,18 +45,41 @@ export function ApprovalTab() {
         .select("id, email, note, created_at")
         .order("created_at", { ascending: false }),
     ]);
+    if (pendingError || emailsError) {
+      toast.error(pendingError?.message ?? emailsError?.message ?? "טעינת האישורים נכשלה");
+      return;
+    }
     setPending((p ?? []) as PendingProfile[]);
     setApprovedEmails((ae ?? []) as ApprovedEmail[]);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void load();
+    const channel = supabase
+      .channel("admin-pending-approvals")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void load())
+      .subscribe();
+    const pollId = window.setInterval(() => void load(), 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(pollId);
+      document.removeEventListener("visibilitychange", onVisible);
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   const setStatus = async (id: string, status: "approved" | "blocked") => {
     setBusy(true);
-    const { error } = await supabase.from("profiles").update({ status }).eq("id", id);
+    const { error } = await supabase.rpc("admin_set_profile_status", {
+      p_user_id: id,
+      p_status: status,
+    });
     setBusy(false);
     if (error) return toast.error(error.message);
-    toast.success(status === "approved" ? "החשבון אושר" : "החשבון נחסם");
+    toast.success(status === "approved" ? "החשבון והמייל אושרו — המשתמש יכול להתחבר" : "החשבון נחסם");
     load();
   };
 

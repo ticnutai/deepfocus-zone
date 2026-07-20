@@ -33,7 +33,7 @@ function addDays(d: Date, n: number) { const o = new Date(d); o.setDate(o.getDat
 
 export function ShasCalendar({ viewMode = "month" }: { viewMode?: ShasCalendarViewMode }) {
   const { state } = useStudy();
-  const uiPrefs = state.uiPrefs as any;
+  const uiPrefs = state.uiPrefs;
   const progress = useMemo(
     () => (uiPrefs?.shasBoardProgress ?? {}) as Record<string, Record<number, { a?: number; b?: number }>>,
     [uiPrefs?.shasBoardProgress],
@@ -63,7 +63,8 @@ export function ShasCalendar({ viewMode = "month" }: { viewMode?: ShasCalendarVi
 
   const toggleInSet = (s: Set<string>, val: string) => {
     const next = new Set(s);
-    next.has(val) ? next.delete(val) : next.add(val);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
     return next;
   };
 

@@ -263,9 +263,10 @@ function StyleEditor({ style, onChange }: { style: Style; onChange: (s: Style) =
 function FloatingLine({
   line, layoutMode, isAdmin, onMove,
 }: { line: Line; layoutMode: boolean; isAdmin: boolean; onMove: (x: number, y: number) => void }) {
-  if (line.position.kind !== "floating") return null;
   const ref = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  if (line.position.kind !== "floating") return null;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!layoutMode) return;

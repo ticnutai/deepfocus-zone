@@ -26,9 +26,9 @@ function fmtNum(n: number) { return n.toLocaleString("he-IL"); }
 
 export function ShasPlanner({ viewMode = "rich" }: { viewMode?: ShasPlannerViewMode }) {
   const { state, setUiPref } = useStudy();
-  const progress = ((state.uiPrefs as any)?.shasBoardProgress ?? {}) as Record<string, Record<number, { a?: number; b?: number }>>;
-  const log = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
-  const customTarget = (state.uiPrefs as any)?.shasBoardDailyTarget as number | undefined;
+  const progress = state.uiPrefs.shasBoardProgress ?? {};
+  const log = state.uiPrefs.shasBoardLog ?? {};
+  const customTarget = state.uiPrefs.shasBoardDailyTarget;
 
   const [window, setWindow] = useState<7 | 14 | 30 | 90>(14);
 
@@ -147,7 +147,7 @@ export function ShasPlanner({ viewMode = "rich" }: { viewMode?: ShasPlannerViewM
             placeholder={`אוטומטי (${autoPerDay.toFixed(1)})`}
             onChange={(e) => {
               const v = e.target.value === "" ? undefined : Math.max(0, Number(e.target.value));
-              setUiPref("shasBoardDailyTarget", v as any);
+              setUiPref("shasBoardDailyTarget", v);
             }}
             className="w-32"
           />
@@ -157,11 +157,11 @@ export function ShasPlanner({ viewMode = "rich" }: { viewMode?: ShasPlannerViewM
               min={0}
               max={20}
               step={1}
-              onValueChange={(v) => setUiPref("shasBoardDailyTarget", (v[0] || 0) as any)}
+              onValueChange={(v) => setUiPref("shasBoardDailyTarget", v[0] || 0)}
             />
           </div>
           {customTarget !== undefined && (
-            <Button size="sm" variant="ghost" onClick={() => setUiPref("shasBoardDailyTarget", undefined as any)}>
+            <Button size="sm" variant="ghost" onClick={() => setUiPref("shasBoardDailyTarget", undefined)}>
               חזרה לאוטומטי
             </Button>
           )}
@@ -210,7 +210,7 @@ export function ShasPlanner({ viewMode = "rich" }: { viewMode?: ShasPlannerViewM
                   size="sm"
                   variant="outline"
                   className="shrink-0"
-                  onClick={() => setUiPref("shasBoardDailyTarget", Math.ceil(perDay) as any)}
+                  onClick={() => setUiPref("shasBoardDailyTarget", Math.ceil(perDay))}
                 >
                   קבע
                 </Button>

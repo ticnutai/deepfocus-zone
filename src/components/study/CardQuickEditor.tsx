@@ -188,7 +188,7 @@ export function CardQuickEditor({ card, onClose }: Props) {
     if (saving) return "שומר…";
     if (!savedAt) return "אין שינויים";
     const s = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
-    return s < 5 ? "נשמר ✓" : `נשמר לפני ${s}\"`;
+    return s < 5 ? "נשמר ✓" : `נשמר לפני ${s}"`;
   }, [saving, savedAt]);
 
   return (

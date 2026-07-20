@@ -15,6 +15,9 @@ export async function generateQuestionsWithClaude(
   text: string,
   count = 10,
 ): Promise<GeneratedQuestion[]> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    throw new Error("שירות ה-AI דורש חיבור לאינטרנט. הנתונים המקומיים נשמרו וניתן להמשיך לעבוד באופליין.");
+  }
   const amudLabel = amud === "a" ? "עמוד א" : "עמוד ב";
   const dafLabel = `${toHebrewNumeral(daf)}'`;
 

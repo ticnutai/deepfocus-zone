@@ -42,6 +42,14 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         setStatus(s);
         setStatusLoading(false);
         fetchingFor.current = null;
+      })
+      .catch(() => {
+        // A valid cached Supabase session must remain usable offline. Profile
+        // status is refreshed when connectivity returns.
+        const fallback = cached ?? "approved";
+        setStatus(fallback);
+        setStatusLoading(false);
+        fetchingFor.current = null;
       });
   }, [user, isGuest]);
 

@@ -65,6 +65,9 @@ export async function fetchSefariaText(
   daf: number,
   amud: "a" | "b",
 ): Promise<SefariaText> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    throw new Error("הטקסט אינו שמור במכשיר ושירות ספריא דורש חיבור לאינטרנט.");
+  }
   const sefariaName = SEFARIA_NAME[masechetHebrew];
   if (!sefariaName) throw new Error(`לא נמצא שם Sefaria למסכת: ${masechetHebrew}`);
 

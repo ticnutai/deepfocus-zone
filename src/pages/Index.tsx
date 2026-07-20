@@ -1054,7 +1054,11 @@ const Index = () => {
     if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
       setActive("home");
       setActiveTab(id);
-      setVisitedTabs((s) => { s.has(id) || (s = new Set(s)); s.add(id); return s; });
+      setVisitedTabs((s) => {
+        const next = s.has(id) ? s : new Set(s);
+        next.add(id);
+        return next;
+      });
       try { localStorage.setItem("active-tab", id); } catch { /* ignore */ }
       return;
     }
@@ -1503,7 +1507,11 @@ const Index = () => {
                 }
                 setActive("home");
                 setActiveTab(v);
-                setVisitedTabs((s) => { s.has(v) || (s = new Set(s)); s.add(v); return s; });
+                setVisitedTabs((s) => {
+                  const next = s.has(v) ? s : new Set(s);
+                  next.add(v);
+                  return next;
+                });
                 try { localStorage.setItem("active-tab", v); } catch { /* ignore */ }
               }}
               className="w-full" dir="rtl"

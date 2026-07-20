@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { startTransition, useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Plus, Search, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, Folder, FolderOpen, LayoutGrid, Maximize2, Minimize2, ChevronsDown, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,6 @@ import { displayCategoryName } from "@/lib/study/shasGen";
 
 const RECENT_KEY = "deck-create:recent-cats";
 const MAX_RECENT = 6;
-const CardEditor = lazy(() => import("./CardEditor").then((m) => ({ default: m.CardEditor })));
-
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -34,8 +32,6 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const [cardsPath, setCardsPath] = useState<string[]>(state.uiPrefs?.deckCreateCategoryPathIds ?? []);
   const [isExpanded, setIsExpanded] = useState<boolean>(!!state.uiPrefs?.deckCreateDialogExpanded);
   const [mobileClassifyOpen, setMobileClassifyOpen] = useState(false);
-  const [addQuestionOpen, setAddQuestionOpen] = useState(false);
-  const [cardsCountAtOpen, setCardsCountAtOpen] = useState(0);
   const [treeSearch, setTreeSearch] = useState("");
   const [treeExpanded, setTreeExpanded] = useState<Record<string, boolean>>({});
   const [classificationReady, setClassificationReady] = useState(false);
@@ -66,20 +62,21 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
       setClassificationReady(false);
       return;
     }
-    // Keep open snappy: hydrate heavy classification work only when browser is idle.
+    // Let the name field paint and accept input before hydrating classification.
     let timeoutId = 0;
     let idleId: number | null = null;
+    const markReady = () => startTransition(() => setClassificationReady(true));
     const scheduleReady = () => {
       const hasIdle = typeof (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback === "function";
       if (hasIdle) {
         idleId = (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(() => {
-          setClassificationReady(true);
-        }, { timeout: 1200 });
+          markReady();
+        }, { timeout: 1500 });
         return;
       }
-      timeoutId = window.setTimeout(() => setClassificationReady(true), 180);
+      timeoutId = window.setTimeout(markReady, 0);
     };
-    timeoutId = window.setTimeout(scheduleReady, 0);
+    timeoutId = window.setTimeout(scheduleReady, 250);
     return () => {
       window.clearTimeout(timeoutId);
       if (idleId !== null) {
@@ -354,14 +351,14 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     const countFor = (cat: Category): number => {
       if (total.has(cat.id)) return total.get(cat.id)!;
       const d = direct.get(cat.name) ?? 0;
-      const kids = categories.filter((c) => c.parentId === cat.id);
+      const kids = childrenByParent.get(cat.id) ?? [];
       const sum = d + kids.reduce((acc, k) => acc + countFor(k), 0);
       total.set(cat.id, sum);
       return sum;
     };
     for (const cat of categories) countFor(cat);
     return total;
-  }, [open, classificationReady, state.cards, categories, childrenOf]);
+  }, [open, classificationReady, state.cards, categories, childrenByParent]);
   const recentExisting = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -529,21 +526,6 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
     onOpenChange(false);
   };
 
-  const openAddQuestion = () => {
-    setCardsCountAtOpen(state.cards.length);
-    setAddQuestionOpen(true);
-  };
-
-  const closeAddQuestion = () => {
-    setAddQuestionOpen(false);
-    if (state.cards.length > cardsCountAtOpen) {
-      setTreeSearch("");
-      setCardsPathAndPersist([]);
-      setExpandedState({});
-    }
-  };
-
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
@@ -637,17 +619,6 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                   title="כווץ את כל הענפים"
                 >
                   <Plus className={cn("h-3.5 w-3.5 transition-transform duration-200", hasExpandedBranches && "rotate-45")} />
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 rounded-full border-2 border-gold/50 px-3"
-                  title="הוסף שאלה"
-                  onClick={openAddQuestion}
-                >
-                  <Plus className="h-3.5 w-3.5 ml-1" /> הוסף שאלה
                 </Button>
 
                 <Button
@@ -868,23 +839,6 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
           onMouseDown={(e) => startResize("s", e)}
         />
 
-        <Dialog open={addQuestionOpen} onOpenChange={(o) => { if (!o) closeAddQuestion(); }}>
-          <DialogContent dir="rtl" className="max-w-[min(96vw,900px)] max-h-[92vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-right">הוספת שאלה חדשה</DialogTitle>
-              <DialogDescription className="sr-only">
-                טופס הוספת שאלה חדשה למאגר.
-              </DialogDescription>
-            </DialogHeader>
-            <Suspense fallback={<div className="text-xs text-muted-foreground text-right">טוען עורך שאלה...</div>}>
-              <CardEditor
-                deckId={null}
-                onClose={closeAddQuestion}
-                prefillCategories={undefined}
-              />
-            </Suspense>
-          </DialogContent>
-        </Dialog>
       </DialogContent>
     </Dialog>
   );

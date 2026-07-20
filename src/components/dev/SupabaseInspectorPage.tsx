@@ -726,7 +726,7 @@ function TableSchemaCard({ t }: { t: TableSchema }) {
         className="w-full flex items-center justify-between gap-2"
         onClick={() => setOpen((v) => {
           const next = !v;
-          try { localStorage.setItem(`pashash:inspector-schema-open:${t.name}`, next ? "1" : "0"); } catch {}
+          try { localStorage.setItem(`pashash:inspector-schema-open:${t.name}`, next ? "1" : "0"); } catch { /* storage unavailable */ }
           return next;
         })}
       >
@@ -847,8 +847,8 @@ export function SupabaseInspectorPage() {
     if (!sortField || !sortDir) return sorted;
 
     return sorted.sort((a, b) => {
-      let aVal: any = "";
-      let bVal: any = "";
+      let aVal: string | number = "";
+      let bVal: string | number = "";
 
       const aStat = stats.find((x) => x.name === a.name);
       const bStat = stats.find((x) => x.name === b.name);
@@ -1180,7 +1180,7 @@ export function SupabaseInspectorPage() {
         let from = 0;
         const all: Array<Record<string, unknown>> = [];
         while (true) {
-          let query = supabase
+          const query = supabase
             .from(table)
             .select(selectFields)
             .eq("user_id", user.id)
@@ -1749,7 +1749,7 @@ export function SupabaseInspectorPage() {
         </div>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); try { localStorage.setItem("pashash:inspector-tab", v); } catch {} }} className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); try { localStorage.setItem("pashash:inspector-tab", v); } catch { /* storage unavailable */ } }} className="w-full">
         <Card className="gold-frame p-2">
           <TabsList className="w-full bg-transparent h-auto flex-wrap justify-between gap-1">
             <TabsTrigger value="schema" className="flex-1 gap-1.5 rounded-xl px-2 py-2 text-sm data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">

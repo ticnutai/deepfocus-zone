@@ -84,16 +84,8 @@ export default function SyncDiagnostics() {
     return () => window.clearInterval(id);
   }, []);
 
-  if (!uid) {
-    return (
-      <div dir="rtl" className="container max-w-2xl py-10 text-center">
-        <p className="text-muted-foreground">יש להתחבר כדי לראות אבחון סנכרון.</p>
-      </div>
-    );
-  }
-
-  const lastSync = getLastCloudSyncAt(uid);
-  const lastFull = getLastFullSyncAt(uid);
+  const lastSync = uid ? getLastCloudSyncAt(uid) : 0;
+  const lastFull = uid ? getLastFullSyncAt(uid) : 0;
   const ttl = getFullRefreshTtlMs();
   const localCards = getCurrentStudyCardsCount();
   const cloudCards = getLastKnownCloudCardsCount(uid);
@@ -134,6 +126,14 @@ export default function SyncDiagnostics() {
       force((n) => n + 1);
     }
   }, [isSyncingNow, requestCloudSyncNow]);
+
+  if (!uid) {
+    return (
+      <div dir="rtl" className="container max-w-2xl py-10 text-center">
+        <p className="text-muted-foreground">יש להתחבר כדי לראות אבחון סנכרון.</p>
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl" className="container max-w-2xl py-6 space-y-4">

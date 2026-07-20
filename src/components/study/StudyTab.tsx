@@ -74,20 +74,6 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
   }, [state.cards]);
 
 
-  if (session) {
-    return (
-      <div className="space-y-4">
-        <StudySession
-          deckId={session.deckId}
-          mode={session.mode}
-          cardIds={session.cardIds}
-          timeLimitSec={session.timeLimitSec}
-          onExit={() => setSession(null)}
-        />
-      </div>
-    );
-  }
-
   // Heavy derived data: memoize so it does not recompute on every store mutation.
   const { activeDeck, activeDeckCards, activeDeckDue } = useMemo(() => {
     const deck = state.decks.find((d) => d.id === activeDeckId);
@@ -120,6 +106,20 @@ export function StudyTab({ showBadge = true, onToggleBadge }: Props) {
     );
     return { activeDeck: deck, activeDeckCards: cards, activeDeckDue: cards.filter(isDue).length };
   }, [state.decks, state.cards, state.cardDecks, state.categories, activeDeckId]);
+
+  if (session) {
+    return (
+      <div className="space-y-4">
+        <StudySession
+          deckId={session.deckId}
+          mode={session.mode}
+          cardIds={session.cardIds}
+          timeLimitSec={session.timeLimitSec}
+          onExit={() => setSession(null)}
+        />
+      </div>
+    );
+  }
 
   const totalDue = deckStats.reduce((s, d) => s + d.dueCount, 0);
   const displayedDecks = showAllDecks ? deckStats : deckStats.slice(0, 5);

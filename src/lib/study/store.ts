@@ -382,14 +382,21 @@ const clearLegacyBrowserCachesForUser = async (userId: string) => {
 
 const scheduleStateCachePersist = () => {
   const uid = currentUserId;
-  if (!uid || uid === GUEST_ID) return;
+  if (!uid) return;
   if (cachePersistTimer !== null) window.clearTimeout(cachePersistTimer);
   cachePersistTimer = window.setTimeout(() => {
     cachePersistTimer = null;
     const snapshotUser = currentUserId;
-    if (!snapshotUser || snapshotUser === GUEST_ID) return;
+    if (!snapshotUser) return;
     // Yield to browser first so the save doesn't block the main thread.
-    void Promise.resolve().then(() => saveStudyStateCache(snapshotUser, memState));
+    void Promise.resolve().then(async () => {
+      await saveStudyStateCache(snapshotUser, memState);
+      if (snapshotUser !== GUEST_ID && typeof navigator !== "undefined" && !navigator.onLine) {
+        await enqueueFullSyncJob(snapshotUser, "offline-local-change");
+        const jobs = await listSyncJobs(snapshotUser);
+        markCloudSyncJobs(jobs.length);
+      }
+    });
   }, 2000);
 };
 
@@ -2245,6 +2252,7 @@ let guestCloudHydrateInFlight = false;
 async function hydrateGuestFromCloud(): Promise<void> {
   if (guestCloudHydrateInFlight) return;
   if (currentUserId !== GUEST_ID) return;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
   guestCloudHydrateInFlight = true;
   try {
     const headers = { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY };
@@ -2517,11 +2525,31 @@ export function useStudy() {
       }
       isHydrated = true;
       notify();
-      // In parallel: pull source-user snapshot from cloud (if admin enabled it).
-      // Guest cannot write to cloud — all changes stay local.
-      void hydrateGuestFromCloud().catch((err) => {
-        console.warn("[guest] cloud hydrate failed:", err);
-      });
+      // localStorage is only a fast bootstrap and is limited to a few MB. The
+      // authoritative offline guest snapshot lives in IndexedDB, just like an
+      // authenticated user's state. This keeps large card collections usable
+      // across restarts with no network.
+      void (async () => {
+        try {
+          const cached = await loadStudyStateCache(GUEST_ID);
+          if (cancelled || currentUserId !== GUEST_ID) return;
+          if (cached && hasMeaningfulStudyData(cached) && isStudyStateStructurallyUsable(cached)) {
+            memState = applyGuestProfileSeedOnce(applyBidirectionalDedupeGuards(cached));
+            ensureCategoryLocalState(uid);
+            markCategoryParentLoadedNow(null);
+            for (const cat of memState.categories ?? []) {
+              if (cat.parentId) categoryHasChildrenHint.set(cat.parentId, true);
+            }
+            notify();
+          }
+          if (typeof navigator === "undefined" || navigator.onLine) {
+            await hydrateGuestFromCloud();
+            await saveStudyStateCache(GUEST_ID, memState);
+          }
+        } catch (err) {
+          console.warn("[guest] offline hydrate failed:", err);
+        }
+      })();
       return;
     }
     ensureCategoryLocalState(uid);
@@ -2818,8 +2846,14 @@ export function useStudy() {
 
   useEffect(() => {
     const uid = user?.id ?? null;
-    if (!uid || uid === GUEST_ID) return;
+    if (!uid) return;
     const onOnline = () => {
+      if (uid === GUEST_ID) {
+        void hydrateGuestFromCloud()
+          .then(() => saveStudyStateCache(GUEST_ID, memState))
+          .catch((err) => console.warn("[guest] reconnect refresh failed:", err));
+        return;
+      }
       void runPendingCloudSync(uid);
       void flushPendingDeletes(uid);
     };

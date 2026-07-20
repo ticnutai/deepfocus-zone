@@ -13,10 +13,33 @@ import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { GuestProfilesTab } from "./GuestProfilesTab";
 import { ChangeNotesTab } from "./ChangeNotesTab";
 import { usePermissions } from "@/hooks/usePermissions";
+import { supabase } from "@/integrations/supabase/client";
 
 export function AdminPanel() {
   const { isAdmin, loading } = usePermissions();
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   useEffect(() => { document.title = "ניהול | מעקב למידה"; }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const refresh = async () => {
+      const { count } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      setPendingApprovals(count ?? 0);
+    };
+    void refresh();
+    const channel = supabase
+      .channel("admin-approval-count")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void refresh())
+      .subscribe();
+    const pollId = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      window.clearInterval(pollId);
+      void supabase.removeChannel(channel);
+    };
+  }, [isAdmin]);
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">טוען…</div>;
   if (!isAdmin) {
@@ -46,6 +69,11 @@ export function AdminPanel() {
             </TabsTrigger>
             <TabsTrigger value="approval" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>אישורים</span><UserCheck className="h-4 w-4" />
+              {pendingApprovals > 0 && (
+                <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
+                  {pendingApprovals}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="roles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תפקידים</span><Layers className="h-4 w-4" />

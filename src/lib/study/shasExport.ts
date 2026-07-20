@@ -118,7 +118,7 @@ function scopeTitle(scope: ExportScope): string {
 }
 
 function fileBase(scope: ExportScope): string {
-  const title = scopeTitle(scope).replace(/["\/\\]/g, "");
+  const title = scopeTitle(scope).replace(/["/\\]/g, "");
   const date = new Date().toISOString().slice(0, 10);
   return `לוח-שס-${title}-${date}`;
 }

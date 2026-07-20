@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb, Move } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Type, X, Loader2, Trash2, Check, MicOff, Settings, Bot, Brain, Wand2, Star, Zap, MessageCircle, BookOpen, Lightbulb, Move, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +32,7 @@ const DRAG_THRESHOLD = 4;
 
 const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
 
-const ICON_MAP: Record<IconName, React.ComponentType<any>> = {
+const ICON_MAP: Record<IconName, LucideIcon> = {
   sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
   zap: Zap, chat: MessageCircle, book: BookOpen, bulb: Lightbulb,
 };
@@ -115,6 +115,33 @@ type Draft = {
   explanation?: string;
 };
 
+interface SpeechRecognitionResultEvent {
+  resultIndex: number;
+  results: ArrayLike<{ [index: number]: { transcript: string } }>;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
+interface ExtractCardsResponse {
+  error?: string;
+  cards?: Draft[];
+}
+
 const EMPTY_CATEGORY_OPTIONS: { id: string; label: string; name: string }[] = [];
 
 export function AiCardCapture() {
@@ -144,7 +171,7 @@ export function AiCardCapture() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [selectedDeckIds, setSelectedDeckIds] = useState<string[]>([]);
   const [selectedCategoryNames, setSelectedCategoryNames] = useState<string[]>([]);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number; moved: boolean } | null>(null);
   const saveTimerRef = useRef<number | null>(null);
@@ -337,8 +364,8 @@ export function AiCardCapture() {
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
     setSyncState("saving");
     saveTimerRef.current = window.setTimeout(() => {
-      setUiPref("aiButtonStyle", style as any);
-      if (dragEnabled) setUiPref("aiButtonPos", pos as any);
+      setUiPref("aiButtonStyle", style);
+      if (dragEnabled) setUiPref("aiButtonPos", pos);
       setUiPref("aiButtonDragEnabled", dragEnabled);
       dbg("persist:setUiPref", { style, dragEnabled, pos: dragEnabled ? pos : "skipped" });
       setSyncState("saved");
@@ -409,7 +436,8 @@ export function AiCardCapture() {
 
   const startVoice = () => {
     dbg("voice:startRequested");
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const speechWindow = window as SpeechRecognitionWindow;
+    const SR = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SR) {
       dbg("voice:notSupported");
       toast.error("הדפדפן לא תומך בזיהוי קולי");
@@ -419,7 +447,7 @@ export function AiCardCapture() {
     rec.lang = "he-IL";
     rec.continuous = true;
     rec.interimResults = true;
-    rec.onresult = (e: any) => {
+    rec.onresult = (e: SpeechRecognitionResultEvent) => {
       let finalText = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         finalText += e.results[i][0].transcript;
@@ -467,15 +495,17 @@ export function AiCardCapture() {
         },
       });
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      const cards = (data as any)?.cards ?? [];
-      dbg("extract:response", { cards: cards.length, hasError: !!(data as any)?.error });
+      const response = data as ExtractCardsResponse | null;
+      if (response?.error) throw new Error(response.error);
+      const cards = response?.cards ?? [];
+      dbg("extract:response", { cards: cards.length, hasError: !!response?.error });
       if (!cards.length) { toast.error("לא חולצו שאלות"); return; }
       setDrafts(cards);
       toast.success(`חולצו ${cards.length} שאלות`);
-    } catch (e: any) {
-      dbg("extract:error", { message: e?.message ?? "unknown" });
-      toast.error(e?.message || "שגיאה בחילוץ");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "שגיאה בחילוץ";
+      dbg("extract:error", { message });
+      toast.error(message);
     } finally {
       dbg("extract:finally");
       setLoading(false);

@@ -52,6 +52,21 @@ type FlatLayout = "grid" | "table" | "compact";
 type MasechtaDetailLayout = "grid" | "compact" | "table" | "focus";
 type FlatSort = "name-asc" | "name-desc" | "progress-desc" | "progress-asc" | "remaining-desc" | "remaining-asc";
 type ShasBoardThemeMode = "global" | "separate";
+type ShasBoardView = "hierarchy" | "flat" | "planner" | "calendar";
+interface ShasBoardViewPrefs {
+  activeTab?: ShasBoardView;
+  hierarchyLayout?: HierarchyLayout;
+  flatLayout?: FlatLayout;
+  masechtaDetailLayout?: MasechtaDetailLayout;
+  plannerLayout?: ShasPlannerViewMode;
+  calendarLayout?: ShasCalendarViewMode;
+  flatSort?: FlatSort;
+  boardThemeMode?: ShasBoardThemeMode;
+  boardThemeId?: string;
+  boardTheme?: string;
+  boardLocalThemeIds?: string[];
+  selectMode?: boolean;
+}
 
 const HEB = [
   "א","ב","ג","ד","ה","ו","ז","ח","ט","י",
@@ -132,12 +147,12 @@ export function ShasBoard() {
   const { state, setUiPref } = useStudy();
   const { allThemes, getEffectiveTokens, theme: appTheme, duplicateTheme } = useTheme();
   const progress: ShasBoardProgress = useMemo(
-    () => (state.uiPrefs as any)?.shasBoardProgress ?? {},
+    () => state.uiPrefs.shasBoardProgress ?? {},
     [state.uiPrefs],
   );
-  const viewPrefs = (state.uiPrefs as any)?.shasBoardViewPrefs ?? {};
+  const viewPrefs = (state.uiPrefs.shasBoardViewPrefs ?? {}) as ShasBoardViewPrefs;
 
-  const [view, setView] = useState<"hierarchy" | "flat" | "planner" | "calendar">(viewPrefs.activeTab ?? "hierarchy");
+  const [view, setView] = useState<ShasBoardView>(viewPrefs.activeTab ?? "hierarchy");
   const [hierarchyLayout, setHierarchyLayout] = useState<HierarchyLayout>(viewPrefs.hierarchyLayout ?? "cards");
   const [flatLayout, setFlatLayout] = useState<FlatLayout>(viewPrefs.flatLayout ?? "grid");
   const [masechtaDetailLayout, setMasechtaDetailLayout] = useState<MasechtaDetailLayout>(viewPrefs.masechtaDetailLayout ?? "grid");
@@ -173,9 +188,9 @@ export function ShasBoard() {
       boardLocalThemeIds,
       selectMode,
     };
-    const currentPrefs = (state.uiPrefs as any)?.shasBoardViewPrefs ?? {};
+    const currentPrefs = (state.uiPrefs.shasBoardViewPrefs ?? {}) as ShasBoardViewPrefs;
     if (JSON.stringify(currentPrefs) !== JSON.stringify(nextPrefs)) {
-      setUiPref("shasBoardViewPrefs", nextPrefs as any);
+      setUiPref("shasBoardViewPrefs", nextPrefs);
     }
   }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, selectMode, setUiPref, state.uiPrefs]);
 
@@ -225,7 +240,7 @@ export function ShasBoard() {
       const today = new Date();
       const k = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
       // Defer the log write so it doesn't pile another synchronous store update onto the click.
-      const prevLog = ((state.uiPrefs as any)?.shasBoardLog ?? {}) as Record<string, number>;
+      const prevLog = state.uiPrefs.shasBoardLog ?? {};
       const nextLog = { ...prevLog, [k]: (prevLog[k] ?? 0) + delta };
       queueMicrotask(() => setUiPref("shasBoardLog", nextLog));
     }
@@ -301,7 +316,7 @@ export function ShasBoard() {
 
     if (!alreadyLocal) {
       const source = allThemes.find((t) => t.id === sourceThemeId);
-      const copyLabel = `${source?.label ?? "ערכת נושא"} — לוח ש\"ס`;
+      const copyLabel = `${source?.label ?? "ערכת נושא"} — לוח ש"ס`;
       editableId = duplicateTheme(sourceThemeId, copyLabel, {});
       setBoardLocalThemeIds((prev) => (prev.includes(editableId) ? prev : [...prev, editableId]));
     }
@@ -889,7 +904,7 @@ export function ShasBoard() {
       </Card>
       {BoardThemeEditor}
 
-      <Tabs value={view} onValueChange={(v) => setView(v as any)}>
+      <Tabs value={view} onValueChange={(v) => setView(v as ShasBoardView)}>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TabsList>
             <TabsTrigger value="hierarchy">לפי סדרים</TabsTrigger>

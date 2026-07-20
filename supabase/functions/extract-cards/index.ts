@@ -21,7 +21,10 @@ serve(async (req) => {
 - "boolean": נכון/לא נכון
 אם יש כמה שאלות - החזר את כולן במערך.`;
 
-    const userContent: any[] = [];
+    const userContent: Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    > = [];
     if (text) userContent.push({ type: "text", text });
     if (imageBase64) {
       userContent.push({

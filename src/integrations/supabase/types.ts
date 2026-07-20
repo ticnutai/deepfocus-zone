@@ -43,6 +43,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          is_default_for_signup: boolean
           is_system: boolean
           name: string
           updated_at: string
@@ -51,6 +52,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_default_for_signup?: boolean
           is_system?: boolean
           name: string
           updated_at?: string
@@ -59,6 +61,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_default_for_signup?: boolean
           is_system?: boolean
           name?: string
           updated_at?: string
@@ -1042,6 +1045,14 @@ export type Database = {
       admin_delete_user: { Args: { p_user_id: string }; Returns: undefined }
       admin_set_password: {
         Args: { p_password: string; p_user_id: string }
+        Returns: undefined
+      }
+      admin_set_default_signup_role: {
+        Args: { p_role_id?: string | null }
+        Returns: undefined
+      }
+      admin_set_profile_status: {
+        Args: { p_status: string; p_user_id: string }
         Returns: undefined
       }
       admin_update_user: {

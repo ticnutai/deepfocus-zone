@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, memo } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FolderTree, BookOpen } from "lucide-react";
+import { FolderTree, BookOpen, CircleHelp } from "lucide-react";
 import { CardsManager } from "./CardsManager";
 import { CategoriesPage } from "./CategoriesPage";
+import { QuestionCreationPage } from "./QuestionCreationPage";
 import { debugLog } from "@/lib/debug/perf";
 
-type SubTab = "categories" | "cards";
+type SubTab = "categories" | "decks" | "questions";
 const STORAGE_KEY = "cards-categories:sub-tab";
 const STORAGE_VISITED_KEY = "cards-categories:visited-tabs";
 const ENABLE_TAB_SWITCH_PERF = import.meta.env.DEV;
@@ -28,7 +29,8 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
     if (initialTab) return initialTab;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === "categories" || saved === "cards") return saved;
+      if (saved === "categories" || saved === "decks" || saved === "questions") return saved;
+      if (saved === "cards") return "decks";
     } catch { /* ignore */ }
     return "categories";
   });
@@ -36,7 +38,11 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
   const [visited, setVisited] = useState<Set<SubTab>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      const active: SubTab = (saved === "categories" || saved === "cards") ? saved : "categories";
+      const active: SubTab = saved === "decks" || saved === "questions"
+        ? saved
+        : saved === "cards"
+          ? "decks"
+          : "categories";
       return new Set<SubTab>([active]);
     } catch { return new Set<SubTab>(["categories"]); }
   });
@@ -110,22 +116,29 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
       </div>
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as SubTab)}>
-        <TabsList className="grid grid-cols-2 w-full max-w-md mx-auto">
+        <TabsList className="grid h-auto w-full max-w-2xl grid-cols-1 gap-1 mx-auto sm:grid-cols-3">
           <TabsTrigger value="categories" className="gap-2">
             <FolderTree className="h-4 w-4" />
             קטגוריות
           </TabsTrigger>
-          <TabsTrigger value="cards" className="gap-2">
+          <TabsTrigger value="decks" className="gap-2">
             <BookOpen className="h-4 w-4" />
-            שאלות חזרה
+            יצירת מערכת מבחנים
+          </TabsTrigger>
+          <TabsTrigger value="questions" className="gap-2">
+            <CircleHelp className="h-4 w-4" />
+            יצירת שאלות
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="categories" className="mt-4" forceMount>
           {visited.has("categories") && <CategoriesPage />}
         </TabsContent>
-        <TabsContent value="cards" className="mt-4" forceMount>
-          {visited.has("cards") && <CardsManager />}
+        <TabsContent value="decks" className="mt-4" forceMount>
+          {visited.has("decks") && <CardsManager />}
+        </TabsContent>
+        <TabsContent value="questions" className="mt-4" forceMount>
+          {visited.has("questions") && <QuestionCreationPage />}
         </TabsContent>
       </Tabs>
     </div>

@@ -12,6 +12,7 @@ import {
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
 const GUEST_USER = { id: GUEST_ID, email: "guest@local", role: "authenticated" } as unknown as User;
+const SESSION_BOOT_TIMEOUT_MS = 3500;
 
 interface AuthCtx {
   user: User | null;
@@ -32,9 +33,10 @@ const Ctx = createContext<AuthCtx>({
 let initialSessionPromise: Promise<Session | null> | null = null;
 const getInitialSession = () => {
   if (!initialSessionPromise) {
-    initialSessionPromise = supabase.auth.getSession()
-      .then(({ data }) => data.session ?? null)
-      .catch(() => null);
+    initialSessionPromise = Promise.race([
+      supabase.auth.getSession().then(({ data }) => data.session ?? null).catch(() => null),
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), SESSION_BOOT_TIMEOUT_MS)),
+    ]);
   }
   return initialSessionPromise;
 };

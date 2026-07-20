@@ -17,8 +17,30 @@ import {
   hydrateGuestProfilesFromSiteSettings,
   listGuestViewProfiles,
   setActiveGuestViewProfile,
+  saveGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
+
+const LOCAL_OFFLINE_PROFILE_ID = "local-offline";
+const LOCAL_OFFLINE_MATRIX = Object.fromEntries(
+  ["decks", "cards", "goals", "shas", "analytics", "settings"].flatMap((module) =>
+    ["view", "create", "edit", "delete", "manage"].map((action) => [`${module}:${action}`, true]),
+  ),
+);
+
+function ensureLocalOfflineProfile(): GuestViewProfile {
+  const existing = listGuestViewProfiles().find((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID);
+  if (existing) return existing;
+  return saveGuestViewProfile({
+    id: LOCAL_OFFLINE_PROFILE_ID,
+    label: "עבודה מקומית (אופליין)",
+    // Local mode can fully operate on study data, but intentionally receives
+    // no cloud administration permissions (users/roles).
+    isAdmin: false,
+    roles: [{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }],
+    matrix: LOCAL_OFFLINE_MATRIX,
+  });
+}
 
 const REMEMBER_KEY = "auth-remember";
 const EMAIL_KEY = "auth-remember-email";
@@ -68,12 +90,7 @@ export default function Auth() {
         if (cancelled) return;
         const effectiveProfiles = profiles.length > 0 ? profiles : listGuestViewProfiles();
         const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
-        if (effectiveProfiles.length === 0) {
-          setGuestProfiles([]);
-          setSelectedGuestProfileId("");
-          setGuestProfile(null);
-          return;
-        }
+        if (effectiveProfiles.length === 0) effectiveProfiles.push(ensureLocalOfflineProfile());
         const hasActive = !!activeId && effectiveProfiles.some((p) => p.id === activeId);
         const chosen = hasActive
           ? (effectiveProfiles.find((p) => p.id === activeId) ?? effectiveProfiles[0])
@@ -84,12 +101,7 @@ export default function Auth() {
       } catch {
         const fallbackProfiles = listGuestViewProfiles();
         const activeId = getActiveGuestViewProfileId();
-        if (fallbackProfiles.length === 0) {
-          setGuestProfiles([]);
-          setSelectedGuestProfileId("");
-          setGuestProfile(null);
-          return;
-        }
+        if (fallbackProfiles.length === 0) fallbackProfiles.push(ensureLocalOfflineProfile());
         const hasActive = !!activeId && fallbackProfiles.some((p) => p.id === activeId);
         const chosen = hasActive
           ? (fallbackProfiles.find((p) => p.id === activeId) ?? fallbackProfiles[0])
@@ -139,7 +151,7 @@ export default function Auth() {
 
   const signUp = async () => {
     setBusy(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: {
         emailRedirectTo: `${REDIRECT_ORIGIN}/`,
@@ -149,7 +161,11 @@ export default function Auth() {
     setBusy(false);
     if (error) return toast.error(error.message);
     persistRemember();
-    toast.success('נרשמת בהצלחה! בדוק את הדוא"ל לאישור.');
+    if (data.session) {
+      toast.warning("ההרשמה נקלטה וממתינה לאישור מנהל. אימות דוא״ל אינו מופעל כרגע בשרת.");
+    } else {
+      toast.success("ההרשמה נקלטה וממתינה לאישור מנהל. אם לא התקבל מייל אימות, אישור המנהל יאמת גם את הכתובת ויאפשר כניסה.");
+    }
   };
 
   const signInGoogle = async () => {

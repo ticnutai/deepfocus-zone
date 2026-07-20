@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2, Lock, UserX } from "lucide-react";
+import { Plus, Trash2, Lock, UserX, Star, X } from "lucide-react";
 import {
   hasUsableGuestCategoryTree,
   isGuestStudySeedStructurallyUsable,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/study/featureBlocklist";
 import { PROFILE_B_PROFILE_NAME } from "@/lib/study/profileBMode";
 
-interface Role { id: string; name: string; description: string | null; is_system: boolean; }
+interface Role { id: string; name: string; description: string | null; is_system: boolean; is_default_for_signup: boolean; }
 interface RolePermRow { module: string; action: string; allowed: boolean; }
 interface RoleDefaultsRow { sidebar_config: SidebarConfig[] | null; widget_layout: WidgetLayout | null; }
 interface CategorySeedRow {
@@ -412,6 +412,17 @@ export function RolesTab() {
     load();
   };
 
+  const setSignupDefault = async (roleId: string | null) => {
+    setBusy(true);
+    const { error } = await supabase.rpc("admin_set_default_signup_role", {
+      p_role_id: roleId,
+    });
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success(roleId ? "תפקיד ברירת המחדל להרשמה עודכן" : "ברירת המחדל להרשמה נוקתה");
+    await load();
+  };
+
   const createGuestProfileFromRole = async (role: Role) => {
     setBusy(true);
     try {
@@ -470,16 +481,29 @@ export function RolesTab() {
 
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-semibold mb-2">תפקידים קיימים</h3>
+        <p className="text-xs text-muted-foreground pb-1">
+          התפקיד המסומן כברירת מחדל משויך אוטומטית לנרשמים חדשים. אפשר לבחור תפקיד אחר או לנקות את הבחירה.
+        </p>
         {roles.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border-2 border-gold/40 bg-card p-3">
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-foreground">{r.name}</span>
                 {r.is_system && <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3" /> מובנה</Badge>}
+                {r.is_default_for_signup && <Badge className="gap-1"><Star className="h-3 w-3 fill-current" /> ברירת מחדל להרשמה</Badge>}
               </div>
               {r.description && <div className="text-xs text-muted-foreground mt-0.5">{r.description}</div>}
             </div>
             <div className="flex items-center gap-1">
+              {r.is_default_for_signup ? (
+                <Button variant="outline" size="sm" onClick={() => setSignupDefault(null)} disabled={busy}>
+                  <X className="h-4 w-4" /> נקה ברירת מחדל
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setSignupDefault(r.id)} disabled={busy}>
+                  <Star className="h-4 w-4" /> קבע כברירת מחדל
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => createGuestProfileFromRole(r)} disabled={busy}>
                 <UserX className="h-4 w-4" />
                 פרופיל אורח

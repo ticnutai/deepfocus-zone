@@ -12,6 +12,7 @@ import { UserCog, X, RefreshCw, CheckCheck, Ban } from "lucide-react";
 
 const MODULES = ["decks","cards","goals","shas","analytics","users","roles","settings"] as const;
 const ACTIONS  = ["view","create","edit","delete","manage"] as const;
+type PermissionModule = (typeof MODULES)[number];
 const MODULE_LABEL: Record<string, string> = {
   decks: "מערכות", cards: "כרטיסים", goals: "יעדים", shas: 'ש"ס',
   analytics: "ניתוח", users: "משתמשים", roles: "תפקידים", settings: "הגדרות",
@@ -111,11 +112,11 @@ export function UserPermOverrides() {
     toast.success("כל הדריסות נמחקו — משתמש יחזור לברירת מחדל של תפקידיו");
   };
 
-  const setModuleRow = async (module: string, allowed: boolean) => {
+  const setModuleRow = async (module: PermissionModule, allowed: boolean) => {
     if (!selectedUser) return;
     setBusy(true);
     const rows = ACTIONS.map((a) => ({
-      user_id: selectedUser, module: module as any, action: a, allowed, set_by: me?.id ?? null,
+      user_id: selectedUser, module, action: a, allowed, set_by: me?.id ?? null,
     }));
     const { data, error } = await supabase
       .from("user_permission_overrides")
@@ -129,14 +130,14 @@ export function UserPermOverrides() {
     setBusy(false);
   };
 
-  const clearModuleRow = async (module: string) => {
+  const clearModuleRow = async (module: PermissionModule) => {
     if (!selectedUser) return;
     setBusy(true);
     const { error } = await supabase
       .from("user_permission_overrides")
       .delete()
       .eq("user_id", selectedUser)
-      .eq("module", module as any);
+      .eq("module", module);
     if (error) { toast.error(error.message); setBusy(false); return; }
     setOverrides((arr) => arr.filter((o) => o.module !== module));
     setBusy(false);

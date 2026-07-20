@@ -28,7 +28,8 @@ Deno.serve(async (req) => {
     if (error) throw error;
 
     return new Response(JSON.stringify({ status: 'success', fileName, executionTime: Date.now() - start }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ status: 'error', error: e.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return new Response(JSON.stringify({ status: 'error', error: message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

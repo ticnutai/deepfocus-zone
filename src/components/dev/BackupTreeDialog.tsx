@@ -221,7 +221,10 @@ export function BackupTreeDialog({ open, onClose, mode, state, onConfirm }: Back
   const toggleGroupBulk = useCallback((ids: string[], val: boolean) => {
     setGroups((prev) => {
       const next = new Set(prev);
-      for (const id of ids) val ? next.add(id) : next.delete(id);
+      for (const id of ids) {
+        if (val) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
   }, []);

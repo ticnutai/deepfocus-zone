@@ -494,7 +494,8 @@ export function PerformancePage() {
   const toggleGroup = (g: TestGroup) => {
     setEnabledGroups((prev) => {
       const next = new Set(prev);
-      next.has(g) ? next.delete(g) : next.add(g);
+      if (next.has(g)) next.delete(g);
+      else next.add(g);
       return next;
     });
   };
