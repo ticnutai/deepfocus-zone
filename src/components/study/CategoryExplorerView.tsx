@@ -50,6 +50,8 @@ interface Props {
   onQuickRun?: (categoryId: string, categoryName: string) => void;
   /** אופציונלי: תוכן נוסף שיוצג בשורת הכותרת (למשל: מיתג תצוגה) */
   headerExtra?: React.ReactNode;
+  /** בקשה לחשוף קטגוריה בעץ, כולל פתיחת כל קטגוריות האב. */
+  revealCategory?: { name: string; requestId: number } | null;
 }
 
 type AddQuestionTrace = {
@@ -831,7 +833,7 @@ interface BenchState {
 }
 
 /* ===================== MAIN ===================== */
-export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun, headerExtra }: Props) {
+export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAddCardToCategory, onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun, headerExtra, revealCategory }: Props) {
   const { state, addCategory, deleteCategory, renameCategory, duplicateCategory, moveCategory, addCategoriesBulk, addCard, deleteCard, addDeck, updateDeckCategoryIds, addCardToDeck, setCardCategories, setUiPref } = useStudy();
 
   // === Persistent prefs ===
@@ -1450,6 +1452,32 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
       setHistoryIdx((i) => i + 1);
     }
   }, [historyIdx]);
+
+  const handledRevealRequestRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!revealCategory) return;
+    if (handledRevealRequestRef.current === revealCategory.requestId) return;
+
+    const target = categoriesByName.get(revealCategory.name);
+    if (!target) return;
+    handledRevealRequestRef.current = revealCategory.requestId;
+
+    const ancestorIds: string[] = [];
+    let parentId = target.parentId;
+    while (parentId) {
+      ancestorIds.push(parentId);
+      parentId = categoriesById.get(parentId)?.parentId ?? null;
+    }
+
+    setOpenIds((previous) => {
+      const next = { ...previous };
+      ancestorIds.forEach((id) => { next[id] = true; });
+      return next;
+    });
+    setSearch("");
+    setMobileSidebarOpen(true);
+    navigateTo(target.id);
+  }, [categoriesById, categoriesByName, navigateTo, revealCategory]);
 
   // Single source of truth for tree navigation policy:
   // navigation-only (no content selection side effects).

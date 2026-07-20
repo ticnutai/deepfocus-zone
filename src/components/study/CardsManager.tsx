@@ -330,6 +330,7 @@ function CardsManager() {
   const [copyCard, setCopyCard] = useState<StudyCardType | null>(null);
   const [decksDialogCard, setDecksDialogCard] = useState<StudyCardType | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [categoryRevealRequest, setCategoryRevealRequest] = useState<{ name: string; requestId: number } | null>(null);
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>({
     field: "createdAt", from: null, to: null,
@@ -1144,6 +1145,10 @@ function CardsManager() {
             <PinnedCategoriesWidget
               onSelectCategory={(name) => {
                 setCategoryFilter(name);
+                setCategoryRevealRequest((previous) => ({
+                  name,
+                  requestId: (previous?.requestId ?? 0) + 1,
+                }));
               }}
               onEditCard={(card) => openEditCard(card)}
             />
@@ -1152,6 +1157,7 @@ function CardsManager() {
             <CategoryManager
               selectedCategory={categoryFilter}
               onSelectCategory={setCategoryFilter}
+              revealCategory={categoryRevealRequest}
               activeDeckId={activeDeckId}
               onAddCardToCategory={(catName) => {
                 openNewCardForCategory(catName);

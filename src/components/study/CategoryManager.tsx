@@ -32,6 +32,7 @@ interface Props {
   onStudyMultipleCategories?: (catNames: string[], filter?: "all" | "due" | "failed") => void;
   onStudyCardIds?: (ids: string[]) => void;
   onQuickRun?: (categoryId: string, categoryName: string) => void;
+  revealCategory?: { name: string; requestId: number } | null;
 }
 
 const VIEW_MODE_KEY = "cat-view-mode-v1";
@@ -40,6 +41,7 @@ const VALID_VIEWS: CategoryViewMode[] = ["browse", "explorer", "list", "cards", 
 export function CategoryManager({
   selectedCategory, onSelectCategory, onAddCardToCategory,
   onEditCard, activeDeckId, onStudyCategory, onStudyMultipleCategories, onStudyCardIds, onQuickRun,
+  revealCategory,
 }: Props) {
   const { state, setUiPref } = useStudy();
   const cloudView = state.uiPrefs?.categoryViewMode;
@@ -67,6 +69,13 @@ export function CategoryManager({
     setUiPref("categoryViewMode", v);
   };
 
+  useEffect(() => {
+    if (!revealCategory || viewMode === "explorer") return;
+    handleViewChange("explorer");
+    // The request id intentionally retriggers this for repeated clicks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealCategory?.requestId]);
+
   return (
     <div dir="rtl" className="space-y-2">
       {/* View switcher: shown standalone for non-explorer views; injected into explorer's title bar otherwise */}
@@ -88,6 +97,7 @@ export function CategoryManager({
             onStudyMultipleCategories={onStudyMultipleCategories}
             onStudyCardIds={onStudyCardIds}
             onQuickRun={onQuickRun}
+            revealCategory={revealCategory}
             headerExtra={<CategoryViewSwitcher value={viewMode} onChange={handleViewChange} />}
           />
         </Suspense>
