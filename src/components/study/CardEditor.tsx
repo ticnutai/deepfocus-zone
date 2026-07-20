@@ -106,11 +106,10 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
     ? Array.from(new Set(state.uiPrefs.cardEditorLastCreateTypes.filter((t): t is CardType => t === "flashcard" || t === "multiple" || t === "boolean")))
     : [];
 
-  // Deck assignment (optional – category-owned cards have null)
-  // For NEW cards: do NOT auto-assign to the active deck just because the user is viewing it.
-  // The user must explicitly link the card's category to a deck via the "שייך קטגוריה למערכת" panel below.
+  // Deck assignment is optional. A deckId passed by an explicit "new question"
+  // action preselects that deck; opening the general creation tab still uses null.
   const [selectedDeckId, setSelectedDeckId] = useState<string | null>(
-    editCard?.deckId ?? null,
+    editCard?.deckId ?? deckId ?? null,
   );
 
   const [type, setType] = useState<CardType>(editCard?.type ?? "flashcard");
@@ -367,6 +366,29 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
   return (
     <div dir="rtl" className="space-y-4">
+      <div className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3">
+        <Label className="block text-right">מערכת יעד</Label>
+        <Select
+          value={selectedDeckId ?? "__none__"}
+          onValueChange={(value) => setSelectedDeckId(value === "__none__" ? null : value)}
+        >
+          <SelectTrigger aria-label="מערכת יעד" className="border-2 border-gold/40 text-right">
+            <SelectValue placeholder="בחר מערכת" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">ללא מערכת — סיווג לפי קטגוריות בלבד</SelectItem>
+            {state.decks.map((deck) => (
+              <SelectItem key={deck.id} value={deck.id}>{deck.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedDeckId && (
+          <p className="text-xs text-muted-foreground text-right">
+            השאלה תתווסף כברירת מחדל למערכת שנבחרה. אפשר לשנות את היעד לפני השמירה.
+          </p>
+        )}
+      </div>
+
       {/* === Categories — moved to TOP === */}
       <div className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3">
         <div className="flex items-center justify-between gap-2">
