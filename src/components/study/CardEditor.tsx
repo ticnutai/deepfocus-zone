@@ -8,11 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogFooter } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Card as StudyCardType, CardType } from "@/lib/study/types";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const RECENT_CATS_KEY = "card-editor:recent-cats";
 const MAX_RECENT = 6;
@@ -100,11 +102,9 @@ interface Props {
 }
 
 export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Props) {
-  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, setUiPref, state, forkSourceCard, isCardFromSource } = useStudy();
+  const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, state, forkSourceCard, isCardFromSource } = useStudy();
+  const { isAdmin } = usePermissions();
   const isEdit = !!editCard;
-  const persistedCreateTypes = Array.isArray(state.uiPrefs?.cardEditorLastCreateTypes)
-    ? Array.from(new Set(state.uiPrefs.cardEditorLastCreateTypes.filter((t): t is CardType => t === "flashcard" || t === "multiple" || t === "boolean")))
-    : [];
 
   // Deck assignment is optional. A deckId passed by an explicit "new question"
   // action preselects that deck; opening the general creation tab still uses null.
@@ -114,18 +114,16 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
   const [type, setType] = useState<CardType>(editCard?.type ?? "flashcard");
   // Create-mode: which question types to generate at once (one card per type).
-  // Default: only flashcard. In edit-mode this state is ignored (single type).
+  // Default: American multiple-choice. In edit-mode this state is ignored (single type).
   const [createTypes, setCreateTypes] = useState<CardType[]>(
-    editCard ? [editCard.type] : (persistedCreateTypes.length ? persistedCreateTypes : ["flashcard"]),
+    editCard ? [editCard.type] : ["multiple"],
   );
   const toggleCreateType = (t: CardType) => {
     setCreateTypes((arr) =>
       {
-        const next = arr.includes(t)
+        return arr.includes(t)
           ? (arr.length > 1 ? arr.filter((x) => x !== t) : arr) // keep at least one
           : [...arr, t];
-        if (!isEdit) setUiPref("cardEditorLastCreateTypes", next);
-        return next;
       },
     );
   };
@@ -164,6 +162,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   const initialCategoryNames = initialTags.filter((t) => t.startsWith("cat:")).map((t) => t.slice(4));
   const initialPlainTags = initialTags.filter((t) => !t.startsWith("cat:"));
   const [tagsInput, setTagsInput] = useState(initialPlainTags.join(", "));
+  const [optionalOptionsOpen, setOptionalOptionsOpen] = useState(false);
   const [selectedCategoryNames, setSelectedCategoryNames] = useState<string[]>(
     isEdit ? initialCategoryNames : (prefillCategories ?? initialCategoryNames),
   );
@@ -276,6 +275,9 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   const showFlashFields = hasType("flashcard") || (type === "combo" && comboFlashEnabled && isEdit);
   const showMultiFields = hasType("multiple") || (type === "combo" && comboMultiEnabled && isEdit);
   const showBooleanFields = hasType("boolean");
+  const selectedDeckName = selectedDeckId
+    ? state.decks.find((deck) => deck.id === selectedDeckId)?.name
+    : null;
 
   useEffect(() => {
     const w = window as Window & {
@@ -366,31 +368,15 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
   return (
     <div dir="rtl" className="space-y-4">
-      <div className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3">
-        <Label className="block text-right">מערכת יעד</Label>
-        <Select
-          value={selectedDeckId ?? "__none__"}
-          onValueChange={(value) => setSelectedDeckId(value === "__none__" ? null : value)}
-        >
-          <SelectTrigger aria-label="מערכת יעד" className="border-2 border-gold/40 text-right">
-            <SelectValue placeholder="בחר מערכת" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">ללא מערכת — סיווג לפי קטגוריות בלבד</SelectItem>
-            {state.decks.map((deck) => (
-              <SelectItem key={deck.id} value={deck.id}>{deck.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selectedDeckId && (
-          <p className="text-xs text-muted-foreground text-right">
-            השאלה תתווסף כברירת מחדל למערכת שנבחרה. אפשר לשנות את היעד לפני השמירה.
-          </p>
-        )}
-      </div>
-
+      <div
+        dir="ltr"
+        className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(22rem,0.7fr)] xl:items-start"
+      >
       {/* === Categories — moved to TOP === */}
-      <div className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3">
+      <div
+        dir="rtl"
+        className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto"
+      >
         <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-1.5">
             <FolderTree className="h-4 w-4" /> קטגוריות
@@ -401,6 +387,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             )}
           </Label>
           <div className="flex items-center gap-1.5">
+            {isAdmin && (
             <Button
               type="button"
               size="sm"
@@ -447,6 +434,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
               {aiClassifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               סווג עם AI
             </Button>
+            )}
           </div>
         </div>
 
@@ -465,6 +453,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
         )}
       </div>
 
+      <div dir="rtl" className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
       <div className="space-y-2">
         <Label className="block text-right">סוג שאלה</Label>
         {isEdit ? (
@@ -481,8 +470,8 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
           <div className="flex flex-row-reverse gap-1.5" role="group" aria-label="סוגי שאלות">
             {([
               { id: "flashcard" as const, label: "כרטיסיה" },
-              { id: "multiple"  as const, label: "אמריקאי" },
               { id: "boolean"   as const, label: "נכון/לא נכון" },
+              { id: "multiple"  as const, label: "אמריקאי" },
             ]).map(({ id, label }) => {
               const active = createTypes.includes(id);
               return (
@@ -622,13 +611,6 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
       {/* Categories selector moved to TOP */}
 
-      <div className="space-y-2">
-        <Label className="block text-right">תגיות (מופרד בפסיקים)</Label>
-        <Input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)}
-          placeholder="לדוגמה: היסטוריה, מבחן" className="border-2 border-gold/40 text-right" />
-      </div>
-
-
       {editingSourceCard && (
         <div className="space-y-2 rounded-xl border-2 border-gold/50 bg-gold/10 p-3 text-right">
           <div className="text-sm font-semibold text-gold-foreground">
@@ -647,12 +629,79 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
         </div>
       )}
 
+      <Collapsible
+        open={optionalOptionsOpen}
+        onOpenChange={setOptionalOptionsOpen}
+        className="rounded-xl border-2 border-gold/40 bg-secondary/20"
+      >
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="flex h-auto w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-right hover:bg-gold/10"
+            aria-label={optionalOptionsOpen ? "מזער אפשרויות אופציונליות" : "פתח אפשרויות אופציונליות"}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold text-foreground">אפשרויות אופציונליות</div>
+              <div className="truncate text-xs font-normal text-muted-foreground">
+                {selectedDeckName
+                  ? `מערכת: ${selectedDeckName}${tagsInput.trim() ? " · נוספו תגיות" : ""}`
+                  : tagsInput.trim()
+                    ? "נוספו תגיות · ללא מערכת יעד"
+                    : "תגיות ומערכת יעד"}
+              </div>
+            </div>
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 shrink-0 transition-transform",
+                optionalOptionsOpen && "rotate-180",
+              )}
+            />
+          </Button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent className="space-y-4 border-t border-gold/30 px-3 pb-3 pt-4">
+          <div className="space-y-2">
+            <Label className="block text-right">תגיות (מופרד בפסיקים)</Label>
+            <Input
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              placeholder="לדוגמה: היסטוריה, מבחן"
+              className="border-2 border-gold/40 text-right"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="block text-right">מערכת יעד</Label>
+            <Select
+              value={selectedDeckId ?? "__none__"}
+              onValueChange={(value) => setSelectedDeckId(value === "__none__" ? null : value)}
+            >
+              <SelectTrigger aria-label="מערכת יעד (אופציונלי)" className="border-2 border-gold/40 text-right">
+                <SelectValue placeholder="בחר מערכת" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">ללא מערכת — סיווג לפי קטגוריות בלבד</SelectItem>
+                {state.decks.map((deck) => (
+                  <SelectItem key={deck.id} value={deck.id}>{deck.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground text-right">
+              אפשר לשמור את השאלה ללא מערכת או לבחור מערכת שאליה היא תתווסף.
+            </p>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       <DialogFooter>
         <Button onClick={handleSave} className="bg-gradient-navy text-primary-foreground rounded-xl">
           <Plus className="h-4 w-4" /> {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : (createTypes.length > 1 ? `הוסף ${createTypes.length} שאלות` : "הוסף שאלה")}
         </Button>
       </DialogFooter>
 
+      </div>
+      </div>
     </div>
   );
 }

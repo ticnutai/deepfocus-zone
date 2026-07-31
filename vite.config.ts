@@ -1,14 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { readFileSync } from "fs";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
+
+// Version + build date injected at build time, shown in a tiny badge in-app.
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
+const APP_VERSION = pkg.version as string;
+const BUILD_DATE = new Date().toISOString();
 
 // https://vitejs.dev/config/
 // When BUILD_TARGET=electron, emit relative asset paths so the bundle works
 // when loaded via file:// inside the desktop app. Web builds stay absolute.
 export default defineConfig(({ mode }) => ({
   base: process.env.BUILD_TARGET === "electron" ? "./" : "/",
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __BUILD_DATE__: JSON.stringify(BUILD_DATE),
+  },
   server: {
     host: "::",
     port: 5000,
@@ -28,7 +38,9 @@ export default defineConfig(({ mode }) => ({
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/~oauth/, /^\/api\//],
         globPatterns: ["**/*.{js,css,html,woff2,svg,png,ico,json}"],
-        globIgnores: ["**/data/reports/full_shas_qna_report.json"],
+        // shas/** — ספריית הש"ס המקומית (5,375 קבצים, ~128MB): לא ב-precache;
+        // נטענת לפי דרישה עם runtime cache (ראה למטה).
+        globIgnores: ["**/data/reports/full_shas_qna_report.json", "**/shas/**"],
         // Includes the generated shared question library so the installed PWA
         // can start from a completely cold cache without a network connection.
         maximumFileSizeToCacheInBytes: 80 * 1024 * 1024,
@@ -36,6 +48,16 @@ export default defineConfig(({ mode }) => ({
         clientsClaim: true,
         skipWaiting: true,
         runtimeCaching: [
+          {
+            // ספריית הש"ס המקומית — קבצים סטטיים שלא משתנים: cache-first.
+            urlPattern: /\/shas\/.*\.json$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "shas-library",
+              expiration: { maxEntries: 800, maxAgeSeconds: 86400 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             // HTML navigations → network first so new deploys land fast.
             urlPattern: ({ request }) => request.mode === "navigate",
@@ -82,7 +104,7 @@ export default defineConfig(({ mode }) => ({
       },
       manifest: {
         name: "מעקב למידה",
-        short_name: "פשש",
+        short_name: "למען",
         description: "מערכת לימוד וחזרות",
         theme_color: "#1a1f2e",
         background_color: "#1a1f2e",

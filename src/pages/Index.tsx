@@ -12,6 +12,8 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { useAutoBackupRunner } from "@/hooks/useAutoBackupRunner";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { usePrompt } from "@/hooks/usePrompt";
+import { toast } from "@/hooks/use-toast";
 import { PreviewRoleApplier } from "@/components/admin/PreviewRoleApplier";
 import { AutoInitShasTemplate } from "@/components/AutoInitShasTemplate";
 import { WidgetGrid } from "@/components/study/WidgetGrid";
@@ -35,6 +37,7 @@ import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
 import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBMode";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+import { getLocalAccount } from "@/lib/auth/localAccount";
 
 // Lazy-loaded components — downloaded only when first rendered
 const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
@@ -451,20 +454,33 @@ const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
 };
 
 const DEFAULT_TABS_ALL: TabDef[] = (() => {
-  const byId = new Map(DEFAULT_TABS.map((tab) => [tab.v, tab]));
+  const byId = new Set(DEFAULT_TABS.map((tab) => tab.v));
+  // Dedupe by LABEL too, not just id: the sidebar's "cards" and the home tab
+  // "categories" are the same page under different ids but share the label
+  // "קטגוריות ושאלות", so an id-only check let both through and the tab strip
+  // rendered it twice. Mirrors the same guard used by SIDEBAR_CHOICES below.
+  const byLabel = new Set(DEFAULT_TABS.map((tab) => tab.l));
   const out = [...DEFAULT_TABS];
   for (const item of DEFAULT_SIDEBAR_ITEMS) {
-    if (byId.has(item.id)) continue;
+    if (byId.has(item.id) || byLabel.has(item.label)) continue;
+    byId.add(item.id);
+    byLabel.add(item.label);
     out.push({ v: item.id, l: item.label, I: item.icon });
   }
   return out;
 })();
 
-const DEFAULT_SIDEBAR_ITEMS_ALL: NavItem[] = (() => {
-  const byId = new Map(DEFAULT_SIDEBAR_ITEMS.map((item) => [item.id, item]));
+// All pages selectable for the sidebar: native items + home-tab pages
+// (e.g. לימוד דף, חזרות לימוד). The configs themselves stay fully
+// independent — this only widens the sidebar's own choice list. Entries whose
+// id or label already exists as a native sidebar item are skipped to avoid
+// duplicates (קטגוריות ושאלות, יעדים).
+const SIDEBAR_CHOICES: NavItem[] = (() => {
+  const byId = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
+  const byLabel = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.label));
   const out = [...DEFAULT_SIDEBAR_ITEMS];
   for (const tab of DEFAULT_TABS) {
-    if (byId.has(tab.v)) continue;
+    if (byId.has(tab.v) || byLabel.has(tab.l)) continue;
     out.push({ id: tab.v, label: tab.l, icon: tab.I });
   }
   return out;
@@ -538,12 +554,15 @@ const Index = () => {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const { user, signOut, isGuest, guestProfile } = useAuth();
+  const { prompt: promptText, dialog: promptDialog } = usePrompt();
+  const { user, signOut, isGuest, guestProfile, loading: authLoading } = useAuth();
   const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
-  const displayUserPrimary = isGuest ? "אורח" : (user?.email ?? "");
+  const displayUserPrimary = isGuest
+    ? (getLocalAccount()?.displayName ?? "אורח")
+    : (user?.email ?? "");
   const displayUserRole = isAdmin
     ? "ADMIN"
-    : (isGuest ? (guestProfile?.roleName ?? "") : "");
+    : (isGuest ? (getLocalAccount() ? "חשבון מקומי" : (guestProfile?.roleName ?? "")) : "");
   const previewRoleId = useMemo(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";
@@ -853,7 +872,10 @@ const Index = () => {
   }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
 
   const visibleTabs = useMemo(() => orderedTabs.filter((t) => {
-    if (!HOME_TAB_IDS.has(t.v)) return false;
+    // Sidebar-derived entries are allowed in the strip too (clicking one
+    // navigates to its section) — only "home" itself is excluded, since the
+    // strip already lives on the home page.
+    if (t.v === "home") return false;
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
     if (!isAdmin || previewRoleId) {
@@ -868,9 +890,23 @@ const Index = () => {
     [visibleTabs],
   );
 
+  // Home tabs the current role is allowed to SEE, ignoring the strip's
+  // show/hide config. Used below so that explicit navigation (e.g. clicking
+  // לימוד דף in the sidebar) works even when that tab is hidden from the
+  // strip — strip config must never veto navigation, only presentation.
+  const allowedHomeTabs = useMemo(() => orderedTabs.filter((t) => {
+    if (!HOME_TAB_IDS.has(t.v)) return false;
+    if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
+    if (!isAdmin || previewRoleId) {
+      const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
+      if (blockedSidebarSet.has(sidebarId)) return false;
+    }
+    return isAllowedByPermission(t.v);
+  }), [orderedTabs, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
+
   useEffect(() => {
     if (permsLoading) return;
-    if (activeTab && !visibleHomeTabs.some((tab) => tab.v === activeTab)) {
+    if (activeTab && !allowedHomeTabs.some((tab) => tab.v === activeTab)) {
       const fallback = visibleHomeTabs[0]?.v ?? "overview";
       setActiveTab(fallback);
       setVisitedTabs((prev) => {
@@ -881,7 +917,7 @@ const Index = () => {
       });
       try { localStorage.setItem("active-tab", fallback); } catch { /* ignore */ }
     }
-  }, [activeTab, permsLoading, visibleHomeTabs]);
+  }, [activeTab, permsLoading, allowedHomeTabs, visibleHomeTabs]);
 
   const handleTabDragEnd = useCallback((e: DragEndEvent) => {
     const { active: dragActive, over } = e;
@@ -910,7 +946,7 @@ const Index = () => {
 
   const orderedSidebarItems: (NavItem & { visible: boolean })[] = useMemo(() => {
     const cfg = state.sidebarConfig ?? [];
-    if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS_ALL.map((item) => ({ ...item, visible: true }));
+    if (cfg.length === 0) return SIDEBAR_CHOICES.map((item) => ({ ...item, visible: true }));
 
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const used = new Set<string>();
@@ -918,14 +954,16 @@ const Index = () => {
 
     for (const c of sorted) {
       if (used.has(c.id)) continue;
-      const def = DEFAULT_SIDEBAR_ITEMS_ALL.find((item) => item.id === c.id);
+      const def = SIDEBAR_CHOICES.find((item) => item.id === c.id);
       if (!def) continue;
       result.push({ ...def, visible: c.visible });
       used.add(c.id);
     }
 
-    for (const def of DEFAULT_SIDEBAR_ITEMS_ALL) {
-      if (!used.has(def.id)) result.push({ ...def, visible: true });
+    // Items missing from the saved config (e.g. newly added pages) default to
+    // hidden so an app update never floods an existing user's sidebar.
+    for (const def of SIDEBAR_CHOICES) {
+      if (!used.has(def.id)) result.push({ ...def, visible: false });
     }
 
     return result;
@@ -938,10 +976,44 @@ const Index = () => {
     return isAllowedByPermission(item.id);
   }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
 
+  // Sections the user is ALLOWED to open, ignoring the sidebar strip's
+  // show/hide config. Visibility config controls presentation, not navigation
+  // rights — hiding "ניהול משתמשים" from the strip must not make the admin
+  // panel unreachable via direct navigation (?section=admin). Same rule the
+  // home tabs already use via allowedHomeTabs.
+  const navigableSidebarIds = useMemo(() => {
+    const ids = orderedSidebarItems
+      .filter((item) => {
+        if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
+        if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
+        return isAllowedByPermission(item.id);
+      })
+      .map((item) => item.id);
+    return new Set(ids);
+  }, [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
+
   useEffect(() => {
-    if (visibleSidebarItems.some((item) => item.id === active)) return;
+    // Wait for BOTH auth and permissions before bouncing. While the session is
+    // still being restored `user` is null, which makes usePermissions publish an
+    // empty (isAdmin: false) set with loading already false — so bouncing here
+    // would kick an admin off ?section=admin before their role ever loaded.
+    if (authLoading || permsLoading) return;
+    // Session restore races a boot timeout, so there is a window where auth
+    // reports "finished" while `user` is still null and permissions are an
+    // empty (isAdmin: false) set. Bouncing then would kick an admin off
+    // ?section=admin moments before their real session arrives. With no user
+    // and no guest profile there is nothing to authorise against anyway —
+    // RequireAuth owns that redirect.
+    if (!user && !isGuest) return;
+    // Permissions can land a render AFTER `loading` flips to false (the hook
+    // publishes an empty set for a not-yet-known user). Bouncing on that empty
+    // set is what made ?section=admin unreachable for admins. Wait until roles
+    // have actually materialised before treating a section as forbidden.
+    if (!isGuest && roles.length === 0) return;
+    if (navigableSidebarIds.has(active)) return;
     setActive(visibleSidebarItems[0]?.id ?? "home");
-  }, [active, visibleSidebarItems]);
+  }, [active, navigableSidebarIds, visibleSidebarItems, permsLoading, authLoading, user, isGuest, roles]);
+
 
   useEffect(() => {
     if (permsLoading) return;
@@ -986,71 +1058,41 @@ const Index = () => {
   }, [allSidebarSelected, orderedSidebarItems, saveSidebarConfig]);
 
   const resetSidebarConfig = useCallback(() => {
-    saveSidebarConfig(DEFAULT_SIDEBAR_ITEMS_ALL.map((item, index) => ({ id: item.id, visible: true, order: index })));
+    saveSidebarConfig(SIDEBAR_CHOICES.map((item, index) => ({ id: item.id, visible: true, order: index })));
   }, [saveSidebarConfig]);
 
-  const copySidebarFromTabsConfig = useCallback(() => {
-    const tabOrder = new Map(orderedTabs.map((tab, index) => [tab.v, { index, visible: tab.visible }]));
-    const originalIndex = new Map(orderedSidebarItems.map((item, index) => [item.id, index]));
-
-    const next = [...orderedSidebarItems]
-      .sort((a, b) => {
-        const aRank = tabOrder.get(a.id)?.index ?? Number.MAX_SAFE_INTEGER;
-        const bRank = tabOrder.get(b.id)?.index ?? Number.MAX_SAFE_INTEGER;
-        if (aRank !== bRank) return aRank - bRank;
-        return (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
-      })
-      .map((item, order) => {
-        const fromTab = tabOrder.get(item.id);
-        return {
-          id: item.id,
-          visible: item.id === "home" ? true : (fromTab?.visible ?? item.visible),
-          order,
-        };
-      });
-
-    saveSidebarConfig(next);
-  }, [orderedSidebarItems, orderedTabs, saveSidebarConfig]);
-
-  const copyTabsFromSidebarConfig = useCallback(() => {
-    const sidebarOrder = new Map(orderedSidebarItems.map((item, index) => [item.id, { index, visible: item.visible }]));
-    const originalIndex = new Map(orderedTabs.map((tab, index) => [tab.v, index]));
-
-    const next = [...orderedTabs]
-      .sort((a, b) => {
-        const aRank = sidebarOrder.get(a.v)?.index ?? Number.MAX_SAFE_INTEGER;
-        const bRank = sidebarOrder.get(b.v)?.index ?? Number.MAX_SAFE_INTEGER;
-        if (aRank !== bRank) return aRank - bRank;
-        return (originalIndex.get(a.v) ?? 0) - (originalIndex.get(b.v) ?? 0);
-      })
-      .map((tab, order) => {
-        const fromSidebar = sidebarOrder.get(tab.v);
-        return {
-          id: tab.v,
-          visible: fromSidebar?.visible ?? tab.visible,
-          order,
-        };
-      });
-
-    saveTabConfig(next);
-  }, [orderedSidebarItems, orderedTabs, saveTabConfig]);
-
-  const requireSettingsAuth = useCallback((): boolean => {
+  // Async settings gate — uses the usePrompt dialog because window.prompt is
+  // not supported inside Electron (the call silently fails, so the button
+  // appeared dead in the desktop app).
+  const requireSettingsAuth = useCallback(async (): Promise<boolean> => {
     try {
       if (sessionStorage.getItem("settings-unlocked") === "1") return true;
     } catch { /* ignore */ }
-    const input = window.prompt("להזנת אזור ההגדרות יש להזין סיסמה:");
+    const input = await promptText("להזנת אזור ההגדרות יש להזין סיסמה:", {
+      title: "אזור הגדרות",
+      password: true,
+    });
     if (input === null) return false;
     if (input === "543211") {
       try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
       return true;
     }
-    window.alert("סיסמה שגויה");
+    toast({ title: "סיסמה שגויה", variant: "destructive" });
     return false;
-  }, []);
+  }, [promptText]);
 
-  const selectSidebarItem = useCallback((id: string) => {
-    if (id === "settings" && !requireSettingsAuth()) return;
+  const selectSidebarItem = useCallback(async (id: string) => {
+    if (id === "settings" && !(await requireSettingsAuth())) return;
+    // "בית" must return to the home overview. When the user is on a home-tab
+    // (e.g. חזרות לימוד) `active` is already "home" with a sub-tab active, so
+    // just setActive("home") would be a no-op — explicitly reset the tab too.
+    if (id === "home") {
+      setActive("home");
+      setActiveTab("overview");
+      setVisitedTabs((s) => (s.has("overview") ? s : new Set(s).add("overview")));
+      try { localStorage.setItem("active-tab", "overview"); } catch { /* ignore */ }
+      return;
+    }
     if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
       setActive("home");
       setActiveTab(id);
@@ -1068,6 +1110,62 @@ const Index = () => {
   const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
     ? activeTab
     : active;
+
+  // The branding title + top tab strip normally only appears on the "home"
+  // page. Sidebar-derived pages that were added to that same strip (e.g. the
+  // "book" page renamed to "לוח ש"ס") render through renderSidebarPage instead,
+  // so without this they'd show no header at all. Reusable so any such page
+  // can opt in by rendering it above its own content.
+  const renderHomeHeaderStrip = (activeValue: string) => (
+    <>
+      <div className="text-center space-y-2 animate-fade-in">
+        <p className="font-display text-3xl sm:text-5xl lg:text-7xl font-bold text-gold leading-tight">למען תהיה תורת ה' בפיך</p>
+        <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-semibold text-foreground">מערכת לימוד וחזרות</h1>
+        <p className="text-muted-foreground text-sm sm:text-base">עקוב אחר ההתקדמות שלך וקבל תובנות מתקדמות</p>
+      </div>
+      <Tabs
+        value={activeValue}
+        onValueChange={(v) => {
+          if (!HOME_TAB_IDS.has(v)) {
+            void selectSidebarItem(v);
+            return;
+          }
+          setActive("home");
+          setActiveTab(v);
+          setVisitedTabs((s) => {
+            const next = s.has(v) ? s : new Set(s);
+            next.add(v);
+            return next;
+          });
+          try { localStorage.setItem("active-tab", v); } catch { /* ignore */ }
+        }}
+        className="w-full" dir="rtl"
+      >
+        <Card className="gold-frame p-1.5 sm:p-2 relative">
+          <TabsList
+            className="grid w-full bg-transparent gap-3 sm:gap-4 h-auto px-1"
+            dir="rtl"
+            style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+          >
+            {visibleTabs.map(({ v, l, I }) => (
+              <TabsTrigger
+                key={v} value={v}
+                className="w-full min-w-0 justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
+              >
+                <span className="relative">
+                  {l}
+                  {v === "study" && showStudiedBadge && studiedToday && (
+                    <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+                  )}
+                </span>
+                <I className="h-4 w-4" />
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Card>
+      </Tabs>
+    </>
+  );
 
   const renderSidebarPage = (pageId: string) => {
     switch (pageId) {
@@ -1260,7 +1358,12 @@ const Index = () => {
       case "backup-restore":
         return <BackupRestorePage />;
       case "shas-board":
-        return <ShasBoard />;
+        return (
+          <>
+            {renderHomeHeaderStrip("shas-board")}
+            <ShasBoard />
+          </>
+        );
       case "db-inspector":
         return <SupabaseInspectorPage />;
       case "perf":
@@ -1306,12 +1409,20 @@ const Index = () => {
           <div className="px-4 h-[60px] border-b-2 border-gold/40 flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
-                onClick={() => { if (requireSettingsAuth()) setSidebarConfigOpen(true); }}
+                onClick={async () => { if (await requireSettingsAuth()) setSidebarConfigOpen(true); }}
                 title="הגדרת סיידבר"
                 className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-secondary text-gold hover:text-navy transition-colors"
                 style={{ display: profileBActive ? "none" : undefined }}
               >
                 <Sliders className="h-4 w-4" />
+              </button>
+              <button
+                onClick={async () => { if (await requireSettingsAuth()) setTabConfigOpen(true); }}
+                title="הגדרת טאבים"
+                className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-secondary text-gold hover:text-navy transition-colors"
+                style={{ display: profileBActive ? "none" : undefined }}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
               </button>
               <button
                 onClick={() => { setPinned((v) => !v); setSidebarHovered(false); }}
@@ -1329,7 +1440,7 @@ const Index = () => {
           <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
             <div ref={userFooterDesktopRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
               <button
-                onClick={() => { if (requireSettingsAuth()) setActive("settings"); }}
+                onClick={async () => { if (await requireSettingsAuth()) setActive("settings"); }}
                 className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                 style={{ flex: "1 1 auto" }}
                 title="הגדרות משתמש"
@@ -1407,14 +1518,14 @@ const Index = () => {
                       )}
                     >
                       <button
-                        onClick={() => { if (requireSettingsAuth()) { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); } }}
+                        onClick={async () => { if (await requireSettingsAuth()) { setSidebarConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת סיידבר"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
                         <Sliders className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => { if (requireSettingsAuth()) { setTabConfigOpen(true); setShowTabsConfigIcon(false); } }}
+                        onClick={async () => { if (await requireSettingsAuth()) { setTabConfigOpen(true); setShowTabsConfigIcon(false); } }}
                         title="הגדרת טאבים"
                         className="flex items-center justify-center h-8 w-8 rounded-lg text-navy hover:bg-secondary transition-colors"
                       >
@@ -1432,7 +1543,7 @@ const Index = () => {
                   <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
                     <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
                       <button
-                        onClick={() => { if (requireSettingsAuth()) { setActive("settings"); setMobileSidebarOpen(false); } }}
+                        onClick={async () => { if (await requireSettingsAuth()) { setActive("settings"); setMobileSidebarOpen(false); } }}
                         className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                         style={{ flex: "1 1 auto" }}
                         title="הגדרות משתמש"
@@ -1502,7 +1613,9 @@ const Index = () => {
               value={activeTab}
               onValueChange={(v) => {
                 if (!HOME_TAB_IDS.has(v)) {
-                  setActive(v);
+                  // Sidebar-derived tab — route through selectSidebarItem so
+                  // gated sections (settings) still require the password.
+                  void selectSidebarItem(v);
                   return;
                 }
                 setActive("home");
@@ -1677,9 +1790,6 @@ const Index = () => {
                   </SortableContext>
                 </DndContext>
                 <div className="mt-4">
-                  <Button variant="outline" className="w-full border-gold/60 mb-2" onClick={copyTabsFromSidebarConfig}>
-                    העתק פריסה מהסיידבר
-                  </Button>
                   <Button variant="outline" className="w-full border-gold/60" onClick={resetTabsConfig}>
                     איפוס טאבים לברירת מחדל
                   </Button>
@@ -1716,9 +1826,6 @@ const Index = () => {
                   </SortableContext>
                 </DndContext>
                 <div className="mt-4">
-                  <Button variant="outline" className="w-full border-gold/60 mb-2" onClick={copySidebarFromTabsConfig}>
-                    העתק פריסה מהטאבים
-                  </Button>
                   <Button variant="outline" className="w-full border-gold/60" onClick={resetSidebarConfig}>
                     איפוס סיידבר לברירת מחדל
                   </Button>
@@ -1753,6 +1860,7 @@ const Index = () => {
       <Suspense fallback={null}>
         <AiCardCapture />
       </Suspense>
+      {promptDialog}
     </div>
   );
 };

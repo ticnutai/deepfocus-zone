@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "deepfocus-zone",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5000", "--strictPort"],
+      "port": 5000,
+      "autoPort": false
+    }
+  ]
+}

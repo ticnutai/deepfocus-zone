@@ -65,13 +65,39 @@ export async function fetchSefariaText(
   daf: number,
   amud: "a" | "b",
 ): Promise<SefariaText> {
+  const sefariaName = SEFARIA_NAME[masechetHebrew];
+  if (!sefariaName) throw new Error(`לא נמצא שם Sefaria למסכת: ${masechetHebrew}`);
+  const ref = `${sefariaName}.${daf}${amud}`;
+
+  // 1) מאגר מקומי (offline-first) — עברית מקומית; תרגום אנגלי מושלם אונליין אם זמין
+  const { fetchLocalAmud, stripTags } = await import("@/lib/study/localShas");
+  const local = await fetchLocalAmud(sefariaName.replace(/\s+/g, "_"), daf, amud);
+  if (local && local.gemara.length > 0) {
+    let english = "";
+    if (typeof navigator === "undefined" || navigator.onLine) {
+      try {
+        const url = `https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?pad=0&commentary=0`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json() as Record<string, unknown>;
+          english = joinSegments(data.text);
+        }
+      } catch {
+        /* אין תרגום — נשאר עם עברית מקומית */
+      }
+    }
+    return {
+      ref,
+      heRef: `${masechetHebrew} ${local.daf} ${local.amud === "א" ? "ע\"א" : "ע\"ב"}`,
+      aramaic: local.gemara.map(stripTags).filter(Boolean).join(" "),
+      english,
+    };
+  }
+
+  // 2) גיבוי: Sefaria אונליין
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     throw new Error("הטקסט אינו שמור במכשיר ושירות ספריא דורש חיבור לאינטרנט.");
   }
-  const sefariaName = SEFARIA_NAME[masechetHebrew];
-  if (!sefariaName) throw new Error(`לא נמצא שם Sefaria למסכת: ${masechetHebrew}`);
-
-  const ref = `${sefariaName}.${daf}${amud}`;
   const url = `https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?pad=0&commentary=0`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`שגיאת Sefaria API: ${res.status} ${res.statusText}`);

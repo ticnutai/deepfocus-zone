@@ -5,10 +5,23 @@ import {
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
   Trophy, Archive, Settings, Menu, Sparkles, Sliders, SlidersHorizontal,
   Pin, PinOff, LogOut, Shield, FolderTree, Search, HardDrive,
-  DatabaseZap, RefreshCw,
+  DatabaseZap, RefreshCw, UsersRound, Check, UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  listLocalAccounts,
+  getActiveUsername,
+  switchLocalAccount,
+} from "@/lib/auth/localAccount";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +30,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useStudy } from "@/lib/study/store";
 import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+import { usePrompt } from "@/hooks/usePrompt";
+import { toast } from "@/hooks/use-toast";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },
@@ -105,15 +120,87 @@ const NavList = ({
   </nav>
 );
 
+// In-app switcher between local (offline) accounts. Only meaningful in guest
+// mode, where each account owns an isolated workspace parked by username. A
+// switch parks the live workspace (after a synchronous flush) and swaps the
+// target in, then reloads so the study store re-hydrates cleanly from it —
+// the most reliable path, and instant on Electron's file:// origin.
+const LocalAccountSwitcher = ({ onAddAccount }: { onAddAccount: () => void }) => {
+  const [accounts, setAccounts] = useState(() => listLocalAccounts());
+  const active = getActiveUsername();
+  const [switching, setSwitching] = useState(false);
+
+  if (accounts.length === 0) return null;
+
+  const switchTo = async (uname: string) => {
+    if (switching || uname === active) return;
+    setSwitching(true);
+    const ok = await switchLocalAccount(uname);
+    if (!ok) {
+      setSwitching(false);
+      toast({ title: "החלפת החשבון נכשלה", variant: "destructive" });
+      return;
+    }
+    // Clean, deterministic re-hydration of the study store from the new slot.
+    window.location.reload();
+  };
+
+  return (
+    <DropdownMenu onOpenChange={(open) => { if (open) setAccounts(listLocalAccounts()); }}>
+      <DropdownMenuTrigger asChild>
+        <button
+          title="החלפת חשבון מקומי"
+          className="flex aspect-square items-center justify-center h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors"
+        >
+          <UsersRound className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56" style={{ direction: "rtl" }}>
+        <DropdownMenuLabel className="text-[11px] text-muted-foreground">חשבונות מקומיים</DropdownMenuLabel>
+        {accounts.map((acct) => {
+          const isActive = acct.username === active;
+          return (
+            <DropdownMenuItem
+              key={acct.username}
+              disabled={switching}
+              onSelect={(e) => { e.preventDefault(); void switchTo(acct.username); }}
+              className="gap-2"
+            >
+              <span className="flex h-4 w-4 items-center justify-center shrink-0">
+                {isActive && <Check className="h-4 w-4 text-gold" />}
+              </span>
+              <span className="flex-1 min-w-0 text-right">
+                <span className="block text-sm truncate">{acct.displayName || acct.username}</span>
+                <span className="block text-[10px] text-muted-foreground">
+                  {acct.status === "registered" ? "מסונכרן לשרת" : "ממתין לסנכרון"}
+                </span>
+              </span>
+            </DropdownMenuItem>
+          );
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); onAddAccount(); }} className="gap-2">
+          <UserPlus className="h-4 w-4 text-gold" />
+          <span className="text-sm">הוסף חשבון…</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 const SidebarFooter = ({
   onOpenSettings,
   onSignOut,
+  onAddAccount,
+  showAccountSwitcher,
   userLabel,
   userInitial,
   isAdmin,
 }: {
   onOpenSettings: () => void;
   onSignOut: () => void;
+  onAddAccount: () => void;
+  showAccountSwitcher: boolean;
   userLabel: string;
   userInitial: string;
   isAdmin: boolean;
@@ -129,6 +216,7 @@ const SidebarFooter = ({
         >
           <LogOut className="h-3 w-3" />
         </button>
+        {showAccountSwitcher && <LocalAccountSwitcher onAddAccount={onAddAccount} />}
         <ThemeSwitcher />
       </div>
 
@@ -206,22 +294,28 @@ export function AppShellSidebar() {
   }, [state.sidebarConfig, isAdmin, previewRoleId, blocklist]);
 
   const SETTINGS_PW = "543211";
-  const requireSettingsAuth = (): boolean => {
+  const { prompt: promptText, dialog: promptDialog } = usePrompt();
+  // Async settings gate — window.prompt is not supported inside Electron
+  // (the call silently fails), so we use the usePrompt dialog instead.
+  const requireSettingsAuth = async (): Promise<boolean> => {
     try {
       if (sessionStorage.getItem("settings-unlocked") === "1") return true;
     } catch { /* ignore */ }
-    const input = window.prompt("להזנת אזור ההגדרות יש להזין סיסמה:");
+    const input = await promptText("להזנת אזור ההגדרות יש להזין סיסמה:", {
+      title: "אזור הגדרות",
+      password: true,
+    });
     if (input === null) return false;
     if (input === SETTINGS_PW) {
       try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
       return true;
     }
-    window.alert("סיסמה שגויה");
+    toast({ title: "סיסמה שגויה", variant: "destructive" });
     return false;
   };
 
-  const goSection = (id: string) => {
-    if (id === "settings" && !requireSettingsAuth()) return;
+  const goSection = async (id: string) => {
+    if (id === "settings" && !(await requireSettingsAuth())) return;
     if (pathname !== "/") {
       navigate(`/?section=${id}`);
     } else {
@@ -238,6 +332,13 @@ export function AppShellSidebar() {
 
   const userInitial = isGuest ? "א" : (user?.email?.[0] ?? "?").toUpperCase();
   const userLabel = isGuest ? "אורח" : (user?.email ?? "");
+
+  // Adding another local account = leave the current session and land on the
+  // sign-up screen; the new offline account gets its own isolated workspace.
+  const addLocalAccount = () => {
+    void signOut();
+    navigate("/auth");
+  };
 
   return (
     <>
@@ -282,6 +383,8 @@ export function AppShellSidebar() {
           <SidebarFooter
             onOpenSettings={() => goSection("settings")}
             onSignOut={() => signOut()}
+            onAddAccount={addLocalAccount}
+            showAccountSwitcher={isGuest}
             userLabel={userLabel}
             userInitial={userInitial}
             isAdmin={isAdmin}
@@ -315,6 +418,8 @@ export function AppShellSidebar() {
             <SidebarFooter
               onOpenSettings={() => goSection("settings")}
               onSignOut={() => signOut()}
+              onAddAccount={addLocalAccount}
+              showAccountSwitcher={isGuest}
               userLabel={userLabel}
               userInitial={userInitial}
               isAdmin={isAdmin}
@@ -322,6 +427,7 @@ export function AppShellSidebar() {
           </div>
         </SheetContent>
       </Sheet>
+      {promptDialog}
     </>
   );
 }

@@ -69,6 +69,21 @@ const VOWELS_RE = /[\u05B0-\u05BC\u05BD\u05BF\u05C1\u05C2\u05C7]/g;
 
 async function fetchSefariaText(ref: string): Promise<string[]> {
   if (cache.has(ref)) return cache.get(ref)!;
+
+  // מקומי קודם: אם זה ref של גמרא בבלית (למשל "Berakhot.2a") — נסה את המאגר המקומי
+  const { parseBavliRef, fetchLocalAmud, stripTags } = await import("@/lib/study/localShas");
+  const bavli = parseBavliRef(ref);
+  if (bavli) {
+    const local = await fetchLocalAmud(bavli.slug, bavli.daf, bavli.amud);
+    if (local && local.gemara.length > 0) {
+      const cleaned = local.gemara
+        .map((s) => normalizeSefariaLine(stripTags(s)))
+        .filter(Boolean);
+      cache.set(ref, cleaned);
+      return cleaned;
+    }
+  }
+
   const url = `${API}/${encodeURIComponent(ref)}?version=hebrew&return_format=text_only`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Sefaria fetch failed: ${res.status}`);
@@ -181,7 +196,16 @@ export function SefariaTextViewer({
     setText(null);
     fetchSefariaText(sefariaRef)
       .then((t) => { if (!cancelled) setText(t); })
-      .catch((e) => { if (!cancelled) setError(e?.message || "שגיאה בטעינה"); })
+      .catch((e) => {
+        if (cancelled) return;
+        const msg = (e?.message ?? "").toLowerCase();
+        const isNetwork = msg.includes("failed to fetch") || msg.includes("fetch")
+          || msg.includes("network") || msg.includes("timeout") || msg.includes("load failed")
+          || (typeof navigator !== "undefined" && !navigator.onLine);
+        setError(isNetwork
+          ? "הטקסט זמין רק עם חיבור לאינטרנט. במצב אופליין ניתן להמשיך לתרגל מהשאלות והחזרות המובנות."
+          : (e?.message || "שגיאה בטעינה"));
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [sefariaRef]);
@@ -221,7 +245,7 @@ export function SefariaTextViewer({
       <div className="flex-1 overflow-y-auto p-4 leading-loose text-lg">
         {loading && (
           <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
-            <Loader2 className="h-5 w-5 animate-spin" /> טוען מ-Sefaria…
+            <Loader2 className="h-5 w-5 animate-spin" /> טוען טקסט…
           </div>
         )}
         {error && (

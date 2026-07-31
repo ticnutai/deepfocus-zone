@@ -23,6 +23,20 @@ export interface RoleBlocklistAssignment {
 }
 
 const EMPTY: FeatureBlocklist = { sections: [], widgets: {} };
+
+/**
+ * Role id carried by the bundled "עבודה מקומית (אופליין)" guest profile.
+ *
+ * Offline accounts (username + password, registered with no connection) enter
+ * under this synthetic role. It is not a row in `app_roles`, so it never
+ * matched a blocklist assignment and `resolveRoleFeatureBlocklist` fell through
+ * to the GLOBAL blocklist — meaning a broad global block emptied the offline
+ * experience too, even though the offline profile grants full permissions.
+ * Giving the role its own assignable profile makes offline independently
+ * controllable from the admin screen.
+ */
+export const LOCAL_OFFLINE_ROLE_ID = "local-offline";
+export const LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID = "blocklist-local-offline";
 const KEY: Record<BlocklistScope, string> = {
   desktop: "feature_blocklist",
   mobile: "feature_blocklist_mobile_v1",
@@ -140,7 +154,7 @@ const normalizeProfiles = (value: unknown): FeatureBlocklistProfile[] => {
 
 const normalizeRoleAssignments = (value: unknown): RoleBlocklistAssignment[] => {
   if (!Array.isArray(value)) return [];
-  return value
+  const rows = value
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const raw = item as Partial<RoleBlocklistAssignment>;
@@ -151,6 +165,14 @@ const normalizeRoleAssignments = (value: unknown): RoleBlocklistAssignment[] => 
       };
     })
     .filter((row) => row.roleId && row.profileId);
+
+  // A role may hold at most ONE assignment. Duplicates accumulated in stored
+  // data (the same role→profile pair written twice), and since resolution picks
+  // the first match, the extras were invisible clutter that made the admin list
+  // confusing. Keep the last write for each role — that is the newest intent.
+  const byRole = new Map<string, RoleBlocklistAssignment>();
+  for (const row of rows) byRole.set(row.roleId, row);
+  return Array.from(byRole.values());
 };
 
 export async function loadFeatureBlocklistProfiles(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklistProfile[]> {
@@ -200,6 +222,55 @@ export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignmen
 // mergeBlocklists intentionally removed: role-assigned profiles fully
 // override the global blocklist (see resolveRoleFeatureBlocklist).
 
+/**
+ * Ensures the offline role owns an editable blocklist profile + assignment.
+ *
+ * Created unblocked (nothing hidden) so a local account behaves like a full
+ * install, and editable from the admin screen like any other profile. Runs at
+ * most once per scope per session and is a no-op when already present.
+ */
+const localOfflineEnsured = new Set<BlocklistScope>();
+
+export async function ensureLocalOfflineBlocklistProfile(
+  opts?: { scope?: BlocklistScope },
+): Promise<void> {
+  const scope = opts?.scope ?? "desktop";
+  if (localOfflineEnsured.has(scope)) return;
+  localOfflineEnsured.add(scope);
+
+  const [profiles, assignments] = await Promise.all([
+    loadFeatureBlocklistProfiles({ scope }),
+    loadRoleBlocklistAssignments({ scope }),
+  ]);
+
+  const hasProfile = profiles.some((p) => p.id === LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID);
+  const hasAssignment = assignments.some((a) => a.roleId === LOCAL_OFFLINE_ROLE_ID);
+  if (hasProfile && hasAssignment) return;
+
+  if (!hasProfile) {
+    await saveFeatureBlocklistProfiles([
+      ...profiles,
+      {
+        id: LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID,
+        name: "עבודה מקומית (אופליין)",
+        blocklist: { sections: [], widgets: {} },
+        updatedAt: Date.now(),
+      },
+    ], { scope });
+  }
+
+  if (!hasAssignment) {
+    await saveRoleBlocklistAssignments([
+      ...assignments,
+      {
+        id: crypto.randomUUID(),
+        roleId: LOCAL_OFFLINE_ROLE_ID,
+        profileId: LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID,
+      },
+    ], { scope });
+  }
+}
+
 export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
   const scope = opts?.scope ?? "desktop";
   const uniqueRoleIds = Array.from(new Set(roleIds.filter(Boolean)));
@@ -214,7 +285,15 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
   const assignment = uniqueRoleIds
     .map((roleId) => assignments.find((row) => row.roleId === roleId))
     .find((row): row is RoleBlocklistAssignment => !!row);
-  if (!assignment) return globalBlocklist;
+  if (!assignment) {
+    // The offline role must never inherit the global blocklist: an offline
+    // machine cannot reach the server to have its profile provisioned, and
+    // falling back to a broad global block would leave a local account staring
+    // at empty tabs with no way to fix it. Default it to "nothing blocked" —
+    // an admin can still restrict it via its own profile once online.
+    if (uniqueRoleIds.includes(LOCAL_OFFLINE_ROLE_ID)) return EMPTY;
+    return globalBlocklist;
+  }
 
   const profile = profiles.find((row) => row.id === assignment.profileId) ?? null;
   // When a role has an assigned blocklist profile, that profile fully defines

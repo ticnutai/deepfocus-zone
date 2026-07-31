@@ -22,6 +22,7 @@ import { WIDGET_DEFS } from "@/lib/study/widgetLayout";
 import type { SidebarConfig, WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import {
   loadFeatureBlocklist,
+  ensureLocalOfflineBlocklistProfile,
   loadFeatureBlocklistProfiles,
   loadRoleBlocklistAssignments,
   saveFeatureBlocklist,
@@ -107,6 +108,10 @@ export function RoleDefaultsTab() {
         setSelectedRole(userRole?.id ?? data[0]?.id ?? "");
       }
       const otherScp: BlocklistScope = layoutScope === "mobile" ? "desktop" : "mobile";
+      // Provision the offline role's own blocklist profile while an admin is
+      // online — offline machines can never write it themselves.
+      await ensureLocalOfflineBlocklistProfile({ scope: layoutScope as BlocklistScope })
+        .catch(() => { /* non-fatal: resolution falls back to "nothing blocked" */ });
       const [bl, profiles, assignments, loadedLayoutProfiles, loadedLayoutAssignments, crossProfiles] = await Promise.all([
         loadFeatureBlocklist({ scope: layoutScope as BlocklistScope }),
         loadFeatureBlocklistProfiles({ scope: layoutScope as BlocklistScope }),
@@ -392,6 +397,30 @@ export function RoleDefaultsTab() {
   const allWidgetsBlocked = allWidgetPairs.length > 0 && allWidgetPairs.every(({ tabId, widgetId }) =>
     (blocklist.widgets[tabId] ?? []).includes(widgetId),
   );
+
+  /** One click: nothing blocked at all — sections and widgets alike. */
+  const clearAllBlocks = () => setBlocklist((b) => ({ ...b, sections: [], widgets: {} }));
+
+  // Profiles nobody is assigned to. They are NOT duplicates (their contents
+  // differ), so they are never removed automatically — but labelling them keeps
+  // a long list readable and makes it obvious which ones are safe to delete.
+  const assignedProfileIds = useMemo(
+    () => new Set(roleAssignments.map((a) => a.profileId)),
+    [roleAssignments],
+  );
+  const profileLabel = useCallback(
+    (p: { id: string; name: string }) =>
+      assignedProfileIds.has(p.id) ? p.name : `${p.name} · לא בשימוש`,
+    [assignedProfileIds],
+  );
+  const unusedProfileCount = blockProfiles.filter((p) => !assignedProfileIds.has(p.id)).length;
+
+  const nothingBlocked =
+    blocklist.sections.length === 0 && Object.keys(blocklist.widgets).length === 0;
+
+  const blockedCount =
+    blocklist.sections.length +
+    Object.values(blocklist.widgets).reduce((n, list) => n + (list?.length ?? 0), 0);
 
   const toggleAllWidgetsGlobal = () => {
     setBlocklist((b) => {
@@ -799,7 +828,7 @@ export function RoleDefaultsTab() {
                 <SelectContent>
                   <SelectItem value="__none">ללא שיוך</SelectItem>
                   {blockProfiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{profileLabel(p)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -874,6 +903,30 @@ export function RoleDefaultsTab() {
                 ))}
               </div>
             </div>
+
+        {/* Quick status + one-click reset. When everything is blocked the app
+            looks broken (empty "כללי" tab), so make the way out obvious. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-gold/40 bg-card/60 p-3">
+          <div className="text-sm">
+            {nothingBlocked ? (
+              <span className="font-bold text-emerald-600">אין חסימות — הכל פתוח למשתמש</span>
+            ) : (
+              <>
+                <span className="font-bold text-destructive">{blockedCount} פריטים חסומים</span>
+                <span className="text-muted-foreground"> · פריטים חסומים לא יופיעו למשתמש</span>
+              </>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={clearAllBlocks}
+            disabled={nothingBlocked}
+          >
+            בטל את כל החסימות
+          </Button>
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -992,9 +1045,12 @@ export function RoleDefaultsTab() {
                 <SelectContent>
                   {blockProfiles.length > 0 && (
                     <>
-                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{scopeLabel}</div>
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                        {scopeLabel}
+                        {unusedProfileCount > 0 && ` · ${unusedProfileCount} לא בשימוש`}
+                      </div>
                       {blockProfiles.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        <SelectItem key={p.id} value={p.id}>{profileLabel(p)}</SelectItem>
                       ))}
                     </>
                   )}

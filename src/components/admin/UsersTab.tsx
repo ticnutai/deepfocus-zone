@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { syntheticEmailForUsername } from "@/lib/auth/localAccount";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -125,8 +126,8 @@ export function UsersTab() {
   };
 
   const createUser = async () => {
-    if (newPassword.length < 6) {
-      toast.error("סיסמה חייבת להכיל לפחות 6 תווים");
+    if (!newPassword.length) {
+      toast.error("יש להזין סיסמה");
       return;
     }
     if (createMode === "email" && !newEmail.trim()) {
@@ -194,7 +195,7 @@ export function UsersTab() {
 
   const savePassword = async () => {
     if (!pwdTarget) return;
-    if (newPwd.length < 6) { toast.error("סיסמה חייבת להכיל לפחות 6 תווים"); return; }
+    if (!newPwd.length) { toast.error("יש להזין סיסמה"); return; }
     setBusy(true);
     const { error } = await supabase.rpc("admin_set_password", { p_user_id: pwdTarget.id, p_password: newPwd } as never);
     setBusy(false);
@@ -316,12 +317,12 @@ export function UsersTab() {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Label className="text-right block">שם משתמש * (אותיות/ספרות/_/. — לפחות 3)</Label>
+                    <Label className="text-right block">שם משתמש * (אפשר בעברית, לפחות 2 תווים)</Label>
                     <Input
                       value={newUsername}
                       onChange={(e) => { setNewUsername(e.target.value); setUsernameSuggestions([]); }}
-                      dir="ltr"
                       placeholder="yossi"
+                      className="text-right"
                     />
                     {usernameSuggestions.length > 0 && (
                       <div className="flex flex-wrap gap-1 pt-1">
@@ -339,13 +340,13 @@ export function UsersTab() {
                     )}
                     {newUsername.trim() && (
                       <p className="text-[10px] text-muted-foreground" dir="ltr">
-                        login email will be: {newUsername.trim().toLowerCase()}@users.local
+                        login email will be: {syntheticEmailForUsername(newUsername)}
                       </p>
                     )}
                   </div>
                 )}
                 <div className="space-y-1">
-                  <Label className="text-right block">סיסמה * (לפחות 6 תווים)</Label>
+                  <Label className="text-right block">סיסמה *</Label>
                   <Input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} type="password" dir="ltr" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -602,7 +603,7 @@ export function UsersTab() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1">
-              <Label className="text-right block">סיסמה חדשה (לפחות 6 תווים)</Label>
+              <Label className="text-right block">סיסמה חדשה</Label>
               <Input
                 value={newPwd}
                 onChange={(e) => setNewPwd(e.target.value)}
@@ -613,7 +614,7 @@ export function UsersTab() {
               />
             </div>
             <DialogFooter className="flex-row-reverse">
-              <Button onClick={savePassword} disabled={busy || newPwd.length < 6}>שמור סיסמה</Button>
+              <Button onClick={savePassword} disabled={busy || !newPwd.length}>שמור סיסמה</Button>
               <Button variant="outline" onClick={() => { setPwdTarget(null); setNewPwd(""); }}>ביטול</Button>
             </DialogFooter>
           </DialogContent>

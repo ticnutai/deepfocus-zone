@@ -39,9 +39,16 @@ const FONT_FAMILY_VALUE: Record<"heebo" | "assistant" | "frank" | "arial" | "dav
 const CANTILLATION_RE = /[\u0591-\u05AF]/g;
 const VOWELS_RE = /[\u05B0-\u05BC\u05BD\u05BF\u05C1\u05C2\u05C7]/g;
 
+// Desktop (Electron) ships the full Shas text locally and is offline-first, so
+// it defaults to the bundled TEXT (always available). The PDF scan lives in
+// cloud storage and is used online only \u2014 the user can still toggle to it.
+const IS_ELECTRON =
+  typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+const DEFAULT_SOURCE: Source = IS_ELECTRON ? "text" : "pdf";
+
 export function GemaraViewer({ masechta, daf, amud, className, isActive = true, onPrev, onNext, canPrev, canNext, onTogglePin, isPinned }: Props) {
   const { state, setUiPref } = useStudy();
-  const [source, setSource] = useState<Source>("pdf");
+  const [source, setSource] = useState<Source>(DEFAULT_SOURCE);
   const [pdfExists, setPdfExists] = useState<boolean | null>(null);
   const [text, setText] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,7 +109,18 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
     setError(null);
     fetchSefariaDaf(masechta, daf, amud)
       .then((t) => { if (!cancel) setText(t); })
-      .catch((e: Error) => { if (!cancel) setError(e.message); })
+      .catch((e: Error) => {
+        if (cancel) return;
+        // Network failure (offline / server unreachable) → friendly message
+        // instead of a raw "Failed to fetch". Daf text needs the internet.
+        const msg = (e?.message ?? "").toLowerCase();
+        const isNetwork = msg.includes("failed to fetch") || msg.includes("fetch")
+          || msg.includes("network") || msg.includes("timeout") || msg.includes("load failed")
+          || (typeof navigator !== "undefined" && !navigator.onLine);
+        setError(isNetwork
+          ? "טקסט הדף זמין רק עם חיבור לאינטרנט. במצב אופליין ניתן להמשיך לתרגל מהשאלות והחזרות המובנות."
+          : e.message);
+      })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
   }, [source, masechta, daf, amud, isActive]);
@@ -217,7 +235,7 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
           <div className="h-full overflow-y-auto p-4">
             {loading && (
               <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin mr-2" /> טוען מ-Sefaria…
+                <Loader2 className="h-5 w-5 animate-spin mr-2" /> טוען דף…
               </div>
             )}
             {error && <div className="text-sm text-destructive py-4 text-center">{error}</div>}

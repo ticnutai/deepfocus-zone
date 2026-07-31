@@ -1,5 +1,8 @@
 // Sefaria API client לטקסטי גמרא בבלי
 // docs: https://www.sefaria.org.il/api/texts
+// ברירת מחדל: מאגר מקומי (public/shas) — Sefaria אונליין משמש רק כגיבוי.
+
+import { fetchLocalAmud, stripTags } from "./localShas";
 
 const SEFARIA_BASE = "https://www.sefaria.org/api/v3/texts";
 
@@ -47,7 +50,7 @@ const MASECHTA_EN: Record<string, string> = {
 
 const cache = new Map<string, string[]>();
 
-/** מחזיר מערך פסקאות עברית עבור עמוד ספציפי. */
+/** מחזיר מערך פסקאות עברית עבור עמוד ספציפי — מקומי קודם, אונליין כגיבוי. */
 export async function fetchSefariaDaf(
   masechta: string,
   daf: number,
@@ -59,6 +62,15 @@ export async function fetchSefariaDaf(
   const key = ref;
   if (cache.has(key)) return cache.get(key)!;
 
+  // 1) מאגר מקומי (offline-first)
+  const local = await fetchLocalAmud(en.replace(/\s+/g, "_"), daf, amud === 1 ? "a" : "b");
+  if (local && local.gemara.length > 0) {
+    const cleaned = local.gemara.map(stripTags).filter(Boolean);
+    cache.set(key, cleaned);
+    return cleaned;
+  }
+
+  // 2) גיבוי: Sefaria אונליין
   const url = `${SEFARIA_BASE}/${encodeURIComponent(ref)}?version=hebrew&return_format=text_only`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Sefaria fetch failed: ${res.status}`);

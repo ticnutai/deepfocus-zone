@@ -8,8 +8,18 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Eye, EyeOff, UserX } from "lucide-react";
+import { Sparkles, Eye, EyeOff, UserX, Trash2, UserCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import {
   getActiveGuestViewProfileId,
@@ -20,6 +30,17 @@ import {
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
 import { loadBundledOfflineLibrary } from "@/lib/study/offlineLibrary";
+import {
+  createLocalAccount,
+  verifyLocalCredentials,
+  deleteLocalAccount,
+  switchLocalAccount,
+  listLocalAccounts,
+  getActiveUsername,
+  syntheticEmailForUsername,
+  USERNAME_RE,
+  type LocalAccount,
+} from "@/lib/auth/localAccount";
 
 const LOCAL_OFFLINE_PROFILE_ID = "local-offline";
 const LOCAL_OFFLINE_MATRIX = Object.fromEntries(
@@ -48,6 +69,36 @@ async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
 const REMEMBER_KEY = "auth-remember";
 const EMAIL_KEY = "auth-remember-email";
 
+// Electron's `navigator.onLine` is unreliable — it reports `true` whenever a
+// network adapter is up, even with no real internet. So we never trust it to
+// mean "online": we ATTEMPT the server call (with a timeout) and treat any
+// network failure/timeout as offline, falling back to the local account.
+const NET_TIMEOUT_MS = 6000;
+
+function isNetworkError(e: unknown): boolean {
+  if (!e) return false;
+  const err = e as { name?: string; message?: string; status?: number };
+  const msg = (err.message ?? String(e)).toLowerCase();
+  return (
+    err.name === "AuthRetryableFetchError" ||
+    err.name === "TypeError" ||
+    err.status === 0 ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("network error") ||
+    msg.includes("fetch") ||
+    msg.includes("timeout") ||
+    msg.includes("load failed")
+  );
+}
+
+async function withTimeout<T>(p: PromiseLike<T>, ms = NET_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    p as Promise<T>,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
 // In Electron the renderer is loaded via file://, which breaks OAuth redirect
 // flows that assume an http(s) origin. Detect via the preload bridge.
 const IS_ELECTRON =
@@ -68,6 +119,48 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
   const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
   const [offlineLibraryCount, setOfflineLibraryCount] = useState<number | null>(null);
+  // Local (offline) accounts saved on this machine. Several can coexist, each
+  // with its own isolated offline workspace; one is "active" at a time.
+  const [localAccounts, setLocalAccounts] = useState<LocalAccount[]>(() => listLocalAccounts());
+  const [activeUsername, setActiveUsername] = useState<string | null>(() => getActiveUsername());
+  const [deleteTarget, setDeleteTarget] = useState<LocalAccount | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const refreshLocalAccounts = () => {
+    setLocalAccounts(listLocalAccounts());
+    setActiveUsername(getActiveUsername());
+  };
+
+  const handleDeleteLocalAccount = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    await deleteLocalAccount(target.username);
+    refreshLocalAccounts();
+    setDeleteTarget(null);
+    toast.success(`החשבון "${target.displayName || target.username}" נמחק מהמחשב.`);
+  };
+
+  // Switch to a local account and enter its offline workspace in one tap. The
+  // swap parks the current workspace and loads the target's into the shared
+  // slot; entering guest mode then hydrates the study store from it.
+  const handleSwitchLocalAccount = async (uname: string) => {
+    if (switching) return;
+    const target = localAccounts.find((a) => a.username === uname);
+    setSwitching(true);
+    const ok = await switchLocalAccount(uname);
+    if (!ok) {
+      setSwitching(false);
+      toast.error("החלפת החשבון נכשלה.");
+      return;
+    }
+    setActiveUsername(uname);
+    // Make sure the bundled study library is present, then enter offline mode
+    // as this account so the store hydrates from the freshly-swapped workspace.
+    await ensureLocalOfflineProfile();
+    signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+    toast.success(`נכנסת לחשבון "${target?.displayName || uname}".`);
+    navigate("/", { replace: true });
+  };
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
 
@@ -144,58 +237,143 @@ export default function Auth() {
     }
   };
 
-  const signIn = async () => {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("אין חיבור לאינטרנט. התחברות ראשונה לחשבון דורשת רשת; אפשר להיכנס כעת למצב האופליין.");
-      return;
+  // Sign in to the local offline account and enter the app.
+  const enterOfflineFromSignIn = async (): Promise<boolean> => {
+    if (await verifyLocalCredentials(email, password)) {
+      // Ensure the bundled study library (22k questions) is loaded into the
+      // offline profile BEFORE entering, otherwise the store hydrates with an
+      // empty seed and the review system shows nothing.
+      await ensureLocalOfflineProfile();
+      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+      toast.success("התחברת לחשבון המקומי. הנתונים יסתנכרנו לשרת כשיהיה אינטרנט.");
+      navigate("/", { replace: true });
+      return true;
     }
+    return false;
+  };
+
+  const signIn = async () => {
     setBusy(true);
     void import("./Index");
-    let loginEmail = email.trim();
-    // If user typed a username (no @), look up the matching email
-    if (loginEmail && !loginEmail.includes("@")) {
-      const { data: resolved } = await supabase.rpc("email_for_username", { p_username: loginEmail });
-      if (typeof resolved === "string" && resolved) {
-        loginEmail = resolved;
-      } else {
-        // Fallback: synthetic email convention for username-only accounts
-        loginEmail = `${loginEmail.toLowerCase()}@users.local`;
+
+    // Skip the network attempt only when the browser is *certain* it's offline.
+    const clearlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    if (!clearlyOffline) {
+      try {
+        let loginEmail = email.trim();
+        if (loginEmail && !loginEmail.includes("@")) {
+          console.log("[auth-debug] signIn: resolving username →", loginEmail);
+          const { data: resolved } = await withTimeout(supabase.rpc("email_for_username", { p_username: loginEmail }));
+          loginEmail = (typeof resolved === "string" && resolved) ? resolved : syntheticEmailForUsername(loginEmail);
+        }
+        console.log("[auth-debug] signIn: signInWithPassword →", loginEmail);
+        const { error } = await withTimeout(supabase.auth.signInWithPassword({ email: loginEmail, password }));
+        if (!error) {
+          setBusy(false);
+          persistRemember();
+          try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
+          toast.success("התחברת בהצלחה");
+          navigate("/", { replace: true });
+          return;
+        }
+        // Non-network error (wrong password, etc.) — but first, if we have a
+        // matching local account, prefer entering offline over failing.
+        if (isNetworkError(error)) throw error;
+        console.error("[auth-debug] signInWithPassword error", { name: error.name, status: (error as { status?: number }).status, message: error.message });
+        if (await enterOfflineFromSignIn()) { setBusy(false); return; }
+        setBusy(false);
+        return toast.error(error.message);
+      } catch (err) {
+        // Network failure / timeout → fall through to offline sign-in.
+        if (!isNetworkError(err)) {
+          setBusy(false);
+          console.error("[auth-debug] signIn threw (non-network)", err);
+          return toast.error("שגיאה בהתחברות: " + (err instanceof Error ? err.message : String(err)));
+        }
+        console.warn("[auth-debug] signIn network failure → offline fallback");
       }
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+
+    // Offline path: verify against the locally-stored account.
+    const ok = await enterOfflineFromSignIn();
     setBusy(false);
-    if (error) return toast.error(error.message);
-    persistRemember();
-    toast.success("התחברת בהצלחה");
-    navigate("/", { replace: true });
+    if (!ok) {
+      toast.error("אין חיבור לשרת ולא נמצא חשבון מקומי תואם במחשב זה. בדוק את הפרטים או הירשם.");
+    }
+  };
+
+  // Create the local offline account and enter the app. The account registers
+  // on the server automatically once connectivity returns (see
+  // attemptDeferredRegistration in useAuth).
+  const registerOffline = async (): Promise<void> => {
+    const result = await createLocalAccount({ username, displayName: name, email, password });
+    if (result.ok) {
+      // Load the bundled 22k-question library into the offline profile BEFORE
+      // entering, so the review system is populated on first load (avoids the
+      // race where the store hydrates before the heavy seed finishes loading).
+      await ensureLocalOfflineProfile();
+      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+      toast.success("נרשמת מקומית! החשבון יירשם לשרת אוטומטית ברגע שיהיה חיבור לאינטרנט.");
+      navigate("/", { replace: true });
+    } else {
+      toast.error(result.error ?? "יצירת החשבון נכשלה.");
+    }
   };
 
   const signUp = async () => {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("הרשמה חדשה דורשת חיבור לאינטרנט. מצב האופליין זמין מיד ואינו דורש הרשמה.");
+    const cleanUsername = username.trim().toLowerCase();
+    if (!USERNAME_RE.test(cleanUsername)) {
+      toast.error("שם המשתמש חייב להכיל לפחות 2 תווים (עברית/אנגלית, מספרים, נקודה או קו תחתון) וללא רווחים.");
       return;
     }
-    const cleanUsername = username.trim().toLowerCase();
-    if (!/^[a-z0-9_.]{3,}$/.test(cleanUsername)) {
-      toast.error("שם המשתמש חייב להכיל לפחות 3 תווים באנגלית, מספרים, נקודה או קו תחתון.");
+    if (!(password ?? "").length) {
+      toast.error("יש להזין סיסמה.");
       return;
     }
     setBusy(true);
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: {
-        emailRedirectTo: `${REDIRECT_ORIGIN}/`,
-        data: { display_name: name || cleanUsername, username: cleanUsername },
-      },
-    });
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    persistRemember();
-    if (data.session) {
-      toast.warning("ההרשמה נקלטה וממתינה לאישור מנהל. אימות דוא״ל אינו מופעל כרגע בשרת.");
-    } else {
-      toast.success("ההרשמה נקלטה וממתינה לאישור מנהל. אם לא התקבל מייל אימות, אישור המנהל יאמת גם את הכתובת ויאפשר כניסה.");
+
+    const clearlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    if (!clearlyOffline) {
+      try {
+        const signupEmail = email.trim() || syntheticEmailForUsername(cleanUsername);
+        console.log("[auth-debug] signUp: online attempt →", { signupEmail, isElectron: IS_ELECTRON, supaHost: (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).host; } catch { return "INVALID"; } })() });
+        const { data, error } = await withTimeout(supabase.auth.signUp({
+          email: signupEmail, password,
+          options: {
+            emailRedirectTo: `${REDIRECT_ORIGIN}/`,
+            data: { display_name: name || cleanUsername, username: cleanUsername },
+          },
+        }));
+        if (!error) {
+          setBusy(false);
+          persistRemember();
+          if (data.session) {
+            try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
+            toast.success("נרשמת בהצלחה!");
+            navigate("/", { replace: true });
+          } else {
+            toast.success("ההרשמה נקלטה. אמת את כתובת המייל כדי להתחבר.");
+          }
+          return;
+        }
+        if (isNetworkError(error)) throw error;
+        // A real server error (e.g. already registered) — surface it.
+        console.error("[auth-debug] signUp error", { name: error.name, status: (error as { status?: number }).status, message: error.message });
+        setBusy(false);
+        return toast.error(error.message);
+      } catch (err) {
+        if (!isNetworkError(err)) {
+          setBusy(false);
+          console.error("[auth-debug] signUp threw (non-network)", err);
+          return toast.error("שגיאה בהרשמה: " + (err instanceof Error ? err.message : String(err)));
+        }
+        console.warn("[auth-debug] signUp network failure → offline registration");
+      }
     }
+
+    // Offline path: register locally and enter now.
+    await registerOffline();
+    setBusy(false);
   };
 
   const signInGoogle = async () => {
@@ -245,9 +423,9 @@ export default function Auth() {
 
           <TabsContent value="signup" className="space-y-3 mt-4">
             <Input placeholder="שם תצוגה" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input dir="ltr" placeholder="username (שם משתמש)" value={username} onChange={(e) => setUsername(e.target.value)} />
-            <Input dir="ltr" placeholder="email@example.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <PasswordField value={password} onChange={setPassword} show={showPwd} onToggle={() => setShowPwd((v) => !v)} placeholder="סיסמה (לפחות 6 תווים)" />
+            <Input placeholder="שם משתמש (אפשר בעברית)" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <Input dir="ltr" placeholder="email@example.com (אופציונלי)" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <PasswordField value={password} onChange={setPassword} show={showPwd} onToggle={() => setShowPwd((v) => !v)} placeholder="סיסמה" />
             <div className="flex items-center gap-2">
               <Checkbox id="remember2" checked={remember} onCheckedChange={(v) => setRemember(!!v)} />
               <Label htmlFor="remember2" className="text-sm cursor-pointer">זכור אותי</Label>
@@ -294,7 +472,81 @@ export default function Auth() {
             ? `כולל ${offlineLibraryCount.toLocaleString("he-IL")} שאלות מובנות. ההתקדמות נשמרת במחשב ללא צורך באינטרנט.`
             : "ההתקדמות נשמרת במחשב הזה ללא צורך באינטרנט."}
         </p>
+
+        {localAccounts.length > 0 && (
+          <div className="rounded-xl border-2 border-gold/30 bg-card/60 p-3 space-y-2">
+            <div className="text-[11px] font-medium text-muted-foreground text-right px-1">
+              חשבונות מקומיים במחשב זה
+            </div>
+            {localAccounts.map((acct) => {
+              const isActive = acct.username === activeUsername;
+              return (
+                <div
+                  key={acct.username}
+                  className={`flex items-center gap-2 rounded-lg p-2 transition-colors ${
+                    isActive ? "bg-gold/10 ring-1 ring-gold/40" : "hover:bg-card"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchLocalAccount(acct.username)}
+                    disabled={switching}
+                    className="flex flex-1 min-w-0 items-center gap-2 text-right disabled:opacity-60"
+                    title={isActive ? "כניסה לחשבון הפעיל" : "עבור לחשבון זה והיכנס"}
+                  >
+                    {isActive
+                      ? <UserCircle className="h-5 w-5 text-gold shrink-0" />
+                      : <UserX className="h-5 w-5 text-muted-foreground shrink-0" />}
+                    <div className="min-w-0 flex-1 text-right">
+                      <div className="text-sm font-medium text-foreground break-all">
+                        {acct.displayName || acct.username}
+                        {isActive && <span className="mr-1 text-[10px] text-gold">· פעיל</span>}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {acct.status === "registered" ? "מסונכרן לשרת" : "ממתין לסנכרון"}
+                      </div>
+                    </div>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    title="מחק חשבון מקומי"
+                    onClick={() => setDeleteTarget(acct)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+            <p className="text-[11px] text-muted-foreground text-right leading-relaxed px-1">
+              להוספת חשבון נוסף במחשב זה — עבור ללשונית "הרשמה" וצור חשבון חדש. כל חשבון שומר התקדמות נפרדת.
+            </p>
+          </div>
+        )}
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>למחוק את החשבון המקומי?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.status === "registered"
+                ? `החשבון "${deleteTarget?.displayName || deleteTarget?.username}" יוסר מהמחשב הזה בלבד. הנתונים שכבר סונכרנו לשרת יישארו ותוכל להתחבר אליהם שוב עם אינטרנט.`
+                : `החשבון "${deleteTarget?.displayName || deleteTarget?.username}" עדיין לא סונכרן לשרת. מחיקה תסיר אותו לצמיתות מהמחשב.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteLocalAccount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              מחק חשבון
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

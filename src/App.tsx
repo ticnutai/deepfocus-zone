@@ -12,6 +12,7 @@ import { RestoreProvider } from "@/lib/study/RestoreContext";
 import { GlobalRestoreHost } from "@/components/study/GlobalRestoreHost";
 import { DevIconsHost } from "@/components/dev/DevIconsHost";
 import { OfflineBadge } from "@/components/OfflineBadge";
+import { VersionBadge } from "@/components/VersionBadge";
 import { DirectionProvider } from "@radix-ui/react-direction";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
@@ -75,6 +76,7 @@ const App = () => (
             </Suspense>
             <GlobalRestoreHost />
             <OfflineBadge />
+            <VersionBadge />
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>

@@ -1,6 +1,6 @@
 {
   "appId": "com.pashash.studyapp",
-  "productName": "פשש",
+  "productName": "למען",
   "directories": {
     "output": "release",
     "buildResources": "electron/build"
@@ -16,7 +16,7 @@
     "target": [
       { "target": "nsis", "arch": ["x64"] }
     ],
-    "artifactName": "pashash-setup-${version}.${ext}"
+    "artifactName": "lemaan-setup-${version}.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -24,10 +24,10 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "פשש"
+    "shortcutName": "למען"
   },
   "portable": {
-    "artifactName": "pashash-portable-${version}.${ext}"
+    "artifactName": "lemaan-portable-${version}.${ext}"
   },
   "mac": {
     "target": ["dmg"],

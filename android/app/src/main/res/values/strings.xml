@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">פשש - לימוד</string>
-    <string name="title_activity_main">פשש - לימוד</string>
+    <string name="app_name">למען</string>
+    <string name="title_activity_main">למען</string>
     <string name="package_name">com.pashash.app</string>
     <string name="custom_url_scheme">com.pashash.app</string>
 </resources>

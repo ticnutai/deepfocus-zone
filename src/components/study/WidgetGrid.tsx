@@ -34,6 +34,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { isProfileBMode } from "@/lib/study/profileBMode";
 import type { WidgetConfig, WidgetLayout } from "@/lib/study/types";
 import { useMobileLayoutMode, resolveMobileMode } from "@/lib/study/mobileLayoutMode";
+import { usePrompt } from "@/hooks/usePrompt";
+import { toast } from "@/hooks/use-toast";
 import { PremiumStackLayout, CarouselLayout, MagazineLayout, FocusedDashboardLayout } from "./MobileWidgetLayouts";
 import {
   GripVertical,
@@ -519,6 +521,29 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   const [toolbarVisible, setToolbarVisible] = useState(false);
   const editingLocked = lockEditing || isProfileBMode();
 
+  // Same lock used for the sidebar/tabs config and the settings page — entering
+  // layout-edit mode, the widget manager, auto-arrange, reset, or restoring a
+  // hidden widget all go through it too so a stray click can't rearrange the
+  // dashboard.
+  const SETTINGS_PW = "543211";
+  const { prompt: promptText, dialog: promptDialog } = usePrompt();
+  const requireSettingsAuth = async (): Promise<boolean> => {
+    try {
+      if (sessionStorage.getItem("settings-unlocked") === "1") return true;
+    } catch { /* ignore */ }
+    const input = await promptText("לעריכת הפריסה יש להזין סיסמה:", {
+      title: "אזור הגדרות",
+      password: true,
+    });
+    if (input === null) return false;
+    if (input === SETTINGS_PW) {
+      try { sessionStorage.setItem("settings-unlocked", "1"); } catch { /* ignore */ }
+      return true;
+    }
+    toast({ title: "סיסמה שגויה", variant: "destructive" });
+    return false;
+  };
+
   const defs = WIDGET_DEFS[tabId] ?? [];
   const { isAdmin, roles } = usePermissions();
   const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);
@@ -678,6 +703,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
 
   return (
     <div className="space-y-4 relative">
+      {promptDialog}
       {!editingLocked && !(useMobileLayout && !editMode) && (
       <div
         className="flex items-center justify-between gap-2"
@@ -688,7 +714,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           <Button
             size="sm"
             variant={editMode ? "default" : "outline"}
-            onClick={() => setEditMode((v) => !v)}
+            onClick={async () => { if (await requireSettingsAuth()) setEditMode((v) => !v); }}
             title={editMode ? "לחץ לסיום עריכת הפריסה" : "ערוך פריסה — גרור, שנה גודל, הסתר ווידג׳טים"}
             className={editMode
               ? "gap-1.5 text-xs bg-gradient-navy text-primary-foreground"
@@ -697,21 +723,21 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
             {editMode ? <><Check className="h-3.5 w-3.5" /> סיום עריכה</> : <><Pencil className="h-3.5 w-3.5" /> ערוך פריסה</>}
           </Button>
           <button
-            onClick={openManagerDialog}
+            onClick={async () => { if (await requireSettingsAuth()) openManagerDialog(); }}
             title="ניהול ווידג׳טים"
             className="flex items-center justify-center h-9 w-9 shrink-0 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
           >
             <SlidersHorizontal className="h-4 w-4" />
           </button>
           <button
-            onClick={autoArrangeLayout}
+            onClick={async () => { if (await requireSettingsAuth()) autoArrangeLayout(); }}
             title="סידור אוטומטי"
             className="flex items-center justify-center h-9 w-9 shrink-0 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
           >
             <WandSparkles className="h-4 w-4" />
           </button>
           <button
-            onClick={resetLayout}
+            onClick={async () => { if (await requireSettingsAuth()) resetLayout(); }}
             title="איפוס פריסה"
             className="flex items-center justify-center h-9 w-9 shrink-0 rounded-xl border-2 border-gold/70 bg-card text-navy hover:bg-secondary transition-all"
           >
@@ -719,7 +745,7 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
           </button>
           {hiddenWidgets.length > 0 && (
             <button
-              onClick={() => setShowHiddenTray((v) => !v)}
+              onClick={async () => { if (await requireSettingsAuth()) setShowHiddenTray((v) => !v); }}
               title="רכיבים מוסתרים"
               className={`flex items-center gap-1.5 rounded-xl border-2 border-gold/70 px-2 py-1.5 text-xs transition-all ${showHiddenTray ? "bg-secondary text-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}
             >

@@ -117,19 +117,24 @@ export const WIDGET_DEFS: Record<string, WidgetDef[]> = {
 };
 
 export const DEFAULT_WIDGET_LAYOUT: WidgetLayout = {
+  // "כללי" is the landing tab, so it shows the widgets belonging to the pages
+  // that actually exist in the tab strip (לימוד דף / קטגוריות ושאלות / לוח ש"ס):
+  // study progress, review scheduling and question plans. Widgets for pages that
+  // are not part of the strip (משימות, פומודורו, ציטוט, מאמן AI, תזכורות) stay
+  // available in "ערוך פריסה" but are hidden by default so the tab stays focused.
   overview: [
     { id: "study-plans",     visible: true,  size: "half", order: 0 },
-    { id: "review-calendar", visible: true,  size: "full", order: 1 },
-    { id: "weekly-summary",  visible: true,  size: "full", order: 2 },
-    { id: "heatmap",         visible: false, size: "full", order: 3 },
-    { id: "quiz-plans",      visible: true,  size: "half", order: 4 },
-    { id: "goals-manager",   visible: true,  size: "full", order: 5 },
-    { id: "daily-trackers",  visible: true,  size: "half", order: 6 },
-    { id: "quote-card",      visible: true,  size: "half", order: 7 },
-    { id: "ai-coach",        visible: true,  size: "half", order: 8 },
-    { id: "next-alarm",      visible: true,  size: "half", order: 9 },
-    { id: "pomodoro",        visible: true,  size: "half", order: 10 },
-    { id: "task-card",       visible: true,  size: "half", order: 11 },
+    { id: "quiz-plans",      visible: true,  size: "half", order: 1 },
+    { id: "review-calendar", visible: true,  size: "full", order: 2 },
+    { id: "weekly-summary",  visible: true,  size: "full", order: 3 },
+    { id: "heatmap",         visible: true,  size: "full", order: 4 },
+    { id: "goals-manager",   visible: false, size: "full", order: 5 },
+    { id: "daily-trackers",  visible: false, size: "half", order: 6 },
+    { id: "quote-card",      visible: false, size: "half", order: 7 },
+    { id: "ai-coach",        visible: false, size: "half", order: 8 },
+    { id: "next-alarm",      visible: false, size: "half", order: 9 },
+    { id: "pomodoro",        visible: false, size: "half", order: 10 },
+    { id: "task-card",       visible: false, size: "half", order: 11 },
   ],
   goals: [
     { id: "study-plans",       visible: true, size: "half", order: 0 },

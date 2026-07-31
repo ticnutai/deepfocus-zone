@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.pashash.app',
-  appName: 'פשש - לימוד',
+  appName: 'למען',
   webDir: 'dist',
   server: {
     // בפיתוח אפשר לשנות ל-url של השרת המקומי:

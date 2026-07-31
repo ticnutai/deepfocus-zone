@@ -1,8 +1,8 @@
-# Privacy Policy - Pashash App
+# Privacy Policy - Lemaan App
 
 Last updated: 2026-05-25
 
-This Privacy Policy explains what information is collected when using the Pashash app, how that information is used, and what choices users have.
+This Privacy Policy explains what information is collected when using the Lemaan app, how that information is used, and what choices users have.
 
 ## 1. Information We Collect
 

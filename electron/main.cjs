@@ -1,10 +1,47 @@
 // Electron main process — desktop wrapper for the Vite/React app.
 // Kept fully isolated from the web build: this file is loaded ONLY by Electron.
-const { app, BrowserWindow, shell, Menu } = require("electron");
+const { app, BrowserWindow, shell, Menu, protocol } = require("electron");
 const path = require("path");
+const fs = require("fs");
 
 const isDev = process.env.ELECTRON_DEV === "1";
-const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:8080";
+const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:5000";
+
+// ---------------------------------------------------------------------------
+// shas:// — offline access to the bundled Shas library (public/shas → dist/shas).
+// The renderer is loaded via file://, where fetch() cannot read local JSON, so
+// the local-first layer (src/lib/study/localShas.ts) fetches shas://local/<path>
+// and we serve the file from the packaged app (asar-aware via fs.readFile).
+// ---------------------------------------------------------------------------
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "shas",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
+]);
+
+function registerShasProtocol() {
+  const baseDir = isDev
+    ? path.join(__dirname, "..", "public", "shas")
+    : path.join(__dirname, "..", "dist", "shas");
+  protocol.handle("shas", async (request) => {
+    try {
+      const url = new URL(request.url); // shas://local/<rel>
+      const rel = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+      const filePath = path.normalize(path.join(baseDir, rel));
+      if (!filePath.startsWith(path.normalize(baseDir))) {
+        return new Response("forbidden", { status: 403 });
+      }
+      const data = await fs.promises.readFile(filePath); // asar-aware
+      return new Response(data, {
+        status: 200,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    } catch {
+      return new Response("not found", { status: 404 });
+    }
+  });
+}
 
 let mainWindow = null;
 
@@ -18,7 +55,7 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#0b0b0f",
-    title: "פשש",
+    title: "למען",
     icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -91,7 +128,10 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    registerShasProtocol();
+    createWindow();
+  });
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

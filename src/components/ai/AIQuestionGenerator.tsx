@@ -26,6 +26,7 @@ import {
   type GeneratedQuestion,
 } from "@/lib/ai/claudeClient";
 import { GENERATED_JOSHUA_CHAPTERS } from "@/lib/ai/joshuaBuiltins.generated";
+import { usePrompt } from "@/hooks/usePrompt";
 import type {
   Card as StudyCard,
   Category,
@@ -183,6 +184,8 @@ export function AIQuestionGenerator() {
   const { state, setUiPref, addCategory, bulkAddCards, updateCard } =
     useStudy();
   const apiKey = state.uiPrefs?.anthropicApiKey ?? "";
+  // window.prompt is not supported inside Electron — use the dialog hook
+  const { prompt: promptText, dialog: promptDialog } = usePrompt();
 
   // Form state
   const [masechet, setMasechet] = useState("יומא");
@@ -487,6 +490,7 @@ export function AIQuestionGenerator() {
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto" dir="rtl">
+      {promptDialog}
       <header className="flex items-center gap-2">
         <span className="gold-icon-circle">
           <Sparkles className="h-4 w-4" />
@@ -503,8 +507,8 @@ export function AIQuestionGenerator() {
             ⚠ מפתח API לא מוגדר —{" "}
             <button
               className="underline text-red-300 hover:text-red-200"
-              onClick={() => {
-                const key = window.prompt("הכנס Anthropic API key:");
+              onClick={async () => {
+                const key = await promptText("הכנס Anthropic API key:", { title: "מפתח API", password: true });
                 if (key?.trim()) setUiPref("anthropicApiKey", key.trim());
               }}
             >
@@ -522,8 +526,8 @@ export function AIQuestionGenerator() {
             variant="ghost"
             size="sm"
             className="mr-auto text-xs text-muted-foreground h-6 px-2"
-            onClick={() => {
-              const key = window.prompt("עדכן Anthropic API key:", apiKey);
+            onClick={async () => {
+              const key = await promptText("עדכן Anthropic API key:", { title: "מפתח API", password: true, defaultValue: apiKey });
               if (key !== null) setUiPref("anthropicApiKey", key.trim());
             }}
           >
@@ -631,7 +635,7 @@ export function AIQuestionGenerator() {
             <BookOpen className="h-4 w-4" />
           )}
           {textLoading
-            ? "טוען מ-Sefaria..."
+            ? "טוען טקסט..."
             : `טען טקסט — ${masechet} דף ${dafLabel} ${AMUD_LABELS[amud]}`}
         </Button>
         {textError && <p className="text-xs text-red-400">{textError}</p>}

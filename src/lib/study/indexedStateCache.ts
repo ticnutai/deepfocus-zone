@@ -269,6 +269,32 @@ const timeIdb = <T>(
   getDetail?: (result: T) => string | undefined,
 ) => timeOp(`idb:${label}`, "store", fn, getDetail);
 
+/**
+ * Guest-workspace flush hook.
+ *
+ * The live study store persists guest changes to localStorage/IndexedDB only on
+ * a throttled rAF tick (see `notify`) and a debounced timer. That leaves a
+ * short window where the newest edit lives only in the in-memory `memState`.
+ * Account switching parks the guest slot, so a park landing inside that window
+ * would lose the last edit. To make switching deterministic, the store
+ * registers a synchronous flush here; callers about to park MUST await
+ * `flushGuestWorkspace()` first so the parked snapshot is always current.
+ */
+let guestWorkspaceFlush: (() => Promise<void>) | null = null;
+
+export function registerGuestWorkspaceFlush(fn: () => Promise<void>): void {
+  guestWorkspaceFlush = fn;
+}
+
+export async function flushGuestWorkspace(): Promise<void> {
+  if (!guestWorkspaceFlush) return;
+  try {
+    await guestWorkspaceFlush();
+  } catch {
+    /* best-effort — never block a switch on a flush failure */
+  }
+}
+
 export async function loadStudyStateCache(userId: string): Promise<StudyState | null> {
   return timeIdb("loadState", async () => {
     try {
@@ -290,6 +316,31 @@ export async function loadStudyStateCache(userId: string): Promise<StudyState | 
       return null;
     }
   }, (state) => (state ? "hit" : "miss"));
+}
+
+/**
+ * When the cached snapshot for `userId` was written, or null when absent.
+ * Used to decide whether the (async, debounced) IndexedDB snapshot is actually
+ * newer than the (synchronous, per-frame) localStorage bootstrap before letting
+ * it overwrite live state on hydration.
+ */
+export async function readStudyStateCacheSavedAt(userId: string): Promise<number | null> {
+  try {
+    const db = await openDb();
+    return await new Promise<number | null>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(userId);
+      req.onsuccess = () => {
+        const row = req.result as StudyStateCacheRecord | undefined;
+        resolve(row?.savedAt ?? null);
+      };
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function saveStudyStateCache(userId: string, state: StudyState): Promise<void> {

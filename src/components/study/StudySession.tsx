@@ -31,6 +31,7 @@ import {
   AlignLeft,
   Pause,
   Play,
+  Trash2,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -265,16 +266,27 @@ const BUILTIN_THEME_SEEDS: Partial<Record<QuizTheme, CustomQuizTheme>> = {
 };
 
 type QuizHistoryEntry = {
+  id?: string;
   date: string;
+  createdAt?: string;
   pct: number;
   totalMs: number;
   mode: string;
   total: number;
+  correct?: number;
 };
 
 function loadQuizHistory(): QuizHistoryEntry[] {
   try {
-    return JSON.parse(localStorage.getItem(QUIZ_HISTORY_KEY) ?? "[]");
+    const entries = JSON.parse(
+      localStorage.getItem(QUIZ_HISTORY_KEY) ?? "[]",
+    ) as QuizHistoryEntry[];
+    return entries.map((entry, index) => ({
+      ...entry,
+      id:
+        entry.id ??
+        `legacy-${entry.date}-${entry.total}-${entry.pct}-${index}`,
+    }));
   } catch {
     return [];
   }
@@ -284,6 +296,14 @@ function saveQuizEntry(entry: QuizHistoryEntry) {
     const hist = loadQuizHistory();
     hist.unshift(entry);
     localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(hist.slice(0, 60)));
+  } catch {
+    /* noop */
+  }
+}
+function deleteQuizEntry(id: string) {
+  try {
+    const hist = loadQuizHistory().filter((entry) => entry.id !== id);
+    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(hist));
   } catch {
     /* noop */
   }
@@ -407,7 +427,7 @@ export function StudySession({
       ? localStorage.getItem(COMBO_PREF_KEY)
       : null) as ComboPref | null) ??
     "both";
-  const queue = useMemo(() => {
+  const baseQueue = useMemo(() => {
     // When cardIds is explicitly provided, use them directly (supports card_decks-linked cards).
     // When deckId is null (category-owned cards), use all cards.
     let cards: StudyCard[];
@@ -442,6 +462,12 @@ export function StudySession({
     return [...cards].sort(() => Math.random() - 0.5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckId, mode, cardIds, comboPrefForQueue]);
+  const [retryCardIds, setRetryCardIds] = useState<string[] | null>(null);
+  const queue = useMemo(() => {
+    if (!retryCardIds) return baseQueue;
+    const allowed = new Set(retryCardIds);
+    return baseQueue.filter((card) => allowed.has(card.id));
+  }, [baseQueue, retryCardIds]);
 
   const [idx, setIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -459,6 +485,9 @@ export function StudySession({
     totalMs: number;
     failed: string[];
   }>({ correct: 0, total: 0, totalMs: 0, failed: [] });
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const savedHistoryEntryRef = useRef<string | null>(null);
+  void historyVersion;
 
   // Session-level timer (never resets per card)
   const sessionStart = useRef(Date.now());
@@ -820,18 +849,59 @@ export function StudySession({
       quality: 0 | 1 | 2 | 3 | 4 | 5;
       correct: boolean;
       durationMs: number;
+      selected: number[];
+      boolPick: boolean | null;
+      comboMode: "flash" | "multi" | null;
     }>
   >([]);
 
   useEffect(() => {
     setStartedAt(Date.now());
-    setComboMode(null);
     setNextInterval("auto");
     setCustomDate("");
     setInstantPendingSubmit(null);
-  }, [idx]);
+    const savedAnswer =
+      viewMode === "test"
+        ? testAnswers.find((answer) => answer.cardId === queue[idx]?.id)
+        : undefined;
+    if (savedAnswer) {
+      setSelected(savedAnswer.selected);
+      setBoolPick(savedAnswer.boolPick);
+      setComboMode(savedAnswer.comboMode);
+      // In test mode, restore the user's choice without exposing the correct
+      // answer. They can review or change it and submit again.
+      setRevealed(false);
+      return;
+    }
+    setSelected([]);
+    setBoolPick(null);
+    setComboMode(null);
+    setRevealed(false);
+  }, [idx, queue, testAnswers, viewMode]);
 
   const card = queue[idx];
+  const currentTestAnswer =
+    viewMode === "test" && card
+      ? testAnswers.find((answer) => answer.cardId === card.id)
+      : undefined;
+
+  const restartSession = useCallback((onlyCardIds: string[] | null = null) => {
+    setRetryCardIds(onlyCardIds);
+    setIdx(0);
+    setResults({ correct: 0, total: 0, totalMs: 0, failed: [] });
+    setTestAnswers([]);
+    setRevealed(false);
+    setSelected([]);
+    setBoolPick(null);
+    setComboMode(null);
+    setInstantPendingSubmit(null);
+    savedHistoryEntryRef.current = null;
+    sessionStart.current = Date.now();
+    pausedAtRef.current = null;
+    pausedTotalMsRef.current = 0;
+    setTimerRunning(true);
+    setElapsed(0);
+  }, []);
 
   const quickAddToLastDeck = useCallback(() => {
     if (!card) return;
@@ -949,10 +1019,22 @@ export function StudySession({
       const customDueAt = resolveCustomDueAt(nextInterval, customDate);
       const cardSnapshot = card; // capture for undo (current srs/stats are pre-review)
       const idxAtSubmit = idx;
+      const previousTestAnswer =
+        viewMode === "test"
+          ? testAnswers.find((answer) => answer.cardId === card.id)
+          : undefined;
       if (viewMode === "test") {
         setTestAnswers((arr) => [
-          ...arr,
-          { cardId: card.id, quality, correct, durationMs },
+          ...arr.filter((answer) => answer.cardId !== card.id),
+          {
+            cardId: card.id,
+            quality,
+            correct,
+            durationMs,
+            selected: [...selected],
+            boolPick,
+            comboMode,
+          },
         ]);
       } else {
         const res = reviewCard(
@@ -964,10 +1046,18 @@ export function StudySession({
         );
       }
       setResults((r) => ({
-        correct: r.correct + (correct ? 1 : 0),
-        total: r.total + 1,
-        totalMs: r.totalMs + durationMs,
-        failed: correct ? r.failed : [...r.failed, card.id],
+        correct:
+          r.correct -
+          (previousTestAnswer?.correct ? 1 : 0) +
+          (correct ? 1 : 0),
+        total: r.total + (previousTestAnswer ? 0 : 1),
+        totalMs:
+          r.totalMs -
+          (previousTestAnswer?.durationMs ?? 0) +
+          durationMs,
+        failed: correct
+          ? r.failed.filter((id) => id !== card.id)
+          : [...r.failed.filter((id) => id !== card.id), card.id],
       }));
       setRevealed(false);
       setSelected([]);
@@ -984,6 +1074,10 @@ export function StudySession({
       customDate,
       viewMode,
       idx,
+      testAnswers,
+      selected,
+      boolPick,
+      comboMode,
     ],
   );
 
@@ -1286,36 +1380,34 @@ export function StudySession({
       results.failed.includes(c.id),
     );
 
-    // Load history & save this entry
-    const history = loadQuizHistory();
-    const today = new Date().toISOString().slice(0, 10);
+    // Load history & save this completed attempt exactly once.
+    const completedAt = new Date();
+    const today = completedAt.toISOString().slice(0, 10);
+    const entryId =
+      savedHistoryEntryRef.current ??
+      `${completedAt.toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
     const todayEntry: QuizHistoryEntry = {
+      id: entryId,
       date: today,
+      createdAt: completedAt.toISOString(),
       pct,
       totalMs: elapsed * 1000,
       mode,
       total: results.total,
+      correct: results.correct,
     };
-    // Only save if not already saved (avoid double-save on re-render)
-    const alreadySaved =
-      history.length > 0 &&
-      history[0].date === today &&
-      history[0].total === results.total &&
-      history[0].pct === pct;
-    if (!alreadySaved) saveQuizEntry(todayEntry);
+    if (!savedHistoryEntryRef.current) {
+      savedHistoryEntryRef.current = entryId;
+      saveQuizEntry(todayEntry);
+    }
+    const history = loadQuizHistory();
 
-    // Compare: last session that isn't today
-    const prev = history.find((h) => h.date !== today);
+    // Compare with the immediately preceding attempt, including attempts today.
+    const prev = history.find((h) => h.id !== entryId);
     const pctDiff = prev ? pct - prev.pct : null;
     const timeDiff = prev ? elapsed * 1000 - prev.totalMs : null; // positive = slower
 
-    const retryFailed = () => {
-      setIdx(0);
-      setResults({ correct: 0, total: 0, totalMs: 0, failed: [] });
-      setRevealed(false);
-      setSelected([]);
-      setBoolPick(null);
-    };
+    const retryFailed = () => restartSession([...results.failed]);
     return (
       <Card
         className="gold-frame p-8 text-center space-y-5 animate-fade-in"
@@ -1501,10 +1593,10 @@ export function StudySession({
         )}
 
         {/* History mini chart (last 5 sessions) */}
-        {history.length >= 2 && (
+        {history.length >= 1 && (
           <div className="max-w-md mx-auto">
             <div className="text-xs text-muted-foreground text-right mb-1">
-              היסטוריה (5 אחרונות)
+              היסטוריית מבחנים (5 אחרונים)
             </div>
             <div className="flex items-end justify-center gap-2 h-16">
               {history
@@ -1540,6 +1632,70 @@ export function StudySession({
                   </div>
                 ))}
             </div>
+            <div className="mt-3 space-y-1.5">
+              {history.slice(0, 5).map((entry, index) => {
+                const previousEntry = history[index + 1];
+                const difference = previousEntry
+                  ? entry.pct - previousEntry.pct
+                  : null;
+                const displayTime = entry.createdAt
+                  ? new Date(entry.createdAt).toLocaleString("he-IL", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : entry.date;
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-gold/20 bg-card px-2.5 py-2 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-navy">{entry.pct}%</span>
+                      <span className="text-muted-foreground">
+                        {entry.correct ?? Math.round((entry.pct / 100) * entry.total)}
+                        /{entry.total}
+                      </span>
+                      {difference !== null && (
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            difference > 0
+                              ? "text-green-600"
+                              : difference < 0
+                                ? "text-destructive"
+                                : "text-muted-foreground",
+                          )}
+                        >
+                          {difference > 0 ? "+" : ""}
+                          {difference}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{displayTime}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        title="מחק תוצאה מההיסטוריה"
+                        onClick={() => {
+                          deleteQuizEntry(entry.id!);
+                          if (savedHistoryEntryRef.current === entry.id) {
+                            savedHistoryEntryRef.current = "deleted";
+                          }
+                          setHistoryVersion((version) => version + 1);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -1571,22 +1727,11 @@ export function StudySession({
             </Button>
           )}
           <Button
-            onClick={() => {
-              setIdx(0);
-              setResults({ correct: 0, total: 0, totalMs: 0, failed: [] });
-              setRevealed(false);
-              setSelected([]);
-              setBoolPick(null);
-              sessionStart.current = Date.now();
-              pausedAtRef.current = null;
-              pausedTotalMsRef.current = 0;
-              setTimerRunning(true);
-              setElapsed(0);
-            }}
+            onClick={() => restartSession(null)}
             variant="outline"
             className="border-2 border-gold rounded-xl"
           >
-            <RotateCcw className="h-4 w-4" /> שוב
+            <RotateCcw className="h-4 w-4" /> בצע שוב את כל המבחן
           </Button>
           <Button
             onClick={onExit}
@@ -2287,6 +2432,34 @@ export function StudySession({
               </>
             )}
           </Button>
+          {viewMode === "test" && idx > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+              title="חזור לשאלה הקודמת וראה את התשובה שסימנת"
+              onClick={() => setIdx((current) => Math.max(0, current - 1))}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+              <span className="text-xs">שאלה קודמת</span>
+            </Button>
+          )}
+          {viewMode === "test" &&
+            currentTestAnswer &&
+            idx < queue.length - 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+                title="חזור לשאלה הבאה בלי לשנות את התשובה"
+                onClick={() =>
+                  setIdx((current) => Math.min(queue.length - 1, current + 1))
+                }
+              >
+                <span className="text-xs">שאלה הבאה</span>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+            )}
           <span className="text-sm text-muted-foreground">
             {idx + 1} / {queue.length} ·{" "}
             {mode === "srs" ? "חזרה ממוקדת" : "תרגול חופשי"}

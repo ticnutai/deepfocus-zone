@@ -7,7 +7,8 @@ import { applyReview, defaultSrs, getSrsAlgorithm, getRetentionTarget } from "./
 import { toHebrewNum } from "./shasFormat";
 import { SHAS_BAVLI } from "./shasData";
 import { UNCATEGORIZED_NAME, UNCATEGORIZED_TAG, findUncategorized, isUncategorized } from "./uncategorized";
-import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
+import { isBundledLibraryItem, primeBundledLibraryGuard, PROTECTED_DELETE_MESSAGE } from "./bundledLibraryGuard";
+import { appendCloudToIdbDeleteAuditEvent, appendDeleteAuditEvent, bumpPendingDeleteAttempt, clearStudyStateCache, clearWidgetLayoutIdb, enqueueFullSyncJob, enqueuePendingDelete, listDeleteAuditEvents, listPendingDeletes, listSyncJobs, loadStudyStateCache, markSyncJobFailure, readWidgetLayoutIdb, registerGuestWorkspaceFlush, removePendingDelete, removeSyncJob, saveStudyStateCache, writeWidgetLayoutIdb } from "./indexedStateCache";
 import { applyCloudSyncPref, isSyncEnabled } from "./syncControl";
 import {
   canProfileBDeleteCard,
@@ -94,6 +95,8 @@ export function isCardFromSource(id: string): boolean { return sourceOwnedCardId
 
 const GUEST_ID = "guest";
 const GUEST_STATE_KEY = "guest-study-state";
+const GUEST_STATE_AT_KEY = "guest-study-state-at";
+const GUEST_SETTINGS_KEY = "guest-display-settings";
 const GUEST_PROFILE_SEED_APPLIED_KEY = (profileId: string) => `guest-study-seed-applied:${profileId}`;
 const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
@@ -377,13 +380,112 @@ const writeDeckCategoriesCache = (userId: string, map: Record<string, string[]>)
   try { localStorage.setItem(DECK_CATEGORIES_KEY(userId), JSON.stringify(map)); } catch { /* ignore */ }
 };
 
+type GuestDisplaySettings = {
+  tabConfig?: StudyState["tabConfig"];
+  sidebarConfig?: StudyState["sidebarConfig"];
+  widgetLayout?: StudyState["widgetLayout"];
+  uiPrefs?: StudyState["uiPrefs"];
+  at?: number;
+};
+
+/**
+ * An empty array/object is truthy in JS, so a naive overlay would let an empty
+ * `tabConfig` overwrite a valid one — which empties the tab strip and makes the
+ * "active tab not allowed" guard bounce the user to a different tab. Only real,
+ * non-empty values may override.
+ */
+const hasContent = (v: unknown): boolean => {
+  if (v === null || v === undefined) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === "object") return Object.keys(v as object).length > 0;
+  return true;
+};
+
+const readGuestDisplaySettings = (): GuestDisplaySettings | null => {
+  try {
+    const raw = localStorage.getItem(GUEST_SETTINGS_KEY);
+    return raw ? (JSON.parse(raw) as GuestDisplaySettings) : null;
+  } catch { return null; }
+};
+
+/**
+ * Display settings are tiny but must never be lost. The full guest snapshot can
+ * exceed the localStorage quota (the bundled library alone is ~22k cards), and a
+ * quota failure there would silently take the settings down with it. So they are
+ * mirrored into their own small record, written synchronously on every change.
+ */
+const writeGuestDisplaySettings = () => {
+  try {
+    // Never let a transient empty value (e.g. mid-hydration, before the real
+    // config has loaded) erase a previously saved setting — keep the last
+    // known-good value for any field that is currently empty.
+    const prev = readGuestDisplaySettings();
+    const pick = <T,>(next: T, before: T | undefined): T | undefined =>
+      hasContent(next) ? next : before;
+    localStorage.setItem(GUEST_SETTINGS_KEY, JSON.stringify({
+      tabConfig: pick(memState.tabConfig, prev?.tabConfig),
+      sidebarConfig: pick(memState.sidebarConfig, prev?.sidebarConfig),
+      widgetLayout: pick(memState.widgetLayout, prev?.widgetLayout),
+      uiPrefs: pick(memState.uiPrefs, prev?.uiPrefs),
+      at: Date.now(),
+    }));
+  } catch { /* ignore */ }
+};
+
+/** Overlay the last-known display settings onto a state loaded from any source. */
+const applyGuestDisplaySettings = (state: StudyState, s: GuestDisplaySettings | null): StudyState => {
+  if (!s) return state;
+  return {
+    ...state,
+    ...(hasContent(s.tabConfig) ? { tabConfig: s.tabConfig } : {}),
+    ...(hasContent(s.sidebarConfig) ? { sidebarConfig: s.sidebarConfig } : {}),
+    ...(hasContent(s.widgetLayout) ? { widgetLayout: s.widgetLayout } : {}),
+    ...(hasContent(s.uiPrefs) ? { uiPrefs: s.uiPrefs } : {}),
+  };
+};
+
 const notify = () => {
   if (currentUserId === GUEST_ID) {
-    try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+    // Settings first: this must succeed even when the full snapshot below
+    // overflows the quota and throws.
+    writeGuestDisplaySettings();
+    try {
+      localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState));
+      // Stamp the write so hydration can tell whether the debounced IndexedDB
+      // snapshot is actually newer before letting it overwrite this one.
+      localStorage.setItem(GUEST_STATE_AT_KEY, String(Date.now()));
+    } catch { /* storage full — settings already persisted above */ }
   }
   perfMeter.bumpNotify(listeners.size);
   listeners.forEach((l) => l());
 };
+
+// Synchronously persist the live guest workspace so an account switch can park
+// it without losing the newest (not-yet-flushed) edit. Registered globally so
+// `flushGuestWorkspace()` in the cache module can reach the in-memory state
+// without a circular import.
+registerGuestWorkspaceFlush(async () => {
+  if (currentUserId !== GUEST_ID) return;
+  try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+  try { await saveStudyStateCache(GUEST_ID, memState); } catch { /* ignore */ }
+});
+
+// A reload can land inside the debounced persist window (~2s), which would drop
+// the pending write. On unload we synchronously re-stamp the localStorage
+// snapshot (the authoritative fast path on boot) and fire a best-effort IndexedDB
+// write, so display settings survive a refresh made immediately after a change.
+if (typeof window !== "undefined") {
+  const flushOnUnload = () => {
+    if (currentUserId !== GUEST_ID) return;
+    try {
+      localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState));
+      localStorage.setItem(GUEST_STATE_AT_KEY, String(Date.now()));
+    } catch { /* storage full */ }
+    void saveStudyStateCache(GUEST_ID, memState).catch(() => {});
+  };
+  window.addEventListener("pagehide", flushOnUnload);
+  window.addEventListener("beforeunload", flushOnUnload);
+}
 
 let notifyTransitionScheduled = false;
 const requestStoreNotify = () => {
@@ -2556,6 +2658,25 @@ export function useStudy() {
     hydrationInFlightFor = uid;
     if (uid === GUEST_ID) {
       const saved = localStorage.getItem(GUEST_STATE_KEY);
+      // Last-known display settings — the authority for theme/tab/sidebar/UI
+      // prefs regardless of which snapshot the study data comes from.
+      const guestSettings = readGuestDisplaySettings();
+      // Warm the shipped-library id sets so delete guards can answer instantly.
+      primeBundledLibraryGuard();
+      console.log("[guest-hydrate] boot", {
+        hasLocalSnapshot: !!saved,
+        localSnapshotKB: saved ? Math.round(saved.length / 1024) : 0,
+        settingsRecord: guestSettings
+          ? {
+              tabConfig: guestSettings.tabConfig?.length ?? null,
+              sidebarConfig: guestSettings.sidebarConfig?.length ?? null,
+              widgetLayoutTabs: guestSettings.widgetLayout
+                ? Object.keys(guestSettings.widgetLayout).length
+                : null,
+              at: guestSettings.at ? new Date(guestSettings.at).toISOString() : null,
+            }
+          : null,
+      });
       if (saved) {
         try { memState = applyBidirectionalDedupeGuards(JSON.parse(saved) as StudyState); } catch { memState = emptyState(); }
       } else {
@@ -2564,7 +2685,7 @@ export function useStudy() {
       if (hasMeaningfulStudyData(memState) && !isStudyStateStructurallyUsable(memState)) {
         memState = clearStudyDataCollections(memState);
       }
-      memState = applyGuestProfileSeedOnce(memState);
+      memState = applyGuestDisplaySettings(applyGuestProfileSeedOnce(memState), guestSettings);
       ensureCategoryLocalState(uid);
       // Mark roots loaded for any local-only seed data so UI shows it immediately.
       markCategoryParentLoadedNow(null);
@@ -2583,13 +2704,46 @@ export function useStudy() {
           const cached = await loadStudyStateCache(GUEST_ID);
           if (cancelled || currentUserId !== GUEST_ID) return;
           if (cached && hasMeaningfulStudyData(cached) && isStudyStateStructurallyUsable(cached)) {
-            memState = applyGuestProfileSeedOnce(applyBidirectionalDedupeGuards(cached));
+            // IndexedDB is authoritative for the bulk study data (localStorage
+            // is capped at a few MB and silently truncates large libraries), but
+            // NOT for display settings: those are written synchronously on every
+            // change while this cache only catches up on a ~2s debounce.
+            // Re-applying stale settings here is what rolled back the user's
+            // theme/tab/sidebar choice and made clicks land on the wrong tab.
+            memState = applyGuestDisplaySettings(
+              applyGuestProfileSeedOnce(applyBidirectionalDedupeGuards(cached)),
+              guestSettings,
+            );
+            console.log("[guest-hydrate] adopted IndexedDB snapshot", {
+              cards: memState.cards?.length ?? 0,
+              decks: memState.decks?.length ?? 0,
+              categories: memState.categories?.length ?? 0,
+              tabConfig: memState.tabConfig?.length ?? 0,
+            });
             ensureCategoryLocalState(uid);
             markCategoryParentLoadedNow(null);
             for (const cat of memState.categories ?? []) {
               if (cat.parentId) categoryHasChildrenHint.set(cat.parentId, true);
             }
             notify();
+          }
+          // Safety net for offline mode: if the guest state is still empty (e.g.
+          // a local account that entered before the profile seed was loaded, or
+          // an app that booted straight into guest mode without visiting the
+          // login screen), apply the bundled library directly so the ~22k
+          // questions are always present offline.
+          if (!hasMeaningfulStudyData(memState)) {
+            const seeded = await applyBundledLibraryToAuthenticatedState(memState);
+            if (!cancelled && currentUserId === GUEST_ID && hasMeaningfulStudyData(seeded)) {
+              memState = applyGuestDisplaySettings(applyBidirectionalDedupeGuards(seeded), guestSettings);
+              ensureCategoryLocalState(uid);
+              markCategoryParentLoadedNow(null);
+              for (const cat of memState.categories ?? []) {
+                if (cat.parentId) categoryHasChildrenHint.set(cat.parentId, true);
+              }
+              notify();
+              await saveStudyStateCache(GUEST_ID, memState);
+            }
           }
           if (typeof navigator === "undefined" || navigator.onLine) {
             await hydrateGuestFromCloud();
@@ -3243,6 +3397,10 @@ export function useStudy() {
       });
       return;
     }
+    if (currentUserId === GUEST_ID && isBundledLibraryItem("deck", id)) {
+      toast({ ...PROTECTED_DELETE_MESSAGE, variant: "destructive" });
+      return;
+    }
     // Mark as deleted before touching state so that any in-flight sync that
     // completes right after cannot resurrect the deck via mergeByKeyLww.
     deletedDeckIds.add(id);
@@ -3492,6 +3650,12 @@ export function useStudy() {
       });
       return;
     }
+    // Offline/local workspaces have no cloud copy, so deleting shipped library
+    // content would be unrecoverable. Only user-created questions may go.
+    if (currentUserId === GUEST_ID && isBundledLibraryItem("card", id)) {
+      toast({ ...PROTECTED_DELETE_MESSAGE, variant: "destructive" });
+      return;
+    }
     deletedCardIds.add(id);
     setState((s) => ({
       ...s,
@@ -3601,6 +3765,12 @@ export function useStudy() {
     const target = (memState.categories ?? []).find((c) => c.id === id);
     if (target && isUncategorized(target)) {
       console.warn('[store] refusing to delete singleton "ללא סיווג" category');
+      return;
+    }
+    // Deleting a shipped category cascades to its children and their questions,
+    // so this guard protects the whole bundled subtree, not just one row.
+    if (currentUserId === GUEST_ID && isBundledLibraryItem("category", id)) {
+      toast({ ...PROTECTED_DELETE_MESSAGE, variant: "destructive" });
       return;
     }
     let removedTags: Set<string> | null = null;
