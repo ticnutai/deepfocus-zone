@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 export function AdminPanel() {
   const { isAdmin, loading } = usePermissions();
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [pendingNotes, setPendingNotes] = useState(0);
   useEffect(() => { document.title = "ניהול | מעקב למידה"; }, []);
 
   useEffect(() => {
@@ -39,6 +40,19 @@ export function AdminPanel() {
       window.clearInterval(pollId);
       void supabase.removeChannel(channel);
     };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const refresh = async () => {
+      const { count } = await supabase.from("source_change_notes").select("id", { count: "exact", head: true }).eq("status", "open");
+      setPendingNotes(count ?? 0);
+    };
+    void refresh();
+    const channel = supabase.channel("admin-question-report-count")
+      .on("postgres_changes", { event: "*", schema: "public", table: "source_change_notes" }, () => void refresh())
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
   }, [isAdmin]);
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">טוען…</div>;
@@ -97,7 +111,8 @@ export function AdminPanel() {
               <span>פרופילי אורח</span><UserX className="h-4 w-4" />
             </TabsTrigger>
             <TabsTrigger value="change-notes" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>הערות שינוי</span><MessageSquare className="h-4 w-4" />
+              <span>דיווחים והערות</span><MessageSquare className="h-4 w-4" />
+              {pendingNotes > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingNotes}</span>}
             </TabsTrigger>
           </TabsList>
         </Card>

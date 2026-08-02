@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect } from "react";
-import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2, ListPlus } from "lucide-react";
+import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2, ListPlus, FolderPlus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -208,7 +208,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
     setExplanation("");
   };
 
-  const handleSave = (keepClassification = false) => {
+  const handleSave = (followUp: "close" | "same-classification" | "new-classification" = "close") => {
     const showMissingField = (description: string) => {
       toast({
         title: "לא ניתן עדיין לשמור את השאלה",
@@ -299,11 +299,25 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       cards.push({ deckId: dId, type: "boolean", question, correct: boolCorrect === "true", explanation, tags, ...dafFields } as unknown as NewCard);
     }
     for (const c of cards) addCard(c);
-    if (keepClassification) {
+    if (followUp === "same-classification") {
       resetQuestionFields();
       toast({
         title: cards.length > 1 ? `${cards.length} שאלות נוספו` : "השאלה נוספה",
         description: "הסיווג נשמר. אפשר לכתוב עכשיו שאלה נוספת באותו מקום.",
+      });
+      return;
+    }
+    if (followUp === "new-classification") {
+      resetQuestionFields();
+      setSelectedCategoryNames([]);
+      setSelectedDeckId(null);
+      setTagsInput("");
+      setMasechta("");
+      setDaf(undefined);
+      setAmud(1);
+      toast({
+        title: cards.length > 1 ? `${cards.length} שאלות נוספו` : "השאלה נוספה",
+        description: "הסיווג נוקה. בחר סיווג חדש לשאלה הבאה.",
       });
       return;
     }
@@ -737,16 +751,29 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
           <Button
             type="button"
             variant="outline"
-            onClick={() => handleSave(true)}
+            onClick={() => handleSave("new-classification")}
+            title="שמור את השאלה, נקה את הסיווג והישאר בטופס"
+            className="gap-2 rounded-xl border-2 border-gold/60"
+          >
+            <FolderPlus className="h-4 w-4" />
+            שמור והוסף שאלה בסיווג חדש
+          </Button>
+        )}
+        {!isEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleSave("same-classification")}
             title="שמור את השאלה והשאר את הקטגוריות והמערכת שנבחרו"
             className="gap-2 rounded-xl border-2 border-gold/60"
           >
             <ListPlus className="h-4 w-4" />
-            שמור והוסף שאלות לאותו סיווג
+            שמור והוסף שאלה באותו סיווג
           </Button>
         )}
-        <Button onClick={() => handleSave()} className="bg-gradient-navy text-primary-foreground rounded-xl">
-          <Plus className="h-4 w-4" /> {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : (createTypes.length > 1 ? `הוסף ${createTypes.length} שאלות` : "הוסף שאלה")}
+        <Button onClick={() => handleSave("close")} className="bg-gradient-navy text-primary-foreground rounded-xl">
+          {isEdit ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+          {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : "שמור וצא"}
         </Button>
       </DialogFooter>
 

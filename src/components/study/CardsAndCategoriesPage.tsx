@@ -1,146 +1,122 @@
-import { useEffect, useState, useRef, memo } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FolderTree, BookOpen, CircleHelp } from "lucide-react";
+import { memo, useEffect, useState, type ComponentType } from "react";
+import { BookOpen, CircleHelp, FolderTree } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { CardsManager } from "./CardsManager";
 import { CategoriesPage } from "./CategoriesPage";
 import { QuestionCreationPage } from "./QuestionCreationPage";
-import { debugLog } from "@/lib/debug/perf";
 
 type SubTab = "categories" | "decks" | "questions";
 const STORAGE_KEY = "cards-categories:sub-tab";
-const STORAGE_VISITED_KEY = "cards-categories:visited-tabs";
-const ENABLE_TAB_SWITCH_PERF = import.meta.env.DEV;
 
-const percentile = (vals: number[], p: number): number => {
-  if (vals.length === 0) return 0;
-  const sorted = [...vals].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[idx];
+const PAGE_META: Record<SubTab, {
+  title: string;
+  description: string;
+  icon: ComponentType<{ className?: string }>;
+}> = {
+  categories: {
+    title: "קטגוריות",
+    description: "יצירה, סידור וניהול של עץ הקטגוריות ותתי־הקטגוריות.",
+    icon: FolderTree,
+  },
+  decks: {
+    title: "יצירת מבחנים",
+    description: "בניית מבחנים מהשאלות והקטגוריות שכבר קיימות במערכת.",
+    icon: BookOpen,
+  },
+  questions: {
+    title: "יצירת שאלות",
+    description: "הוספת שאלות חדשות, תשובות וסיווגן במקום הנכון.",
+    icon: CircleHelp,
+  },
 };
 
-/**
- * Unified shell section that merges the former "Categories" and
- * "Review questions" sidebar tabs into a single screen with two
- * internal sub-tabs. Both legacy components are reused as-is — no
- * logic duplication.
- */
-function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
-  const [tab, setTab] = useState<SubTab>(() => {
+const readInitialPage = (initialTab?: SubTab): SubTab => {
+  try {
+    const fromUrl = new URL(window.location.href).searchParams.get("workspace");
+    if (fromUrl === "categories" || fromUrl === "decks" || fromUrl === "questions") return fromUrl;
     if (initialTab) return initialTab;
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === "categories" || saved === "decks" || saved === "questions") return saved;
-      if (saved === "cards") return "decks";
-    } catch { /* ignore */ }
-    return "categories";
-  });
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "categories" || saved === "decks" || saved === "questions") return saved;
+  } catch { /* use default */ }
+  return "categories";
+};
 
-  const [visited, setVisited] = useState<Set<SubTab>>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const active: SubTab = saved === "decks" || saved === "questions"
-        ? saved
-        : saved === "cards"
-          ? "decks"
-          : "categories";
-      return new Set<SubTab>([active]);
-    } catch { return new Set<SubTab>(["categories"]); }
-  });
-
-  const tabSwitchStartRef = useRef<number | null>(null);
-  const tabSwitchFromRef = useRef<SubTab>(tab);
-  const tabSwitchSamplesRef = useRef<number[]>([]);
+function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
+  const [page, setPage] = useState<SubTab>(() => readInitialPage(initialTab));
+  const meta = PAGE_META[page];
+  const PageIcon = meta.icon;
 
   useEffect(() => {
-    if (initialTab && initialTab !== tab) { setTab(initialTab); setVisited((s) => { const n = new Set(s); n.add(initialTab); return n; }); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (initialTab) setPage(initialTab);
   }, [initialTab]);
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, tab); } catch { /* ignore */ }
-  }, [tab]);
-
-  const switchTab = (v: SubTab) => {
-    if (v === tab) return;
-    if (ENABLE_TAB_SWITCH_PERF) {
-      tabSwitchStartRef.current = performance.now();
-      tabSwitchFromRef.current = tab;
-    }
-    setTab(v);
-    setVisited((s) => { const n = new Set(s); n.add(v); return n; });
-  };
+    try { localStorage.setItem(STORAGE_KEY, page); } catch { /* ignore */ }
+  }, [page]);
 
   useEffect(() => {
-    if (!ENABLE_TAB_SWITCH_PERF) return;
-    const startedAt = tabSwitchStartRef.current;
-    if (startedAt == null) return;
+    const onPopState = () => setPage(readInitialPage(initialTab));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [initialTab]);
 
-    let raf1 = 0;
-    let raf2 = 0;
-
-    raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => {
-        const durationMs = performance.now() - startedAt;
-        tabSwitchStartRef.current = null;
-
-        const nextSamples = [...tabSwitchSamplesRef.current, durationMs].slice(-40);
-        tabSwitchSamplesRef.current = nextSamples;
-
-        const avgMs = nextSamples.reduce((sum, n) => sum + n, 0) / nextSamples.length;
-        const p95Ms = percentile(nextSamples, 95);
-        const fromTab = tabSwitchFromRef.current;
-        const toTab = tab;
-
-        debugLog.record(
-          "ui:cards-categories:tab-switch",
-          "other",
-          Math.round(durationMs),
-          `from=${fromTab} to=${toTab} avg=${avgMs.toFixed(1)}ms p95=${p95Ms.toFixed(1)}ms n=${nextSamples.length}`,
-        );
-      });
-    });
-
-    return () => {
-      if (raf1) window.cancelAnimationFrame(raf1);
-      if (raf2) window.cancelAnimationFrame(raf2);
-    };
-  }, [tab]);
+  const openPage = (next: SubTab) => {
+    if (next === page) return;
+    setPage(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("workspace", next);
+    window.history.pushState({}, "", url);
+  };
 
   return (
-    <div dir="rtl" className="space-y-4">
-      <div className="text-right space-y-1 animate-fade-in">
-        <h1 className="font-display text-2xl font-bold text-gold">קטגוריות ושאלות</h1>
-        <p className="text-muted-foreground text-sm">
-          ניהול קטגוריות, מבחנים ושאלות חזרה במקום אחד
-        </p>
-      </div>
+    <div dir="rtl" className="space-y-5">
+      <Card className="gold-frame overflow-hidden bg-card/95 p-2 shadow-sm">
+        <nav aria-label="עמודי קטגוריות, מבחנים ושאלות" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {(Object.keys(PAGE_META) as SubTab[]).map((key) => {
+            const item = PAGE_META[key];
+            const Icon = item.icon;
+            const active = page === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => openPage(key)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "group flex min-h-16 items-center justify-center gap-3 rounded-xl border-2 px-4 py-3 text-base font-semibold transition-all",
+                  active
+                    ? "border-navy bg-gradient-navy text-primary-foreground shadow-md"
+                    : "border-transparent bg-secondary/45 text-muted-foreground hover:border-gold/50 hover:bg-gold/10 hover:text-navy",
+                )}
+              >
+                <span className={cn("flex h-9 w-9 items-center justify-center rounded-full border", active ? "border-gold/70 text-gold" : "border-gold/40 bg-card text-navy")}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                {item.title}
+              </button>
+            );
+          })}
+        </nav>
+      </Card>
 
-      <Tabs value={tab} onValueChange={(v) => switchTab(v as SubTab)}>
-        <TabsList className="grid h-auto w-full max-w-2xl grid-cols-1 gap-1 mx-auto sm:grid-cols-3">
-          <TabsTrigger value="categories" className="gap-2">
-            <FolderTree className="h-4 w-4" />
-            קטגוריות
-          </TabsTrigger>
-          <TabsTrigger value="decks" className="gap-2">
-            <BookOpen className="h-4 w-4" />
-            יצירת מבחנים
-          </TabsTrigger>
-          <TabsTrigger value="questions" className="gap-2">
-            <CircleHelp className="h-4 w-4" />
-            יצירת שאלות
-          </TabsTrigger>
-        </TabsList>
+      <header className="rounded-2xl border-2 border-gold/35 bg-gradient-to-l from-gold/10 via-card to-card p-5 shadow-sm">
+        <div className="flex items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card text-gold shadow-sm">
+            <PageIcon className="h-7 w-7" />
+          </span>
+          <div className="text-right">
+            <h1 className="font-display text-2xl font-bold text-foreground">{meta.title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+          </div>
+        </div>
+      </header>
 
-        <TabsContent value="categories" className="mt-4" forceMount>
-          {visited.has("categories") && <CategoriesPage />}
-        </TabsContent>
-        <TabsContent value="decks" className="mt-4" forceMount>
-          {visited.has("decks") && <CardsManager />}
-        </TabsContent>
-        <TabsContent value="questions" className="mt-4" forceMount>
-          {visited.has("questions") && <QuestionCreationPage />}
-        </TabsContent>
-      </Tabs>
+      <main key={page} className="animate-fade-in">
+        {page === "categories" && <CategoriesPage />}
+        {page === "decks" && <CardsManager />}
+        {page === "questions" && <QuestionCreationPage />}
+      </main>
     </div>
   );
 }

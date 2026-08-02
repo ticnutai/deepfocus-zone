@@ -32,6 +32,7 @@ import {
   Pause,
   Play,
   Trash2,
+  MessageSquareText,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -78,6 +79,7 @@ import { parseCloze, hasCloze, renderCloze } from "@/lib/study/cloze";
 import type { Card as StudyCard, StudyMode } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { QuestionReportDialog } from "./QuestionReportDialog";
 
 // ===== Persistence keys =====
 const COMBO_PREF_KEY = "study-combo-pref-v1";
@@ -463,6 +465,7 @@ export function StudySession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckId, mode, cardIds, comboPrefForQueue]);
   const [retryCardIds, setRetryCardIds] = useState<string[] | null>(null);
+  const [guidedMistakeReview, setGuidedMistakeReview] = useState(false);
   const queue = useMemo(() => {
     if (!retryCardIds) return baseQueue;
     const allowed = new Set(retryCardIds);
@@ -477,6 +480,8 @@ export function StudySession({
     quality: 0 | 1 | 2 | 3 | 4 | 5;
   } | null>(null);
   const [boolPick, setBoolPick] = useState<boolean | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ kind: "question" } | { kind: "answer"; text: string; index: number }>({ kind: "question" });
   const [comboMode, setComboMode] = useState<"flash" | "multi" | null>(null);
   const [startedAt, setStartedAt] = useState(Date.now());
   const [results, setResults] = useState<{
@@ -828,15 +833,7 @@ export function StudySession({
       setTimerRunning(p.studyTimerRunning);
       if (!p.studyTimerRunning) pausedAtRef.current = Date.now();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    !!(
-      state.uiPrefs?.studyTypography ??
-      state.uiPrefs?.studyAnswerTypography ??
-      state.uiPrefs?.studyQuestionAlign ??
-      state.uiPrefs?.studyCustomTheme
-    ) || state.uiPrefs?.studyTimerRunning !== undefined,
-  ]);
+  }, [state.uiPrefs]);
 
   // Custom next-due selection (per current card). Reset when card changes.
   const [nextInterval, setNextInterval] = useState<string>("auto");
@@ -860,6 +857,14 @@ export function StudySession({
     setNextInterval("auto");
     setCustomDate("");
     setInstantPendingSubmit(null);
+    const currentCard = queue[idx];
+    if (guidedMistakeReview && currentCard) {
+      setSelected(currentCard.type === "multiple" || currentCard.type === "combo" ? [...(currentCard.correctIndices ?? [])] : []);
+      setBoolPick(currentCard.type === "boolean" ? currentCard.correct : null);
+      setComboMode(currentCard.type === "combo" ? (currentCard.options?.length ? "multi" : "flash") : null);
+      setRevealed(true);
+      return;
+    }
     const savedAnswer =
       viewMode === "test"
         ? testAnswers.find((answer) => answer.cardId === queue[idx]?.id)
@@ -877,7 +882,7 @@ export function StudySession({
     setBoolPick(null);
     setComboMode(null);
     setRevealed(false);
-  }, [idx, queue, testAnswers, viewMode]);
+  }, [idx, queue, testAnswers, viewMode, guidedMistakeReview]);
 
   const card = queue[idx];
   const currentTestAnswer =
@@ -885,8 +890,9 @@ export function StudySession({
       ? testAnswers.find((answer) => answer.cardId === card.id)
       : undefined;
 
-  const restartSession = useCallback((onlyCardIds: string[] | null = null) => {
+  const restartSession = useCallback((onlyCardIds: string[] | null = null, guided = false) => {
     setRetryCardIds(onlyCardIds);
+    setGuidedMistakeReview(guided);
     setIdx(0);
     setResults({ correct: 0, total: 0, totalMs: 0, failed: [] });
     setTestAnswers([]);
@@ -902,6 +908,15 @@ export function StudySession({
     setTimerRunning(true);
     setElapsed(0);
   }, []);
+
+  const advanceGuidedReview = () => {
+    if (idx >= queue.length - 1) {
+      toast({ title: "החזרה על השגיאות הושלמה" });
+      onExit();
+      return;
+    }
+    setIdx((current) => current + 1);
+  };
 
   const quickAddToLastDeck = useCallback(() => {
     if (!card) return;
@@ -1407,7 +1422,8 @@ export function StudySession({
     const pctDiff = prev ? pct - prev.pct : null;
     const timeDiff = prev ? elapsed * 1000 - prev.totalMs : null; // positive = slower
 
-    const retryFailed = () => restartSession([...results.failed]);
+    const retryFailed = () => restartSession([...results.failed], false);
+    const reviewFailed = () => restartSession([...results.failed], true);
     return (
       <Card
         className="gold-frame p-8 text-center space-y-5 animate-fade-in"
@@ -1508,6 +1524,24 @@ export function StudySession({
                 ? "עברת — עוד קצת ותגיע לשלמות!"
                 : "אל תתייאש, כל חזרה מקדמת אותך קדימה!"}
         </p>
+
+        {/* פעולות המשך מוצגות מיד אחרי הציון, ללא צורך בגלילה */}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {failedCards.length > 0 && (
+            <Button onClick={reviewFailed} className="border-2 border-gold bg-gold/20 text-navy hover:bg-gold/30 rounded-xl">
+              <Eye className="h-4 w-4" /> חזרה מודרכת על השגיאות
+            </Button>
+          )}
+          {failedCards.length > 0 && (
+            <Button onClick={retryFailed} variant="outline" className="border-2 border-destructive/50 text-destructive rounded-xl">
+              <RefreshCw className="h-4 w-4" /> מבחן חוזר על השגיאות
+            </Button>
+          )}
+          <Button onClick={() => restartSession(null)} variant="outline" className="border-2 border-gold rounded-xl">
+            <RotateCcw className="h-4 w-4" /> בצע שוב את כל המבחן
+          </Button>
+          <Button onClick={onExit} className="bg-gradient-navy text-primary-foreground rounded-xl">סיום</Button>
+        </div>
 
         {/* Stats grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-lg mx-auto pt-2">
@@ -1716,30 +1750,6 @@ export function StudySession({
             </ul>
           </div>
         )}
-        <div className="flex flex-wrap gap-2 justify-center">
-          {failedCards.length > 0 && (
-            <Button
-              onClick={retryFailed}
-              variant="outline"
-              className="border-2 border-destructive/50 text-destructive rounded-xl"
-            >
-              <RefreshCw className="h-4 w-4" /> תרגל שוב רק את השגיאות
-            </Button>
-          )}
-          <Button
-            onClick={() => restartSession(null)}
-            variant="outline"
-            className="border-2 border-gold rounded-xl"
-          >
-            <RotateCcw className="h-4 w-4" /> בצע שוב את כל המבחן
-          </Button>
-          <Button
-            onClick={onExit}
-            className="bg-gradient-navy text-primary-foreground rounded-xl"
-          >
-            סיום
-          </Button>
-        </div>
       </Card>
     );
   }
@@ -2481,6 +2491,11 @@ export function StudySession({
         value={progress}
         className={cn("h-2", (isMobile || fillHeight) && "shrink-0")}
       />
+      {guidedMistakeReview && (
+        <div className="rounded-xl border-2 border-green-500/50 bg-green-50 px-3 py-2 text-center text-sm font-semibold text-green-800" dir="rtl">
+          חזרה מודרכת: התשובה הנכונה מסומנת בירוק — לחץ עליה כדי להמשיך.
+        </div>
+      )}
 
       <div
         className={cn(
@@ -2548,10 +2563,10 @@ export function StudySession({
             S
           </span>
         )}
-        <div className="space-y-3 w-full" dir="rtl">
+        <div className="flex w-full items-start gap-2" dir="rtl">
           <h3
             className={cn(
-              "font-display text-2xl font-semibold leading-relaxed",
+              "min-w-0 flex-1 font-display text-2xl font-semibold leading-relaxed",
               questionAlign === "right"
                 ? "text-right"
                 : questionAlign === "center"
@@ -2576,6 +2591,15 @@ export function StudySession({
               card.question
             )}
           </h3>
+          <button
+            type="button"
+            title="כתוב הערה למנהל על השאלה"
+            aria-label="כתוב הערה למנהל על השאלה"
+            onClick={() => { setReportTarget({ kind: "question" }); setReportOpen(true); }}
+            className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gold/50 bg-background/90 text-gold hover:bg-gold/10"
+          >
+            <MessageSquareText className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -2598,12 +2622,8 @@ export function StudySession({
               </Button>
             ) : (
               <>
-                <div
-                  className={cn(
-                    "p-5 rounded-xl bg-card border-2 border-gold/40",
-                    viewMode === "flip" && "animate-fade-in",
-                  )}
-                >
+                <div className="flex items-stretch gap-1.5">
+                <div className={cn("min-w-0 flex-1 p-5 rounded-xl bg-card border-2 border-gold/40", viewMode === "flip" && "animate-fade-in")}>
                   <p
                     className="text-lg text-foreground text-right font-medium"
                     dir="rtl"
@@ -2611,6 +2631,11 @@ export function StudySession({
                     {card.answer}
                   </p>
                 </div>
+                <button type="button" title="כתוב הערה למנהל על התשובה" aria-label="כתוב הערה למנהל על התשובה" onClick={() => { setReportTarget({ kind: "answer", text: card.answer, index: 0 }); setReportOpen(true); }} className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 bg-card text-gold hover:bg-gold/10"><MessageSquareText className="h-3.5 w-3.5" /></button>
+                </div>
+                {guidedMistakeReview ? (
+                  <Button onClick={advanceGuidedReview} className="w-full bg-green-600 text-white hover:bg-green-700">הבנתי — לשאלה הבאה</Button>
+                ) : (<>
                 <NextReviewTabs
                   value={nextInterval}
                   customDate={customDate}
@@ -2646,6 +2671,7 @@ export function StudySession({
                     קל
                   </Button>
                 </div>
+                </>)}
               </>
             )}
           </div>
@@ -2705,6 +2731,10 @@ export function StudySession({
                     const isCorrect = card.correctIndices.includes(i);
                     const showResult = revealed;
                     const handleClick = () => {
+                      if (guidedMistakeReview) {
+                        if (isCorrect) advanceGuidedReview();
+                        return;
+                      }
                       if (revealed) return;
                       if (quizAnswerMode === "instant") {
                         const correct =
@@ -2993,13 +3023,14 @@ export function StudySession({
                     };
 
                     return (
+                      <div key={i} className={cn("flex gap-1.5", (isMobile || fillHeight) && "min-h-0")}>
                       <button
-                        key={i}
                         dir="rtl"
-                        disabled={revealed}
+                        disabled={revealed && !guidedMistakeReview}
                         onClick={handleClick}
                         className={cn(
                           btnCls,
+                          "min-w-0 flex-1",
                           (isMobile || fillHeight) &&
                             (isGrid ? "h-full min-h-0" : "flex-1 min-h-0"),
                         )}
@@ -3047,6 +3078,16 @@ export function StudySession({
                           </>
                         )}
                       </button>
+                      <button
+                        type="button"
+                        title={`כתוב הערה למנהל על תשובה ${i + 1}`}
+                        aria-label={`כתוב הערה למנהל על תשובה ${i + 1}`}
+                        onClick={() => { setReportTarget({ kind: "answer", text: opt, index: i }); setReportOpen(true); }}
+                        className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 bg-card text-gold hover:bg-gold/10"
+                      >
+                        <MessageSquareText className="h-3.5 w-3.5" />
+                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -3103,28 +3144,42 @@ export function StudySession({
         {/* Boolean */}
         {card.type === "boolean" && (
           <div className="space-y-3" dir="rtl">
-            {!revealed ? (
+            {!revealed || guidedMistakeReview ? (
               <div className="grid grid-cols-2 gap-3">
+                <div className="flex gap-1.5">
                 <Button
                   onClick={() => {
+                    if (guidedMistakeReview) {
+                      if (card.correct) advanceGuidedReview();
+                      return;
+                    }
                     setBoolPick(true);
                     setRevealed(true);
                   }}
                   variant="outline"
-                  className="border-2 border-gold/50 rounded-xl py-8 text-lg"
+                  className={cn("min-w-0 flex-1 border-2 rounded-xl py-8 text-lg", guidedMistakeReview && card.correct ? "border-green-500 bg-green-100 text-green-800" : "border-gold/50")}
                 >
                   <Check className="h-5 w-5" /> נכון
                 </Button>
+                <button type="button" title="הערה על התשובה נכון" aria-label="כתוב הערה למנהל על התשובה נכון" onClick={() => { setReportTarget({ kind: "answer", text: "נכון", index: 0 }); setReportOpen(true); }} className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 text-gold"><MessageSquareText className="h-3.5 w-3.5" /></button>
+                </div>
+                <div className="flex gap-1.5">
                 <Button
                   onClick={() => {
+                    if (guidedMistakeReview) {
+                      if (!card.correct) advanceGuidedReview();
+                      return;
+                    }
                     setBoolPick(false);
                     setRevealed(true);
                   }}
                   variant="outline"
-                  className="border-2 border-gold/50 rounded-xl py-8 text-lg"
+                  className={cn("min-w-0 flex-1 border-2 rounded-xl py-8 text-lg", guidedMistakeReview && !card.correct ? "border-green-500 bg-green-100 text-green-800" : "border-gold/50")}
                 >
                   <X className="h-5 w-5" /> לא נכון
                 </Button>
+                <button type="button" title="הערה על התשובה לא נכון" aria-label="כתוב הערה למנהל על התשובה לא נכון" onClick={() => { setReportTarget({ kind: "answer", text: "לא נכון", index: 1 }); setReportOpen(true); }} className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 text-gold"><MessageSquareText className="h-3.5 w-3.5" /></button>
+                </div>
               </div>
             ) : (
               (() => {
@@ -3235,7 +3290,8 @@ export function StudySession({
                     </Button>
                   ) : (
                     <>
-                      <div className="p-5 rounded-xl bg-card border-2 border-gold/40">
+                      <div className="flex items-stretch gap-1.5">
+                      <div className="min-w-0 flex-1 p-5 rounded-xl bg-card border-2 border-gold/40">
                         <p
                           className="text-lg text-foreground text-right font-medium"
                           dir="rtl"
@@ -3248,6 +3304,11 @@ export function StudySession({
                           </p>
                         )}
                       </div>
+                      <button type="button" title="כתוב הערה למנהל על התשובה" aria-label="כתוב הערה למנהל על התשובה" onClick={() => { setReportTarget({ kind: "answer", text: card.answer ?? "", index: 0 }); setReportOpen(true); }} className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 bg-card text-gold hover:bg-gold/10"><MessageSquareText className="h-3.5 w-3.5" /></button>
+                      </div>
+                      {guidedMistakeReview ? (
+                        <Button onClick={advanceGuidedReview} className="w-full bg-green-600 text-white hover:bg-green-700">הבנתי — לשאלה הבאה</Button>
+                      ) : (<>
                       <NextReviewTabs
                         value={nextInterval}
                         customDate={customDate}
@@ -3283,6 +3344,7 @@ export function StudySession({
                           קל
                         </Button>
                       </div>
+                      </>)}
                       {hasMulti && (
                         <Button
                           variant="ghost"
@@ -3356,6 +3418,10 @@ export function StudySession({
                         const isCorrect = card.correctIndices!.includes(i);
                         const showResult = revealed;
                         const handleClick = () => {
+                          if (guidedMistakeReview) {
+                            if (isCorrect) advanceGuidedReview();
+                            return;
+                          }
                           if (revealed) return;
                           if (quizAnswerMode === "instant") {
                             const correct =
@@ -3648,13 +3714,14 @@ export function StudySession({
                           ...typographyToBgStyle(answerTypography),
                         };
                         return (
+                          <div key={i} className={cn("flex gap-1.5", isMobile && "min-h-0")}>
                           <button
-                            key={i}
                             dir="rtl"
-                            disabled={revealed}
+                            disabled={revealed && !guidedMistakeReview}
                             onClick={handleClick}
                             className={cn(
                               btnCls,
+                              "min-w-0 flex-1",
                               isMobile &&
                                 (isGrid ? "h-full min-h-0" : "flex-1 min-h-0"),
                             )}
@@ -3700,6 +3767,8 @@ export function StudySession({
                               </>
                             )}
                           </button>
+                          <button type="button" title={`כתוב הערה למנהל על תשובה ${i + 1}`} aria-label={`כתוב הערה למנהל על תשובה ${i + 1}`} onClick={() => { setReportTarget({ kind: "answer", text: opt, index: i }); setReportOpen(true); }} className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-gold/40 bg-card text-gold hover:bg-gold/10"><MessageSquareText className="h-3.5 w-3.5" /></button>
+                          </div>
                         );
                       })}
                     </div>
@@ -3782,6 +3851,16 @@ export function StudySession({
         open={deckDialogOpen}
         onOpenChange={setDeckDialogOpen}
       />
+
+      {card && (
+        <QuestionReportDialog
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          cardId={card.id}
+          question={card.question}
+          target={reportTarget}
+        />
+      )}
 
       <Dialog open={editorOpen && !!card} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">

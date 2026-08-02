@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ export function ChangeNotesTab() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"open" | "all">("open");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     let q = supabase.from("source_change_notes").select("*").order("created_at", { ascending: false }).limit(500);
     if (filter === "open") q = q.eq("status", "open");
@@ -46,9 +46,16 @@ export function ChangeNotesTab() {
       setProfiles(map);
     }
     setLoading(false);
-  };
+  }, [filter]);
 
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter]);
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const channel = supabase.channel("admin-question-reports-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "source_change_notes" }, () => void load())
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [load]);
 
   const setStatus = async (id: string, status: string) => {
     const { error } = await supabase.from("source_change_notes").update({ status }).eq("id", id);
@@ -74,7 +81,7 @@ export function ChangeNotesTab() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="gold-icon-circle"><MessageSquare className="h-4 w-4" /></span>
-          <h3 className="font-display text-lg font-semibold">הערות שינוי על שאלות מהמקור</h3>
+          <h3 className="font-display text-lg font-semibold">דיווחים והערות על שאלות</h3>
         </div>
         <div className="flex items-center gap-2">
           <Button
