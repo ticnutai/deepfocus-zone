@@ -17,6 +17,12 @@ import { toast } from "@/hooks/use-toast";
 
 const RECENT_KEY = "category-picker:recent-cats";
 const MAX_RECENT = 6;
+const HEBREW_LETTER_VALUES: Record<string, number> = {
+  "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7, "ח": 8, "ט": 9,
+  "י": 10, "כ": 20, "ך": 20, "ל": 30, "מ": 40, "ם": 40, "נ": 50, "ן": 50, "ס": 60, "ע": 70, "פ": 80, "ף": 80, "צ": 90, "ץ": 90,
+  "ק": 100, "ר": 200, "ש": 300, "ת": 400,
+};
+const hebrewToNum = (value: string) => [...value].reduce((sum, char) => sum + (HEBREW_LETTER_VALUES[char] ?? 0), 0);
 
 type ClassificationViewMode = "tree" | "cards";
 
@@ -85,13 +91,6 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     () => [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt),
     [state.categories],
   );
-
-  const HVAL: Record<string, number> = {
-    "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7, "ח": 8, "ט": 9,
-    "י": 10, "כ": 20, "ך": 20, "ל": 30, "מ": 40, "ם": 40, "נ": 50, "ן": 50, "ס": 60, "ע": 70, "פ": 80, "ף": 80, "צ": 90, "ץ": 90,
-    "ק": 100, "ר": 200, "ש": 300, "ת": 400,
-  };
-  const hebrewToNum = (s: string) => [...s].reduce((sum, ch) => sum + (HVAL[ch] ?? 0), 0);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string | null, Category[]>();
@@ -172,11 +171,11 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     return total;
   }, [state.cards, categories, childrenByParent]);
 
-  const matchesSearch = (cat: Category, q: string): boolean => {
+  const matchesSearch = useCallback(function categoryMatchesSearch(cat: Category, q: string): boolean {
     if (!q) return true;
     if (displayCategoryName(cat.name).toLowerCase().includes(q)) return true;
-    return childrenOf(cat.id).some((child) => matchesSearch(child, q));
-  };
+    return childrenOf(cat.id).some((child) => categoryMatchesSearch(child, q));
+  }, [childrenOf]);
 
   const renderNode = (cat: Category, depth: number) => {
     const q = search.trim().toLowerCase();
@@ -258,7 +257,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   const topLevelCategories = useMemo(() => {
     const q = search.trim().toLowerCase();
     return childrenOf(null).filter((cat) => !q || matchesSearch(cat, q));
-  }, [childrenOf, search]);
+  }, [childrenOf, matchesSearch, search]);
 
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>();
@@ -290,7 +289,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     const q = search.trim().toLowerCase();
     const level = childrenOf(cardsParentId);
     return q ? level.filter((cat) => matchesSearch(cat, q)) : level;
-  }, [cardsParentId, childrenOf, search]);
+  }, [cardsParentId, childrenOf, matchesSearch, search]);
 
   const cardsBreadcrumb = useMemo(
     () => normalizedCardsPath.map((id) => categoryById.get(id)).filter((c): c is Category => !!c),
@@ -499,15 +498,20 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                       <button
                         type="button"
                         className={cn("w-full p-3 text-right transition-colors hover:bg-secondary/30", isSelected && "bg-navy/10")}
-                        onClick={() => enterCardsCategory(root)}
+                        onClick={() => hasChildren ? enterCardsCategory(root) : toggle(root.name)}
+                        title={hasChildren ? `פתח את ${displayCategoryName(root.name)}` : `בחר את ${displayCategoryName(root.name)} לסיווג`}
                       >
                         <div className="flex items-center gap-2">
                           <span className="h-7 w-7 rounded-full border border-gold/50 flex items-center justify-center shrink-0">
-                            {hasChildren ? <ChevronLeft className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                            {hasChildren ? (
+                              <ChevronLeft className="h-4 w-4" />
+                            ) : (
+                              <Check className={cn("h-4 w-4", isSelected && "fill-navy text-navy")} />
+                            )}
                           </span>
                           <Folder className="h-4 w-4 text-gold shrink-0" />
                           <span className="flex-1 font-semibold truncate">{displayCategoryName(root.name)}</span>
-                          {count > 0 ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-navy text-white">{count}</span> : null}
+                          {count > 0 ? <span title={`${count} שאלות בקטגוריה`} className="text-[10px] px-1.5 py-0.5 rounded bg-navy text-white">{count}</span> : null}
                         </div>
                       </button>
                     </div>

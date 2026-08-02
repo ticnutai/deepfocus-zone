@@ -221,6 +221,10 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       showMissingField("צריך לכתוב את נוסח השאלה.");
       return;
     }
+    if (!isEdit && selectedCategoryNames.length === 0) {
+      showMissingField("לצורך יצירת שאלה נדרש לבחור לפחות סיווג אחד.");
+      return;
+    }
     const plainTags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const categoryTags = selectedCategoryNames.map((n) => `cat:${n}`);
     const tags = [...plainTags, ...categoryTags];
@@ -420,6 +424,17 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
   return (
     <div dir="rtl" className="space-y-4">
+      {!isEdit && (
+        <div className="flex items-center gap-3 rounded-xl border-2 border-gold/55 bg-gold/10 px-4 py-3 text-right" role="note">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card text-gold">
+            <FolderTree className="h-5 w-5" />
+          </span>
+          <div>
+            <div className="font-bold text-foreground">לצורך יצירת שאלה נדרש סיווג</div>
+            <div className="text-sm text-muted-foreground">בחר לפחות קטגוריה אחת באזור הסיווג לפני שמירת השאלה.</div>
+          </div>
+        </div>
+      )}
       <div
         dir="ltr"
         className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(22rem,0.7fr)] xl:items-start"
@@ -431,7 +446,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       >
         <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-1.5">
-            <FolderTree className="h-4 w-4" /> קטגוריות
+            <FolderTree className="h-4 w-4" /> קטגוריות <span className="text-destructive" aria-hidden="true">*</span>
             {selectedCategoryNames.length > 0 && (
               <span className="text-xs font-normal text-muted-foreground">
                 ({selectedCategoryNames.length} נבחרו)

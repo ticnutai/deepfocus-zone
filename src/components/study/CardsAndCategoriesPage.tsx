@@ -42,7 +42,13 @@ const readInitialPage = (initialTab?: SubTab): SubTab => {
   return "categories";
 };
 
-function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
+function CardsAndCategoriesPage({
+  initialTab,
+  hideNavigation = false,
+}: {
+  initialTab?: SubTab;
+  hideNavigation?: boolean;
+}) {
   const [page, setPage] = useState<SubTab>(() => readInitialPage(initialTab));
   const meta = PAGE_META[page];
   const PageIcon = meta.icon;
@@ -71,7 +77,7 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
 
   return (
     <div dir="rtl" className="space-y-5">
-      <Card className="gold-frame overflow-hidden bg-card/95 p-2 shadow-sm">
+      {!hideNavigation && <Card className="gold-frame overflow-hidden bg-card/95 p-2 shadow-sm">
         <nav aria-label="עמודי קטגוריות, מבחנים ושאלות" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {(Object.keys(PAGE_META) as SubTab[]).map((key) => {
             const item = PAGE_META[key];
@@ -98,7 +104,7 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
             );
           })}
         </nav>
-      </Card>
+      </Card>}
 
       <header className="rounded-2xl border-2 border-gold/35 bg-gradient-to-l from-gold/10 via-card to-card p-5 shadow-sm">
         <div className="flex items-center gap-4">

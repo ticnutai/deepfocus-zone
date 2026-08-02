@@ -5,7 +5,7 @@ import {
   Trophy, Archive, Settings, Menu, Play, Pause, RotateCcw, Plus, Shield,
   Sparkles, ChevronLeft, Check, X, LogOut, Quote, Sliders, GraduationCap,
   Pin, PinOff, SlidersHorizontal, GripVertical, FolderTree, Search, HardDrive,
-  LineChart, DatabaseZap,
+  LineChart, DatabaseZap, CircleHelp,
 } from "lucide-react";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -438,8 +438,10 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "summary",       l: "סיכום",         I: LineChart },
   { v: "study",         l: "חזרות לימוד",  I: GraduationCap },
   { v: "daf",           l: "לימוד דף",      I: BookOpen },
+  { v: "categories",    l: "קטגוריות",      I: FolderTree },
+  { v: "decks",         l: "יצירת מבחנים",  I: BookOpen },
+  { v: "questions",     l: "יצירת שאלות",   I: CircleHelp },
   { v: "analytics",     l: "ניתוחים",       I: Activity },
-  { v: "categories",    l: "קטגוריות ושאלות", I: FolderTree },
   { v: "goals",         l: "יעדים",         I: Target },
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
@@ -451,6 +453,9 @@ const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 // If a tab id matches a sidebar id directly, no mapping needed — handled via fallback.
 const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
   backup: "backup-restore",
+  categories: "cards",
+  decks: "cards",
+  questions: "cards",
 };
 
 const DEFAULT_TABS_ALL: TabDef[] = (() => {
@@ -462,6 +467,9 @@ const DEFAULT_TABS_ALL: TabDef[] = (() => {
   const byLabel = new Set(DEFAULT_TABS.map((tab) => tab.l));
   const out = [...DEFAULT_TABS];
   for (const item of DEFAULT_SIDEBAR_ITEMS) {
+    // The former combined workspace is represented by three dedicated home
+    // tabs now, so never add its legacy "קטגוריות ושאלות" entry to the strip.
+    if (item.id === "cards") continue;
     if (byId.has(item.id) || byLabel.has(item.label)) continue;
     byId.add(item.id);
     byLabel.add(item.label);
@@ -490,6 +498,8 @@ const PROFILE_B_ALLOWED_HOME_TAB_IDS = new Set<string>([
   "overview",
   "daf",
   "categories",
+  "decks",
+  "questions",
 ]);
 
 const PROFILE_B_ALLOWED_SIDEBAR_IDS = new Set<string>([
@@ -866,7 +876,7 @@ const Index = () => {
     }
     if (profileBActive && (id === "backup" || id === "backup-restore")) return false;
     if (id === "admin") return isAdmin;
-    if (id === "cards") return canViewCardsModule;
+    if (id === "cards" || id === "categories" || id === "decks" || id === "questions") return canViewCardsModule;
     if (id === "ai-generator" || id === "question-lab") return canUseQuestionTools;
     return true;
   }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
@@ -1739,7 +1749,23 @@ const Index = () => {
               <TabsContent value="categories" className="mt-6" forceMount>
                 {visitedTabs.has("categories") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
-                    <CardsAndCategoriesPage />
+                    <CardsAndCategoriesPage initialTab="categories" hideNavigation />
+                  </Suspense>
+                )}
+              </TabsContent>
+
+              <TabsContent value="decks" className="mt-6" forceMount>
+                {visitedTabs.has("decks") && (
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
+                    <CardsAndCategoriesPage initialTab="decks" hideNavigation />
+                  </Suspense>
+                )}
+              </TabsContent>
+
+              <TabsContent value="questions" className="mt-6" forceMount>
+                {visitedTabs.has("questions") && (
+                  <Suspense fallback={<StaticLazyPanelPreview />}>
+                    <CardsAndCategoriesPage initialTab="questions" hideNavigation />
                   </Suspense>
                 )}
               </TabsContent>

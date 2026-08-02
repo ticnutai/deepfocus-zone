@@ -149,9 +149,21 @@ export function DeckCreationGuide() {
                 <DialogTitle className="text-2xl">מדריך אינטראקטיבי ליצירת מבחנים</DialogTitle>
                 <DialogDescription className="mt-1 text-right">שלב {step + 1} מתוך {STEPS.length}</DialogDescription>
               </div>
-              <Button type="button" variant="outline" onClick={() => setGuideOpen(false)} className="gap-2 border-2 border-gold/50 font-semibold">
-                <SkipForward className="h-4 w-4" /> דלג על המדריך
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant={hidden ? "default" : "outline"}
+                  onClick={toggleHidden}
+                  aria-pressed={hidden}
+                  className="gap-2 border-2 border-gold/50 font-semibold"
+                >
+                  <EyeOff className="h-4 w-4" />
+                  {hidden ? "לא יוצג שוב" : "אל תציג שוב"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setGuideOpen(false)} className="gap-2 border-2 border-gold/50 font-semibold">
+                  <SkipForward className="h-4 w-4" /> דלג על המדריך
+                </Button>
+              </div>
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="התקדמות במדריך" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={STEPS.length}>
               <div className="h-full rounded-full bg-gold transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
@@ -179,9 +191,6 @@ export function DeckCreationGuide() {
               ))}
             </div>
 
-            <Button type="button" variant={hidden ? "default" : "outline"} onClick={toggleHidden} className="h-12 w-full gap-2 border-2 border-gold/60 text-base font-semibold">
-              <EyeOff className="h-5 w-5" /> {hidden ? "לא יוצג שוב — לחץ כדי לבטל" : "אל תציג לי את המדריך שוב"}
-            </Button>
           </div>
 
           <DialogFooter className="flex-row-reverse justify-between gap-3 border-t border-gold/25 bg-secondary/10 p-5 sm:justify-between">

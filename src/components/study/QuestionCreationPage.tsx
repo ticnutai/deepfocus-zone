@@ -460,16 +460,29 @@ export function QuestionCreationPage() {
                   שלב {guideStep + 1} מתוך {GUIDE_STEPS.length}
                 </DialogDescription>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setGuideVisibility(false)}
-                className="shrink-0 gap-2 border-2 border-gold/50 font-semibold"
-              >
-                <SkipForward className="h-4 w-4" />
-                דלג על המדריך
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant={dontShowGuideAgain ? "default" : "outline"}
+                  size="sm"
+                  aria-pressed={dontShowGuideAgain}
+                  onClick={toggleGuideForever}
+                  className="gap-2 border-2 border-gold/50 font-semibold"
+                >
+                  <EyeOff className="h-4 w-4" />
+                  {dontShowGuideAgain ? "לא יוצג שוב" : "אל תציג שוב"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGuideVisibility(false)}
+                  className="gap-2 border-2 border-gold/50 font-semibold"
+                >
+                  <SkipForward className="h-4 w-4" />
+                  דלג על המדריך
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 
@@ -598,20 +611,6 @@ export function QuestionCreationPage() {
               ))}
             </div>
           </div>
-
-          <button
-            type="button"
-            aria-pressed={dontShowGuideAgain}
-            onClick={toggleGuideForever}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-bold transition-colors ${
-              dontShowGuideAgain
-                ? "border-navy bg-navy text-primary-foreground"
-                : "border-gold/50 bg-gold/10 text-foreground hover:bg-gold/20"
-            }`}
-          >
-            <EyeOff className="h-5 w-5" />
-            {dontShowGuideAgain ? "לא יוצג שוב — לחץ כדי לבטל" : "אל תציג לי את המדריך שוב"}
-          </button>
 
           <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
             <Button
