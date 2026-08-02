@@ -13,6 +13,7 @@ import { useStudy } from "@/lib/study/store";
 import type { Category } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
 import { displayCategoryName } from "@/lib/study/shasGen";
+import { toast } from "@/hooks/use-toast";
 
 const RECENT_KEY = "category-picker:recent-cats";
 const MAX_RECENT = 6;
@@ -30,13 +31,15 @@ interface Props {
 }
 
 export function CategoryPickerDialog({ open, onOpenChange, inline = false, selected: initialSelected, onConfirm }: Props) {
-  const { state, setUiPref } = useStudy();
+  const { state, setUiPref, addCategory } = useStudy();
   const isOpen = inline ? true : !!open;
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [classificationView, setClassificationView] = useState<ClassificationViewMode>("cards");
   const [cardsPath, setCardsPath] = useState<string[]>([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [localSelected, setLocalSelected] = useState<string[]>(initialSelected);
   const [recent, setRecent] = useState<string[]>(() => {
     try {
@@ -282,6 +285,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   }, [normalizedCardsPath, cardsPath.length]);
 
   const cardsParentId = normalizedCardsPath.length > 0 ? normalizedCardsPath[normalizedCardsPath.length - 1] : null;
+  const cardsParent = cardsParentId ? categoryById.get(cardsParentId) : null;
   const cardsLevelCategories = useMemo(() => {
     const q = search.trim().toLowerCase();
     const level = childrenOf(cardsParentId);
@@ -294,9 +298,32 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   );
 
   const enterCardsCategory = useCallback((cat: Category) => {
-    if (childrenOf(cat.id).length === 0) return;
     setCardsPath([...normalizedCardsPath, cat.id]);
-  }, [childrenOf, normalizedCardsPath]);
+  }, [normalizedCardsPath]);
+
+  const createCategoryHere = useCallback(() => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const duplicate = categories.some((cat) => cat.parentId === cardsParentId && displayCategoryName(cat.name) === name);
+    if (duplicate) {
+      toast({ title: "הקטגוריה כבר קיימת במקום הזה", description: name, variant: "destructive" });
+      return;
+    }
+
+    addCategory(name, cardsParentId);
+    setLocalSelected((current) => {
+      const next = current.includes(name) ? current : [...current, name];
+      if (inline) onConfirm(next);
+      return next;
+    });
+    pushRecent([name]);
+    setNewCategoryName("");
+    setAddingCategory(false);
+    toast({
+      title: cardsParent ? "תת־הקטגוריה נוספה" : "הקטגוריה נוספה",
+      description: cardsParent ? `${name} בתוך ${displayCategoryName(cardsParent.name)}` : name,
+    });
+  }, [addCategory, cardsParent, cardsParentId, categories, inline, newCategoryName, onConfirm, pushRecent]);
 
   const expandFirstLevel = useCallback(() => {
     setExpanded(Object.fromEntries(topLevelCategories.map((cat) => [cat.id, true])));
@@ -353,12 +380,58 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
             </Button>
           </div>
 
-          <h3 className="text-right text-lg font-semibold leading-none tracking-tight flex items-center gap-2">
-            <Folder className="h-4 w-4 text-gold" />
-            סיווג {localSelected.length > 0 && <span className="text-xs text-muted-foreground">({localSelected.length} נבחרו)</span>}
-          </h3>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setAddingCategory((value) => !value)}
+              className="h-8 gap-1.5 rounded-full border-2 border-gold/60 px-3 font-semibold text-navy hover:bg-gold/10"
+              title={cardsParent ? `הוסף תת־קטגוריה בתוך ${displayCategoryName(cardsParent.name)}` : "הוסף קטגוריה ראשית"}
+              aria-expanded={addingCategory}
+            >
+              <Plus className="h-4 w-4" />
+              {cardsParent ? "תת־קטגוריה" : "קטגוריה"}
+            </Button>
+            <h3 className="text-right text-lg font-semibold leading-none tracking-tight flex items-center gap-2">
+              <Folder className="h-4 w-4 text-gold" />
+              סיווג {localSelected.length > 0 && <span className="text-xs text-muted-foreground">({localSelected.length} נבחרו)</span>}
+            </h3>
+          </div>
         </div>
       </div>
+
+      {addingCategory && (
+        <form
+          className="rounded-xl border-2 border-gold/45 bg-gold/5 p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createCategoryHere();
+          }}
+        >
+          <div className="mb-2 text-sm font-semibold text-foreground">
+            {cardsParent
+              ? `הוספת תת־קטגוריה בתוך „${displayCategoryName(cardsParent.name)}”`
+              : "הוספת קטגוריה ראשית"}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder={cardsParent ? "לדוגמה: מאמר ראשון" : "לדוגמה: ספר הכוזרי"}
+              aria-label="שם הקטגוריה החדשה"
+              autoFocus
+              className="h-9 border-gold/40"
+            />
+            <Button type="submit" size="sm" disabled={!newCategoryName.trim()} className="h-9 gap-1 bg-navy text-white hover:bg-navy/90">
+              <Check className="h-4 w-4" /> שמור
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="h-9" onClick={() => { setAddingCategory(false); setNewCategoryName(""); }}>
+              ביטול
+            </Button>
+          </div>
+        </form>
+      )}
 
       <div className="space-y-3">
         <div className="relative rounded-lg border-2 border-gold/40 overflow-hidden focus-within:border-gold">

@@ -111,7 +111,7 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
       <div className="text-right space-y-1 animate-fade-in">
         <h1 className="font-display text-2xl font-bold text-gold">קטגוריות ושאלות</h1>
         <p className="text-muted-foreground text-sm">
-          ניהול קטגוריות, מערכות ושאלות חזרה במקום אחד
+          ניהול קטגוריות, מבחנים ושאלות חזרה במקום אחד
         </p>
       </div>
 
@@ -123,7 +123,7 @@ function CardsAndCategoriesPage({ initialTab }: { initialTab?: SubTab }) {
           </TabsTrigger>
           <TabsTrigger value="decks" className="gap-2">
             <BookOpen className="h-4 w-4" />
-            יצירת מערכת מבחנים
+            יצירת מבחנים
           </TabsTrigger>
           <TabsTrigger value="questions" className="gap-2">
             <CircleHelp className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
   Check,
@@ -8,6 +8,8 @@ import {
   FolderTree,
   ListChecks,
   PencilLine,
+  EyeOff,
+  SkipForward,
   SlidersHorizontal,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -22,6 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { CardEditor } from "./CardEditor";
 
+const QUESTION_GUIDE_HIDDEN_KEY = "question-creation-guide-hidden-v1";
+
 const GUIDE_STEPS = [
   {
     title: "שלב ראשון: בוחרים קטגוריה",
@@ -34,11 +38,12 @@ const GUIDE_STEPS = [
     tip: "גם „כללי”, „טור” ו„תנ״ך” הן קטגוריות. בדוגמה הזאת מתמקדים רק ב„ש״ס”.",
     image: "/question-guide/categories.png",
     imageAlt: "צילום אמיתי של אזור בחירת הקטגוריות",
-    imageHint: "1 הוא הכרטיס „ש״ס”. 2 הוא החץ שנמצא בתוך אותו כרטיס. 3 הוא סימן ה־✓ שמאשר את הבחירה, ומודגם בצורה אינטראקטיבית מתחת לצילום.",
+    imageHint: "1 הוא כרטיס הקטגוריה. 2 הוא כפתור הפתיחה. 3 הוא סימן ה־✓ שמאשר את הבחירה.",
     imageDisplayWidth: 771,
     markers: [
-      { number: 1, x: 37, y: 45, offsetX: -4, offsetY: -16, targetWidth: 22, targetHeight: 13, label: "הכרטיס ש״ס הוא קטגוריה" },
-      { number: 2, x: 45, y: 45, offsetX: 7, offsetY: 14, label: "החץ שבתוך קטגוריית ש״ס" },
+      { number: 1, x: 72, y: 62, offsetX: 0, offsetY: -18, targetWidth: 43, targetHeight: 11, label: "כרטיס הקטגוריה שנבחרה" },
+      { number: 2, x: 89, y: 60, offsetX: 0, offsetY: -25, label: "כפתור פתיחת הקטגוריה" },
+      { number: 3, x: 56, y: 60, offsetX: 0, offsetY: -25, label: "סימן הווי שמאשר את הסיווג" },
     ],
     icon: FolderTree,
   },
@@ -162,6 +167,7 @@ function renderHighlightedGuideText(text: string) {
 export function QuestionCreationPage() {
   const [editorKey, setEditorKey] = useState(0);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [dontShowGuideAgain, setDontShowGuideAgain] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
   const [guideDemoCategoryOpen, setGuideDemoCategoryOpen] = useState(false);
   const [guideDemoCategoryConfirmed, setGuideDemoCategoryConfirmed] = useState(false);
@@ -173,8 +179,25 @@ export function QuestionCreationPage() {
   const currentGuideStep = GUIDE_STEPS[guideStep];
   const GuideIcon = currentGuideStep.icon;
 
+  useEffect(() => {
+    try {
+      const hidden = localStorage.getItem(QUESTION_GUIDE_HIDDEN_KEY) === "1";
+      setDontShowGuideAgain(hidden);
+      if (!hidden) setGuideOpen(true);
+    } catch {
+      setGuideOpen(true);
+    }
+  }, []);
+
   const setGuideVisibility = (open: boolean) => {
     setGuideOpen(open);
+    if (open) {
+      try {
+        setDontShowGuideAgain(localStorage.getItem(QUESTION_GUIDE_HIDDEN_KEY) === "1");
+      } catch {
+        setDontShowGuideAgain(false);
+      }
+    }
     if (!open) {
       setGuideStep(0);
       setGuideDemoCategoryOpen(false);
@@ -183,6 +206,17 @@ export function QuestionCreationPage() {
       setGuideDemoCorrectIndex(null);
       setGuideDemoOptionsOpen(false);
       setGuideDemoSaved(false);
+    }
+  };
+
+  const toggleGuideForever = () => {
+    const next = !dontShowGuideAgain;
+    setDontShowGuideAgain(next);
+    try {
+      if (next) localStorage.setItem(QUESTION_GUIDE_HIDDEN_KEY, "1");
+      else localStorage.removeItem(QUESTION_GUIDE_HIDDEN_KEY);
+    } catch {
+      /* localStorage may be unavailable */
     }
   };
 
@@ -202,40 +236,48 @@ export function QuestionCreationPage() {
                 <span className="text-lg font-bold text-foreground">ש״ס</span>
                 <FolderTree className="h-5 w-5 text-gold" />
               </div>
-              <button
-                type="button"
-                aria-label={guideDemoCategoryOpen ? "סגור את קטגוריית ש״ס" : "פתח את קטגוריית ש״ס"}
-                aria-expanded={guideDemoCategoryOpen}
-                onClick={() => setGuideDemoCategoryOpen((open) => !open)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-full border-2 border-gold/60 bg-card text-navy transition-colors hover:bg-gold/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-              >
-                <ChevronLeft
-                  className={`h-5 w-5 transition-transform ${guideDemoCategoryOpen ? "-rotate-90" : ""}`}
-                />
-                <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
-                  2
-                </span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="אשר את קטגוריית ש״ס"
+                  disabled={!guideDemoCategoryOpen}
+                  onClick={() => setGuideDemoCategoryConfirmed(true)}
+                  className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed ${
+                    guideDemoCategoryConfirmed
+                      ? "border-green-600 bg-green-600 text-white"
+                      : guideDemoCategoryOpen
+                        ? "border-gold/60 bg-card text-navy hover:bg-gold/15"
+                        : "border-gold/35 bg-muted/40 text-muted-foreground"
+                  }`}
+                >
+                  <Check className="h-5 w-5" />
+                  <span className="absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
+                    3
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={guideDemoCategoryOpen ? "סגור את קטגוריית ש״ס" : "פתח את קטגוריית ש״ס"}
+                  aria-expanded={guideDemoCategoryOpen}
+                  onClick={() => {
+                    setGuideDemoCategoryOpen((open) => !open);
+                    setGuideDemoCategoryConfirmed(false);
+                  }}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full border-2 border-gold/60 bg-card text-navy transition-colors hover:bg-gold/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                >
+                  <ChevronLeft
+                    className={`h-5 w-5 transition-transform ${guideDemoCategoryOpen ? "-rotate-90" : ""}`}
+                  />
+                  <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
+                    2
+                  </span>
+                </button>
+              </div>
             </div>
             {guideDemoCategoryOpen && (
               <div className="border-t border-gold/30 bg-gold/5 px-4 py-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-gold/35 bg-card px-3 py-2 text-sm font-medium">
+                <div className="rounded-xl border border-gold/35 bg-card px-3 py-2 text-sm font-medium">
                   <span>מועד — הקטגוריה שבחרת</span>
-                  <button
-                    type="button"
-                    aria-label="אשר את קטגוריית מועד"
-                    onClick={() => setGuideDemoCategoryConfirmed(true)}
-                    className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
-                      guideDemoCategoryConfirmed
-                        ? "border-green-600 bg-green-600 text-white"
-                        : "border-gold/60 bg-card text-navy hover:bg-gold/15"
-                    }`}
-                  >
-                    <Check className="h-5 w-5" />
-                    <span className="absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
-                      3
-                    </span>
-                  </button>
                 </div>
               </div>
             )}
@@ -397,7 +439,7 @@ export function QuestionCreationPage() {
         </div>
         <button
           type="button"
-          onClick={() => setGuideOpen(true)}
+          onClick={() => setGuideVisibility(true)}
           aria-label="פתח מדריך אינטראקטיבי ליצירת שאלות"
           title="איך יוצרים שאלה?"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-gold/60 text-gold transition-colors hover:border-gold hover:bg-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
@@ -411,10 +453,24 @@ export function QuestionCreationPage() {
       <Dialog open={guideOpen} onOpenChange={setGuideVisibility}>
         <DialogContent dir="rtl" className="max-h-[92vh] max-w-4xl overflow-y-auto">
           <DialogHeader className="text-right">
-            <DialogTitle>מדריך אינטראקטיבי ליצירת שאלות</DialogTitle>
-            <DialogDescription>
-              שלב {guideStep + 1} מתוך {GUIDE_STEPS.length}
-            </DialogDescription>
+            <div className="flex items-start justify-between gap-3 pl-8">
+              <div>
+                <DialogTitle>מדריך אינטראקטיבי ליצירת שאלות</DialogTitle>
+                <DialogDescription className="mt-1">
+                  שלב {guideStep + 1} מתוך {GUIDE_STEPS.length}
+                </DialogDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setGuideVisibility(false)}
+                className="shrink-0 gap-2 border-2 border-gold/50 font-semibold"
+              >
+                <SkipForward className="h-4 w-4" />
+                דלג על המדריך
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-5 py-2">
@@ -542,6 +598,20 @@ export function QuestionCreationPage() {
               ))}
             </div>
           </div>
+
+          <button
+            type="button"
+            aria-pressed={dontShowGuideAgain}
+            onClick={toggleGuideForever}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-bold transition-colors ${
+              dontShowGuideAgain
+                ? "border-navy bg-navy text-primary-foreground"
+                : "border-gold/50 bg-gold/10 text-foreground hover:bg-gold/20"
+            }`}
+          >
+            <EyeOff className="h-5 w-5" />
+            {dontShowGuideAgain ? "לא יוצג שוב — לחץ כדי לבטל" : "אל תציג לי את המדריך שוב"}
+          </button>
 
           <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
             <Button

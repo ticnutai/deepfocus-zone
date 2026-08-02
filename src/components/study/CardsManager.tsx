@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, memo } from "react";
-import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download, X, CheckSquare, Square, Search } from "lucide-react";
+import { Plus, BookOpen, Trash2, Brain, Library, Upload, History, Pencil, Copy, GripVertical, Layers, Play, Folder, List as ListIcon, LayoutGrid, Rows3, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown, Download, X, CheckSquare, Square, Search, CircleX } from "lucide-react";
 import { useMultiSelect } from "@/hooks/useMultiSelect";
 import { MultiSelectToolbar } from "@/components/study/MultiSelectToolbar";
 import {
@@ -17,7 +17,7 @@ import { CopyCardDialog } from "./CopyCardDialog";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { DateRangePicker } from "./DateRangePicker";
 import type { DateRangeFilter } from "@/lib/study/dateFilter";
-import type { Card as StudyCardType } from "@/lib/study/types";
+import type { Card as StudyCardType, ReviewLog } from "@/lib/study/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,8 +44,16 @@ import { PinnedCategoriesWidget } from "./PinnedCategoriesWidget";
 import { PATH_SEP, dafLabel } from "@/lib/study/shasGen";
 import { toHebrewNum } from "@/lib/study/shasFormat";
 import { useAuth } from "@/hooks/useAuth";
+import { DeckCreationGuide } from "./DeckCreationGuide";
 
 const IS_DEV = import.meta.env.DEV;
+const DECK_CREATION_EXCLUDED_WIDGETS = [
+  "cards-toolbar",
+  "cards-pinned",
+  "cards-categories",
+  "cards-filters",
+  "cards-list",
+] as const;
 
 // helper: collect a category id and all its descendant ids
 function collectDescendants(rootId: string, cats: { id: string; parentId: string | null }[]): Set<string> {
@@ -190,10 +198,10 @@ function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) 
         type="button"
         onClick={() => setOpen(true)}
         className="bg-gradient-navy text-primary-foreground rounded-xl flex-1 gap-2"
-        title="יצירת מערכת מבחן"
+        title="יצירת מבחן"
       >
         <Plus className="h-4 w-4" />
-        יצירת מערכת מבחן
+        יצירת מבחן
       </Button>
 
       <DeckCreateDialog
@@ -201,7 +209,7 @@ function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) 
         onOpenChange={setOpen}
         onCreated={(id) => {
           onCreated(id);
-          toast({ title: "המערכת נוספה" });
+          toast({ title: "המבחן נוסף" });
         }}
       />
     </>
@@ -471,6 +479,21 @@ function CardsManager() {
     }
     return total;
   }, [deckCards]);
+  const wrongCardIds = useMemo(() => {
+    if (!activeDeckId || allDeckCards.length === 0) return [];
+    const deckCardIds = new Set(allDeckCards.map((card) => card.id));
+    const latestByCard = new Map<string, ReviewLog>();
+
+    for (const log of state.logs ?? []) {
+      if (log.deckId !== activeDeckId || !deckCardIds.has(log.cardId)) continue;
+      const previous = latestByCard.get(log.cardId);
+      if (!previous || log.at > previous.at) latestByCard.set(log.cardId, log);
+    }
+
+    return allDeckCards
+      .filter((card) => latestByCard.get(card.id)?.correct === false)
+      .map((card) => card.id);
+  }, [activeDeckId, allDeckCards, state.logs]);
   const isDateFilterActive = dateFilter.from !== null || dateFilter.to !== null;
   const isTypeFilterActive = typeFilter.size > 0;
 
@@ -786,16 +809,18 @@ function CardsManager() {
       <WidgetGrid
         tabId="cards"
         inlineDrag={false}
+        excludedWidgetIds={DECK_CREATION_EXCLUDED_WIDGETS}
         widgetMap={{
           "cards-decks": (
             <Card className="gold-frame p-3 sm:p-5 space-y-3 sm:space-y-4 min-w-0">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="gold-icon-circle"><Library className="h-4 w-4" /></span>
-                  <h3 className="font-display text-base sm:text-lg font-semibold truncate">מערכות</h3>
+                  <h3 className="font-display text-base sm:text-lg font-semibold truncate">מבחנים</h3>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                  <span className="text-xs text-muted-foreground hidden sm:inline">{state.decks.length} מערכות</span>
+                  <span className="text-xs text-muted-foreground hidden sm:inline">{state.decks.length} מבחנים</span>
+                  <DeckCreationGuide />
                   <span className="text-xs text-muted-foreground sm:hidden">{state.decks.length}</span>
                   {/* Sort dropdown */}
                   <DropdownMenu>
@@ -809,7 +834,7 @@ function CardsManager() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44">
-                      <DropdownMenuLabel className="text-right">סיווג מערכות</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-right">סיווג מבחנים</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setDeckSort("manual")} className="justify-end">{deckSort === "manual" && "✓ "}ידני (מותאם)</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setDeckSort("name")} className="justify-end">{deckSort === "name" && "✓ "}שם</DropdownMenuItem>
@@ -838,7 +863,7 @@ function CardsManager() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-40 text-right">
-                      <DropdownMenuLabel className="text-right">תצוגת מערכות</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-right">תצוגת מבחנים</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => changeDeckView("list")} className="gap-2 flex-row-reverse justify-end text-right">
                         רשימה
@@ -886,6 +911,22 @@ function CardsManager() {
                     className="border-2 border-gold rounded-xl text-navy"
                   >
                     <Play className="h-4 w-4" /> תרגול חופשי
+                  </Button>
+                  <Button
+                    disabled={wrongCardIds.length === 0}
+                    onClick={() => {
+                      if (!activeDeck) return;
+                      setSession({
+                        deckId: activeDeck.id,
+                        mode: "practice",
+                        cardIds: wrongCardIds,
+                      });
+                    }}
+                    variant="outline"
+                    className="border-2 border-red-300 rounded-xl text-red-700 disabled:text-muted-foreground"
+                    title={wrongCardIds.length > 0 ? "תרגל רק שאלות שהתשובה האחרונה עליהן הייתה שגויה" : "הכפתור יופעל לאחר שתענה תשובה שגויה במבחן הזה"}
+                  >
+                    <CircleX className="h-4 w-4" /> תרגול טעויות ({wrongCardIds.length})
                   </Button>
                 </div>
               )}
@@ -1173,7 +1214,7 @@ function CardsManager() {
                   );
                 })}
                 {state.decks.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-6 col-span-full">אין מערכות עדיין</p>
+                  <p className="text-sm text-muted-foreground text-center py-6 col-span-full">אין מבחנים עדיין</p>
                 )}
               </div>
             </Card>
@@ -1205,7 +1246,7 @@ function CardsManager() {
           "cards-toolbar": (
             <Card className="gold-frame p-3 sm:p-5 space-y-3 sm:space-y-4 min-w-0">
               {!activeDeck ? (
-                <div className="text-center py-8 text-muted-foreground">בחר מערכת כדי להתחיל</div>
+                <div className="text-center py-8 text-muted-foreground">בחר מבחן כדי להתחיל</div>
               ) : (
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="text-right min-w-0 flex-1">

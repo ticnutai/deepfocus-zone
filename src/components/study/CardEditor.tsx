@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect } from "react";
-import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2 } from "lucide-react";
+import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -199,8 +199,28 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   const editingSourceCard = !!editCard && isCardFromSource(editCard.id);
   const [changeNote, setChangeNote] = useState("");
 
-  const handleSave = () => {
-    if (!question.trim()) return;
+  const resetQuestionFields = () => {
+    setQuestion("");
+    setAnswer("");
+    setOptions(["", "", "", ""]);
+    setCorrectIndices([]);
+    setBoolCorrect("true");
+    setExplanation("");
+  };
+
+  const handleSave = (keepClassification = false) => {
+    const showMissingField = (description: string) => {
+      toast({
+        title: "לא ניתן עדיין לשמור את השאלה",
+        description,
+        variant: "destructive",
+      });
+    };
+
+    if (!question.trim()) {
+      showMissingField("צריך לכתוב את נוסח השאלה.");
+      return;
+    }
     const plainTags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const categoryTags = selectedCategoryNames.map((n) => `cat:${n}`);
     const tags = [...plainTags, ...categoryTags];
@@ -257,18 +277,36 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
     if (createTypes.length === 0) return;
     const cards: NewCard[] = [];
     if (createTypes.includes("flashcard")) {
-      if (!answer.trim()) return;
+      if (!answer.trim()) {
+        showMissingField("בשאלת כרטיסייה צריך לכתוב תשובה.");
+        return;
+      }
       cards.push({ deckId: dId, type: "flashcard", question, answer, tags, ...dafFields } as unknown as NewCard);
     }
     if (createTypes.includes("multiple")) {
       const cleanOpts = options.map((o) => o.trim());
-      if (cleanOpts.some((o) => !o) || correctIndices.length === 0) return;
+      if (cleanOpts.some((o) => !o)) {
+        showMissingField("בשאלה אמריקאית צריך למלא את כל אפשרויות התשובה.");
+        return;
+      }
+      if (correctIndices.length === 0) {
+        showMissingField("צריך לסמן בעיגול לפחות תשובה נכונה אחת.");
+        return;
+      }
       cards.push({ deckId: dId, type: "multiple", question, options: cleanOpts, correctIndices, tags, ...dafFields } as unknown as NewCard);
     }
     if (createTypes.includes("boolean")) {
       cards.push({ deckId: dId, type: "boolean", question, correct: boolCorrect === "true", explanation, tags, ...dafFields } as unknown as NewCard);
     }
     for (const c of cards) addCard(c);
+    if (keepClassification) {
+      resetQuestionFields();
+      toast({
+        title: cards.length > 1 ? `${cards.length} שאלות נוספו` : "השאלה נוספה",
+        description: "הסיווג נשמר. אפשר לכתוב עכשיו שאלה נוספת באותו מקום.",
+      });
+      return;
+    }
     onClose?.();
   };
 
@@ -694,8 +732,20 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
         </CollapsibleContent>
       </Collapsible>
 
-      <DialogFooter>
-        <Button onClick={handleSave} className="bg-gradient-navy text-primary-foreground rounded-xl">
+      <DialogFooter className="flex-wrap gap-2 sm:justify-start">
+        {!isEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleSave(true)}
+            title="שמור את השאלה והשאר את הקטגוריות והמערכת שנבחרו"
+            className="gap-2 rounded-xl border-2 border-gold/60"
+          >
+            <ListPlus className="h-4 w-4" />
+            שמור והוסף שאלות לאותו סיווג
+          </Button>
+        )}
+        <Button onClick={() => handleSave()} className="bg-gradient-navy text-primary-foreground rounded-xl">
           <Plus className="h-4 w-4" /> {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : (createTypes.length > 1 ? `הוסף ${createTypes.length} שאלות` : "הוסף שאלה")}
         </Button>
       </DialogFooter>

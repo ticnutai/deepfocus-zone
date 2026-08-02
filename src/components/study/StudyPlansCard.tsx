@@ -30,7 +30,7 @@ import { ReviewScheduleDialog } from "@/components/settings/ReviewScheduleSettin
 import { PlanScheduleView } from "@/components/study/PlanScheduleView";
 import { useStudy } from "@/lib/study/store";
 import { cn, calcEtaDate } from "@/lib/utils";
-import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS } from "@/lib/hebrewDate";
+import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, datePickerValues } from "@/lib/hebrewDate";
 import type { GeneralPlanType, GeneralStudyPlan, PlanReview, ReviewScheduleType, ReviewSpacingMode, ShasUnit, MishnaUnit } from "@/lib/study/types";
 import { getPlanUnitsForDate } from "@/lib/study/planSchedule";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
@@ -901,6 +901,16 @@ function AddPlanDialog({
   const [hebMonth, setHebMonth] = useState("");
   const [hebYear, setHebYear] = useState(5786);
 
+  const changeAnchorEnabled = (enabled: boolean) => {
+    setAnchorEnabled(enabled);
+    if (!enabled || anchorDate) return;
+    const today = datePickerValues();
+    setAnchorDate(today.gregorian);
+    setHebDay(today.hebrewDay);
+    setHebMonth(today.hebrewMonth);
+    setHebYear(today.hebrewYear);
+  };
+
   // Masechta-review form state
   const [mrItems, setMrItems] = useState<string[]>([]);
   const [mrMasechta, setMrMasechta] = useState("");
@@ -1369,13 +1379,12 @@ function AddPlanDialog({
             {/* עוגן תאריך */}
             <div className="space-y-2 border-2 border-gold/30 rounded-xl p-3">
               <div className="flex items-center justify-between">
-                <label
-                  className="flex items-center gap-2 cursor-pointer select-none"
-                  onClick={() => setAnchorEnabled((v) => !v)}
-                >
-                  <Checkbox checked={anchorEnabled} onCheckedChange={(c) => setAnchorEnabled(!!c)} />
-                  <span className="text-xs font-semibold text-muted-foreground">עוגן תאריך — איפה הייתי בתאריך מסוים?</span>
-                </label>
+                <div className="flex items-center gap-2 select-none">
+                  <Checkbox checked={anchorEnabled} onCheckedChange={(c) => changeAnchorEnabled(!!c)} />
+                  <button type="button" onClick={() => changeAnchorEnabled(!anchorEnabled)} className="text-xs font-semibold text-muted-foreground">
+                    עוגן תאריך — איפה הייתי בתאריך מסוים?
+                  </button>
+                </div>
               </div>
               {anchorEnabled && (
                 <div className="space-y-3 pt-1">

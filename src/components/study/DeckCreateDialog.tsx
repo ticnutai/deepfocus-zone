@@ -538,16 +538,16 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
         dir="rtl"
       >
         <DialogHeader>
-          <DialogTitle className="text-right">מערכת חדשה</DialogTitle>
+          <DialogTitle className="text-right">מבחן חדש</DialogTitle>
           <DialogDescription className="sr-only">
-            יצירת מערכת חדשה ובחירת קטגוריות לשיוך.
+            יצירת מבחן חדש ובחירת קטגוריות לשיוך.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 space-y-8 overflow-y-auto pr-1">
           {/* Deck name */}
           <div className="space-y-4">
-            <Label className="block text-right">שם המערכת</Label>
+            <Label className="block text-right">שם המבחן</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -646,7 +646,7 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
             >
               {mobileClassifyOpen && (
                 <div className="sticky top-0 z-10 -mx-4 px-4 pb-3 pt-2 bg-background/95 backdrop-blur-sm border-b border-gold/20 flex items-center justify-between">
-                  <span className="text-sm font-semibold">סיווג מערכת</span>
+                  <span className="text-sm font-semibold">סיווג מבחן</span>
                   <Button type="button" variant="outline" size="sm" onClick={() => setMobileClassifyOpen(false)}>
                     סגור
                   </Button>

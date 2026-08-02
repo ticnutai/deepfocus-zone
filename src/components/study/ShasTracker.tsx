@@ -11,7 +11,7 @@ import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { toHebrewNum, formatShasPosition, unitLabel, unitRhythmHint, unitsPerDaf, totalUnitsInMasechta, computeExpectedShasPosition } from "@/lib/study/shasFormat";
 import type { ShasPlan, ShasUnit } from "@/lib/study/types";
 import { cn, calcEtaDate } from "@/lib/utils";
-import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS } from "@/lib/hebrewDate";
+import { toHebrewDate, fromHebrewDate, hebrewYearGematriya, HEB_MONTHS, datePickerValues } from "@/lib/hebrewDate";
 import { ShasReviewScheduleDialog, isShasDialogSkipped } from "./ShasReviewScheduleDialog";
 import { GridPickerPopover } from "./HebrewGridPicker";
 
@@ -45,6 +45,16 @@ export function ShasTracker() {
   const [hebDay, setHebDay] = useState("");
   const [hebMonth, setHebMonth] = useState("");
   const [hebYear, setHebYear] = useState(5786);
+
+  const changeAnchorEnabled = (enabled: boolean) => {
+    setAnchorEnabled(enabled);
+    if (!enabled || anchorDate) return;
+    const today = datePickerValues();
+    setAnchorDate(today.gregorian);
+    setHebDay(today.hebrewDay);
+    setHebMonth(today.hebrewMonth);
+    setHebYear(today.hebrewYear);
+  };
 
   const handleCompleteDaf = () => {
     if (!plan) return;
@@ -280,10 +290,12 @@ export function ShasTracker() {
 
                 {/* עוגן תאריך */}
                 <div className="space-y-2 border-2 border-gold/30 rounded-xl p-3">
-                  <label className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setAnchorEnabled((v) => !v)}>
-                    <Checkbox checked={anchorEnabled} onCheckedChange={(c) => setAnchorEnabled(!!c)} />
-                    <span className="text-xs font-semibold text-muted-foreground">עוגן תאריך — איפה הייתי בתאריך מסוים?</span>
-                  </label>
+                  <div className="flex items-center gap-2 select-none">
+                    <Checkbox checked={anchorEnabled} onCheckedChange={(c) => changeAnchorEnabled(!!c)} />
+                    <button type="button" onClick={() => changeAnchorEnabled(!anchorEnabled)} className="text-xs font-semibold text-muted-foreground">
+                      עוגן תאריך — איפה הייתי בתאריך מסוים?
+                    </button>
+                  </div>
                   {anchorEnabled && (
                     <div className="space-y-3 pt-1">
                       <div className="space-y-1">

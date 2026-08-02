@@ -70,3 +70,20 @@ export function fromHebrewDate(day: number, month: number, year: number): string
     return null;
   }
 }
+
+/** Returns synchronized Gregorian and Hebrew values for a date picker. */
+export function datePickerValues(date = new Date()): {
+  gregorian: string;
+  hebrewDay: string;
+  hebrewMonth: string;
+  hebrewYear: number;
+} {
+  const gregorian = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const hd = new HDate(date);
+  return {
+    gregorian,
+    hebrewDay: String(hd.getDate()),
+    hebrewMonth: String(hd.getMonth()),
+    hebrewYear: hd.getFullYear(),
+  };
+}

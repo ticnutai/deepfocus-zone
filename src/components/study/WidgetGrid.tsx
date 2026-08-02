@@ -505,9 +505,11 @@ interface WidgetGridProps {
   widgetMap: Record<string, ReactNode>;
   inlineDrag?: boolean;
   lockEditing?: boolean;
+  /** Widgets that belong to another workflow and must not appear on this page. */
+  excludedWidgetIds?: readonly string[];
 }
 
-export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = false }: WidgetGridProps) {
+export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = false, excludedWidgetIds = [] }: WidgetGridProps) {
   const { search } = useLocation();
   const { state, setWidgetLayout } = useStudy();
   const isMobile = useIsMobile();
@@ -581,8 +583,9 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const visibleWidgets = tabLayout.filter((w) => w.visible);
-  const hiddenWidgets = tabLayout.filter((w) => !w.visible);
+  const excludedWidgets = useMemo(() => new Set(excludedWidgetIds), [excludedWidgetIds]);
+  const visibleWidgets = tabLayout.filter((w) => w.visible && !excludedWidgets.has(w.id));
+  const hiddenWidgets = tabLayout.filter((w) => !w.visible && !excludedWidgets.has(w.id));
   const activeLabel = activeId
     ? (() => {
       const activeWidget = tabLayout.find((w) => w.id === activeId);
