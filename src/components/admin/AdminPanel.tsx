@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, MessageSquare } from "lucide-react";
+import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, MessageSquare, Library } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { PermissionsMatrix } from "./PermissionsMatrix";
@@ -12,6 +12,7 @@ import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { GuestProfilesTab } from "./GuestProfilesTab";
 import { ChangeNotesTab } from "./ChangeNotesTab";
+import { UserQuestionsTab } from "./UserQuestionsTab";
 import { usePermissions } from "@/hooks/usePermissions";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -114,6 +115,9 @@ export function AdminPanel() {
               <span>דיווחים והערות</span><MessageSquare className="h-4 w-4" />
               {pendingNotes > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingNotes}</span>}
             </TabsTrigger>
+            <TabsTrigger value="user-questions" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>שאלות משתמשים</span><Library className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
@@ -127,6 +131,7 @@ export function AdminPanel() {
         <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
         <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
         <TabsContent value="change-notes" className="mt-4"><ChangeNotesTab /></TabsContent>
+        <TabsContent value="user-questions" className="mt-4"><UserQuestionsTab /></TabsContent>
       </Tabs>
     </div>
   );

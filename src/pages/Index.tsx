@@ -31,6 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
+import { UserQuestionsExportButton } from "@/components/UserQuestionsExportButton";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -1466,6 +1467,7 @@ const Index = () => {
               </button>
               <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
                 <ThemeSwitcher />
+                <UserQuestionsExportButton />
                 <DesktopUpdateButton />
                 <button
                   onClick={() => signOut()}
@@ -1570,6 +1572,7 @@ const Index = () => {
                       </button>
                       <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
                         <ThemeSwitcher />
+                        <UserQuestionsExportButton />
                         <DesktopUpdateButton />
                         <button
                           onClick={() => { signOut(); setMobileSidebarOpen(false); }}

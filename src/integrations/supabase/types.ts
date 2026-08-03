@@ -180,7 +180,12 @@ export type Database = {
           explanation: string | null
           id: string
           masechta: string | null
+          moderated_at: string | null
+          moderated_by: string | null
+          moderation_note: string | null
+          moderation_status: string
           options: Json | null
+          published_card_id: string | null
           question: string
           sort_order: number
           srs: Json
@@ -202,7 +207,12 @@ export type Database = {
           explanation?: string | null
           id?: string
           masechta?: string | null
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_note?: string | null
+          moderation_status?: string
           options?: Json | null
+          published_card_id?: string | null
           question: string
           sort_order?: number
           srs?: Json
@@ -224,7 +234,12 @@ export type Database = {
           explanation?: string | null
           id?: string
           masechta?: string | null
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_note?: string | null
+          moderation_status?: string
           options?: Json | null
+          published_card_id?: string | null
           question?: string
           sort_order?: number
           srs?: Json
