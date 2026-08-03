@@ -49,6 +49,9 @@ export function QuestionReportDialog({
       original_card_id: isUuid ? cardId : null,
       original_question: question,
       note: `[${targetText}]\n${note.trim()}`,
+      target_kind: target.kind,
+      target_text: target.kind === "answer" ? target.text : null,
+      target_index: target.kind === "answer" ? target.index : null,
       status: "open",
     });
     setSending(false);

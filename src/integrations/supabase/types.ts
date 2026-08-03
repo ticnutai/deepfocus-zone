@@ -749,6 +749,7 @@ export type Database = {
       }
       source_change_notes: {
         Row: {
+          admin_response: string | null
           created_at: string
           forked_card_id: string | null
           id: string
@@ -757,10 +758,16 @@ export type Database = {
           original_question: string | null
           source_user_id: string
           status: string
+          target_index: number | null
+          target_kind: string | null
+          target_text: string | null
           updated_at: string
           user_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
         }
         Insert: {
+          admin_response?: string | null
           created_at?: string
           forked_card_id?: string | null
           id?: string
@@ -769,10 +776,16 @@ export type Database = {
           original_question?: string | null
           source_user_id: string
           status?: string
+          target_index?: number | null
+          target_kind?: string | null
+          target_text?: string | null
           updated_at?: string
           user_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
         }
         Update: {
+          admin_response?: string | null
           created_at?: string
           forked_card_id?: string | null
           id?: string
@@ -781,8 +794,13 @@ export type Database = {
           original_question?: string | null
           source_user_id?: string
           status?: string
+          target_index?: number | null
+          target_kind?: string | null
+          target_text?: string | null
           updated_at?: string
           user_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
         }
         Relationships: []
       }

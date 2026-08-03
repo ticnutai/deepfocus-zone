@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { ChangeNotesTab } from "./ChangeNotesTab";
 
 type CardRow = Database["public"]["Tables"]["cards"]["Row"];
 type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "display_name" | "email">;
@@ -269,6 +270,7 @@ export function UserQuestionsTab() {
 
   return (
     <div className="space-y-4" dir="rtl">
+      <ChangeNotesTab />
       <Card className="gold-frame p-4 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
