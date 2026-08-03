@@ -66,19 +66,37 @@ function rowToCard(row: CardRow): StudyCard {
   return { ...base, type: "combo", answer: row.answer ?? undefined, options: stringArray(row.options), correctIndices: numberArray(row.correct_indices), explanation: row.explanation ?? undefined };
 }
 
-async function fetchAllCards(): Promise<CardRow[]> {
+async function fetchAllCards(excludedUserId: string | null): Promise<CardRow[]> {
   const all: CardRow[] = [];
   const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase.from("cards").select("*")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    const page = (data ?? []) as CardRow[];
-    all.push(...page);
-    if (page.length < pageSize) return all;
+  let countQuery = supabase.from("cards")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+  if (excludedUserId) countQuery = countQuery.neq("user_id", excludedUserId);
+  const { count, error: countError } = await countQuery;
+  if (countError) throw countError;
+  const pageCount = Math.ceil((count ?? 0) / pageSize);
+  // Fetch in small parallel batches: the site library may contain tens of
+  // thousands of rows, and sequential pagination kept the whole admin tab
+  // on its loading screen for too long.
+  for (let pageStart = 0; pageStart < pageCount; pageStart += 6) {
+    const batch = await Promise.all(
+      Array.from({ length: Math.min(6, pageCount - pageStart) }, async (_, offset) => {
+        const page = pageStart + offset;
+        const from = page * pageSize;
+        let query = supabase.from("cards").select("*")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (excludedUserId) query = query.neq("user_id", excludedUserId);
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data ?? []) as CardRow[];
+      }),
+    );
+    for (const page of batch) all.push(...page);
   }
+  return all;
 }
 
 export function UserQuestionsTab() {
@@ -106,14 +124,16 @@ export function UserQuestionsTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: profileData, error: profileError }, cardRows, sourceResult, authResult] = await Promise.all([
-        supabase.from("profiles").select("id,display_name,email"),
-        fetchAllCards(),
+      const [sourceResult, authResult] = await Promise.all([
         supabase.rpc("get_guest_source_user_id"),
         supabase.auth.getUser(),
       ]);
-      if (profileError) throw profileError;
       const sourceId = typeof sourceResult.data === "string" ? sourceResult.data : null;
+      const [{ data: profileData, error: profileError }, cardRows] = await Promise.all([
+        supabase.from("profiles").select("id,display_name,email"),
+        fetchAllCards(sourceId),
+      ]);
+      if (profileError) throw profileError;
       setSourceUserId(sourceId);
       setMeId(authResult.data.user?.id ?? null);
       setProfiles((profileData ?? []) as ProfileRow[]);
@@ -266,7 +286,14 @@ export function UserQuestionsTab() {
     }
   };
 
-  if (loading) return <Card className="gold-frame p-8 text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />טוען שאלות משתמשים…</Card>;
+  if (loading) return (
+    <div className="space-y-4" dir="rtl">
+      <ChangeNotesTab />
+      <Card className="gold-frame p-8 text-center text-muted-foreground">
+        <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />טוען שאלות משתמשים… ההערות זמינות כבר עכשיו.
+      </Card>
+    </div>
+  );
 
   return (
     <div className="space-y-4" dir="rtl">
