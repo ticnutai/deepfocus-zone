@@ -18,6 +18,14 @@
     ],
     "artifactName": "lemaan-setup-${version}.${ext}"
   },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "ticnutai",
+      "repo": "deepfocus-zone",
+      "releaseType": "release"
+    }
+  ],
   "nsis": {
     "oneClick": false,
     "perMachine": false,

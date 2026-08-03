@@ -1,6 +1,7 @@
 // Electron main process — desktop wrapper for the Vite/React app.
 // Kept fully isolated from the web build: this file is loaded ONLY by Electron.
-const { app, BrowserWindow, shell, Menu, protocol } = require("electron");
+const { app, BrowserWindow, shell, Menu, protocol, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 
@@ -44,6 +45,61 @@ function registerShasProtocol() {
 }
 
 let mainWindow = null;
+
+function sendUpdateStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("updater:status", status);
+  }
+}
+
+function configureAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => sendUpdateStatus({ type: "checking" }));
+  autoUpdater.on("update-available", (info) => sendUpdateStatus({ type: "available", version: info.version }));
+  autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ type: "not-available", version: info.version }));
+  autoUpdater.on("download-progress", (progress) => sendUpdateStatus({
+    type: "downloading",
+    percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
+  }));
+  autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ type: "downloaded", version: info.version }));
+  autoUpdater.on("error", (error) => sendUpdateStatus({
+    type: "error",
+    message: error?.message || "בדיקת העדכון נכשלה",
+  }));
+
+  ipcMain.handle("updater:get-version", () => app.getVersion());
+  ipcMain.handle("updater:check", async () => {
+    if (isDev) {
+      const status = { type: "development", version: app.getVersion() };
+      sendUpdateStatus(status);
+      return status;
+    }
+    try {
+      await autoUpdater.checkForUpdates();
+      return { ok: true };
+    } catch (error) {
+      const status = { type: "error", message: error?.message || "בדיקת העדכון נכשלה" };
+      sendUpdateStatus(status);
+      return status;
+    }
+  });
+  ipcMain.handle("updater:download", async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { ok: true };
+    } catch (error) {
+      const status = { type: "error", message: error?.message || "הורדת העדכון נכשלה" };
+      sendUpdateStatus(status);
+      return status;
+    }
+  });
+  ipcMain.handle("updater:install", () => {
+    autoUpdater.quitAndInstall(false, true);
+    return { ok: true };
+  });
+}
 
 function createWindow() {
   const appIconPath = path.join(__dirname, "build", "icon.png");
@@ -130,6 +186,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     registerShasProtocol();
+    configureAutoUpdater();
     createWindow();
   });
 

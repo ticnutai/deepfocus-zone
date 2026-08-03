@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -1465,6 +1466,7 @@ const Index = () => {
               </button>
               <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
                 <ThemeSwitcher />
+                <DesktopUpdateButton />
                 <button
                   onClick={() => signOut()}
                   title={isGuest ? "יציאה" : "התנתקות"}
@@ -1568,6 +1570,7 @@ const Index = () => {
                       </button>
                       <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
                         <ThemeSwitcher />
+                        <DesktopUpdateButton />
                         <button
                           onClick={() => { signOut(); setMobileSidebarOpen(false); }}
                           title={isGuest ? "יציאה" : "התנתקות"}

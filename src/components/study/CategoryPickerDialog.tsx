@@ -4,7 +4,7 @@
  * leaving the card creation flow.
  */
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, Pin, PinOff, Check, LayoutGrid, FolderTree, ChevronsDown, Plus, Clock3 } from "lucide-react";
+import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, Pin, PinOff, Check, LayoutGrid, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   const [classificationView, setClassificationView] = useState<ClassificationViewMode>("cards");
   const [cardsPath, setCardsPath] = useState<string[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
+  const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [localSelected, setLocalSelected] = useState<string[]>(initialSelected);
   const [recent, setRecent] = useState<string[]>(() => {
@@ -119,6 +120,12 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     const cur = state.uiPrefs?.pinnedCats ?? [];
     setUiPref("pinnedCats", cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name]);
   };
+
+  const beginAddCategory = useCallback((parentId: string | null) => {
+    setAddingParentId(parentId);
+    setNewCategoryName("");
+    setAddingCategory(true);
+  }, []);
 
   const toggle = (name: string) => {
     setLocalSelected((arr) => {
@@ -227,6 +234,21 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
             : <span className="text-[10px] text-muted-foreground/40 shrink-0">-</span>
           }
 
+          {/* add child category */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              beginAddCategory(cat.id);
+              setExpanded((current) => ({ ...current, [cat.id]: true }));
+            }}
+            title={`הוסף תת־קטגוריה בתוך ${label}`}
+            aria-label={`הוסף תת־קטגוריה בתוך ${label}`}
+            className="h-5 w-5 shrink-0 rounded flex items-center justify-center text-gold opacity-70 transition-all hover:bg-gold/10 hover:opacity-100"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </button>
+
           {/* pin button */}
           <button
             type="button"
@@ -285,6 +307,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
 
   const cardsParentId = normalizedCardsPath.length > 0 ? normalizedCardsPath[normalizedCardsPath.length - 1] : null;
   const cardsParent = cardsParentId ? categoryById.get(cardsParentId) : null;
+  const addingParent = addingParentId ? categoryById.get(addingParentId) : null;
   const cardsLevelCategories = useMemo(() => {
     const q = search.trim().toLowerCase();
     const level = childrenOf(cardsParentId);
@@ -303,13 +326,16 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   const createCategoryHere = useCallback(() => {
     const name = newCategoryName.trim();
     if (!name) return;
-    const duplicate = categories.some((cat) => cat.parentId === cardsParentId && displayCategoryName(cat.name) === name);
+    const duplicate = categories.some((cat) => cat.parentId === addingParentId && displayCategoryName(cat.name) === name);
     if (duplicate) {
       toast({ title: "הקטגוריה כבר קיימת במקום הזה", description: name, variant: "destructive" });
       return;
     }
 
-    addCategory(name, cardsParentId);
+    addCategory(name, addingParentId);
+    if (addingParentId) {
+      setExpanded((current) => ({ ...current, [addingParentId]: true }));
+    }
     setLocalSelected((current) => {
       const next = current.includes(name) ? current : [...current, name];
       if (inline) onConfirm(next);
@@ -319,10 +345,10 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     setNewCategoryName("");
     setAddingCategory(false);
     toast({
-      title: cardsParent ? "תת־הקטגוריה נוספה" : "הקטגוריה נוספה",
-      description: cardsParent ? `${name} בתוך ${displayCategoryName(cardsParent.name)}` : name,
+      title: addingParent ? "תת־הקטגוריה נוספה" : "הקטגוריה נוספה",
+      description: addingParent ? `${name} בתוך ${displayCategoryName(addingParent.name)}` : name,
     });
-  }, [addCategory, cardsParent, cardsParentId, categories, inline, newCategoryName, onConfirm, pushRecent]);
+  }, [addCategory, addingParent, addingParentId, categories, inline, newCategoryName, onConfirm, pushRecent]);
 
   const expandFirstLevel = useCallback(() => {
     setExpanded(Object.fromEntries(topLevelCategories.map((cat) => [cat.id, true])));
@@ -384,7 +410,14 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => setAddingCategory((value) => !value)}
+              onClick={() => {
+                if (addingCategory && addingParentId === cardsParentId) {
+                  setAddingCategory(false);
+                  setNewCategoryName("");
+                } else {
+                  beginAddCategory(cardsParentId);
+                }
+              }}
               className="h-8 gap-1.5 rounded-full border-2 border-gold/60 px-3 font-semibold text-navy hover:bg-gold/10"
               title={cardsParent ? `הוסף תת־קטגוריה בתוך ${displayCategoryName(cardsParent.name)}` : "הוסף קטגוריה ראשית"}
               aria-expanded={addingCategory}
@@ -409,15 +442,15 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
           }}
         >
           <div className="mb-2 text-sm font-semibold text-foreground">
-            {cardsParent
-              ? `הוספת תת־קטגוריה בתוך „${displayCategoryName(cardsParent.name)}”`
+            {addingParent
+              ? `הוספת תת־קטגוריה בתוך „${displayCategoryName(addingParent.name)}”`
               : "הוספת קטגוריה ראשית"}
           </div>
           <div className="flex gap-2">
             <Input
               value={newCategoryName}
               onChange={(event) => setNewCategoryName(event.target.value)}
-              placeholder={cardsParent ? "לדוגמה: מאמר ראשון" : "לדוגמה: ספר הכוזרי"}
+              placeholder={addingParent ? "לדוגמה: מאמר ראשון" : "לדוגמה: ספר הכוזרי"}
               aria-label="שם הקטגוריה החדשה"
               autoFocus
               className="h-9 border-gold/40"
@@ -513,6 +546,18 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                           <span className="flex-1 font-semibold truncate">{displayCategoryName(root.name)}</span>
                           {count > 0 ? <span title={`${count} שאלות בקטגוריה`} className="text-[10px] px-1.5 py-0.5 rounded bg-navy text-white">{count}</span> : null}
                         </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          beginAddCategory(root.id);
+                          setCardsPath([...normalizedCardsPath, root.id]);
+                        }}
+                        className="flex w-full items-center justify-center gap-1.5 border-t border-gold/25 bg-gold/5 px-3 py-1.5 text-xs font-semibold text-navy transition-colors hover:bg-gold/15"
+                        aria-label={`הוסף תת־קטגוריה בתוך ${displayCategoryName(root.name)}`}
+                      >
+                        <FolderPlus className="h-3.5 w-3.5 text-gold" />
+                        הוסף תת־קטגוריה
                       </button>
                     </div>
                   );
