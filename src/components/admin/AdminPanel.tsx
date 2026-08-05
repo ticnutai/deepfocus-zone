@@ -102,7 +102,7 @@ export function AdminPanel() {
               <span>ניטור סנכרון</span><Activity className="h-4 w-4" />
             </TabsTrigger>
             <TabsTrigger value="defaults" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>ברירות מחדל ופריסה</span><LayoutDashboard className="h-4 w-4" />
+              <span>פרופילי תצוגה</span><LayoutDashboard className="h-4 w-4" />
             </TabsTrigger>
             <TabsTrigger value="preview" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תצוגה מקדימה</span><Monitor className="h-4 w-4" />

@@ -42,6 +42,7 @@ import {
   type RoleLayoutProfile,
   type RoleLayoutProfileAssignment,
 } from "@/lib/study/layoutProfiles";
+import { SimpleViewProfilesManager } from "@/components/admin/SimpleViewProfilesManager";
 
 interface AppRole { id: string; name: string; description: string | null }
 interface ExistingDefault {
@@ -644,10 +645,29 @@ export function RoleDefaultsTab() {
         </TabsList>
       </Tabs>
 
-      <Tabs defaultValue="layout" className="space-y-4">
+      <SimpleViewProfilesManager
+        scope={layoutScope}
+        roles={roles}
+        currentWidgetLayout={currentWidgetLayout}
+        currentSidebar={currentSidebar}
+        currentCategories={currentCategories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          color: category.color ?? null,
+        }))}
+      />
+
+      <details className="rounded-xl border-2 border-gold/25 bg-card/40 p-3">
+        <summary className="cursor-pointer select-none font-semibold text-muted-foreground">
+          הגדרות מתקדמות — פריסה וחסימות בנפרד
+        </summary>
+        <p className="mt-2 text-xs text-muted-foreground">
+          רוב המשתמשים אינם צריכים לפתוח אזור זה. הוא נשמר לתחזוקה מדויקת של וידג׳טים וחסימות נפרדות.
+        </p>
+      <Tabs defaultValue="layout" className="mt-4 space-y-4">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="layout">טאב פריסה</TabsTrigger>
-          <TabsTrigger value="blocklist">טאב חסימה</TabsTrigger>
+          <TabsTrigger value="layout">מתקדם: פריסה</TabsTrigger>
+          <TabsTrigger value="blocklist">מתקדם: חסימות</TabsTrigger>
         </TabsList>
 
         <TabsContent value="layout">
@@ -1080,6 +1100,7 @@ export function RoleDefaultsTab() {
           </Card>
         </TabsContent>
       </Tabs>
+      </details>
 
       {/* Overwrite warning */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

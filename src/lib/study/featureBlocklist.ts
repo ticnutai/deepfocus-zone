@@ -25,6 +25,38 @@ export interface RoleBlocklistAssignment {
 const EMPTY: FeatureBlocklist = { sections: [], widgets: {} };
 
 /**
+ * Safe bundled view for a brand-new local/offline installation that has never
+ * connected to the server. Once internet is available, the administrator's
+ * assigned profile replaces this fallback and remains cached for later offline
+ * use. This prevents a first offline launch from exposing every navigation
+ * entry merely because the cloud profile has not been downloaded yet.
+ */
+export const LOCAL_OFFLINE_DEFAULT_BLOCKLIST: FeatureBlocklist = {
+  sections: [
+    "morning",
+    "today",
+    "tasks",
+    "system-rubric",
+    "habits",
+    "journal",
+    "timer",
+    "goals",
+    "studio",
+    "ai",
+    "ai-generator",
+    "question-lab",
+    "archive",
+    "backup",
+    "backup-restore",
+    "db-inspector",
+    "perf",
+    "admin",
+    "settings",
+  ],
+  widgets: {},
+};
+
+/**
  * Role id carried by the bundled "עבודה מקומית (אופליין)" guest profile.
  *
  * Offline accounts (username + password, registered with no connection) enter
@@ -253,7 +285,7 @@ export async function ensureLocalOfflineBlocklistProfile(
       {
         id: LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID,
         name: "עבודה מקומית (אופליין)",
-        blocklist: { sections: [], widgets: {} },
+        blocklist: LOCAL_OFFLINE_DEFAULT_BLOCKLIST,
         updatedAt: Date.now(),
       },
     ], { scope });
@@ -286,12 +318,9 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
     .map((roleId) => assignments.find((row) => row.roleId === roleId))
     .find((row): row is RoleBlocklistAssignment => !!row);
   if (!assignment) {
-    // The offline role must never inherit the global blocklist: an offline
-    // machine cannot reach the server to have its profile provisioned, and
-    // falling back to a broad global block would leave a local account staring
-    // at empty tabs with no way to fix it. Default it to "nothing blocked" —
-    // an admin can still restrict it via its own profile once online.
-    if (uniqueRoleIds.includes(LOCAL_OFFLINE_ROLE_ID)) return EMPTY;
+    // A fresh offline machine cannot download its assigned profile yet. Keep
+    // the bundled restricted view until the administrator's profile is cached.
+    if (uniqueRoleIds.includes(LOCAL_OFFLINE_ROLE_ID)) return LOCAL_OFFLINE_DEFAULT_BLOCKLIST;
     return globalBlocklist;
   }
 
@@ -301,6 +330,8 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
   // otherwise a broad global blocklist (e.g. all overview widgets) would
   // override the per-role profile and make tabs appear empty.
   if (profile) return profile.blocklist;
+  // A stale/missing cached profile must also fail closed for local accounts.
+  if (uniqueRoleIds.includes(LOCAL_OFFLINE_ROLE_ID)) return LOCAL_OFFLINE_DEFAULT_BLOCKLIST;
   return globalBlocklist;
 }
 

@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/guestViewProfile";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { resolvePublishedPermissions } from "@/lib/auth/localPermissionBoundary";
+import { LOCAL_OFFLINE_DEFAULT_BLOCKLIST } from "@/lib/study/featureBlocklist";
 
 function unsafeOfflineProfile(): GuestViewProfile {
   return {
@@ -99,5 +100,21 @@ describe("section access security", () => {
 
   it("fails closed for a future unclassified section", () => {
     expect(canAccessAppSection("future-manager-screen", localAccess)).toBe(false);
+  });
+});
+
+describe("fresh-install offline view", () => {
+  it("ships with a restricted fallback before a cloud profile can be downloaded", () => {
+    expect(LOCAL_OFFLINE_DEFAULT_BLOCKLIST.sections).toEqual(expect.arrayContaining([
+      "admin",
+      "system-rubric",
+      "db-inspector",
+      "perf",
+      "ai-generator",
+      "question-lab",
+    ]));
+    expect(LOCAL_OFFLINE_DEFAULT_BLOCKLIST.sections).not.toContain("home");
+    expect(LOCAL_OFFLINE_DEFAULT_BLOCKLIST.sections).not.toContain("cards");
+    expect(LOCAL_OFFLINE_DEFAULT_BLOCKLIST.sections).not.toContain("study");
   });
 });
