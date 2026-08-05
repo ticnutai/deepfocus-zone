@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/theme/ThemeProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 import { PermissionsProvider } from "@/hooks/usePermissions";
 import { RequireAuth } from "@/components/RequireAuth";
+import { RequireAdmin } from "@/components/RequireAdmin";
 import { RestoreProvider } from "@/lib/study/RestoreContext";
 import { GlobalRestoreHost } from "@/components/study/GlobalRestoreHost";
 import { DevIconsHost } from "@/components/dev/DevIconsHost";
@@ -65,7 +66,7 @@ const App = () => (
               <Route path="/split-view" element={<RequireAuth><SplitViewPage /></RequireAuth>} />
               <Route element={<AppLayout />}>
                 <Route path="/plan/:planId" element={<PlanDetail />} />
-                <Route path="/sync-diagnostics" element={<RequireAuth><SyncDiagnostics /></RequireAuth>} />
+                <Route path="/sync-diagnostics" element={<RequireAuth><RequireAdmin><SyncDiagnostics /></RequireAdmin></RequireAuth>} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Route>

@@ -32,6 +32,7 @@ import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 import { usePrompt } from "@/hooks/usePrompt";
 import { toast } from "@/hooks/use-toast";
+import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },
@@ -245,7 +246,10 @@ export function AppShellSidebar() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { user, signOut, isGuest } = useAuth();
-  const { isAdmin, roles } = usePermissions();
+  const { isAdmin: permissionIsAdmin, roles, can } = usePermissions();
+  // Never expose administrator navigation to a local/offline identity, even
+  // while a previous cloud session is being cleared.
+  const isAdmin = permissionIsAdmin && !isGuest;
   const isMobile = useIsMobile();
   const { state } = useStudy();
   const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);
@@ -254,6 +258,7 @@ export function AppShellSidebar() {
     [previewRoleId, roles],
   );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
+  const canViewCards = isAdmin || can("cards", "view");
 
   const activeId = useMemo(() => {
     const s = new URLSearchParams(search).get("section");
@@ -289,9 +294,14 @@ export function AppShellSidebar() {
     }
     const blockedSet = new Set(blocklist.sections ?? []);
     return result
-      .filter((i) => i.id !== "admin" || isAdmin)
+      .filter((i) => canAccessAppSection(i.id, { isAdmin, canViewCards }))
       .filter((i) => (isAdmin && !previewRoleId) || !blockedSet.has(i.id));
-  }, [state.sidebarConfig, isAdmin, previewRoleId, blocklist]);
+  }, [state.sidebarConfig, isAdmin, canViewCards, previewRoleId, blocklist]);
+
+  const allowedRouteItems = useMemo(
+    () => ROUTE_ITEMS.filter((item) => canAccessAppSection(item.id, { isAdmin, canViewCards })),
+    [isAdmin, canViewCards],
+  );
 
   const SETTINGS_PW = "543211";
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
@@ -315,6 +325,10 @@ export function AppShellSidebar() {
   };
 
   const goSection = async (id: string) => {
+    if (!canAccessAppSection(id, { isAdmin, canViewCards })) {
+      toast({ title: "אין הרשאה לפתוח אזור זה", variant: "destructive" });
+      return;
+    }
     if (id === "settings" && !(await requireSettingsAuth())) return;
     if (pathname !== "/") {
       navigate(`/?section=${id}`);
@@ -374,7 +388,7 @@ export function AppShellSidebar() {
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <NavList
             items={orderedItems}
-            routeItems={ROUTE_ITEMS}
+            routeItems={allowedRouteItems}
             activeId={activeId}
             activePath={pathname}
             onSelect={goSection}
@@ -409,7 +423,7 @@ export function AppShellSidebar() {
           <div className="flex-1 overflow-y-auto no-scrollbar">
             <NavList
               items={orderedItems}
-              routeItems={ROUTE_ITEMS}
+              routeItems={allowedRouteItems}
               activeId={activeId}
               activePath={pathname}
               onSelect={goSection}

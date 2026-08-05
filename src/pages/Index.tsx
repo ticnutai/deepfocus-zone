@@ -40,6 +40,7 @@ import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBM
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 import { getLocalAccount } from "@/lib/auth/localAccount";
+import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 
 // Lazy-loaded components — downloaded only when first rendered
 const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
@@ -568,7 +569,10 @@ const Index = () => {
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
   const { user, signOut, isGuest, guestProfile, loading: authLoading } = useAuth();
-  const { isAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const { isAdmin: permissionIsAdmin, can, roles, loading: permsLoading } = usePermissions();
+  // Authentication identity always wins over a cached/preview permission
+  // snapshot. An offline/local/guest identity can never be an administrator.
+  const isAdmin = permissionIsAdmin && !isGuest;
   const displayUserPrimary = isGuest
     ? (getLocalAccount()?.displayName ?? "אורח")
     : (user?.email ?? "");
@@ -586,7 +590,6 @@ const Index = () => {
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
   const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
   const canViewCardsModule = isAdmin || can("cards", "view");
-  const canUseQuestionTools = canViewCardsModule || isAdmin || can("cards", "create") || can("cards", "edit");
   const [profileBActive, setProfileBActive] = useState(false);
   const {
     state,
@@ -876,12 +879,8 @@ const Index = () => {
       if (HOME_TAB_IDS.has(id)) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(id);
       return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(id);
     }
-    if (profileBActive && (id === "backup" || id === "backup-restore")) return false;
-    if (id === "admin") return isAdmin;
-    if (id === "cards" || id === "categories" || id === "decks" || id === "questions") return canViewCardsModule;
-    if (id === "ai-generator" || id === "question-lab") return canUseQuestionTools;
-    return true;
-  }, [canUseQuestionTools, canViewCardsModule, isAdmin, profileBActive]);
+    return canAccessAppSection(id, { isAdmin, canViewCards: canViewCardsModule });
+  }, [canViewCardsModule, isAdmin, profileBActive]);
 
   const visibleTabs = useMemo(() => orderedTabs.filter((t) => {
     // Sidebar-derived entries are allowed in the strip too (clicking one
@@ -916,6 +915,11 @@ const Index = () => {
     return isAllowedByPermission(t.v);
   }), [orderedTabs, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
 
+  const configurableTabs = useMemo(
+    () => orderedTabs.filter((tab) => isAllowedByPermission(tab.v)),
+    [orderedTabs, isAllowedByPermission],
+  );
+
   useEffect(() => {
     if (permsLoading) return;
     if (activeTab && !allowedHomeTabs.some((tab) => tab.v === activeTab)) {
@@ -945,12 +949,16 @@ const Index = () => {
     saveTabConfig(newOrder);
   }, [orderedTabs, saveTabConfig]);
 
-  const allTabsSelected = useMemo(() => orderedTabs.every((tab) => tab.visible), [orderedTabs]);
+  const allTabsSelected = useMemo(() => configurableTabs.every((tab) => tab.visible), [configurableTabs]);
 
   const toggleAllTabs = useCallback(() => {
     const nextVisible = !allTabsSelected;
-    saveTabConfig(orderedTabs.map((tab, index) => ({ id: tab.v, visible: nextVisible, order: index })));
-  }, [allTabsSelected, orderedTabs, saveTabConfig]);
+    saveTabConfig(orderedTabs.map((tab, index) => ({
+      id: tab.v,
+      visible: isAllowedByPermission(tab.v) ? nextVisible : tab.visible,
+      order: index,
+    })));
+  }, [allTabsSelected, orderedTabs, saveTabConfig, isAllowedByPermission]);
 
   const resetTabsConfig = useCallback(() => {
     saveTabConfig(DEFAULT_TABS_ALL.map((tab, index) => ({ id: tab.v, visible: true, order: index })));
@@ -987,6 +995,11 @@ const Index = () => {
     if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
     return isAllowedByPermission(item.id);
   }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
+
+  const configurableSidebarItems = useMemo(
+    () => orderedSidebarItems.filter((item) => isAllowedByPermission(item.id)),
+    [orderedSidebarItems, isAllowedByPermission],
+  );
 
   // Sections the user is ALLOWED to open, ignoring the sidebar strip's
   // show/hide config. Visibility config controls presentation, not navigation
@@ -1054,8 +1067,8 @@ const Index = () => {
   }, [orderedSidebarItems, saveSidebarConfig]);
 
   const allSidebarSelected = useMemo(
-    () => orderedSidebarItems.filter((item) => item.id !== "home").every((item) => item.visible),
-    [orderedSidebarItems],
+    () => configurableSidebarItems.filter((item) => item.id !== "home").every((item) => item.visible),
+    [configurableSidebarItems],
   );
 
   const toggleAllSidebar = useCallback(() => {
@@ -1063,11 +1076,13 @@ const Index = () => {
     saveSidebarConfig(
       orderedSidebarItems.map((item, index) => ({
         id: item.id,
-        visible: item.id === "home" ? true : nextVisible,
+        visible: item.id === "home"
+          ? true
+          : (isAllowedByPermission(item.id) ? nextVisible : item.visible),
         order: index,
       })),
     );
-  }, [allSidebarSelected, orderedSidebarItems, saveSidebarConfig]);
+  }, [allSidebarSelected, orderedSidebarItems, saveSidebarConfig, isAllowedByPermission]);
 
   const resetSidebarConfig = useCallback(() => {
     saveSidebarConfig(SIDEBAR_CHOICES.map((item, index) => ({ id: item.id, visible: true, order: index })));
@@ -1094,6 +1109,10 @@ const Index = () => {
   }, [promptText]);
 
   const selectSidebarItem = useCallback(async (id: string) => {
+    if (!isAllowedByPermission(id)) {
+      toast({ title: "אין הרשאה לפתוח אזור זה", variant: "destructive" });
+      return;
+    }
     if (id === "settings" && !(await requireSettingsAuth())) return;
     // "בית" must return to the home overview. When the user is on a home-tab
     // (e.g. חזרות לימוד) `active` is already "home" with a sub-tab active, so
@@ -1117,7 +1136,7 @@ const Index = () => {
       return;
     }
     setActive(id);
-  }, [requireSettingsAuth]);
+  }, [isAllowedByPermission, requireSettingsAuth]);
 
   const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
     ? activeTab
@@ -1155,9 +1174,8 @@ const Index = () => {
       >
         <Card className="gold-frame p-1.5 sm:p-2 relative">
           <TabsList
-            className="grid w-full bg-transparent gap-3 sm:gap-4 h-auto px-1"
+            className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
             dir="rtl"
-            style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
           >
             {visibleTabs.map(({ v, l, I }) => (
               <TabsTrigger
@@ -1180,6 +1198,17 @@ const Index = () => {
   );
 
   const renderSidebarPage = (pageId: string) => {
+    // Defence in depth: do not even mount privileged components when a stale
+    // URL, persisted active tab or programmatic navigation targets them.
+    if (["db-inspector", "perf", "ai-generator", "question-lab", "system-rubric"].includes(pageId) && !isAdmin) {
+      return (
+        <Card className="gold-frame p-8 text-center" dir="rtl">
+          <Shield className="mx-auto mb-3 h-10 w-10 text-gold" />
+          <h2 className="text-xl font-bold text-foreground">אין הרשאה לאזור זה</h2>
+          <p className="mt-2 text-sm text-muted-foreground">האזור זמין למנהלי המערכת בלבד.</p>
+        </Card>
+      );
+    }
     switch (pageId) {
       case "blocker":
         return (
@@ -1450,11 +1479,11 @@ const Index = () => {
             <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); if (!pinned) setSidebarHovered(false); }} badges={sidebarBadges} />
           </div>
           <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
-            <div ref={userFooterDesktopRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
-              <button
+            <div ref={userFooterDesktopRef} className="w-full rounded-xl border-2 border-gold/40 bg-card px-2 py-2">
+              <div className="flex w-full min-w-0 items-center gap-2">
+                <button
                 onClick={async () => { if (await requireSettingsAuth()) setActive("settings"); }}
-                className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
-                style={{ flex: "1 1 auto" }}
+                className="min-w-0 flex flex-1 items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                 title="הגדרות משתמש"
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
@@ -1464,11 +1493,12 @@ const Index = () => {
                   <div className="text-[11px] font-medium break-all">{displayUserPrimary}</div>
                   {displayUserRole ? <div className="text-[10px] font-semibold text-gold/90">{displayUserRole}</div> : null}
                 </div>
-              </button>
-              <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
+                </button>
+                <DesktopUpdateButton />
+              </div>
+              <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
                 <ThemeSwitcher />
                 <UserQuestionsExportButton />
-                <DesktopUpdateButton />
                 <button
                   onClick={() => signOut()}
                   title={isGuest ? "יציאה" : "התנתקות"}
@@ -1555,11 +1585,11 @@ const Index = () => {
                     <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
                   </div>
                   <div className="border-t-2 border-gold/40 p-3 flex-shrink-0">
-                    <div ref={userFooterMobileRef} className="w-full flex items-center gap-2 rounded-xl border-2 border-gold/40 bg-card px-2 py-1.5">
-                      <button
+                    <div ref={userFooterMobileRef} className="w-full rounded-xl border-2 border-gold/40 bg-card px-2 py-2">
+                      <div className="flex w-full min-w-0 items-center gap-2">
+                        <button
                         onClick={async () => { if (await requireSettingsAuth()) { setActive("settings"); setMobileSidebarOpen(false); } }}
-                        className="min-w-0 flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
-                        style={{ flex: "1 1 auto" }}
+                        className="min-w-0 flex flex-1 items-center gap-2 rounded-lg px-1 py-1 hover:bg-secondary/70 transition-colors text-right"
                         title="הגדרות משתמש"
                       >
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-navy text-primary-foreground text-sm font-bold">
@@ -1569,11 +1599,12 @@ const Index = () => {
                           <div className="text-[11px] font-medium break-all">{displayUserPrimary}</div>
                           {displayUserRole ? <div className="text-[10px] font-semibold text-gold/90">{displayUserRole}</div> : null}
                         </div>
-                      </button>
-                      <div className="mr-auto flex items-center gap-1.5 flex-shrink-0">
+                        </button>
+                        <DesktopUpdateButton />
+                      </div>
+                      <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
                         <ThemeSwitcher />
                         <UserQuestionsExportButton />
-                        <DesktopUpdateButton />
                         <button
                           onClick={() => { signOut(); setMobileSidebarOpen(false); }}
                           title={isGuest ? "יציאה" : "התנתקות"}
@@ -1591,7 +1622,13 @@ const Index = () => {
 
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
-            {active === "settings" ? (
+            {!navigableSidebarIds.has(active) ? (
+              <Card className="gold-frame p-8 text-center" dir="rtl">
+                <Shield className="mx-auto mb-3 h-10 w-10 text-gold" />
+                <h2 className="text-xl font-bold text-foreground">אין הרשאה לאזור זה</h2>
+                <p className="mt-2 text-sm text-muted-foreground">האזור זמין למנהלי המערכת בלבד.</p>
+              </Card>
+            ) : active === "settings" ? (
               <Suspense fallback={<StaticLazyPanelPreview />}>
                 <SettingsPanel />
               </Suspense>
@@ -1609,7 +1646,7 @@ const Index = () => {
                   <SmartSearch variant="page" />
                 </Suspense>
               </div>
-            ) : active === "admin" ? (
+            ) : active === "admin" && isAdmin ? (
               <Suspense fallback={<StaticLazyPanelPreview />}>
                 <AdminPanel />
               </Suspense>
@@ -1647,9 +1684,8 @@ const Index = () => {
             >
               <Card className="gold-frame p-1.5 sm:p-2 relative">
                 <TabsList
-                  className="grid w-full bg-transparent gap-3 sm:gap-4 h-auto px-1"
+                  className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
                   dir="rtl"
-                  style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
                 >
                   {visibleTabs.map(({ v, l, I }) => (
                     <TabsTrigger
@@ -1808,9 +1844,9 @@ const Index = () => {
                   {allTabsSelected ? "נקה הכל" : "בחר הכל"}
                 </Button>
                 <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
-                  <SortableContext items={orderedTabs.map((t) => t.v)} strategy={verticalListSortingStrategy}>
+                  <SortableContext items={configurableTabs.map((t) => t.v)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-1">
-                      {orderedTabs.map((tab) => (
+                      {configurableTabs.map((tab) => (
                         <SortableConfigItem
                           key={tab.v}
                           item={{ id: tab.v, label: tab.l, icon: tab.I }}
@@ -1843,9 +1879,9 @@ const Index = () => {
                   {allSidebarSelected ? "נקה הכל" : "בחר הכל"}
                 </Button>
                 <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleSidebarDragEnd}>
-                  <SortableContext items={orderedSidebarItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+                  <SortableContext items={configurableSidebarItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-1">
-                      {orderedSidebarItems.map((item) => (
+                      {configurableSidebarItems.map((item) => (
                         <SortableConfigItem
                           key={item.id}
                           item={{ id: item.id, label: item.label, icon: item.icon }}

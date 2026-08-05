@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Download, RefreshCw, RotateCcw, WifiOff } from "lucide-react";
+import { CircleArrowUp, Download, RefreshCw, RotateCcw, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 type UpdateStatus =
   | { type: "idle" }
@@ -17,9 +18,10 @@ type UpdateStatus =
   | { type: "error"; message: string };
 
 export function DesktopUpdateButton() {
-  const { session, isGuest } = useAuth();
   const updates = window.desktop?.updates;
-  const enabled = Boolean(window.desktop?.isElectron && updates && session && !isGuest);
+  // Application updates belong to the installed desktop application, not to a
+  // cloud account. Keep them available for guests and local/offline accounts.
+  const enabled = Boolean(window.desktop?.isElectron && updates);
   const [status, setStatus] = useState<UpdateStatus>({ type: "idle" });
   const [currentVersion, setCurrentVersion] = useState("");
   const [open, setOpen] = useState(false);
@@ -38,12 +40,19 @@ export function DesktopUpdateButton() {
       setStatus({ type: "checking" });
       void updates.check();
     };
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
     check();
+    const intervalId = window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
     window.addEventListener("online", check);
+    document.addEventListener("visibilitychange", checkWhenVisible);
     return () => {
       active = false;
       unsubscribe();
+      window.clearInterval(intervalId);
       window.removeEventListener("online", check);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
     };
   }, [enabled, updates]);
 
@@ -72,7 +81,7 @@ export function DesktopUpdateButton() {
           hasUpdate ? "border-gold bg-gold text-navy shadow-gold" : "border-gold/70 bg-card text-navy hover:bg-secondary",
         )}
       >
-        <Download className="h-3.5 w-3.5" />
+        <CircleArrowUp className="h-4 w-4" />
         {hasUpdate && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />}
       </button>
 

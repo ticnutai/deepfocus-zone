@@ -21,12 +21,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
 import {
-  getActiveGuestViewProfileId,
-  hydrateGuestProfilesFromSiteSettings,
   listGuestViewProfiles,
-  setActiveGuestViewProfile,
   saveGuestViewProfile,
+  LOCAL_OFFLINE_MATRIX,
+  LOCAL_OFFLINE_PROFILE_ID,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
 import { loadBundledOfflineLibrary } from "@/lib/study/offlineLibrary";
@@ -41,13 +41,6 @@ import {
   USERNAME_RE,
   type LocalAccount,
 } from "@/lib/auth/localAccount";
-
-const LOCAL_OFFLINE_PROFILE_ID = "local-offline";
-const LOCAL_OFFLINE_MATRIX = Object.fromEntries(
-  ["decks", "cards", "goals", "shas", "analytics", "settings"].flatMap((module) =>
-    ["view", "create", "edit", "delete", "manage"].map((action) => [`${module}:${action}`, true]),
-  ),
-);
 
 async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
   const existing = listGuestViewProfiles().find((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID);
@@ -117,7 +110,6 @@ export default function Auth() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [selectedGuestProfileId, setSelectedGuestProfileId] = useState<string>("");
   const [offlineLibraryCount, setOfflineLibraryCount] = useState<number | null>(null);
   // Local (offline) accounts saved on this machine. Several can coexist, each
   // with its own isolated offline workspace; one is "active" at a time.
@@ -181,45 +173,9 @@ export default function Auth() {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      let localOfflineProfile = await ensureLocalOfflineProfile();
+      const localOfflineProfile = await ensureLocalOfflineProfile();
+      if (cancelled) return;
       setOfflineLibraryCount(localOfflineProfile.studySeed?.cards.length ?? 0);
-      // Make offline entry available immediately. Cloud profile discovery may
-      // replace this selection later when connectivity is available.
-      setSelectedGuestProfileId(localOfflineProfile.id);
-      try {
-        const { profiles, defaultProfileId } = await hydrateGuestProfilesFromSiteSettings();
-        if (cancelled) return;
-        // Cloud profile hydration replaces the lightweight local catalogue.
-        // Re-register the bundled profile so its in-memory seed remains selectable.
-        localOfflineProfile = await ensureLocalOfflineProfile();
-        const effectiveProfiles = profiles.length > 0 ? profiles : listGuestViewProfiles();
-        if (!effectiveProfiles.some((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID)) {
-          effectiveProfiles.push(localOfflineProfile);
-        }
-        const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
-        const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-        const hasActive = !isOffline && !!activeId && effectiveProfiles.some((p) => p.id === activeId);
-        const chosen = isOffline
-          ? localOfflineProfile
-          : hasActive
-          ? (effectiveProfiles.find((p) => p.id === activeId) ?? effectiveProfiles[0])
-          : effectiveProfiles[0];
-        setSelectedGuestProfileId(chosen.id);
-      } catch {
-        const fallbackProfiles = listGuestViewProfiles();
-        if (!fallbackProfiles.some((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID)) {
-          fallbackProfiles.push(localOfflineProfile);
-        }
-        const activeId = getActiveGuestViewProfileId();
-        const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-        const hasActive = !isOffline && !!activeId && fallbackProfiles.some((p) => p.id === activeId);
-        const chosen = isOffline
-          ? localOfflineProfile
-          : hasActive
-          ? (fallbackProfiles.find((p) => p.id === activeId) ?? fallbackProfiles[0])
-          : fallbackProfiles[0];
-        setSelectedGuestProfileId(chosen.id);
-      }
     };
     void run();
     return () => {
@@ -392,7 +348,10 @@ export default function Auth() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="gold-frame w-full max-w-md p-8 space-y-6 animate-fade-in">
+      <Card className="gold-frame relative w-full max-w-md p-8 space-y-6 animate-fade-in">
+        <div className="absolute right-4 top-4" title="עדכוני תוכנה">
+          <DesktopUpdateButton />
+        </div>
         <header className="text-center space-y-2">
           <div className="flex justify-center">
             <div className="h-12 w-12 rounded-full bg-gradient-gold flex items-center justify-center shadow-gold">
@@ -453,15 +412,14 @@ export default function Auth() {
 
         <Button
           variant="outline"
-          onClick={() => {
-            if (!selectedGuestProfileId) {
-              toast.error("לא הוגדר פרופיל אורח קבוע. הגדר אותו במסך ניהול משתמשים.");
-              return;
-            }
-            signInAsGuest(selectedGuestProfileId);
+          onClick={async () => {
+            // This is an anonymous, machine-local entry point. Never reuse the
+            // configurable cloud guest/default profile here: that profile may
+            // mirror an administrator and must not grant admin rights offline.
+            await ensureLocalOfflineProfile();
+            signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
             navigate("/", { replace: true });
           }}
-          disabled={!selectedGuestProfileId}
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />

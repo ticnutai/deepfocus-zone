@@ -1,13 +1,15 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { clearPersistedSupabaseSession, supabase } from "@/integrations/supabase/client";
 import {
   getActiveGuestViewProfileId,
   listGuestViewProfiles,
   getActiveGuestViewProfile,
   setActiveGuestViewProfile,
   type GuestViewProfile,
+  LOCAL_OFFLINE_PROFILE_ID,
+  sanitizeLocalOfflineProfile,
 } from "@/lib/auth/guestViewProfile";
 import { attemptDeferredRegistration, getPendingRegistration } from "@/lib/auth/localAccount";
 
@@ -47,7 +49,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestMode, setGuestMode] = useState(() => localStorage.getItem(GUEST_KEY) === "1");
-  const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(() => getActiveGuestViewProfile());
+  const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(() => {
+    const activeProfile = getActiveGuestViewProfile();
+    return activeProfile?.id === LOCAL_OFFLINE_PROFILE_ID
+      ? sanitizeLocalOfflineProfile(activeProfile)
+      : activeProfile;
+  });
+  const guestModeRef = useRef(guestMode);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -59,13 +67,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Memoized initial read avoids StrictMode double-mount lock contention.
     getInitialSession().then((initialSession) => {
       if (!mountedRef.current) return;
-      setSession(initialSession);
-      if (initialSession) setGuestMode(false);
+      if (guestModeRef.current) {
+        setSession(null);
+      } else {
+        setSession(initialSession);
+        if (initialSession) setGuestMode(false);
+      }
       setLoading(false);
 
       // Only subscribe after getSession resolves to prevent lock contention.
       const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
         if (!mountedRef.current) return;
+        // A cached cloud session must never replace an explicitly selected
+        // local/offline account in the same Electron installation.
+        if (guestModeRef.current) return;
         setSession(s);
         if (s) setGuestMode(false);
         setLoading(false);
@@ -88,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
     if (guestMode) {
       localStorage.removeItem(GUEST_KEY);
+      guestModeRef.current = false;
       setGuestProfile(null);
       setGuestMode(false);
       return;
@@ -102,17 +118,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (effectiveProfileId) {
       setActiveGuestViewProfile(effectiveProfileId);
     }
-    setGuestProfile(getActiveGuestViewProfile());
+    const selectedProfile = getActiveGuestViewProfile();
+    const safeProfile = selectedProfile?.id === LOCAL_OFFLINE_PROFILE_ID
+      ? sanitizeLocalOfflineProfile(selectedProfile)
+      : selectedProfile;
+    guestModeRef.current = true;
+    // Never let a previously restored cloud administrator session reappear
+    // after entering local mode or after a provider remount.
+    initialSessionPromise = Promise.resolve(null);
+    clearPersistedSupabaseSession();
+    supabase.auth.stopAutoRefresh();
+    void supabase.auth.signOut({ scope: "local" }).catch(() => {
+      // Offline sign-out can fail at the network layer; the persisted token was
+      // already synchronously removed above and guest mode ignores auth events.
+    });
+    setSession(null);
+    setGuestProfile(safeProfile);
     localStorage.setItem(GUEST_KEY, "1");
     setGuestMode(true);
   }, []);
 
   useEffect(() => {
     if (!guestMode) {
+      guestModeRef.current = false;
       setGuestProfile(null);
       return;
     }
-    setGuestProfile(getActiveGuestViewProfile());
+    guestModeRef.current = true;
+    const activeProfile = getActiveGuestViewProfile();
+    setGuestProfile(activeProfile?.id === LOCAL_OFFLINE_PROFILE_ID ? sanitizeLocalOfflineProfile(activeProfile) : activeProfile);
   }, [guestMode]);
 
   // Deferred offline registration: an account created while offline is

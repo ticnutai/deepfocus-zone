@@ -5,6 +5,15 @@ import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsC
 
 export type GuestPermissionMatrix = Record<string, boolean>;
 
+export const LOCAL_OFFLINE_PROFILE_ID = "local-offline";
+export const LOCAL_OFFLINE_MATRIX: GuestPermissionMatrix = Object.fromEntries(
+  ["decks", "cards", "goals", "shas", "analytics", "settings"].flatMap((module) =>
+    // Match a normal registered user. `manage` is deliberately excluded:
+    // anonymous offline entry must never become a management role.
+    ["view", "create", "edit", "delete"].map((action) => [`${module}:${action}`, true]),
+  ),
+);
+
 export interface GuestStudySeed {
   seededAt: number;
   categories: Category[];
@@ -65,6 +74,19 @@ export interface GuestViewProfile {
   updatedAt: number;
 }
 
+/** Enforce the non-admin security boundary for the machine-local account. */
+export function sanitizeLocalOfflineProfile(profile: GuestViewProfile): GuestViewProfile {
+  if (profile.id !== LOCAL_OFFLINE_PROFILE_ID) return profile;
+  return {
+    ...profile,
+    roleId: undefined,
+    roleName: "local",
+    isAdmin: false,
+    roles: [{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }],
+    matrix: { ...LOCAL_OFFLINE_MATRIX },
+  };
+}
+
 const GUEST_ACTIVE_PROFILE_KEY = "guest-view:active-profile";
 const GUEST_PROFILE_CATALOG_KEY = "guest-view:profiles";
 const GUEST_PROFILES_SITE_KEY = "guest_view_profiles_v1";
@@ -116,7 +138,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const p = item as Partial<GuestViewProfile>;
-      return {
+      return sanitizeLocalOfflineProfile({
         id: typeof p.id === "string" && p.id ? p.id : makeId(),
         label: typeof p.label === "string" ? p.label : "אורח",
         roleId: typeof p.roleId === "string" ? p.roleId : undefined,
@@ -137,7 +159,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
         sourceUserId: typeof p.sourceUserId === "string" && p.sourceUserId ? p.sourceUserId : null,
         createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
         updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : Date.now(),
-      };
+      });
     })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 }

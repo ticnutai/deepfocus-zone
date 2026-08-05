@@ -4,6 +4,10 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const PROJECT_REF = (() => {
+  try { return new URL(SUPABASE_URL).hostname.split(".")[0]; } catch { return ""; }
+})();
+const AUTH_STORAGE_KEY = PROJECT_REF ? `sb-${PROJECT_REF}-auth-token` : "";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +15,18 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     storage: localStorage,
+    storageKey: AUTH_STORAGE_KEY || undefined,
     persistSession: true,
     autoRefreshToken: true,
   }
 });
+
+/**
+ * A local/offline account must never inherit a previously cached cloud
+ * session (especially an administrator session) from the same computer.
+ * Clear the persisted token synchronously before guest mode is activated.
+ */
+export function clearPersistedSupabaseSession(): void {
+  if (!AUTH_STORAGE_KEY) return;
+  try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* ignore */ }
+}

@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { LOCAL_OFFLINE_PROFILE_ID, sanitizeLocalOfflineProfile } from "@/lib/auth/guestViewProfile";
+import { resolvePublishedPermissions } from "@/lib/auth/localPermissionBoundary";
 
 export type PermissionModule = "decks" | "cards" | "goals" | "shas" | "analytics" | "users" | "roles" | "settings";
 export type PermissionAction = "view" | "create" | "edit" | "delete" | "manage";
@@ -131,29 +133,32 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const safeGuestProfile = guestProfile.id === LOCAL_OFFLINE_PROFILE_ID
+        ? sanitizeLocalOfflineProfile(guestProfile)
+        : guestProfile;
       const fallback: PermSet = {
-        isAdmin: !!guestProfile.isAdmin,
-        matrix: guestProfile.matrix ?? {},
-        roles: guestProfile.roles ?? [],
+        isAdmin: !!safeGuestProfile.isAdmin,
+        matrix: safeGuestProfile.matrix ?? {},
+        roles: safeGuestProfile.roles ?? [],
       };
       setPerms(fallback);
 
-      if (guestProfile.roleId) {
+      if (safeGuestProfile.roleId) {
         try {
           const [matrix, roleData] = await Promise.all([
-            fetchSingleRoleMatrix(guestProfile.roleId),
-            supabase.from("app_roles").select("id,name").eq("id", guestProfile.roleId).maybeSingle(),
+            fetchSingleRoleMatrix(safeGuestProfile.roleId),
+            supabase.from("app_roles").select("id,name").eq("id", safeGuestProfile.roleId).maybeSingle(),
           ]);
 
-          const roleName = roleData.data?.name ?? guestProfile.roleName ?? guestProfile.roles?.[0]?.name ?? "role";
-          const mergedMatrix: Record<string, boolean> = { ...(guestProfile.matrix ?? {}) };
+          const roleName = roleData.data?.name ?? safeGuestProfile.roleName ?? safeGuestProfile.roles?.[0]?.name ?? "role";
+          const mergedMatrix: Record<string, boolean> = { ...(safeGuestProfile.matrix ?? {}) };
           Object.entries(matrix).forEach(([key, allowed]) => {
             if (allowed) mergedMatrix[key] = true;
           });
           const live: PermSet = {
-            isAdmin: roleName === "admin" || !!guestProfile.isAdmin,
+            isAdmin: roleName === "admin" || !!safeGuestProfile.isAdmin,
             matrix: mergedMatrix,
-            roles: [{ id: guestProfile.roleId, name: roleName }],
+            roles: [{ id: safeGuestProfile.roleId, name: roleName }],
           };
           setPerms(live);
         } catch {
@@ -220,13 +225,19 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Switching from a cloud administrator to the machine-local profile must be
+  // fail-closed synchronously. React effects run after render, so publishing
+  // the previous `perms` state here would otherwise expose one render with the
+  // administrator navigation still enabled.
+  const publishedPerms = resolvePublishedPermissions(perms, isGuest, guestProfile);
+
   const can = useCallback(
-    (m: PermissionModule, a: PermissionAction) => perms.isAdmin || !!perms.matrix[`${m}:${a}`],
-    [perms],
+    (m: PermissionModule, a: PermissionAction) => publishedPerms.isAdmin || !!publishedPerms.matrix[`${m}:${a}`],
+    [publishedPerms],
   );
 
   return (
-    <PermissionsContext.Provider value={{ ...perms, loading, can, reload: () => load(true) }}>
+    <PermissionsContext.Provider value={{ ...publishedPerms, loading, can, reload: () => load(true) }}>
       {children}
     </PermissionsContext.Provider>
   );
