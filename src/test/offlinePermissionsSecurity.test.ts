@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LOCAL_OFFLINE_PROFILE_ID,
+  sanitizeGuestViewProfile,
   sanitizeLocalOfflineProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
@@ -31,12 +32,47 @@ describe("anonymous offline permission boundary", () => {
     const safe = sanitizeLocalOfflineProfile(unsafeOfflineProfile());
 
     expect(safe.isAdmin).toBe(false);
-    expect(safe.roleId).toBeUndefined();
+    expect(safe.roleId).toBe(LOCAL_OFFLINE_PROFILE_ID);
     expect(safe.roleName).toBe("local");
     expect(safe.roles).toEqual([{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }]);
     expect(safe.matrix["users:manage"]).toBeUndefined();
     expect(safe.matrix["roles:manage"]).toBeUndefined();
     expect(safe.matrix["settings:manage"]).toBeUndefined();
+  });
+
+  it("drops legacy embedded administrator presentation from local accounts", () => {
+    const safe = sanitizeLocalOfflineProfile({
+      ...unsafeOfflineProfile(),
+      sidebarConfig: [{ id: "admin", visible: true, order: 0 }],
+      tabConfig: [{ id: "admin", visible: true, order: 0 }],
+      widgetLayout: { home: [{ id: "admin", visible: true, size: "full", order: 0 }] },
+    });
+
+    expect(safe.sidebarConfig).toBeUndefined();
+    expect(safe.tabConfig).toBeUndefined();
+    expect(safe.widgetLayout).toBeUndefined();
+  });
+
+  it("turns a legacy administrator guest profile into a non-admin preset", () => {
+    const safe = sanitizeGuestViewProfile({
+      ...unsafeOfflineProfile(),
+      id: "legacy-admin-guest",
+      matrix: { ...unsafeOfflineProfile().matrix, "cards:view": true },
+      sidebarConfig: [{ id: "admin", visible: true, order: 0 }],
+      tabConfig: [{ id: "admin", visible: true, order: 0 }],
+      widgetLayout: { home: [{ id: "admin", visible: true, size: "full", order: 0 }] },
+    });
+
+    expect(safe.isAdmin).toBe(false);
+    expect(safe.roleId).toBeUndefined();
+    expect(safe.roleName).toBe("guest");
+    expect(safe.roles).toEqual([]);
+    expect(safe.matrix["users:manage"]).toBeUndefined();
+    expect(safe.matrix["settings:manage"]).toBeUndefined();
+    expect(safe.matrix["cards:view"]).toBe(true);
+    expect(safe.sidebarConfig).toBeUndefined();
+    expect(safe.tabConfig).toBeUndefined();
+    expect(safe.widgetLayout).toBeUndefined();
   });
 
   it("keeps normal offline study actions available", () => {
@@ -79,7 +115,15 @@ describe("anonymous offline permission boundary", () => {
 });
 
 describe("section access security", () => {
-  const localAccess = { isAdmin: false, canViewCards: true };
+  const localAccess = {
+    isAdmin: false,
+    canViewCards: true,
+    canViewDecks: true,
+    canViewGoals: true,
+    canViewShas: true,
+    canViewAnalytics: true,
+    canViewSettings: true,
+  };
 
   it.each([
     "admin",
@@ -94,8 +138,20 @@ describe("section access security", () => {
   });
 
   it("allows management sections to administrators", () => {
-    expect(canAccessAppSection("admin", { isAdmin: true, canViewCards: true })).toBe(true);
-    expect(canAccessAppSection("sync-diagnostics", { isAdmin: true, canViewCards: true })).toBe(true);
+    const adminAccess = { ...localAccess, isAdmin: true };
+    expect(canAccessAppSection("admin", adminAccess)).toBe(true);
+    expect(canAccessAppSection("sync-diagnostics", adminAccess)).toBe(true);
+  });
+
+  it.each([
+    ["categories", "canViewCards"],
+    ["decks", "canViewDecks"],
+    ["goals", "canViewGoals"],
+    ["shas-board", "canViewShas"],
+    ["analytics", "canViewAnalytics"],
+    ["settings", "canViewSettings"],
+  ] as const)("uses the permission matrix to hide %s", (sectionId, permission) => {
+    expect(canAccessAppSection(sectionId, { ...localAccess, [permission]: false })).toBe(false);
   });
 
   it("fails closed for a future unclassified section", () => {

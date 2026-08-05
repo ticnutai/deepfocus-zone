@@ -7,7 +7,7 @@ import {
   Home, Gauge, Sun, Calendar, CheckSquare, Target, BookOpen, Timer,
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
   Trophy, Archive, Settings, Shield, FolderTree, Search, HardDrive,
-  DatabaseZap, LayoutGrid, Zap, BrainCircuit, ScrollText,
+  DatabaseZap, LayoutGrid, Zap, BrainCircuit, ScrollText, CircleHelp,
 } from "lucide-react";
 
 export type NavItem = { id: string; label: string; icon: typeof Home; to?: string };
@@ -19,7 +19,9 @@ export const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
   { id: "morning",        label: "קימה בבוקר",          icon: Sun },
   { id: "today",          label: "היום שלי",            icon: Calendar },
   { id: "tasks",          label: "לוח משימות",           icon: CheckSquare },
-  { id: "cards",          label: "קטגוריות ושאלות",     icon: FolderTree },
+  { id: "categories",     label: "קטגוריות",            icon: FolderTree },
+  { id: "decks",          label: "יצירת מבחנים",        icon: BookOpen },
+  { id: "questions",      label: "יצירת שאלות",         icon: CircleHelp },
   { id: "search",         label: "חיפוש חכם",           icon: Search },
   { id: "habits",         label: "הרגלים",              icon: Target },
   { id: "journal",        label: "יומן",                icon: BookOpen },

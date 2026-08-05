@@ -74,16 +74,56 @@ export interface GuestViewProfile {
   updatedAt: number;
 }
 
-/** Enforce the non-admin security boundary for the machine-local account. */
-export function sanitizeLocalOfflineProfile(profile: GuestViewProfile): GuestViewProfile {
-  if (profile.id !== LOCAL_OFFLINE_PROFILE_ID) return profile;
+const sanitizeGuestMatrix = (matrix: GuestPermissionMatrix): GuestPermissionMatrix => Object.fromEntries(
+  Object.entries(matrix).filter(([key, allowed]) => {
+    if (!allowed) return false;
+    const [module, action] = key.split(":");
+    return module !== "users" && module !== "roles" && action !== "manage";
+  }),
+);
+
+/**
+ * Guest profiles are display/content presets, never authenticated identities.
+ * Strip administrator identity at persistence time so stale/cloud snapshots
+ * cannot leak into navigation, layout resolution or permission loading.
+ */
+export function sanitizeGuestViewProfile(profile: GuestViewProfile): GuestViewProfile {
+  if (profile.id === LOCAL_OFFLINE_PROFILE_ID) return sanitizeLocalOfflineProfile(profile);
+
+  const hadAdminIdentity = profile.isAdmin
+    || profile.roleName === "admin"
+    || profile.roles.some((role) => role.name === "admin");
+
   return {
     ...profile,
-    roleId: undefined,
+    roleId: hadAdminIdentity ? undefined : profile.roleId,
+    roleName: hadAdminIdentity ? "guest" : profile.roleName,
+    isAdmin: false,
+    roles: profile.roles.filter((role) => role.name !== "admin"),
+    matrix: sanitizeGuestMatrix(profile.matrix ?? {}),
+    sidebarConfig: hadAdminIdentity ? undefined : profile.sidebarConfig,
+    tabConfig: hadAdminIdentity ? undefined : profile.tabConfig,
+    widgetLayout: hadAdminIdentity ? undefined : profile.widgetLayout,
+  };
+}
+
+/** Enforce the non-admin security boundary for the machine-local account. */
+export function sanitizeLocalOfflineProfile(profile: GuestViewProfile): GuestViewProfile {
+  if (profile.id !== LOCAL_OFFLINE_PROFILE_ID) return sanitizeGuestViewProfile(profile);
+  return {
+    ...profile,
+    // A synthetic, non-cloud role id lets the unified display-profile manager
+    // assign an offline layout without ever resolving an administrator role.
+    roleId: LOCAL_OFFLINE_PROFILE_ID,
     roleName: "local",
     isAdmin: false,
     roles: [{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }],
     matrix: { ...LOCAL_OFFLINE_MATRIX },
+    // Legacy guest profiles used to embed an entire admin-shaped layout. The
+    // unified role/display profile is now the only source for these settings.
+    sidebarConfig: undefined,
+    tabConfig: undefined,
+    widgetLayout: undefined,
   };
 }
 
@@ -138,7 +178,7 @@ function normalizeGuestProfiles(raw: unknown): GuestViewProfile[] {
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const p = item as Partial<GuestViewProfile>;
-      return sanitizeLocalOfflineProfile({
+      return sanitizeGuestViewProfile({
         id: typeof p.id === "string" && p.id ? p.id : makeId(),
         label: typeof p.label === "string" ? p.label : "אורח",
         roleId: typeof p.roleId === "string" ? p.roleId : undefined,
@@ -199,11 +239,11 @@ export function saveGuestViewProfile(profile: Omit<GuestViewProfile, "createdAt"
   const now = Date.now();
   const all = listGuestViewProfiles();
   const existing = all.find((p) => p.id === profile.id);
-  const next: GuestViewProfile = {
+  const next = sanitizeGuestViewProfile({
     ...profile,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-  };
+  });
   const filtered = all.filter((p) => p.id !== profile.id);
   filtered.unshift(next);
   setGuestProfilesLocal(filtered);

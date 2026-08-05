@@ -5,7 +5,7 @@ import {
   Trophy, Archive, Settings, Sparkles, FolderTree, Search, HardDrive,
   DatabaseZap, Shield, LayoutGrid, ChevronDown, ChevronUp, ChevronsUpDown,
   CheckCircle2, AlertCircle, XCircle, BarChart2, Tag, Hash,
-  Download, Globe, Printer, Clipboard, ExternalLink, X as XIcon,
+  Download, Globe, Printer, Clipboard, ExternalLink, X as XIcon, CircleHelp,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -124,19 +124,42 @@ const TABS_RUBRIC: TabRubric[] = [
     ],
   },
   {
-    id: "cards",
-    label: "קטגוריות ושאלות",
+    id: "categories",
+    label: "קטגוריות",
     icon: FolderTree,
     themeCategory: "learning",
     overallStatus: "working",
-    description: "מנהל קטגוריות, עורך כרטיסיות וכלי ייבוא",
+    description: "יצירה וניהול של קטגוריות ותתי־קטגוריות",
     features: [
       { name: "עץ קטגוריות", status: "working", description: "CategoryTreeView — עץ היררכי מלא" },
-      { name: "עורך כרטיסיות", status: "working", description: "CardEditor — יצירה ועריכת שאלות/תשובות" },
-      { name: "יבוא מרובה", status: "working", description: "BulkImporter — ייבוא עשרות כרטיסיות בבת-אחת" },
       { name: "תבניות קטגוריות", status: "working", description: "CategoryTemplatesDialog — תבניות מוגדרות מראש" },
-      { name: "קלט AI", status: "working", description: "AiCardCapture — יצירת כרטיסיות באמצעות AI" },
       { name: "דפדפן קטגוריות", status: "working", description: "CategoryBrowseView — סריקה וסינון קטגוריות" },
+    ],
+  },
+  {
+    id: "decks",
+    label: "יצירת מבחנים",
+    icon: BookOpen,
+    themeCategory: "learning",
+    overallStatus: "working",
+    description: "בניית מבחנים מהשאלות והקטגוריות הקיימות",
+    features: [
+      { name: "בחירת קטגוריות", status: "working", description: "בחירה היררכית של החומר שיופיע במבחן" },
+      { name: "יצירת מבחן", status: "working", description: "הגדרת שם ושמירת מערכת מבחן" },
+      { name: "מדריך אינטראקטיבי", status: "working", description: "הדרכה חזותית ליצירת מבחן" },
+    ],
+  },
+  {
+    id: "questions",
+    label: "יצירת שאלות",
+    icon: CircleHelp,
+    themeCategory: "learning",
+    overallStatus: "working",
+    description: "יצירת שאלות, תשובות וסיווגן במקום הנכון",
+    features: [
+      { name: "עורך שאלות", status: "working", description: "יצירה ועריכה של שאלות ותשובות" },
+      { name: "יבוא מרובה", status: "working", description: "BulkImporter — ייבוא עשרות שאלות בבת־אחת" },
+      { name: "קלט AI", status: "working", description: "AiCardCapture — יצירת שאלות באמצעות AI" },
       { name: "היסטוריית כרטיסייה", status: "working", description: "CardHistoryDialog — לוג שינויים לכל כרטיסייה" },
     ],
   },

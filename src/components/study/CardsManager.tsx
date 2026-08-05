@@ -45,6 +45,7 @@ import { PATH_SEP, dafLabel } from "@/lib/study/shasGen";
 import { toHebrewNum } from "@/lib/study/shasFormat";
 import { useAuth } from "@/hooks/useAuth";
 import { DeckCreationGuide } from "./DeckCreationGuide";
+import { resolveDeckCategoryLabels } from "@/lib/study/deckCategoryLabels";
 
 const IS_DEV = import.meta.env.DEV;
 const DECK_CREATION_EXCLUDED_WIDGETS = [
@@ -408,6 +409,15 @@ function CardsManager() {
     });
     return stats;
   }, [state.decks, getCardsForDeck]);
+
+  const deckCategoryLabelsById = useMemo(() => {
+    return new Map(
+      state.decks.map((deck) => [
+        deck.id,
+        resolveDeckCategoryLabels(state.deckCategories?.[deck.id], state.categories ?? []),
+      ]),
+    );
+  }, [state.decks, state.deckCategories, state.categories]);
 
   const startDeckPractice = (deckId: string) => {
     const deck = state.decks.find((candidate) => candidate.id === deckId);
@@ -955,6 +965,7 @@ function CardsManager() {
               >
                 {sortedDecks.map((deck) => {
                   const deckStats = deckStatsById.get(deck.id) ?? { size: 0, due: 0 };
+                  const deckCategoryLabels = deckCategoryLabelsById.get(deck.id) ?? [];
                   const isActive = deck.id === activeDeckId;
 
                   if (deckView === "grid") {
@@ -989,9 +1000,9 @@ function CardsManager() {
                           <div className={cn("text-[10px]", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
                             {deckStats.size} · {deckStats.due} לחזרה
                           </div>
-                          {(state.deckCategories?.[deck.id] ?? []).length > 0 && (
+                          {deckCategoryLabels.length > 0 && (
                             <div className="flex flex-wrap gap-1 justify-center">
-                              {(state.deckCategories?.[deck.id] ?? []).slice(0, 3).map((cn2) => (
+                              {deckCategoryLabels.slice(0, 3).map((cn2) => (
                                 <Badge
                                   key={cn2}
                                   variant="outline"
@@ -1005,7 +1016,7 @@ function CardsManager() {
                                   {cn2}
                                 </Badge>
                               ))}
-                              {(state.deckCategories?.[deck.id] ?? []).length > 3 && (
+                              {deckCategoryLabels.length > 3 && (
                                 <Badge
                                   variant="outline"
                                   className={cn(
@@ -1015,7 +1026,7 @@ function CardsManager() {
                                       : "bg-transparent text-navy border-navy/45",
                                   )}
                                 >
-                                  +{(state.deckCategories?.[deck.id] ?? []).length - 3}
+                                  +{deckCategoryLabels.length - 3}
                                 </Badge>
                               )}
                             </div>
@@ -1148,9 +1159,9 @@ function CardsManager() {
                           <div className={cn("text-xs truncate", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
                             {deckStats.size} כרטיסים · {deckStats.due} לחזרה
                           </div>
-                          {(state.deckCategories?.[deck.id] ?? []).length > 0 && (
+                          {deckCategoryLabels.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-0.5">
-                              {(state.deckCategories?.[deck.id] ?? []).slice(0, 2).map((catLabel) => (
+                              {deckCategoryLabels.slice(0, 2).map((catLabel) => (
                                 <Badge
                                   key={catLabel}
                                   variant="outline"
@@ -1164,7 +1175,7 @@ function CardsManager() {
                                   {catLabel}
                                 </Badge>
                               ))}
-                              {(state.deckCategories?.[deck.id] ?? []).length > 2 && (
+                              {deckCategoryLabels.length > 2 && (
                                 <Badge
                                   variant="outline"
                                   className={cn(
@@ -1174,7 +1185,7 @@ function CardsManager() {
                                       : "bg-transparent text-navy border-navy/45",
                                   )}
                                 >
-                                  +{(state.deckCategories?.[deck.id] ?? []).length - 2}
+                                  +{deckCategoryLabels.length - 2}
                                 </Badge>
                               )}
                             </div>

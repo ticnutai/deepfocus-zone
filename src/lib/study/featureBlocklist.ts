@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
+import { normalizeSplitWorkspaceSections } from "@/lib/study/sidebarItems";
 
 export type BlocklistScope = "desktop" | "mobile";
 
@@ -120,10 +121,11 @@ function isFreshCache(scope: BlocklistScope): boolean {
 }
 
 function emit(scope: BlocklistScope, b: FeatureBlocklist) {
-  cachedByScope.set(scope, b);
+  const normalized = normalizeBlocklist(b);
+  cachedByScope.set(scope, normalized);
   loadedAtByScope.set(scope, Date.now());
-  try { localStorage.setItem(CACHE_KEY[scope], JSON.stringify(b)); } catch { /* ignore */ }
-  listenersForScope(scope).forEach((fn) => fn(b));
+  try { localStorage.setItem(CACHE_KEY[scope], JSON.stringify(normalized)); } catch { /* ignore */ }
+  listenersForScope(scope).forEach((fn) => fn(normalized));
 }
 
 export async function loadFeatureBlocklist(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
@@ -137,7 +139,7 @@ export async function loadFeatureBlocklist(opts?: { force?: boolean; scope?: Blo
     const value = await getSiteSettingValue(KEY[scope], { force });
     const v = (value ?? EMPTY) as Partial<FeatureBlocklist>;
     const norm: FeatureBlocklist = {
-      sections: Array.isArray(v.sections) ? v.sections : [],
+      sections: normalizeSplitWorkspaceSections(Array.isArray(v.sections) ? v.sections : []),
       widgets: (v.widgets && typeof v.widgets === "object" && !Array.isArray(v.widgets)) ? v.widgets as Record<string, string[]> : {},
     };
     updateSiteSettingCache(KEY[scope], norm);
@@ -153,18 +155,19 @@ export async function loadFeatureBlocklist(opts?: { force?: boolean; scope?: Blo
 
 export async function saveFeatureBlocklist(value: FeatureBlocklist, opts?: { scope?: BlocklistScope }): Promise<void> {
   const scope = opts?.scope ?? "desktop";
+  const normalized = normalizeBlocklist(value);
   await supabase.from("site_settings").upsert(
-    [{ key: KEY[scope], value: value as unknown as import("@/integrations/supabase/types").Json }],
+    [{ key: KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
-  updateSiteSettingCache(KEY[scope], value);
-  emit(scope, value);
+  updateSiteSettingCache(KEY[scope], normalized);
+  emit(scope, normalized);
 }
 
 const normalizeBlocklist = (value: unknown): FeatureBlocklist => {
   const v = (value ?? EMPTY) as Partial<FeatureBlocklist>;
   return {
-    sections: Array.isArray(v.sections) ? v.sections : [],
+    sections: normalizeSplitWorkspaceSections(Array.isArray(v.sections) ? v.sections : []),
     widgets: (v.widgets && typeof v.widgets === "object" && !Array.isArray(v.widgets)) ? v.widgets as Record<string, string[]> : {},
   };
 };
@@ -343,7 +346,7 @@ export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureB
     try {
       const raw = localStorage.getItem(CACHE_KEY[scope]);
       if (raw) {
-        const parsed = JSON.parse(raw) as FeatureBlocklist;
+        const parsed = normalizeBlocklist(JSON.parse(raw));
         cachedByScope.set(scope, parsed);
         loadedAtByScope.set(scope, Date.now());
         return parsed;

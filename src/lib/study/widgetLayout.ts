@@ -118,7 +118,7 @@ export const WIDGET_DEFS: Record<string, WidgetDef[]> = {
 
 export const DEFAULT_WIDGET_LAYOUT: WidgetLayout = {
   // "כללי" is the landing tab, so it shows the widgets belonging to the pages
-  // that actually exist in the tab strip (לימוד דף / קטגוריות ושאלות / לוח ש"ס):
+  // that actually exist in the tab strip (לימוד דף / קטגוריות / יצירת מבחנים / יצירת שאלות / לוח ש"ס):
   // study progress, review scheduling and question plans. Widgets for pages that
   // are not part of the strip (משימות, פומודורו, ציטוט, מאמן AI, תזכורות) stay
   // available in "ערוך פריסה" but are hidden by default so the tab stays focused.

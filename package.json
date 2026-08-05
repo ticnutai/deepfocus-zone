@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "2.6.6",
+  "version": "2.6.10",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,7 +15,9 @@
     "electron:dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on http://localhost:5000 && cross-env ELECTRON_DEV=1 ELECTRON_DEV_URL=http://localhost:5000 electron .\"",
     "electron:build": "cross-env BUILD_TARGET=electron vite build",
     "electron:preview": "npm run electron:build && electron .",
-    "electron:dist": "npm run electron:build && electron-builder",
+    "electron:dist": "node scripts/build-electron-installer.mjs",
+    "electron:publish": "node scripts/build-electron-installer.mjs --publish-only",
+    "electron:version:next": "node scripts/build-electron-installer.mjs --dry-run",
     "android:build": "npm run build && npx cap sync android",
     "android:bundle:release": "npm run android:build && cd android && gradlew.bat bundleRelease",
     "android:publish:internal": "npm run android:build && cd android && gradlew.bat publishReleaseBundle --track=internal",

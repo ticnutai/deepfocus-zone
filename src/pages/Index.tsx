@@ -41,6 +41,8 @@ import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 import { getLocalAccount } from "@/lib/auth/localAccount";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
+import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
+import { getHomeLocation } from "@/lib/study/homeNavigation";
 
 // Lazy-loaded components — downloaded only when first rendered
 const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
@@ -61,7 +63,6 @@ const SystemRubric = lazy(() => import("@/components/study/SystemRubric").then(m
 const AIQuestionGenerator = lazy(() => import("@/components/ai/AIQuestionGenerator").then(m => ({ default: m.AIQuestionGenerator })));
 const QuestionLabPage = lazy(() => import("@/components/study/QuestionLabPage").then(m => ({ default: m.QuestionLabPage })));
 const StudyTab = lazy(() => import("@/components/study/StudyTab").then(m => ({ default: m.StudyTab })));
-const CardsManager = lazy(() => import("@/components/study/CardsManager").then(m => ({ default: m.CardsManager })));
 const CardsAndCategoriesPage = lazy(() => import("@/components/study/CardsAndCategoriesPage").then(m => ({ default: m.CardsAndCategoriesPage })));
 const SmartSearch = lazy(() => import("@/components/study/SmartSearch").then(m => ({ default: m.SmartSearch })));
 const StudyPlansCard = lazy(() => import("@/components/study/StudyPlansCard").then(m => ({ default: m.StudyPlansCard })));
@@ -411,7 +412,9 @@ const getInitialHomeTab = (): string => {
   try {
     const saved = localStorage.getItem("active-tab") ?? "overview";
     // Keep first paint lightweight: never boot directly into the heavy backup tab.
-    return saved === "backup" ? "overview" : saved;
+    if (saved === "backup") return "overview";
+    // Migrate the historic combined workspace to its first dedicated page.
+    return saved === "cards" ? "categories" : saved;
   } catch {
     return "overview";
   }
@@ -444,7 +447,6 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "categories",    l: "קטגוריות",      I: FolderTree },
   { v: "decks",         l: "יצירת מבחנים",  I: BookOpen },
   { v: "questions",     l: "יצירת שאלות",   I: CircleHelp },
-  { v: "analytics",     l: "ניתוחים",       I: Activity },
   { v: "goals",         l: "יעדים",         I: Target },
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
@@ -456,23 +458,14 @@ const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 // If a tab id matches a sidebar id directly, no mapping needed — handled via fallback.
 const HOME_TAB_TO_SIDEBAR_ID: Record<string, string> = {
   backup: "backup-restore",
-  categories: "cards",
-  decks: "cards",
-  questions: "cards",
 };
 
 const DEFAULT_TABS_ALL: TabDef[] = (() => {
   const byId = new Set(DEFAULT_TABS.map((tab) => tab.v));
-  // Dedupe by LABEL too, not just id: the sidebar's "cards" and the home tab
-  // "categories" are the same page under different ids but share the label
-  // "קטגוריות ושאלות", so an id-only check let both through and the tab strip
-  // rendered it twice. Mirrors the same guard used by SIDEBAR_CHOICES below.
+  // Dedupe by label too so aliases never render twice in the same strip.
   const byLabel = new Set(DEFAULT_TABS.map((tab) => tab.l));
   const out = [...DEFAULT_TABS];
   for (const item of DEFAULT_SIDEBAR_ITEMS) {
-    // The former combined workspace is represented by three dedicated home
-    // tabs now, so never add its legacy "קטגוריות ושאלות" entry to the strip.
-    if (item.id === "cards") continue;
     if (byId.has(item.id) || byLabel.has(item.label)) continue;
     byId.add(item.id);
     byLabel.add(item.label);
@@ -485,7 +478,7 @@ const DEFAULT_TABS_ALL: TabDef[] = (() => {
 // (e.g. לימוד דף, חזרות לימוד). The configs themselves stay fully
 // independent — this only widens the sidebar's own choice list. Entries whose
 // id or label already exists as a native sidebar item are skipped to avoid
-// duplicates (קטגוריות ושאלות, יעדים).
+// duplicates (for example, יעדים).
 const SIDEBAR_CHOICES: NavItem[] = (() => {
   const byId = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
   const byLabel = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.label));
@@ -507,7 +500,9 @@ const PROFILE_B_ALLOWED_HOME_TAB_IDS = new Set<string>([
 
 const PROFILE_B_ALLOWED_SIDEBAR_IDS = new Set<string>([
   "home",
-  "cards",
+  "categories",
+  "decks",
+  "questions",
   "search",
   "daf",
 ]);
@@ -589,7 +584,17 @@ const Index = () => {
   );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
   const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
-  const canViewCardsModule = isAdmin || can("cards", "view");
+  const sectionAccess = useMemo(() => ({
+    isAdmin,
+    canViewCards: isAdmin || can("cards", "view"),
+    canViewDecks: isAdmin || can("decks", "view"),
+    canViewGoals: isAdmin || can("goals", "view"),
+    canViewShas: isAdmin || can("shas", "view"),
+    canViewAnalytics: isAdmin || can("analytics", "view"),
+    canViewSettings: isAdmin || can("settings", "view"),
+  }), [can, isAdmin]);
+  const canViewCardsModule = sectionAccess.canViewCards;
+  const canViewDecksModule = sectionAccess.canViewDecks;
   const [profileBActive, setProfileBActive] = useState(false);
   const {
     state,
@@ -786,11 +791,45 @@ const Index = () => {
     () => localStorage.getItem("show-studied-badge") !== "false"
   );
   const [activeTab, setActiveTab] = useState<string>(() => getInitialHomeTab());
+  const [homeLandingTab, setHomeLandingTab] = useState<string | null>(null);
+  // The overview contains several data-heavy widgets (calendar, summaries,
+  // plans, etc.). Mount them only after the Home shell has had a chance to
+  // paint, so the sidebar click responds immediately instead of appearing
+  // frozen while React constructs the whole dashboard.
+  const [homeOverviewReady, setHomeOverviewReady] = useState(false);
+  const homeNavigationStartedAt = useRef<number | null>(null);
   // Only mount a tab's content the first time the user visits it.
   // On load, only the initially-active tab mounts its heavy widgets.
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([getInitialHomeTab()]));
   const tabsHoverTimer = useRef<number | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  useEffect(() => {
+    if (active !== "home" || activeTab !== "overview") {
+      setHomeOverviewReady(false);
+      return;
+    }
+    if (homeOverviewReady) return;
+
+    // First frame paints the Home header/navigation. The second frame mounts
+    // the expensive widgets without delaying the feedback from the click.
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      if (import.meta.env.DEV && homeNavigationStartedAt.current !== null) {
+        console.info("[navigation] home-shell-painted", JSON.stringify({
+          elapsedMs: Math.round(performance.now() - homeNavigationStartedAt.current),
+        }));
+      }
+      secondFrame = window.requestAnimationFrame(() => {
+        setHomeOverviewReady(true);
+        homeNavigationStartedAt.current = null;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [active, activeTab, homeOverviewReady]);
 
   const handleTabsMouseEnter = useCallback(() => {
     if (tabsHoverTimer.current) window.clearTimeout(tabsHoverTimer.current);
@@ -879,8 +918,8 @@ const Index = () => {
       if (HOME_TAB_IDS.has(id)) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(id);
       return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(id);
     }
-    return canAccessAppSection(id, { isAdmin, canViewCards: canViewCardsModule });
-  }, [canViewCardsModule, isAdmin, profileBActive]);
+    return canAccessAppSection(id, sectionAccess);
+  }, [profileBActive, sectionAccess]);
 
   const visibleTabs = useMemo(() => orderedTabs.filter((t) => {
     // Sidebar-derived entries are allowed in the strip too (clicking one
@@ -907,6 +946,10 @@ const Index = () => {
   // strip — strip config must never veto navigation, only presentation.
   const allowedHomeTabs = useMemo(() => orderedTabs.filter((t) => {
     if (!HOME_TAB_IDS.has(t.v)) return false;
+    // Home/overview is the universal landing page. A display profile may hide
+    // its tab from the strip, but must never make the Home button redirect to
+    // another page or appear to do nothing.
+    if (t.v === "overview") return true;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
     if (!isAdmin || previewRoleId) {
       const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
@@ -965,7 +1008,7 @@ const Index = () => {
   }, [saveTabConfig]);
 
   const orderedSidebarItems: (NavItem & { visible: boolean })[] = useMemo(() => {
-    const cfg = state.sidebarConfig ?? [];
+    const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
     if (cfg.length === 0) return SIDEBAR_CHOICES.map((item) => ({ ...item, visible: true }));
 
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
@@ -1042,10 +1085,10 @@ const Index = () => {
 
   useEffect(() => {
     if (permsLoading) return;
-    if ((active === "cards" || active === "categories") && !canViewCardsModule) {
+    if (["cards", "categories", "decks", "questions"].includes(active) && !isAllowedByPermission(active)) {
       setActive("home");
     }
-  }, [active, canViewCardsModule, permsLoading]);
+  }, [active, isAllowedByPermission, permsLoading]);
 
   const handleSidebarDragEnd = useCallback((e: DragEndEvent) => {
     const { active: dragActive, over } = e;
@@ -1109,6 +1152,40 @@ const Index = () => {
   }, [promptText]);
 
   const selectSidebarItem = useCallback(async (id: string) => {
+    if (import.meta.env.DEV) {
+      console.info("[navigation] sidebar-select", JSON.stringify({
+        requestedSection: id,
+        currentSection: active,
+        currentHomeTab: activeTab,
+        location: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+      }));
+    }
+    // Home is the safe landing page for every profile. Handle it before any
+    // permission gate and clear stale deep-link parameters, otherwise a page
+    // opened through `?section=...` can appear to ignore the Home click (and
+    // will certainly reopen the old section after a refresh).
+    if (id === "home") {
+      const landingTab = "overview";
+      homeNavigationStartedAt.current = performance.now();
+      setHomeOverviewReady(false);
+      setActive("home");
+      setActiveTab(landingTab);
+      setHomeLandingTab(landingTab);
+      setVisitedTabs((s) => (s.has(landingTab) ? s : new Set(s).add(landingTab)));
+      try {
+        localStorage.setItem("active-tab", landingTab);
+        const nextLocation = getHomeLocation(window.location.href);
+        window.history.replaceState({}, "", nextLocation);
+        if (import.meta.env.DEV) {
+          console.info("[navigation] home-request-committed", JSON.stringify({
+            section: "home",
+            homeTab: landingTab,
+            location: nextLocation,
+          }));
+        }
+      } catch { /* ignore unavailable browser storage/history */ }
+      return;
+    }
     if (!isAllowedByPermission(id)) {
       toast({ title: "אין הרשאה לפתוח אזור זה", variant: "destructive" });
       return;
@@ -1117,14 +1194,8 @@ const Index = () => {
     // "בית" must return to the home overview. When the user is on a home-tab
     // (e.g. חזרות לימוד) `active` is already "home" with a sub-tab active, so
     // just setActive("home") would be a no-op — explicitly reset the tab too.
-    if (id === "home") {
-      setActive("home");
-      setActiveTab("overview");
-      setVisitedTabs((s) => (s.has("overview") ? s : new Set(s).add("overview")));
-      try { localStorage.setItem("active-tab", "overview"); } catch { /* ignore */ }
-      return;
-    }
     if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
+      setHomeLandingTab(null);
       setActive("home");
       setActiveTab(id);
       setVisitedTabs((s) => {
@@ -1135,12 +1206,25 @@ const Index = () => {
       try { localStorage.setItem("active-tab", id); } catch { /* ignore */ }
       return;
     }
+    setHomeLandingTab(null);
     setActive(id);
-  }, [isAllowedByPermission, requireSettingsAuth]);
+  }, [active, activeTab, isAllowedByPermission, requireSettingsAuth]);
 
-  const sidebarActiveId = active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
-    ? activeTab
-    : active;
+  const sidebarActiveId = active === "home" && homeLandingTab === activeTab
+    ? "home"
+    : active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
+      ? activeTab
+      : active;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.info("[navigation] state-rendered", JSON.stringify({
+      section: active,
+      homeTab: activeTab,
+      sidebarActiveId,
+      location: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    }));
+  }, [active, activeTab, sidebarActiveId]);
 
   // The branding title + top tab strip normally only appears on the "home"
   // page. Sidebar-derived pages that were added to that same strip (e.g. the
@@ -1157,6 +1241,7 @@ const Index = () => {
       <Tabs
         value={activeValue}
         onValueChange={(v) => {
+          setHomeLandingTab(null);
           if (!HOME_TAB_IDS.has(v)) {
             void selectSidebarItem(v);
             return;
@@ -1177,6 +1262,9 @@ const Index = () => {
             className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
             dir="rtl"
           >
+            {HOME_TAB_IDS.has(activeValue) && !visibleTabs.some((tab) => tab.v === activeValue) && (
+              <TabsTrigger value={activeValue} className="hidden" aria-hidden tabIndex={-1} />
+            )}
             {visibleTabs.map(({ v, l, I }) => (
               <TabsTrigger
                 key={v} value={v}
@@ -1632,9 +1720,12 @@ const Index = () => {
               <Suspense fallback={<StaticLazyPanelPreview />}>
                 <SettingsPanel />
               </Suspense>
-            ) : (active === "cards" || active === "categories") && canViewCardsModule ? (
+            ) : (["cards", "categories", "decks", "questions"].includes(active)) && isAllowedByPermission(active) ? (
               <Suspense fallback={<StaticLazyPanelPreview />}>
-                <CardsAndCategoriesPage initialTab={active === "categories" ? "categories" : undefined} />
+                <CardsAndCategoriesPage
+                  initialTab={active === "decks" ? "decks" : active === "questions" ? "questions" : "categories"}
+                  hideNavigation
+                />
               </Suspense>
             ) : active === "search" ? (
               <div className="space-y-6">
@@ -1665,6 +1756,7 @@ const Index = () => {
             <Tabs
               value={activeTab}
               onValueChange={(v) => {
+                setHomeLandingTab(null);
                 if (!HOME_TAB_IDS.has(v)) {
                   // Sidebar-derived tab — route through selectSidebarItem so
                   // gated sections (settings) still require the password.
@@ -1687,6 +1779,9 @@ const Index = () => {
                   className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
                   dir="rtl"
                 >
+                  {HOME_TAB_IDS.has(activeTab) && !visibleTabs.some((tab) => tab.v === activeTab) && (
+                    <TabsTrigger value={activeTab} className="hidden" aria-hidden tabIndex={-1} />
+                  )}
                   {visibleTabs.map(({ v, l, I }) => (
                     <TabsTrigger
                       key={v} value={v}
@@ -1706,7 +1801,7 @@ const Index = () => {
 
               <TabsContent value="overview" className="mt-6">
                 {visitedTabs.has("overview") && (
-                  <Suspense fallback={<StaticLazyPanelPreview />}>
+                  homeOverviewReady ? <Suspense fallback={<StaticLazyPanelPreview />}>
                     <WidgetGrid
                       tabId="overview"
                       widgetMap={{
@@ -1726,7 +1821,7 @@ const Index = () => {
                         "review-calendar": <ReviewCalendar />,
                       }}
                     />
-                  </Suspense>
+                  </Suspense> : <StaticLazyPanelPreview />
                 )}
               </TabsContent>
 
@@ -1750,14 +1845,6 @@ const Index = () => {
                 {visitedTabs.has("daf") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <DafLearningTab isVisible={activeTab === "daf"} />
-                  </Suspense>
-                )}
-              </TabsContent>
-
-              <TabsContent value="cards" className="mt-6" forceMount>
-                {visitedTabs.has("cards") && (
-                  <Suspense fallback={<StaticLazyPanelPreview />}>
-                    <CardsManager />
                   </Suspense>
                 )}
               </TabsContent>
@@ -1916,9 +2003,13 @@ const Index = () => {
                 variant="modal"
                 onPick={(hit) => {
                   setSearchModalOpen(false);
+                  if (hit.kind === "deck") {
+                    if (canViewDecksModule) setActive("decks");
+                    return;
+                  }
                   if (!canViewCardsModule) return;
-                  if (hit.kind === "card" || hit.kind === "deck") setActive("cards");
-                  else if (hit.kind === "category" || hit.kind === "tag") setActive("cards");
+                  if (hit.kind === "card") setActive("questions");
+                  else if (hit.kind === "category" || hit.kind === "tag") setActive("categories");
                 }}
               />
             </Suspense>

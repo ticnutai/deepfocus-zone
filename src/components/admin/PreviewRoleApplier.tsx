@@ -10,8 +10,8 @@ import { Eye, Save } from "lucide-react";
  * When the URL contains ?previewRole=<role_id>, fetches that role's saved
  * layout defaults and applies them to local store state. Sets a global flag
  * (window.__previewRoleId) so that subsequent layout edits via setSidebarConfig
- * / setWidgetLayout are redirected to role_layout_defaults instead of the
- * admin's own user_settings.
+ * / setWidgetLayout are redirected to the role's unified display profile
+ * instead of the admin's own user_settings.
  *
  * Admin-only.
  */

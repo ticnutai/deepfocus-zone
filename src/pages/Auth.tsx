@@ -50,11 +50,18 @@ async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
     ...existing,
     id: LOCAL_OFFLINE_PROFILE_ID,
     label: "עבודה מקומית (אופליין)",
+    roleId: LOCAL_OFFLINE_PROFILE_ID,
+    roleName: "local",
     // Local mode can fully operate on study data, but intentionally receives
     // no cloud administration permissions (users/roles).
     isAdmin: false,
     roles: [{ id: LOCAL_OFFLINE_PROFILE_ID, name: "local" }],
     matrix: LOCAL_OFFLINE_MATRIX,
+    // Do not retain legacy admin-shaped presentation snapshots. Display is
+    // resolved independently from the synthetic local role.
+    sidebarConfig: undefined,
+    tabConfig: undefined,
+    widgetLayout: undefined,
     studySeed: bundledLibrary?.seed,
   });
 }

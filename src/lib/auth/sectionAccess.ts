@@ -17,9 +17,14 @@ const ADMIN_ONLY_SECTION_IDS = new Set([
 const CARDS_PERMISSION_SECTION_IDS = new Set([
   "cards",
   "categories",
-  "decks",
   "questions",
 ]);
+
+const DECKS_PERMISSION_SECTION_IDS = new Set(["decks"]);
+const GOALS_PERMISSION_SECTION_IDS = new Set(["goals"]);
+const SHAS_PERMISSION_SECTION_IDS = new Set(["shas-board"]);
+const ANALYTICS_PERMISSION_SECTION_IDS = new Set(["analytics", "summary"]);
+const SETTINGS_PERMISSION_SECTION_IDS = new Set(["settings"]);
 
 const STANDARD_USER_SECTION_IDS = new Set([
   "home",
@@ -53,14 +58,31 @@ const STANDARD_USER_SECTION_IDS = new Set([
 export type SectionAccessContext = {
   isAdmin: boolean;
   canViewCards: boolean;
+  canViewDecks: boolean;
+  canViewGoals: boolean;
+  canViewShas: boolean;
+  canViewAnalytics: boolean;
+  canViewSettings: boolean;
 };
 
 export function canAccessAppSection(
   sectionId: string,
-  { isAdmin, canViewCards }: SectionAccessContext,
+  {
+    isAdmin,
+    canViewCards,
+    canViewDecks,
+    canViewGoals,
+    canViewShas,
+    canViewAnalytics,
+    canViewSettings,
+  }: SectionAccessContext,
 ): boolean {
   if (ADMIN_ONLY_SECTION_IDS.has(sectionId)) return isAdmin;
   if (CARDS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewCards;
+  if (DECKS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewDecks;
+  if (GOALS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewGoals;
+  if (SHAS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewShas;
+  if (ANALYTICS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewAnalytics;
+  if (SETTINGS_PERMISSION_SECTION_IDS.has(sectionId)) return canViewSettings;
   return STANDARD_USER_SECTION_IDS.has(sectionId);
 }
-

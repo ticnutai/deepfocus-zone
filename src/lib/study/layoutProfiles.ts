@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
+import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
 
 export type LayoutScope = "desktop" | "mobile";
 
@@ -13,6 +14,11 @@ export interface LayoutProfileCategory {
 export interface RoleLayoutProfile {
   id: string;
   name: string;
+  /**
+   * Action permissions owned by this profile. Page visibility owns `view`;
+   * these switches describe what may be done after the page is visible.
+   */
+  actionPermissions?: Record<string, Record<string, boolean>>;
   widgetLayout: WidgetLayout;
   sidebarConfig: SidebarConfig[];
   categoryTemplate: LayoutProfileCategory[];
@@ -53,6 +59,7 @@ const uuid = () => (typeof crypto !== "undefined" && crypto.randomUUID
 const normalizeProfile = (item: unknown): RoleLayoutProfile | null => {
   if (!item || typeof item !== "object") return null;
   const raw = item as Partial<RoleLayoutProfile> & {
+    actionPermissions?: unknown;
     widgetLayout?: unknown;
     sidebarConfig?: unknown;
     categoryTemplate?: unknown;
@@ -60,10 +67,15 @@ const normalizeProfile = (item: unknown): RoleLayoutProfile | null => {
   return {
     id: typeof raw.id === "string" ? raw.id : uuid(),
     name: typeof raw.name === "string" ? raw.name : "ללא שם",
+    actionPermissions: raw.actionPermissions && typeof raw.actionPermissions === "object" && !Array.isArray(raw.actionPermissions)
+      ? (raw.actionPermissions as Record<string, Record<string, boolean>>)
+      : {},
     widgetLayout: (raw.widgetLayout && typeof raw.widgetLayout === "object" && !Array.isArray(raw.widgetLayout))
       ? (raw.widgetLayout as WidgetLayout)
       : {},
-    sidebarConfig: Array.isArray(raw.sidebarConfig) ? (raw.sidebarConfig as SidebarConfig[]) : [],
+    sidebarConfig: Array.isArray(raw.sidebarConfig)
+      ? normalizeSplitWorkspaceSidebarConfig(raw.sidebarConfig as SidebarConfig[])
+      : [],
     categoryTemplate: Array.isArray(raw.categoryTemplate) ? (raw.categoryTemplate as LayoutProfileCategory[]) : [],
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
   };

@@ -8,6 +8,37 @@ const fs = require("fs");
 const isDev = process.env.ELECTRON_DEV === "1";
 const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:5000";
 
+if (process.env.ELECTRON_E2E_HOME_REPORT) {
+  fs.writeFileSync(`${process.env.ELECTRON_E2E_HOME_REPORT}.startup`, JSON.stringify({
+    startedAt: new Date().toISOString(),
+    isDev,
+    devUrl: DEV_URL,
+    pid: process.pid,
+  }, null, 2), "utf8");
+}
+
+function traceE2E(stage, details = {}) {
+  const reportPath = process.env.ELECTRON_E2E_HOME_REPORT;
+  if (!reportPath) return;
+  fs.appendFileSync(`${reportPath}.startup`, `\n${JSON.stringify({ stage, at: new Date().toISOString(), ...details })}`, "utf8");
+}
+
+function logElectron(stage, details = {}) {
+  try {
+    const logPath = path.join(app.getPath("logs"), "electron-main.log");
+    fs.appendFileSync(logPath, `${JSON.stringify({ stage, at: new Date().toISOString(), ...details })}\n`, "utf8");
+  } catch {
+    // Diagnostics must never be able to crash the desktop application.
+  }
+}
+
+// Opt-in CDP endpoint for automated development checks. It is never enabled
+// in an installed production build unless the environment variable is set.
+if (isDev && process.env.ELECTRON_DEBUG_PORT) {
+  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+  app.commandLine.appendSwitch("remote-debugging-port", process.env.ELECTRON_DEBUG_PORT);
+}
+
 // ---------------------------------------------------------------------------
 // shas:// — offline access to the bundled Shas library (public/shas → dist/shas).
 // The renderer is loaded via file://, where fetch() cannot read local JSON, so
@@ -105,7 +136,130 @@ function configureAutoUpdater() {
   });
 }
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runHomeNavigationE2E(window) {
+  const reportPath = process.env.ELECTRON_E2E_HOME_REPORT;
+  if (!isDev || !reportPath) return;
+  traceE2E("e2e-start");
+
+  const report = {
+    startedAt: new Date().toISOString(),
+    devUrl: DEV_URL,
+    steps: [],
+    console: [],
+    passed: false,
+  };
+
+  const debuggerClient = window.webContents.debugger;
+  // Keep CDP attached for renderer console collection. Electron's
+  // webContents execution bridge is more reliable than Runtime.evaluate on
+  // some Windows/Electron combinations while exercising the same renderer.
+  const evaluate = (expression) => window.webContents.executeJavaScript(expression, true);
+
+  try {
+    if (process.env.ELECTRON_E2E_NO_CDP !== "1") {
+      traceE2E("debugger-attach-start");
+      if (!debuggerClient.isAttached()) debuggerClient.attach("1.3");
+      traceE2E("debugger-attached");
+      debuggerClient.on("message", (_event, method, params) => {
+        if (method !== "Runtime.consoleAPICalled") return;
+        const values = (params.args ?? []).map((arg) => arg.value ?? arg.description ?? "");
+        const line = values.map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ");
+        if (line.includes("[navigation]")) report.console.push(line);
+      });
+      await debuggerClient.sendCommand("Runtime.enable");
+      traceE2E("runtime-enabled");
+    }
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const ready = await evaluate(`document.readyState === "complete" && document.body.innerText.length > 100`);
+      if (ready) break;
+      await delay(250);
+    }
+
+    const initial = await evaluate(`({
+      location: location.href,
+      title: document.title,
+      text: document.body.innerText.slice(0, 300)
+    })`);
+    report.steps.push({ name: "initial", result: initial });
+
+    const openedDecks = await evaluate(`(() => {
+      const buttons = [...document.querySelectorAll("nav button")];
+      const target = buttons.find((button) => button.textContent.trim() === "יצירת מבחנים");
+      if (!target) return { clicked: false, available: buttons.map((button) => button.textContent.trim()) };
+      target.click();
+      return { clicked: true, label: target.textContent.trim() };
+    })()`);
+    report.steps.push({ name: "click-decks", result: openedDecks });
+    await delay(800);
+
+    const deckScreen = await evaluate(`({
+      location: location.href,
+      hasDeckHeading: document.body.innerText.includes("יצירת מבחנים"),
+      activeNavigation: [...document.querySelectorAll("nav button")]
+        .filter((button) => button.className.includes("text-primary-foreground"))
+        .map((button) => button.textContent.trim())
+    })`);
+    report.steps.push({ name: "decks-rendered", result: deckScreen });
+
+    const dismissedGuide = await evaluate(`(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      if (!dialog) return false;
+      const close = [...dialog.querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === 'Close' || button.getAttribute('aria-label') === 'Close');
+      if (!close) return false;
+      close.click();
+      return true;
+    })()`);
+    report.steps.push({ name: "dismiss-guide-if-open", result: dismissedGuide });
+    if (dismissedGuide) await delay(350);
+
+    const clickedHome = await evaluate(`(() => {
+      const buttons = [...document.querySelectorAll("nav button")];
+      const target = buttons.find((button) => button.textContent.trim() === "בית");
+      if (!target) return { clicked: false, available: buttons.map((button) => button.textContent.trim()) };
+      target.click();
+      return { clicked: true, label: target.textContent.trim() };
+    })()`);
+    report.steps.push({ name: "click-home", result: clickedHome });
+    await delay(1000);
+
+    const finalState = await evaluate(`(() => {
+      const bodyText = document.body.innerText;
+      return {
+        location: location.href,
+        hasHomeTitle: bodyText.includes("למען תהיה תורת ה' בפיך"),
+        selectedHomeTab: [...document.querySelectorAll('[role="tab"][data-state="active"]')]
+          .map((tab) => tab.textContent.trim()),
+        activeNavigation: [...document.querySelectorAll("nav button")]
+          .filter((button) => button.className.includes("text-primary-foreground"))
+          .map((button) => button.textContent.trim()),
+        visibleUuids: bodyText.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/ig) ?? []
+      };
+    })()`);
+    report.steps.push({ name: "home-rendered", result: finalState });
+    report.passed = Boolean(
+      openedDecks?.clicked
+      && deckScreen?.hasDeckHeading
+      && clickedHome?.clicked
+      && finalState?.hasHomeTitle
+      && finalState?.activeNavigation?.includes("בית")
+      && finalState?.visibleUuids?.length === 0
+    );
+  } catch (error) {
+    report.error = error?.stack || error?.message || String(error);
+  } finally {
+    report.finishedAt = new Date().toISOString();
+    await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+    traceE2E("e2e-finished", { passed: report.passed, reportPath });
+    if (process.env.ELECTRON_E2E_EXIT === "1") app.quit();
+  }
+}
+
 function createWindow() {
+  traceE2E("create-window");
   const appIconPath = path.join(__dirname, "build", "icon.png");
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -128,32 +282,49 @@ function createWindow() {
   // Hide native menu in production (keep DevTools shortcut available in dev)
   if (!isDev) Menu.setApplicationMenu(null);
 
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    logElectron("did-fail-load", { code, desc, url });
+  });
+  mainWindow.webContents.on("render-process-gone", (_e, details) => {
+    logElectron("render-process-gone", details);
+  });
+  // Register all diagnostics and E2E listeners before navigation starts.
+  // localhost can finish loading quickly enough that attaching afterwards
+  // intermittently misses did-finish-load and produces no test report.
   if (isDev) {
-    mainWindow.loadURL(DEV_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    traceE2E("load-url-start", { url: DEV_URL });
+    const loadPromise = mainWindow.loadURL(DEV_URL);
+    if (process.env.ELECTRON_E2E_HOME_REPORT) {
+      void loadPromise
+        .then(() => {
+          traceE2E("load-url-complete");
+          return runHomeNavigationE2E(mainWindow);
+        })
+        .catch((error) => logElectron("e2e-load-failed", { message: error?.message || String(error) }));
+    }
+    // A detached DevTools window is convenient for manual development, but
+    // automated CDP checks do not need a second window.
+    if (!process.env.ELECTRON_DEBUG_PORT && !process.env.ELECTRON_E2E_HOME_REPORT && process.env.ELECTRON_NO_DEVTOOLS !== "1") {
+      mainWindow.webContents.openDevTools({ mode: "detach" });
+    }
   } else {
     // Web build is emitted to ../dist relative to this file
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    const loadPromise = mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    if (process.env.ELECTRON_E2E_HOME_REPORT) {
+      void loadPromise
+        .then(() => runHomeNavigationE2E(mainWindow))
+        .catch((error) => logElectron("e2e-load-failed", { message: error?.message || String(error) }));
+    }
     if (process.env.ELECTRON_DEBUG === "1") {
       mainWindow.webContents.openDevTools({ mode: "detach" });
     }
   }
 
-  mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
-    console.error("[electron] did-fail-load", { code, desc, url });
-  });
-  mainWindow.webContents.on("render-process-gone", (_e, details) => {
-    console.error("[electron] render-process-gone", details);
-  });
-  mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {
-    console.log(`[renderer:${level}] ${message}  (${sourceId}:${line})`);
-  });
-
   // Hard guard: never allow the renderer to navigate away from our local file.
   // Any external URL (http/https) opens in the system browser instead, which
   // prevents OAuth or stray links from turning the window black.
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    const isInternal = url.startsWith("file://");
+    const isInternal = url.startsWith("file://") || (isDev && url.startsWith(DEV_URL));
     if (!isInternal) {
       event.preventDefault();
       shell.openExternal(url);
@@ -178,6 +349,7 @@ function createWindow() {
 
 // Single-instance lock so users don't accidentally launch multiple copies
 const gotLock = app.requestSingleInstanceLock();
+traceE2E("single-instance-lock", { gotLock });
 if (!gotLock) {
   app.quit();
 } else {
@@ -189,6 +361,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    traceE2E("app-ready");
     registerShasProtocol();
     configureAutoUpdater();
     createWindow();

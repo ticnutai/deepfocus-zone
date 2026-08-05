@@ -1,6 +1,6 @@
 import {
   LOCAL_OFFLINE_PROFILE_ID,
-  sanitizeLocalOfflineProfile,
+  sanitizeGuestViewProfile,
   type GuestViewProfile,
 } from "@/lib/auth/guestViewProfile";
 
@@ -25,20 +25,14 @@ export function resolvePublishedPermissions(
   // profiles are presentation presets, not authentication identities.
   if (!guestProfile) return { isAdmin: false, matrix: {}, roles: [] };
   if (guestProfile.id === LOCAL_OFFLINE_PROFILE_ID) {
-    const safe = sanitizeLocalOfflineProfile(guestProfile);
+    const safe = sanitizeGuestViewProfile(guestProfile);
     return { isAdmin: false, matrix: safe.matrix, roles: safe.roles };
   }
 
-  const safeMatrix = Object.fromEntries(
-    Object.entries(guestProfile.matrix ?? {}).filter(([key, allowed]) => {
-      if (!allowed) return false;
-      const [module, action] = key.split(":");
-      return module !== "users" && module !== "roles" && action !== "manage";
-    }),
-  );
+  const safe = sanitizeGuestViewProfile(guestProfile);
   return {
     isAdmin: false,
-    matrix: safeMatrix,
-    roles: (guestProfile.roles ?? []).filter((role) => role.name !== "admin"),
+    matrix: safe.matrix,
+    roles: safe.roles,
   };
 }

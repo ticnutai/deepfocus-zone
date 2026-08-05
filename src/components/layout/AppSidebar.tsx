@@ -33,6 +33,7 @@ import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 import { usePrompt } from "@/hooks/usePrompt";
 import { toast } from "@/hooks/use-toast";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
+import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },
@@ -258,7 +259,15 @@ export function AppShellSidebar() {
     [previewRoleId, roles],
   );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
-  const canViewCards = isAdmin || can("cards", "view");
+  const sectionAccess = useMemo(() => ({
+    isAdmin,
+    canViewCards: isAdmin || can("cards", "view"),
+    canViewDecks: isAdmin || can("decks", "view"),
+    canViewGoals: isAdmin || can("goals", "view"),
+    canViewShas: isAdmin || can("shas", "view"),
+    canViewAnalytics: isAdmin || can("analytics", "view"),
+    canViewSettings: isAdmin || can("settings", "view"),
+  }), [can, isAdmin]);
 
   const activeId = useMemo(() => {
     const s = new URLSearchParams(search).get("section");
@@ -277,7 +286,7 @@ export function AppShellSidebar() {
   const sidebarVisible = pinned || hovered;
 
   const orderedItems = useMemo(() => {
-    const cfg = state.sidebarConfig ?? [];
+    const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
     if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS.map((item) => ({ ...item, visible: true }));
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const used = new Set<string>();
@@ -294,13 +303,13 @@ export function AppShellSidebar() {
     }
     const blockedSet = new Set(blocklist.sections ?? []);
     return result
-      .filter((i) => canAccessAppSection(i.id, { isAdmin, canViewCards }))
+      .filter((i) => canAccessAppSection(i.id, sectionAccess))
       .filter((i) => (isAdmin && !previewRoleId) || !blockedSet.has(i.id));
-  }, [state.sidebarConfig, isAdmin, canViewCards, previewRoleId, blocklist]);
+  }, [state.sidebarConfig, isAdmin, previewRoleId, blocklist, sectionAccess]);
 
   const allowedRouteItems = useMemo(
-    () => ROUTE_ITEMS.filter((item) => canAccessAppSection(item.id, { isAdmin, canViewCards })),
-    [isAdmin, canViewCards],
+    () => ROUTE_ITEMS.filter((item) => canAccessAppSection(item.id, sectionAccess)),
+    [sectionAccess],
   );
 
   const SETTINGS_PW = "543211";
@@ -325,7 +334,7 @@ export function AppShellSidebar() {
   };
 
   const goSection = async (id: string) => {
-    if (!canAccessAppSection(id, { isAdmin, canViewCards })) {
+    if (!canAccessAppSection(id, sectionAccess)) {
       toast({ title: "אין הרשאה לפתוח אזור זה", variant: "destructive" });
       return;
     }

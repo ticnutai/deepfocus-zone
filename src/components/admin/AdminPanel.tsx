@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, ListChecks, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library } from "lucide-react";
+import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
-import { PermissionsMatrix } from "./PermissionsMatrix";
 import { ApprovalTab } from "./ApprovalTab";
 import { UserPermOverrides } from "./UserPermOverrides";
 import { SyncMonitorTab } from "./SyncMonitorTab";
@@ -92,9 +91,6 @@ export function AdminPanel() {
             <TabsTrigger value="roles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תפקידים</span><Layers className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="matrix" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>מטריצת תפקיד</span><ListChecks className="h-4 w-4" />
-            </TabsTrigger>
             <TabsTrigger value="overrides" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>הרשאות אישיות</span><UserCog className="h-4 w-4" />
             </TabsTrigger>
@@ -102,7 +98,7 @@ export function AdminPanel() {
               <span>ניטור סנכרון</span><Activity className="h-4 w-4" />
             </TabsTrigger>
             <TabsTrigger value="defaults" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>פרופילי תצוגה</span><LayoutDashboard className="h-4 w-4" />
+              <span>הרשאות ותצוגה</span><LayoutDashboard className="h-4 w-4" />
             </TabsTrigger>
             <TabsTrigger value="preview" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תצוגה מקדימה</span><Monitor className="h-4 w-4" />
@@ -120,7 +116,6 @@ export function AdminPanel() {
         <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
         <TabsContent value="approval" className="mt-4"><ApprovalTab /></TabsContent>
         <TabsContent value="roles" className="mt-4"><RolesTab /></TabsContent>
-        <TabsContent value="matrix" className="mt-4"><PermissionsMatrix /></TabsContent>
         <TabsContent value="overrides" className="mt-4"><UserPermOverrides /></TabsContent>
         <TabsContent value="sync-monitor" className="mt-4"><SyncMonitorTab /></TabsContent>
         <TabsContent value="defaults" className="mt-4"><RoleDefaultsTab /></TabsContent>

@@ -26,6 +26,12 @@ import {
   saveRoleLayoutProfiles,
   type LayoutScope,
 } from "./layoutProfiles";
+import {
+  loadFeatureBlocklistProfiles,
+  loadRoleBlocklistAssignments,
+  saveFeatureBlocklistProfiles,
+  saveRoleBlocklistAssignments,
+} from "./featureBlocklist";
 import { supabase } from "@/integrations/supabase/client";
 import { loadBundledOfflineLibrary } from "./offlineLibrary";
 
@@ -4759,37 +4765,24 @@ export function useStudy() {
     scope: LayoutScope,
     patch: { sidebar?: SidebarConfig[]; layout?: WidgetLayout },
   ) => {
-    const currentUid = (await supabase.auth.getUser()).data.user?.id ?? null;
-    if (scope === "desktop") {
-      const payload: Record<string, unknown> = {
-        role_id: roleId,
-        updated_by: currentUid,
-        updated_at: new Date().toISOString(),
-      };
-      if (patch.sidebar) payload.sidebar_config = patch.sidebar as unknown as Json;
-      if (patch.layout) payload.widget_layout = patch.layout as unknown as Json;
-      const { error } = await supabase.from("role_layout_defaults").upsert(
-        [payload as never],
-        { onConflict: "role_id" },
-      );
-      if (error) throw error;
-      return;
-    }
-
-    const [profiles, assignments] = await Promise.all([
-      loadRoleLayoutProfiles({ scope: "mobile" }),
-      loadRoleLayoutProfileAssignments({ scope: "mobile" }),
+    const [profiles, assignments, blockProfiles, blockAssignments] = await Promise.all([
+      loadRoleLayoutProfiles({ scope }),
+      loadRoleLayoutProfileAssignments({ scope }),
+      loadFeatureBlocklistProfiles({ scope }),
+      loadRoleBlocklistAssignments({ scope }),
     ]);
 
     const existingAssignment = assignments.find((row) => row.roleId === roleId) ?? null;
-    const profileId = existingAssignment?.profileId ?? uid();
+    const existingBlockAssignment = blockAssignments.find((row) => row.roleId === roleId) ?? null;
+    const profileId = existingAssignment?.profileId ?? existingBlockAssignment?.profileId ?? uid();
     const existingProfile = profiles.find((row) => row.id === profileId) ?? null;
+    const existingBlockProfile = blockProfiles.find((row) => row.id === profileId) ?? null;
 
     const nextProfiles = [
       ...profiles.filter((row) => row.id !== profileId),
       {
         id: profileId,
-        name: existingProfile?.name ?? `פריסת מובייל · ${roleId.slice(0, 6)}`,
+        name: existingProfile?.name ?? `תצוגת תפקיד · ${roleId.slice(0, 6)}`,
         widgetLayout: patch.layout ?? existingProfile?.widgetLayout ?? {},
         sidebarConfig: patch.sidebar ?? existingProfile?.sidebarConfig ?? [],
         categoryTemplate: existingProfile?.categoryTemplate ?? [],
@@ -4797,13 +4790,29 @@ export function useStudy() {
       },
     ];
 
-    const nextAssignments = existingAssignment
-      ? assignments
-      : [...assignments, { id: uid(), roleId, profileId }];
+    const nextAssignments = [
+      ...assignments.filter((row) => row.roleId !== roleId),
+      { id: existingAssignment?.id ?? uid(), roleId, profileId },
+    ];
+    const nextBlockProfiles = existingBlockProfile
+      ? blockProfiles
+      : [...blockProfiles, {
+          id: profileId,
+          name: existingProfile?.name ?? `תצוגת תפקיד · ${roleId.slice(0, 6)}`,
+          blocklist: { sections: [], widgets: {} },
+          updatedAt: Date.now(),
+        }];
+    const nextBlockAssignments = [
+      ...blockAssignments.filter((row) => row.roleId !== roleId),
+      { id: existingBlockAssignment?.id ?? uid(), roleId, profileId },
+    ];
 
     await Promise.all([
-      saveRoleLayoutProfiles(nextProfiles, { scope: "mobile" }),
-      saveRoleLayoutProfileAssignments(nextAssignments, { scope: "mobile" }),
+      saveRoleLayoutProfiles(nextProfiles, { scope }),
+      saveRoleLayoutProfileAssignments(nextAssignments, { scope }),
+      saveFeatureBlocklistProfiles(nextBlockProfiles, { scope }),
+      saveRoleBlocklistAssignments(nextBlockAssignments, { scope }),
+      ...(scope === "desktop" ? [supabase.from("role_layout_defaults").delete().eq("role_id", roleId)] : []),
     ]);
   }, []);
 
@@ -4848,7 +4857,8 @@ export function useStudy() {
       ? ((window as unknown as { __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope ?? "desktop")
       : "desktop";
     if (previewRoleId) {
-      // Preview mode: redirect save to role_layout_defaults; do NOT touch admin's personal cache/settings.
+      // Preview mode: redirect save to the same unified profile used by the
+      // admin editor; do NOT touch the administrator's personal settings.
       void (async () => {
         const { error } = await (async () => {
           try {

@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { LOCAL_OFFLINE_PROFILE_ID, sanitizeLocalOfflineProfile } from "@/lib/auth/guestViewProfile";
 import { resolvePublishedPermissions } from "@/lib/auth/localPermissionBoundary";
 
 export type PermissionModule = "decks" | "cards" | "goals" | "shas" | "analytics" | "users" | "roles" | "settings";
@@ -84,19 +83,6 @@ async function fetchRoleMatrix(roleIds: string[]): Promise<Record<string, boolea
   return matrix;
 }
 
-async function fetchSingleRoleMatrix(roleId: string): Promise<Record<string, boolean>> {
-  const matrix: Record<string, boolean> = {};
-  const { data: rp } = await supabase
-    .from("role_permissions")
-    .select("module, action, allowed")
-    .eq("role_id", roleId);
-  ((rp ?? []) as unknown as RolePermRow[]).forEach((row) => {
-    const key = `${row.module}:${row.action}`;
-    if (row.allowed) matrix[key] = true;
-  });
-  return matrix;
-}
-
 async function fetchPerms(userId: string, opts?: { deferMatrix?: boolean; seedMatrix?: Record<string, boolean> }): Promise<PermSet> {
   const rolesData = await fetchUserRoles(userId);
   if (rolesData.isAdmin || !rolesData.roleIds.length) {
@@ -133,39 +119,10 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const safeGuestProfile = guestProfile.id === LOCAL_OFFLINE_PROFILE_ID
-        ? sanitizeLocalOfflineProfile(guestProfile)
-        : guestProfile;
-      const fallback: PermSet = {
-        isAdmin: !!safeGuestProfile.isAdmin,
-        matrix: safeGuestProfile.matrix ?? {},
-        roles: safeGuestProfile.roles ?? [],
-      };
-      setPerms(fallback);
-
-      if (safeGuestProfile.roleId) {
-        try {
-          const [matrix, roleData] = await Promise.all([
-            fetchSingleRoleMatrix(safeGuestProfile.roleId),
-            supabase.from("app_roles").select("id,name").eq("id", safeGuestProfile.roleId).maybeSingle(),
-          ]);
-
-          const roleName = roleData.data?.name ?? safeGuestProfile.roleName ?? safeGuestProfile.roles?.[0]?.name ?? "role";
-          const mergedMatrix: Record<string, boolean> = { ...(safeGuestProfile.matrix ?? {}) };
-          Object.entries(matrix).forEach(([key, allowed]) => {
-            if (allowed) mergedMatrix[key] = true;
-          });
-          const live: PermSet = {
-            isAdmin: roleName === "admin" || !!safeGuestProfile.isAdmin,
-            matrix: mergedMatrix,
-            roles: [{ id: safeGuestProfile.roleId, name: roleName }],
-          };
-          setPerms(live);
-        } catch {
-          // Keep snapshot fallback when offline / DB unavailable.
-          setPerms(fallback);
-        }
-      }
+      // Guest/local mode never resolves a live cloud role. A guest profile is
+      // only a presentation/content preset; its published permission snapshot
+      // is clamped by the central non-admin boundary.
+      setPerms(resolvePublishedPermissions(empty, true, guestProfile));
 
       setLoading(false);
       return;
