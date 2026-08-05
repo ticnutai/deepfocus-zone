@@ -15,13 +15,40 @@ type CatIndex = {
 };
 
 const _indexCache = new WeakMap<Category[], Map<string, CatIndex>>();
+const EMPTY_CATEGORIES: Category[] = [];
+
+// Study state replaces its arrays on every data change, so array identity is a
+// safe and very cheap cache boundary. Page pickers often ask for dozens of
+// adjacent pages in succession; without this cache every click rescanned the
+// complete card library.
+const _filterCache = new WeakMap<Card[], WeakMap<Category[], Map<string, Card[]>>>();
+const _countCache = new WeakMap<Card[], WeakMap<Category[], Map<string, Map<number, { a: number; b: number; total: number }>>>>();
+
+function getReferenceCache<T>(
+  root: WeakMap<Card[], WeakMap<Category[], Map<string, T>>>,
+  cards: Card[],
+  categories: Category[] | undefined,
+): Map<string, T> {
+  let byCategories = root.get(cards);
+  if (!byCategories) {
+    byCategories = new WeakMap();
+    root.set(cards, byCategories);
+  }
+  const categoryRef = categories ?? EMPTY_CATEGORIES;
+  let values = byCategories.get(categoryRef);
+  if (!values) {
+    values = new Map();
+    byCategories.set(categoryRef, values);
+  }
+  return values;
+}
 
 function buildCatIndex(
   categories: Category[] | undefined,
   masechta: string,
   totalPages: number,
 ): CatIndex {
-  const cats = categories ?? [];
+  const cats = categories ?? EMPTY_CATEGORIES;
   let perCats = _indexCache.get(cats);
   if (!perCats) {
     perCats = new Map();
@@ -85,35 +112,39 @@ export function filterCardsByDafAmud(
   daf: number,
   amud: 1 | 2 | null,
 ): Card[] {
+  const resultCache = getReferenceCache(_filterCache, cards, categories);
+  const resultKey = `${masechta}::${daf}::${amud ?? 0}`;
+  const cachedResult = resultCache.get(resultKey);
+  if (cachedResult) return cachedResult;
+
   const totalPagesHint = Math.max(daf + 1, 200);
   const idx = buildCatIndex(categories, masechta, totalPagesHint);
-
-  const matches = (hits: CatHit[] | undefined): boolean => {
-    if (!hits) return false;
-    for (const h of hits) {
-      if (h.daf !== daf) continue;
-      if (!amud) return true;
-      if (h.amud === 0 || h.amud === amud) return true;
-    }
-    return false;
-  };
+  const matchingCategoryPayloads = new Set<string>();
+  const matchesTarget = (hits: CatHit[]) => hits.some((hit) => (
+    hit.daf === daf && (!amud || hit.amud === 0 || hit.amud === amud)
+  ));
+  for (const [payload, hits] of idx.byName) {
+    if (matchesTarget(hits)) matchingCategoryPayloads.add(payload);
+  }
+  for (const [payload, hits] of idx.byId) {
+    if (matchesTarget(hits)) matchingCategoryPayloads.add(payload);
+  }
 
   const out: Card[] = [];
-  for (const c of cards) {
-    if (c.masechta === masechta && c.daf === daf) {
-      if (!amud || !c.amud || c.amud === amud) { out.push(c); continue; }
+  for (const card of cards) {
+    if (card.masechta === masechta && card.daf === daf
+      && (!amud || !card.amud || card.amud === amud)) {
+      out.push(card);
+      continue;
     }
-    const tags = c.tags;
-    if (!tags || tags.length === 0) continue;
-    for (const t of tags) {
-      if (!t.startsWith("cat:")) continue;
-      const payload = t.slice(4);
-      if (matches(idx.byName.get(payload)) || matches(idx.byId.get(payload))) {
-        out.push(c);
+    for (const tag of card.tags ?? []) {
+      if (tag.startsWith("cat:") && matchingCategoryPayloads.has(tag.slice(4))) {
+        out.push(card);
         break;
       }
     }
   }
+  resultCache.set(resultKey, out);
   return out;
 }
 
@@ -124,6 +155,11 @@ export function countCardsPerDaf(
   masechta: string,
   totalPages: number,
 ): Map<number, { a: number; b: number; total: number }> {
+  const resultCache = getReferenceCache(_countCache, cards, categories);
+  const resultKey = `${masechta}::${totalPages}`;
+  const cachedResult = resultCache.get(resultKey);
+  if (cachedResult) return cachedResult;
+
   const out = new Map<number, { a: number; b: number; total: number }>();
   const idx = buildCatIndex(categories, masechta, totalPages);
 
@@ -171,5 +207,6 @@ export function countCardsPerDaf(
   for (const [d, c] of Array.from(out.entries())) {
     if (c.total === 0) out.delete(d);
   }
+  resultCache.set(resultKey, out);
   return out;
 }

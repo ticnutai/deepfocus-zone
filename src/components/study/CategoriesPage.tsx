@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, lazy, Suspense, memo } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, memo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   FolderTree,
   BookOpen,
@@ -322,6 +323,22 @@ function CategoriesPage() {
     return arr;
   }, [rawCategoryCards, sortMode]);
 
+  // Some classification points contain hundreds or thousands of questions.
+  // Keep only the visible rows mounted so opening, sorting and scrolling the
+  // category stays responsive regardless of its size.
+  const cardsScrollRef = useRef<HTMLDivElement>(null);
+  const cardsVirtualizer = useVirtualizer({
+    count: filteredCards.length,
+    getScrollElement: () => cardsScrollRef.current,
+    estimateSize: () => 142,
+    overscan: 6,
+    gap: 8,
+  });
+
+  useEffect(() => {
+    cardsScrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedCategory, sortMode]);
+
   const defaultDeckId = state.decks[0]?.id ?? null;
   const getDeck = (deckId: string) => state.decks.find((d) => d.id === deckId);
 
@@ -580,8 +597,13 @@ function CategoriesPage() {
 
       {/* Card list */}
       {isClassificationPoint && filteredCards.length > 0 && (
-        <div className="space-y-2 max-h-[560px] overflow-y-auto">
-          {filteredCards.map((card) => {
+        <div ref={cardsScrollRef} className="max-h-[560px] overflow-y-auto">
+          <div
+            className="relative w-full"
+            style={{ height: `${cardsVirtualizer.getTotalSize()}px` }}
+          >
+          {cardsVirtualizer.getVirtualItems().map((virtualRow) => {
+            const card = filteredCards[virtualRow.index];
             const deck = getDeck(card.deckId);
             const diffTag = card.tags.find((t) => t.startsWith("diff:"));
             const diffLevel = diffTag ? parseInt(diffTag.split(":")[1]) : 0;
@@ -596,10 +618,13 @@ function CategoriesPage() {
             return (
               <div
                 key={card.id}
+                ref={cardsVirtualizer.measureElement}
+                data-index={virtualRow.index}
                 className={cn(
-                  "rounded-xl border-2 bg-card p-3 space-y-1.5 hover:border-gold/60 transition-colors",
+                  "absolute left-0 top-0 w-full rounded-xl border-2 bg-card p-3 space-y-1.5 hover:border-gold/60 transition-colors",
                   isPinned ? "border-gold/80 bg-gold/5" : "border-gold/30",
                 )}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
                 <div className="flex items-start justify-between gap-2">
                   {/* action buttons */}
@@ -774,6 +799,7 @@ function CategoriesPage() {
               </div>
             );
           })}
+          </div>
         </div>
       )}
     </Card>
