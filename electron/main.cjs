@@ -96,7 +96,11 @@ function configureAutoUpdater() {
     }
   });
   ipcMain.handle("updater:install", () => {
-    autoUpdater.quitAndInstall(false, true);
+    // NSIS is configured as an assisted installer (oneClick=false). Updates
+    // must therefore be launched silently, otherwise the updater closes the
+    // app and leaves an invisible/waiting setup wizard in unattended or VM
+    // environments.
+    autoUpdater.quitAndInstall(true, true);
     return { ok: true };
   });
 }
