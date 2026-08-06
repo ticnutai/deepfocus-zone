@@ -111,6 +111,8 @@ const SidebarContent = ({
       return (
         <button
           key={item.id}
+          data-sidebar-id={item.id}
+          data-sidebar-label={item.label}
           onClick={() => onSelect(item.id)}
           className={cn(
             "flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",

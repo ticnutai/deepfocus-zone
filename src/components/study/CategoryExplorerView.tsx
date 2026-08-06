@@ -69,6 +69,24 @@ type IconSize = "sm" | "md" | "lg";
 type SortKey = "manual" | "name" | "created" | "count" | "mastery";
 type GlobalCategorySortMode = "name" | "createdNew" | "createdOld" | "favorites" | "manual";
 
+// CategoryExplorerView is unmounted when navigating away. Keep the expensive
+// card-to-category index at module scope so revisiting the tab reuses it as
+// long as the underlying store arrays have not changed.
+let directCardsCache: {
+  cards: StudyCard[] | null;
+  categories: Category[] | null;
+  value: Map<string, StudyCard[]>;
+} = { cards: null, categories: null, value: new Map() };
+
+function sameItems<T>(previous: T[] | null, current: T[]): boolean {
+  if (previous === current) return true;
+  if (!previous || previous.length !== current.length) return false;
+  for (let index = 0; index < current.length; index += 1) {
+    if (previous[index] !== current[index]) return false;
+  }
+  return true;
+}
+
 function mapGlobalSortToExplorer(mode: GlobalCategorySortMode): Pick<ExplorerPrefs, "sortKey" | "sortDesc" | "favoritesFirst"> {
   switch (mode) {
     case "name":
@@ -1227,6 +1245,12 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
   }, [childrenByParent]);
 
   const directCardsByName = useMemo(() => {
+    if (
+      sameItems(directCardsCache.cards, state.cards) &&
+      sameItems(directCardsCache.categories, state.categories)
+    ) {
+      return directCardsCache.value;
+    }
     // Build reverse lookup from category full-path names: masechta|dafLabel|amudLabel → catName
     const AMUD_RE = /^ע"[אב]$/;
     const DAF_RE = /^[\u05D0-\u05EA]+\.$/;
@@ -1277,8 +1301,13 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         map.set(structuredCatName, arr);
       }
     }
+    directCardsCache = {
+      cards: state.cards,
+      categories: state.categories,
+      value: map,
+    };
     return map;
-  }, [state.cards, categories]);
+  }, [state.cards, state.categories, categories]);
 
   /* === Per-category aggregates === */
   const aggregates = useMemo(() => {

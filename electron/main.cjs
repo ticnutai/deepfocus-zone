@@ -8,8 +8,10 @@ const fs = require("fs");
 const isDev = process.env.ELECTRON_DEV === "1";
 const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:5000";
 
-if (process.env.ELECTRON_E2E_HOME_REPORT) {
-  fs.writeFileSync(`${process.env.ELECTRON_E2E_HOME_REPORT}.startup`, JSON.stringify({
+const automatedReportPath = process.env.ELECTRON_E2E_HOME_REPORT || process.env.ELECTRON_PERF_SIDEBAR_REPORT;
+
+if (automatedReportPath) {
+  fs.writeFileSync(`${automatedReportPath}.startup`, JSON.stringify({
     startedAt: new Date().toISOString(),
     isDev,
     devUrl: DEV_URL,
@@ -18,9 +20,126 @@ if (process.env.ELECTRON_E2E_HOME_REPORT) {
 }
 
 function traceE2E(stage, details = {}) {
-  const reportPath = process.env.ELECTRON_E2E_HOME_REPORT;
+  const reportPath = automatedReportPath;
   if (!reportPath) return;
   fs.appendFileSync(`${reportPath}.startup`, `\n${JSON.stringify({ stage, at: new Date().toISOString(), ...details })}`, "utf8");
+}
+
+async function runSidebarPerformanceBenchmark(window) {
+  const reportPath = process.env.ELECTRON_PERF_SIDEBAR_REPORT;
+  if (!isDev || !reportPath) return;
+
+  const evaluate = (expression) => window.webContents.executeJavaScript(expression, true);
+  const report = {
+    schemaVersion: 1,
+    startedAt: new Date().toISOString(),
+    devUrl: DEV_URL,
+    runtime: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    viewport: window.getContentBounds(),
+    samplesPerTab: 3,
+    tabs: [],
+    passed: false,
+  };
+
+  try {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const ready = await evaluate(`document.readyState === "complete" && document.querySelectorAll("nav [data-sidebar-id]").length > 0`);
+      if (ready) break;
+      await delay(250);
+    }
+    // Authentication/profile hydration can replace the default sidebar with
+    // the user's assigned profile shortly after first paint. Measure only the
+    // final visible sidebar, not that temporary bootstrap configuration.
+    await delay(3000);
+    // Trigger one normal navigation before discovery. Some assigned profile
+    // configurations finish applying on the first navigation render.
+    await evaluate(`(() => {
+      const buttons = [...document.querySelectorAll("nav [data-sidebar-id]")];
+      const current = buttons.find((button) => button.className.includes("text-primary-foreground"));
+      const alternate = buttons.find((button) => button.dataset.sidebarId === "summary")
+        || buttons.find((button) => button !== current && button.dataset.sidebarId !== "home");
+      alternate?.click();
+    })()`);
+    await delay(3000);
+
+    const tabs = await evaluate(`([...document.querySelectorAll("nav [data-sidebar-id]")].map((button) => ({
+      id: button.dataset.sidebarId,
+      label: button.dataset.sidebarLabel || button.textContent.trim()
+    })))`);
+    if (!tabs.length) throw new Error("No visible sidebar tabs were found");
+
+    for (const tab of tabs) {
+      const samples = [];
+      for (let sampleIndex = 0; sampleIndex < report.samplesPerTab; sampleIndex += 1) {
+        const result = await evaluate(`(async () => {
+          const targetId = ${JSON.stringify(tab.id)};
+          const buttons = [...document.querySelectorAll("nav [data-sidebar-id]")];
+          let target = buttons.find((button) => button.dataset.sidebarId === targetId);
+          if (!target) return { error: "tab-not-found" };
+
+          // Move away first so every sample measures a real navigation/render.
+          const alternate = buttons.find((button) => button.dataset.sidebarId !== targetId);
+          if (alternate) {
+            alternate.click();
+            // Isolate the target from deferred work started by the previous
+            // page. The target's own post-paint blocking remains measured.
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+
+          // Navigation may remount the sidebar, so never click a stale node.
+          target = [...document.querySelectorAll("nav [data-sidebar-id]")]
+            .find((button) => button.dataset.sidebarId === targetId);
+          if (!target) return { error: "tab-not-found-after-navigation" };
+
+          // Guides and other dialogs can intercept later clicks. Closing them is
+          // outside the timed interval and keeps every tab under equal conditions.
+          document.querySelectorAll('[role="dialog"] button').forEach((button) => {
+            const label = button.getAttribute('aria-label') || button.textContent.trim();
+            if (label === 'Close' || label === 'סגור') button.click();
+          });
+
+          let mutations = 0;
+          const observer = new MutationObserver((records) => { mutations += records.length; });
+          // Attribute animations, clocks and progress indicators can update
+          // forever. Time-to-settled intentionally tracks content/structure
+          // mutations only, which represent actual page loading work.
+          observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+          const beforeNodes = document.getElementsByTagName('*').length;
+          const started = performance.now();
+          target.click();
+          const dispatchMs = performance.now() - started;
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const firstPaintMs = performance.now() - started;
+
+          // Observe a fixed post-paint window. A fixed window is reproducible
+          // even on pages with live clocks/data and still exposes excessive
+          // late DOM churn through the mutation count.
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          const settledMs = performance.now() - started;
+          observer.disconnect();
+          return {
+            dispatchMs,
+            firstPaintMs,
+            settledMs,
+            mutations,
+            nodeDelta: document.getElementsByTagName('*').length - beforeNodes,
+            active: target.className.includes('text-primary-foreground'),
+            timedOut: false
+          };
+        })()`);
+        samples.push(result);
+        await delay(100);
+      }
+      report.tabs.push({ ...tab, samples });
+    }
+    report.passed = report.tabs.every((tab) => tab.samples.every((sample) => !sample.error && sample.active && !sample.timedOut));
+  } catch (error) {
+    report.error = error?.stack || error?.message || String(error);
+  } finally {
+    report.finishedAt = new Date().toISOString();
+    await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+    if (process.env.ELECTRON_E2E_EXIT === "1") app.quit();
+  }
 }
 
 function logElectron(stage, details = {}) {
@@ -294,7 +413,11 @@ function createWindow() {
   if (isDev) {
     traceE2E("load-url-start", { url: DEV_URL });
     const loadPromise = mainWindow.loadURL(DEV_URL);
-    if (process.env.ELECTRON_E2E_HOME_REPORT) {
+    if (process.env.ELECTRON_PERF_SIDEBAR_REPORT) {
+      void loadPromise
+        .then(() => runSidebarPerformanceBenchmark(mainWindow))
+        .catch((error) => logElectron("sidebar-perf-load-failed", { message: error?.message || String(error) }));
+    } else if (process.env.ELECTRON_E2E_HOME_REPORT) {
       void loadPromise
         .then(() => {
           traceE2E("load-url-complete");
@@ -304,13 +427,17 @@ function createWindow() {
     }
     // A detached DevTools window is convenient for manual development, but
     // automated CDP checks do not need a second window.
-    if (!process.env.ELECTRON_DEBUG_PORT && !process.env.ELECTRON_E2E_HOME_REPORT && process.env.ELECTRON_NO_DEVTOOLS !== "1") {
+    if (!process.env.ELECTRON_DEBUG_PORT && !automatedReportPath && process.env.ELECTRON_NO_DEVTOOLS !== "1") {
       mainWindow.webContents.openDevTools({ mode: "detach" });
     }
   } else {
     // Web build is emitted to ../dist relative to this file
     const loadPromise = mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
-    if (process.env.ELECTRON_E2E_HOME_REPORT) {
+    if (process.env.ELECTRON_PERF_SIDEBAR_REPORT) {
+      void loadPromise
+        .then(() => runSidebarPerformanceBenchmark(mainWindow))
+        .catch((error) => logElectron("sidebar-perf-load-failed", { message: error?.message || String(error) }));
+    } else if (process.env.ELECTRON_E2E_HOME_REPORT) {
       void loadPromise
         .then(() => runHomeNavigationE2E(mainWindow))
         .catch((error) => logElectron("e2e-load-failed", { message: error?.message || String(error) }));

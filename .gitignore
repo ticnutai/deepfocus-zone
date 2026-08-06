@@ -23,6 +23,7 @@ electron/build
 # Local script output
 output/
 scripts/diagnose_output.txt
+performance/reports/
 
 # Local backup files (uploaded to cloud, not needed in repo)
 *.json.gz

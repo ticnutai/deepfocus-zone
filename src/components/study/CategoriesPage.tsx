@@ -268,20 +268,16 @@ function CategoriesPage() {
     categoryName: string;
   } | null>(null);
 
-  const directCardCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    state.cards.forEach((card) => {
-      card.tags.forEach((tag) => {
-        if (!tag.startsWith("cat:")) return;
-        const name = tag.slice(4);
-        map.set(name, (map.get(name) ?? 0) + 1);
-      });
-    });
-    return map;
-  }, [state.cards]);
-
-  const isClassificationPoint = !!(
-    selectedCategory && (directCardCounts.get(selectedCategory) ?? 0) > 0
+  // On the category overview there is no selected classification point, so
+  // scanning every bundled question (tens of thousands offline) is wasted
+  // work and used to block each visit for about a second. Once a category is
+  // selected, stop at the first matching card instead of building counts for
+  // every category in the entire database.
+  const isClassificationPoint = useMemo(
+    () =>
+      !!selectedCategory &&
+      state.cards.some((card) => card.tags.includes(`cat:${selectedCategory}`)),
+    [selectedCategory, state.cards],
   );
 
   const rawCategoryCards = useMemo(
