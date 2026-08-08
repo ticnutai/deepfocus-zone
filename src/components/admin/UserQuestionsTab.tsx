@@ -38,6 +38,15 @@ const TYPE_LABEL: Record<string, string> = {
   combo: "משולבת",
 };
 
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+}
+
 function stringArray(value: Json | null): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
@@ -67,36 +76,12 @@ function rowToCard(row: CardRow): StudyCard {
 }
 
 async function fetchAllCards(excludedUserId: string | null): Promise<CardRow[]> {
-  const all: CardRow[] = [];
-  const pageSize = 1000;
-  let countQuery = supabase.from("cards")
-    .select("id", { count: "exact", head: true })
-    .is("deleted_at", null);
-  if (excludedUserId) countQuery = countQuery.neq("user_id", excludedUserId);
-  const { count, error: countError } = await countQuery;
-  if (countError) throw countError;
-  const pageCount = Math.ceil((count ?? 0) / pageSize);
-  // Fetch in small parallel batches: the site library may contain tens of
-  // thousands of rows, and sequential pagination kept the whole admin tab
-  // on its loading screen for too long.
-  for (let pageStart = 0; pageStart < pageCount; pageStart += 6) {
-    const batch = await Promise.all(
-      Array.from({ length: Math.min(6, pageCount - pageStart) }, async (_, offset) => {
-        const page = pageStart + offset;
-        const from = page * pageSize;
-        let query = supabase.from("cards").select("*")
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (excludedUserId) query = query.neq("user_id", excludedUserId);
-        const { data, error } = await query;
-        if (error) throw error;
-        return (data ?? []) as CardRow[];
-      }),
-    );
-    for (const page of batch) all.push(...page);
-  }
-  return all;
+  // Filtering in SQL is essential: downloading the entire bundled library
+  // (22K+ cards) made this admin screen time out before user questions appeared.
+  const { data, error } = await supabase.rpc("get_admin_user_questions" as never);
+  if (error) throw error;
+  const rows = (data ?? []) as CardRow[];
+  return excludedUserId ? rows.filter((row) => row.user_id !== excludedUserId) : rows;
 }
 
 export function UserQuestionsTab() {
@@ -143,7 +128,7 @@ export function UserQuestionsTab() {
           && !tags.some((tag) => tag.startsWith("source:builtin") || tag === "source:site_library");
       }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "טעינת שאלות המשתמשים נכשלה");
+      toast.error(errorMessage(error, "טעינת שאלות המשתמשים נכשלה"));
     } finally {
       setLoading(false);
     }

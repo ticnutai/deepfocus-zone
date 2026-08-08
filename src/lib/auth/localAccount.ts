@@ -408,13 +408,18 @@ export async function attemptDeferredRegistration(): Promise<DeferredRegistratio
     }
 
     if (userId) { console.log(DBG, "migrating guest data → user", userId); await migrateGuestDataToUser(userId); }
-    markRegistered(userId);
 
     // Hand the session to the main client — hydration will pick up the seeded
     // snapshot and the queued full-sync job pushes it to the cloud.
     console.log(DBG, "signing main client in …");
     const { error: mainSignInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (mainSignInError) console.error(DBG, "main client sign-in failed", mainSignInError);
+    if (mainSignInError) {
+      console.error(DBG, "main client sign-in failed", mainSignInError);
+      // Keep the retry secret and pending state. Previously this path was
+      // incorrectly marked registered and the queued data became stranded.
+      return { status: "failed", message: mainSignInError.message };
+    }
+    markRegistered(userId);
     console.log(DBG, "registered ✓");
     return { status: "registered" };
   } catch (err) {

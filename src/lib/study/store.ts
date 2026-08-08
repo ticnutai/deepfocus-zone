@@ -34,6 +34,7 @@ import {
 } from "./featureBlocklist";
 import { supabase } from "@/integrations/supabase/client";
 import { loadBundledOfflineLibrary } from "./offlineLibrary";
+import { enqueueOfflineQuestion, reconcileOfflineQuestions } from "./offlineQuestionSync";
 
 /** Active guest profile's pinned source user id, or null to use the global guest_source. */
 const getActiveGuestSourceUserId = (): string | null => {
@@ -3070,6 +3071,8 @@ export function useStudy() {
     if (!uid) return;
     const onOnline = () => {
       if (uid === GUEST_ID) {
+        void reconcileOfflineQuestions(memState.cards.filter((card) => !isSourceOwnedCard(card.id)))
+          .catch((err) => console.warn("[offline-questions] reconnect upload failed:", err));
         void hydrateGuestFromCloud()
           .then(() => saveStudyStateCache(GUEST_ID, memState))
           .catch((err) => console.warn("[guest] reconnect refresh failed:", err));
@@ -3086,6 +3089,17 @@ export function useStudy() {
       window.removeEventListener("online", onOnline);
     };
   }, [user?.id]);
+
+  // Upload local/guest questions after hydration. This also recovers questions
+  // created by installations that predate the durable offline outbox.
+  useEffect(() => {
+    if (user?.id !== GUEST_ID || !isHydrated) return;
+    const timer = window.setTimeout(() => {
+      void reconcileOfflineQuestions(memState.cards.filter((card) => !isSourceOwnedCard(card.id)))
+        .catch((err) => console.warn("[offline-questions] initial upload failed:", err));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [user?.id, memState.cards]);
 
   // One-time migration: rename legacy "ללא סיווג" → current UNCATEGORIZED_NAME
   useEffect(() => {
@@ -3457,6 +3471,7 @@ export function useStudy() {
     const profileBActive = isProfileBMode();
     setState((s) => ({ ...s, cards: [...s.cards, full] }));
     if (profileBActive) markProfileBCardCreated(userId, full.id);
+    if (userId === GUEST_ID) enqueueOfflineQuestion(full);
     bg(supabase.from("cards").insert(cardToRow(full, userId)));
     // Only mirror into card_decks if the card has a deck
     if (full.deckId) {
@@ -3505,6 +3520,9 @@ export function useStudy() {
     const profileBActive = isProfileBMode();
     if (profileBActive) {
       for (const created of full) markProfileBCardCreated(userId, created.id);
+    }
+    if (userId === GUEST_ID) {
+      for (const created of full) enqueueOfflineQuestion(created);
     }
     const links = full
       .filter((c) => c.deckId)

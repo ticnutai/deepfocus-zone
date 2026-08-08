@@ -118,14 +118,14 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   const [createTypes, setCreateTypes] = useState<CardType[]>(
     editCard ? [editCard.type] : ["multiple"],
   );
+  const [multipleTypeSelection, setMultipleTypeSelection] = useState(false);
   const toggleCreateType = (t: CardType) => {
-    setCreateTypes((arr) =>
-      {
-        return arr.includes(t)
-          ? (arr.length > 1 ? arr.filter((x) => x !== t) : arr) // keep at least one
-          : [...arr, t];
-      },
-    );
+    setCreateTypes((arr) => {
+      if (!multipleTypeSelection) return [t];
+      return arr.includes(t)
+        ? (arr.length > 1 ? arr.filter((x) => x !== t) : arr) // keep at least one
+        : [...arr, t];
+    });
   };
   const hasType = (t: CardType) => (isEdit ? type === t : createTypes.includes(t));
   const [question, setQuestion] = useState(editCard?.question ?? "");
@@ -446,7 +446,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       >
         <div className="flex items-center justify-between gap-2">
           <Label className="flex items-center gap-1.5">
-            <FolderTree className="h-4 w-4" /> קטגוריות <span className="text-destructive" aria-hidden="true">*</span>
+            <FolderTree className="h-4 w-4" /> סיווג <span className="text-destructive" aria-hidden="true">*</span>
             {selectedCategoryNames.length > 0 && (
               <span className="text-xs font-normal text-muted-foreground">
                 ({selectedCategoryNames.length} נבחרו)
@@ -522,7 +522,24 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
       <div dir="rtl" className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
       <div className="space-y-2">
-        <Label className="block text-right">סוג שאלה</Label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label className="block text-right">סוג שאלה</Label>
+          {!isEdit && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gold/35 bg-card px-3 py-1.5 text-xs text-navy">
+              <Checkbox
+                checked={multipleTypeSelection}
+                onCheckedChange={(checked) => {
+                  const enabled = checked === true;
+                  setMultipleTypeSelection(enabled);
+                  if (!enabled) {
+                    setCreateTypes((current) => [current[current.length - 1] ?? "multiple"]);
+                  }
+                }}
+              />
+              בחירת כמה סוגי שאלות
+            </label>
+          )}
+        </div>
         {isEdit ? (
           <Select value={type} onValueChange={(v) => setType(v as CardType)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -560,9 +577,14 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             })}
           </div>
         )}
-        {!isEdit && createTypes.length > 1 && (
+        {!isEdit && multipleTypeSelection && createTypes.length > 1 && (
           <p className="text-xs text-muted-foreground text-right">
             ייווצרו כמה שאלות שונות לאותה שאלה, לפי הסוגים שבחרת.
+          </p>
+        )}
+        {!isEdit && !multipleTypeSelection && (
+          <p className="text-xs text-muted-foreground text-right">
+            לחיצה על סוג אחר מחליפה את הסוג הנוכחי ואינה שומרת או מוסיפה שאלה.
           </p>
         )}
       </div>

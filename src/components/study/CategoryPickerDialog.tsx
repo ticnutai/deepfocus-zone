@@ -4,7 +4,7 @@
  * leaving the card creation flow.
  */
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, Pin, PinOff, Check, LayoutGrid, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
+import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, Pin, PinOff, Check, LayoutGrid, List, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ const HEBREW_LETTER_VALUES: Record<string, number> = {
 };
 const hebrewToNum = (value: string) => [...value].reduce((sum, char) => sum + (HEBREW_LETTER_VALUES[char] ?? 0), 0);
 
-type ClassificationViewMode = "tree" | "cards";
+type ClassificationViewMode = "tree" | "cards" | "list";
 
 interface Props {
   open?: boolean;
@@ -256,7 +256,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
             title={isPinned ? "בטל נעיצה" : "נעץ קטגוריה"}
             className={cn(
               "h-5 w-5 rounded flex items-center justify-center transition-all shrink-0",
-              isPinned ? "text-navy opacity-100" : "opacity-0 group-hover:opacity-60 hover:!opacity-100 text-muted-foreground",
+              isPinned ? "text-navy opacity-100" : "text-muted-foreground opacity-70 hover:opacity-100",
             )}
           >
             {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3 fill-navy" />}
@@ -361,7 +361,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     <>
       <div className="space-y-1.5">
         <div className="flex flex-row-reverse items-center justify-between gap-2">
-          <div className="flex items-center gap-2 opacity-0 pointer-events-none translate-y-0.5 transition-all duration-150 group-hover/classification:opacity-100 group-hover/classification:pointer-events-auto group-hover/classification:translate-y-0 focus-within:opacity-100 focus-within:pointer-events-auto">
+          <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" className="h-8 gap-1 rounded-full border-2 border-gold/50 px-2" title="תצוגות ופריסות סיווג">
@@ -371,7 +371,10 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-[180px]">
                 <DropdownMenuItem className="gap-2" onClick={() => setClassificationView("cards")}>
-                  <LayoutGrid className="h-4 w-4" /> כרטיסיות ענפים {classificationView === "cards" ? "✓" : ""}
+                  <LayoutGrid className="h-4 w-4" /> רשת כרטיסיות {classificationView === "cards" ? "✓" : ""}
+                </DropdownMenuItem>
+                <DropdownMenuItem className="gap-2" onClick={() => setClassificationView("list")}>
+                  <List className="h-4 w-4" /> רשימה {classificationView === "list" ? "✓" : ""}
                 </DropdownMenuItem>
                 <DropdownMenuItem className="gap-2" onClick={() => setClassificationView("tree")}>
                   <FolderTree className="h-4 w-4" /> עץ קומפקטי {classificationView === "tree" ? "✓" : ""}
@@ -423,12 +426,8 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
               aria-expanded={addingCategory}
             >
               <Plus className="h-4 w-4" />
-              {cardsParent ? "תת־קטגוריה" : "קטגוריה"}
+              {cardsParent ? "הוסף תת־קטגוריה" : "הוסף קטגוריה"}
             </Button>
-            <h3 className="text-right text-lg font-semibold leading-none tracking-tight flex items-center gap-2">
-              <Folder className="h-4 w-4 text-gold" />
-              סיווג {localSelected.length > 0 && <span className="text-xs text-muted-foreground">({localSelected.length} נבחרו)</span>}
-            </h3>
           </div>
         </div>
       </div>
@@ -504,7 +503,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                   const isPinned = pinnedCats.includes(root.name);
                   return (
                     <div key={root.id} className="group/card relative rounded-xl border-2 border-gold/30 bg-card overflow-hidden">
-                      <div className="absolute top-2 left-2 z-20 flex items-center gap-1 opacity-0 pointer-events-none transition-opacity duration-150 group-hover/card:opacity-100 group-hover/card:pointer-events-auto group-focus-within/card:opacity-100 group-focus-within/card:pointer-events-auto">
+                      <div className="absolute top-2 left-2 z-20 flex items-center gap-1">
                         <button
                           type="button"
                           title={isSelected ? "הסר בחירה" : "בחר קטגוריה"}
@@ -530,7 +529,7 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                       </div>
                       <button
                         type="button"
-                        className={cn("w-full p-3 text-right transition-colors hover:bg-secondary/30", isSelected && "bg-navy/10")}
+                        className={cn("w-full py-3 pr-3 pl-20 text-right transition-colors hover:bg-secondary/30", isSelected && "bg-navy/10")}
                         onClick={() => hasChildren ? enterCardsCategory(root) : toggle(root.name)}
                         title={hasChildren ? `פתח את ${displayCategoryName(root.name)}` : `בחר את ${displayCategoryName(root.name)} לסיווג`}
                       >
@@ -559,6 +558,61 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
                         <FolderPlus className="h-3.5 w-3.5 text-gold" />
                         הוסף תת־קטגוריה
                       </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {classificationView === "list" && (
+              <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-0.5">
+                {cardsLevelCategories.map((root) => {
+                  const isSelected = localSelected.includes(root.name);
+                  const isPinned = pinnedCats.includes(root.name);
+                  const hasChildren = childrenOf(root.id).length > 0;
+                  const count = countsMap.get(root.id) ?? 0;
+                  return (
+                    <div
+                      key={root.id}
+                      className={cn(
+                        "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border-2 border-gold/30 bg-card p-2",
+                        isSelected && "border-navy/40 bg-navy/10",
+                      )}
+                    >
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          title={isSelected ? "הסר בחירה" : "בחר קטגוריה"}
+                          className={cn("flex h-8 w-8 items-center justify-center rounded-full border", isSelected ? "border-navy bg-navy text-white" : "border-gold/50")}
+                          onClick={() => toggle(root.name)}
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title={isPinned ? "בטל נעיצה" : "נעץ קטגוריה"}
+                          className={cn("flex h-8 w-8 items-center justify-center rounded-full border", isPinned ? "border-navy text-navy" : "border-gold/50 text-muted-foreground")}
+                          onClick={() => togglePin(root.name)}
+                        >
+                          {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex min-w-0 items-center gap-2 text-right"
+                        onClick={() => hasChildren ? enterCardsCategory(root) : toggle(root.name)}
+                      >
+                        <Folder className="h-4 w-4 shrink-0 text-gold" />
+                        <span className="truncate font-semibold">{displayCategoryName(root.name)}</span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        {count > 0 && <span className="rounded bg-navy px-1.5 py-0.5 text-[10px] text-white">{count}</span>}
+                        {hasChildren && (
+                          <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full border border-gold/50" onClick={() => enterCardsCategory(root)} title={`פתח את ${displayCategoryName(root.name)}`}>
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
