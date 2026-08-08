@@ -858,6 +858,44 @@ export type Database = {
         }
         Relationships: []
       }
+      user_activity_daily: {
+        Row: {
+          active_seconds: number
+          activity_date: string
+          first_seen_at: string
+          last_login_at: string | null
+          last_seen_at: string
+          login_count: number
+          user_id: string
+        }
+        Insert: {
+          active_seconds?: number
+          activity_date: string
+          first_seen_at?: string
+          last_login_at?: string | null
+          last_seen_at?: string
+          login_count?: number
+          user_id: string
+        }
+        Update: {
+          active_seconds?: number
+          activity_date?: string
+          first_seen_at?: string
+          last_login_at?: string | null
+          last_seen_at?: string
+          login_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_activity_daily_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_backup_chunks: {
         Row: {
           backup_id: string
@@ -1095,6 +1133,10 @@ export type Database = {
           p_status?: string
           p_user_id: string
         }
+        Returns: undefined
+      }
+      record_user_activity: {
+        Args: { p_active_seconds?: number; p_event?: string }
         Returns: undefined
       }
       email_for_username: { Args: { p_username: string }; Returns: string }

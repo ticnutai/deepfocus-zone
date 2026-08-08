@@ -31,6 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
+import { DesktopAppDownloadButton } from "@/components/DesktopAppDownloadButton";
 import { UserQuestionsExportButton } from "@/components/UserQuestionsExportButton";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -1585,6 +1586,7 @@ const Index = () => {
                 </div>
                 </button>
                 <DesktopUpdateButton />
+                <DesktopAppDownloadButton />
               </div>
               <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
                 <ThemeSwitcher />
@@ -1691,6 +1693,7 @@ const Index = () => {
                         </div>
                         </button>
                         <DesktopUpdateButton />
+                        <DesktopAppDownloadButton />
                       </div>
                       <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
                         <ThemeSwitcher />

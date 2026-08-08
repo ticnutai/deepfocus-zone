@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
+import { DesktopAppDownloadButton } from "@/components/DesktopAppDownloadButton";
 import {
   listGuestViewProfiles,
   saveGuestViewProfile,
@@ -356,8 +357,9 @@ export default function Auth() {
   return (
     <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="gold-frame relative w-full max-w-md p-8 space-y-6 animate-fade-in">
-        <div className="absolute right-4 top-4" title="עדכוני תוכנה">
+        <div className="absolute right-4 top-4 flex items-center gap-2" title="עדכוני תוכנה">
           <DesktopUpdateButton />
+          <DesktopAppDownloadButton />
         </div>
         <header className="text-center space-y-2">
           <div className="flex justify-center">

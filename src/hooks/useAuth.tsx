@@ -12,6 +12,7 @@ import {
   sanitizeLocalOfflineProfile,
 } from "@/lib/auth/guestViewProfile";
 import { attemptDeferredRegistration, getPendingRegistration } from "@/lib/auth/localAccount";
+import { startCloudActivityTracking } from "@/lib/auth/activityTracking";
 
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
@@ -177,6 +178,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [guestMode, session]);
 
   const effectiveUser = guestMode ? GUEST_USER : (session?.user ?? null);
+
+  useEffect(() => {
+    if (guestMode || !session?.user?.id) return;
+    const sessionIdentity = String(session.expires_at ?? session.user.last_sign_in_at ?? "current");
+    return startCloudActivityTracking(session.user.id, sessionIdentity);
+  }, [guestMode, session?.user?.id, session?.expires_at, session?.user?.last_sign_in_at]);
 
   return (
     <Ctx.Provider

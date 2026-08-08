@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library } from "lucide-react";
+import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library, BarChart3 } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { ApprovalTab } from "./ApprovalTab";
@@ -11,6 +11,7 @@ import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { GuestProfilesTab } from "./GuestProfilesTab";
 import { UserQuestionsTab } from "./UserQuestionsTab";
+import { UserActivityTab } from "./UserActivityTab";
 import { usePermissions } from "@/hooks/usePermissions";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -110,6 +111,9 @@ export function AdminPanel() {
               <span>שאלות משתמשים</span><Library className="h-4 w-4" />
               {pendingNotes > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingNotes}</span>}
             </TabsTrigger>
+            <TabsTrigger value="usage" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>ניתוח שימוש</span><BarChart3 className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
@@ -122,6 +126,7 @@ export function AdminPanel() {
         <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
         <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
         <TabsContent value="user-questions" className="mt-4"><UserQuestionsTab /></TabsContent>
+        <TabsContent value="usage" className="mt-4"><UserActivityTab /></TabsContent>
       </Tabs>
     </div>
   );

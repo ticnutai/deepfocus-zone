@@ -29,14 +29,18 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-interface Profile { id: string; display_name: string | null; email: string | null; created_at: string; status: string; }
+interface Profile { id: string; display_name: string | null; username: string | null; email: string | null; created_at: string; status: string; }
 interface Role { id: string; name: string; description: string | null; }
 interface UR { user_id: string; role_id: string; }
+interface ActivitySummary { loginCount: number; activeSeconds: number; lastSeenAt: string | null; }
 
 const STATUS_LABEL: Record<string, string> = { approved: "מאושר", pending: "ממתין", blocked: "חסום" };
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   approved: "default", pending: "secondary", blocked: "destructive",
 };
+const isTechnicalEmail = (email: string | null) => !email || email.endsWith("@users.local") || email === "guest@local";
+const friendlyName = (profile: Profile) => profile.display_name || profile.username || (!isTechnicalEmail(profile.email) ? profile.email : null) || "משתמש מקומי";
+const formatDuration = (seconds: number) => seconds < 60 ? `${seconds} שנ׳` : seconds < 3600 ? `${Math.round(seconds / 60)} דק׳` : `${Math.floor(seconds / 3600)} ש׳ ${Math.round((seconds % 3600) / 60)} דק׳`;
 
 export function UsersTab() {
   const { user: me } = useAuth();
@@ -44,6 +48,7 @@ export function UsersTab() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [userRoles, setUserRoles] = useState<UR[]>([]);
+  const [activityByUser, setActivityByUser] = useState<Record<string, ActivitySummary>>({});
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -70,14 +75,24 @@ export function UsersTab() {
   const [bulkDelConfirm, setBulkDelConfirm] = useState(false);
 
   const load = async () => {
-    const [{ data: p }, { data: r }, { data: ur }] = await Promise.all([
-      supabase.from("profiles").select("id, display_name, email, created_at, status").order("created_at", { ascending: false }),
+    const [{ data: p }, { data: r }, { data: ur }, { data: activity }] = await Promise.all([
+      supabase.from("profiles").select("id, display_name, username, email, created_at, status").order("created_at", { ascending: false }),
       supabase.from("app_roles").select("id, name, description").order("name"),
       supabase.from("user_roles").select("user_id, role_id"),
+      supabase.from("user_activity_daily").select("user_id,login_count,active_seconds,last_seen_at"),
     ]);
     setProfiles((p ?? []) as Profile[]);
     setRoles((r ?? []) as Role[]);
     setUserRoles((ur ?? []) as UR[]);
+    const summaries: Record<string, ActivitySummary> = {};
+    for (const row of activity ?? []) {
+      const current = summaries[row.user_id] ?? { loginCount: 0, activeSeconds: 0, lastSeenAt: null };
+      current.loginCount += row.login_count;
+      current.activeSeconds += row.active_seconds;
+      if (!current.lastSeenAt || row.last_seen_at > current.lastSeenAt) current.lastSeenAt = row.last_seen_at;
+      summaries[row.user_id] = current;
+    }
+    setActivityByUser(summaries);
   };
   useEffect(() => { load(); }, []);
 
@@ -231,8 +246,8 @@ export function UsersTab() {
   const visible = profiles.filter((p) =>
     !filter ||
     p.display_name?.toLowerCase().includes(filter.toLowerCase()) ||
-    (p.email ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-    p.id.includes(filter)
+    p.username?.toLowerCase().includes(filter.toLowerCase()) ||
+    (p.email ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
   const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
@@ -413,10 +428,18 @@ export function UsersTab() {
                       <Badge variant={STATUS_VARIANT[p.status] ?? "outline"} className="text-xs">
                         {STATUS_LABEL[p.status] ?? p.status}
                       </Badge>
-                      <span className="font-medium text-foreground">{p.display_name || "(ללא שם)"}</span>
+                      <span className="font-medium text-foreground">{friendlyName(p)}</span>
                     </div>
-                    {p.email && <div className="text-xs text-muted-foreground" dir="ltr">{p.email}</div>}
-                    <div className="text-[10px] text-muted-foreground/70 font-mono" dir="ltr">{p.id}</div>
+                    <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+                      {p.username && <span>שם משתמש: <strong className="text-foreground">{p.username}</strong></span>}
+                      {p.email && !isTechnicalEmail(p.email) && <span dir="ltr">{p.email}</span>}
+                      {isTechnicalEmail(p.email) && <Badge variant="outline" className="text-[10px]">חשבון מקומי</Badge>}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-muted-foreground">
+                      <span>כניסות: <strong className="text-foreground">{activityByUser[p.id]?.loginCount ?? 0}</strong></span>
+                      <span>זמן שימוש: <strong className="text-foreground">{formatDuration(activityByUser[p.id]?.activeSeconds ?? 0)}</strong></span>
+                      {activityByUser[p.id]?.lastSeenAt && <span>נראה לאחרונה: {new Date(activityByUser[p.id].lastSeenAt!).toLocaleString("he-IL")}</span>}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1 flex-wrap">
