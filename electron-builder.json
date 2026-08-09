@@ -11,6 +11,12 @@
     "package.json"
   ],
   "asar": true,
+  "electronLanguages": [
+    "he",
+    "en-US",
+    "en-GB"
+  ],
+  "afterPack": "scripts/after-pack-electron.cjs",
   "win": {
     "icon": "electron/build/icon.ico",
     "target": [
