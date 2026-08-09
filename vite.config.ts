@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => ({
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/~oauth/, /^\/api\//],
         globPatterns: ["**/*.{js,css,html,woff2,svg,png,ico,json}"],
-        // shas/** — ספריית הש"ס המקומית (5,375 קבצים, ~128MB): לא ב-precache;
+        // shas/** — ספריית הש"ס המקומית הדחוסה: לא ב-precache;
         // נטענת לפי דרישה עם runtime cache (ראה למטה).
         globIgnores: ["**/data/reports/full_shas_qna_report.json", "**/shas/**"],
         // Includes the generated shared question library so the installed PWA
@@ -49,12 +49,12 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: true,
         runtimeCaching: [
           {
-            // ספריית הש"ס המקומית — קבצים סטטיים שלא משתנים: cache-first.
-            urlPattern: /\/shas\/.*\.json$/,
+            // ספריית הש"ס המקומית — אינדקס וקובצי מסכת דחוסים: cache-first.
+            urlPattern: /\/shas\/.*\.(?:json|json\.gz)$/,
             handler: "CacheFirst",
             options: {
               cacheName: "shas-library",
-              expiration: { maxEntries: 800, maxAgeSeconds: 86400 * 365 },
+              expiration: { maxEntries: 80, maxAgeSeconds: 86400 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld("desktop", {
     chrome: process.versions.chrome,
     node: process.versions.node,
   },
+  installation: {
+    getPendingEvents: () => ipcRenderer.invoke("installation:get-pending"),
+    acknowledge: (eventId) => ipcRenderer.invoke("installation:ack", eventId),
+  },
   updates: {
     getVersion: () => ipcRenderer.invoke("updater:get-version"),
     check: () => ipcRenderer.invoke("updater:check"),

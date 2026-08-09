@@ -4,7 +4,7 @@
  * leaving the card creation flow.
  */
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, Pin, PinOff, Check, LayoutGrid, List, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
+import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, ChevronRight, Pin, PinOff, Check, LayoutGrid, List, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { displayCategoryName } from "@/lib/study/shasGen";
 import { toast } from "@/hooks/use-toast";
 
 const RECENT_KEY = "category-picker:recent-cats";
+const VIEW_MODE_KEY = "category-picker:view-mode-v1";
 const MAX_RECENT = 6;
 const HEBREW_LETTER_VALUES: Record<string, number> = {
   "א": 1, "ב": 2, "ג": 3, "ד": 4, "ה": 5, "ו": 6, "ז": 7, "ח": 8, "ט": 9,
@@ -42,7 +43,14 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [classificationView, setClassificationView] = useState<ClassificationViewMode>("cards");
+  const [classificationView, setClassificationViewState] = useState<ClassificationViewMode>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      return saved === "tree" || saved === "list" || saved === "cards" ? saved : "cards";
+    } catch {
+      return "cards";
+    }
+  });
   const [cardsPath, setCardsPath] = useState<string[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
@@ -78,7 +86,6 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
       setSearch("");
       setExpanded({});
       setCardsPath([]);
-      setClassificationView("cards");
     }
     onOpenChange?.(o);
   };
@@ -87,6 +94,16 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     if (!isOpen || inline) return;
     setLocalSelected(initialSelected);
   }, [isOpen, inline, initialSelected]);
+
+  const setClassificationView = useCallback((mode: ClassificationViewMode) => {
+    setClassificationViewState(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // The current session still keeps the selected view when storage is unavailable.
+    }
+    setUiPref("categoryPickerClassificationView", mode);
+  }, [setUiPref]);
 
   const categories = useMemo(
     () => [...(state.categories ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt - b.createdAt),
@@ -480,6 +497,16 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
           <section className="space-y-3">
             <div className="text-xs text-muted-foreground border border-gold/20 rounded-md px-2 py-1">
               <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  disabled={normalizedCardsPath.length === 0}
+                  className="inline-flex items-center gap-1 rounded-md border border-gold/40 bg-background px-2 py-1 font-medium text-foreground hover:bg-secondary disabled:opacity-35 disabled:cursor-not-allowed"
+                  onClick={() => setCardsPath(normalizedCardsPath.slice(0, -1))}
+                  title="חזור לשלב הקודם"
+                  aria-label="חזור לשלב הקודם"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" /> חזרה
+                </button>
                 <button type="button" className="hover:underline" onClick={() => setCardsPath([])}>סיווג</button>
                 <span>/</span>
                 <button type="button" className="hover:underline" onClick={() => setCardsPath([])}>ראשי</button>

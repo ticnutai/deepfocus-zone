@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Clock3, LogIn, RefreshCw, TrendingUp, Users } from "lucide-react";
+import { Activity, AppWindow, Clock3, Download, Globe2, LogIn, RefreshCw, TrendingUp, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,13 @@ type ActivityRow = {
   active_seconds: number;
   last_seen_at: string;
   last_login_at: string | null;
+  web_login_count: number;
+  desktop_login_count: number;
+  web_active_seconds: number;
+  desktop_active_seconds: number;
 };
+
+type InstallEvent = { id: string; user_id: string; event_type: "install" | "update"; from_version: string | null; to_version: string; occurred_at: string };
 
 type ProfileRow = {
   id: string;
@@ -36,6 +42,7 @@ const identity = (profile?: ProfileRow) =>
 export function UserActivityTab() {
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [installEvents, setInstallEvents] = useState<InstallEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -43,12 +50,14 @@ export function UserActivityTab() {
     const since = new Date();
     since.setDate(since.getDate() - 29);
     const date = since.toISOString().slice(0, 10);
-    const [{ data: activity }, { data: people }] = await Promise.all([
-      supabase.from("user_activity_daily").select("user_id,activity_date,login_count,active_seconds,last_seen_at,last_login_at").gte("activity_date", date).order("activity_date"),
+    const [{ data: activity }, { data: people }, { data: installs }] = await Promise.all([
+      supabase.from("user_activity_daily").select("user_id,activity_date,login_count,active_seconds,last_seen_at,last_login_at,web_login_count,desktop_login_count,web_active_seconds,desktop_active_seconds").gte("activity_date", date).order("activity_date"),
       supabase.from("profiles").select("id,display_name,username,email"),
+      supabase.from("desktop_install_events").select("id,user_id,event_type,from_version,to_version,occurred_at").order("occurred_at", { ascending: false }).limit(100),
     ]);
     setRows((activity ?? []) as ActivityRow[]);
     setProfiles((people ?? []) as ProfileRow[]);
+    setInstallEvents((installs ?? []) as InstallEvent[]);
     setLoading(false);
   };
 
@@ -68,11 +77,13 @@ export function UserActivityTab() {
   }, [rows]);
 
   const perUser = useMemo(() => {
-    const map = new Map<string, { userId: string; days: Set<string>; logins: number; seconds: number; lastSeen: string }>();
+    const map = new Map<string, { userId: string; days: Set<string>; logins: number; webLogins: number; desktopLogins: number; seconds: number; lastSeen: string }>();
     for (const row of rows) {
-      const item = map.get(row.user_id) ?? { userId: row.user_id, days: new Set<string>(), logins: 0, seconds: 0, lastSeen: row.last_seen_at };
+      const item = map.get(row.user_id) ?? { userId: row.user_id, days: new Set<string>(), logins: 0, webLogins: 0, desktopLogins: 0, seconds: 0, lastSeen: row.last_seen_at };
       item.days.add(row.activity_date);
       item.logins += row.login_count;
+      item.webLogins += row.web_login_count;
+      item.desktopLogins += row.desktop_login_count;
       item.seconds += row.active_seconds;
       if (row.last_seen_at > item.lastSeen) item.lastSeen = row.last_seen_at;
       map.set(row.user_id, item);
@@ -83,6 +94,12 @@ export function UserActivityTab() {
   const uniqueUsers = new Set(rows.map((row) => row.user_id)).size;
   const totalLogins = rows.reduce((sum, row) => sum + row.login_count, 0);
   const totalSeconds = rows.reduce((sum, row) => sum + row.active_seconds, 0);
+  const webLogins = rows.reduce((sum, row) => sum + row.web_login_count, 0);
+  const desktopLogins = rows.reduce((sum, row) => sum + row.desktop_login_count, 0);
+  const webSeconds = rows.reduce((sum, row) => sum + row.web_active_seconds, 0);
+  const desktopSeconds = rows.reduce((sum, row) => sum + row.desktop_active_seconds, 0);
+  const installs = installEvents.filter((event) => event.event_type === "install").length;
+  const updates = installEvents.filter((event) => event.event_type === "update").length;
   const maxDailyUsers = Math.max(1, ...daily.map((day) => day.users.size));
 
   return (
@@ -95,6 +112,13 @@ export function UserActivityTab() {
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading} className="gap-2">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> רענן
         </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><Globe2 className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">כניסות דרך האתר</div><div className="text-xl font-bold">{webLogins}</div><div className="text-xs text-muted-foreground">{formatDuration(webSeconds)}</div></div></Card>
+        <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><AppWindow className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">כניסות דרך האפליקציה</div><div className="text-xl font-bold">{desktopLogins}</div><div className="text-xs text-muted-foreground">{formatDuration(desktopSeconds)}</div></div></Card>
+        <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><Download className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">התקנות שדווחו</div><div className="text-xl font-bold">{installs}</div></div></Card>
+        <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><RefreshCw className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">עדכונים שדווחו</div><div className="text-xl font-bold">{updates}</div></div></Card>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -130,12 +154,24 @@ export function UserActivityTab() {
         <div className="border-b border-gold/30 p-4 font-bold">פירוט לפי משתמש</div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-sm">
-            <thead className="bg-secondary/50 text-muted-foreground"><tr><th className="p-3 text-right">משתמש</th><th className="p-3">ימים פעילים</th><th className="p-3">כניסות</th><th className="p-3">זמן שימוש</th><th className="p-3">פעילות אחרונה</th></tr></thead>
+            <thead className="bg-secondary/50 text-muted-foreground"><tr><th className="p-3 text-right">משתמש</th><th className="p-3">ימים פעילים</th><th className="p-3">כניסות באתר</th><th className="p-3">כניסות באפליקציה</th><th className="p-3">סה״כ כניסות</th><th className="p-3">זמן שימוש</th><th className="p-3">פעילות אחרונה</th></tr></thead>
             <tbody>
               {perUser.map((item) => {
                 const profile = profileMap.get(item.userId);
-                return <tr key={item.userId} className="border-t border-gold/20"><td className="p-3"><div className="font-semibold">{identity(profile)}</div>{profile?.email && !isTechnicalEmail(profile.email) && <div dir="ltr" className="text-xs text-muted-foreground">{profile.email}</div>}</td><td className="p-3 text-center">{item.days.size}</td><td className="p-3 text-center">{item.logins}</td><td className="p-3 text-center">{formatDuration(item.seconds)}</td><td className="p-3 text-center">{new Date(item.lastSeen).toLocaleString("he-IL")}</td></tr>;
+                return <tr key={item.userId} className="border-t border-gold/20"><td className="p-3"><div className="font-semibold">{identity(profile)}</div>{profile?.email && !isTechnicalEmail(profile.email) && <div dir="ltr" className="text-xs text-muted-foreground">{profile.email}</div>}</td><td className="p-3 text-center">{item.days.size}</td><td className="p-3 text-center">{item.webLogins}</td><td className="p-3 text-center">{item.desktopLogins}</td><td className="p-3 text-center font-semibold">{item.logins}</td><td className="p-3 text-center">{formatDuration(item.seconds)}</td><td className="p-3 text-center">{new Date(item.lastSeen).toLocaleString("he-IL")}</td></tr>;
               })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className="gold-frame overflow-hidden">
+        <div className="border-b border-gold/30 p-4 font-bold">התקנות ועדכוני אפליקציה</div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-secondary/50 text-muted-foreground"><tr><th className="p-3 text-right">משתמש</th><th className="p-3">פעולה</th><th className="p-3">גרסה קודמת</th><th className="p-3">גרסה חדשה</th><th className="p-3">מועד</th></tr></thead>
+            <tbody>
+              {installEvents.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">אירועים חדשים יופיעו לאחר התקנה או עדכון של הגרסה הבאה.</td></tr> : installEvents.map((event) => <tr key={event.id} className="border-t border-gold/20"><td className="p-3 font-semibold">{identity(profileMap.get(event.user_id))}</td><td className="p-3 text-center">{event.event_type === "install" ? "התקנה" : "עדכון"}</td><td className="p-3 text-center">{event.from_version || "—"}</td><td className="p-3 text-center font-semibold">{event.to_version}</td><td className="p-3 text-center">{new Date(event.occurred_at).toLocaleString("he-IL")}</td></tr>)}
             </tbody>
           </table>
         </div>

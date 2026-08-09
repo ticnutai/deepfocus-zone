@@ -1,4 +1,5 @@
 import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
 import {
   AlignmentType,
   Document,
@@ -11,7 +12,7 @@ import type { Card } from "./types";
 import { loadBundledLibraryIds } from "./bundledLibraryGuard";
 import { isCardFromSource } from "./store";
 
-export type UserQuestionExportFormat = "docx" | "pdf";
+export type UserQuestionExportFormat = "docx" | "xlsx" | "csv" | "pdf";
 
 const TYPE_LABEL: Record<Card["type"], string> = {
   flashcard: "כרטיסייה",
@@ -52,6 +53,45 @@ function datedFileBase(prefix: string): string {
   return `${prefix}-${new Date().toISOString().slice(0, 10)}`;
 }
 
+function classificationText(card: Card): string {
+  const classifications = card.tags
+    .filter((tag) => tag.startsWith("cat:"))
+    .map((tag) => tag.slice(4));
+  return (classifications.length ? classifications : card.tags).join(" ← ");
+}
+
+function exportRows(cards: Card[]) {
+  return cards.map((card, index) => ({
+    "מספר": index + 1,
+    "סוג שאלה": TYPE_LABEL[card.type],
+    "שאלה": card.question,
+    "אפשרויות": card.type === "multiple" || card.type === "combo"
+      ? (card.options ?? []).map((option, optionIndex) => `${optionIndex + 1}. ${option}`).join("\n")
+      : "",
+    "תשובה נכונה": answerLines(card).join("\n"),
+    "הסבר": "explanation" in card ? (card.explanation ?? "") : "",
+    "סיווג": classificationText(card),
+  }));
+}
+
+function exportSpreadsheet(cards: Card[], format: "xlsx" | "csv", filePrefix: string): void {
+  const worksheet = XLSX.utils.json_to_sheet(exportRows(cards));
+  worksheet["!cols"] = [
+    { wch: 8 }, { wch: 18 }, { wch: 55 }, { wch: 55 },
+    { wch: 55 }, { wch: 45 }, { wch: 35 },
+  ];
+
+  if (format === "xlsx") {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "שאלות ותשובות");
+    XLSX.writeFile(workbook, `${datedFileBase(filePrefix)}.xlsx`, { compression: true });
+    return;
+  }
+
+  const csv = XLSX.utils.sheet_to_csv(worksheet);
+  saveAs(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }), `${datedFileBase(filePrefix)}.csv`);
+}
+
 function rtlParagraph(
   text: string,
   bold = false,
@@ -77,7 +117,8 @@ async function exportDocx(cards: Card[], title: string, filePrefix: string): Pro
   cards.forEach((card, index) => {
     children.push(rtlParagraph(`${index + 1}. ${card.question}`, true, HeadingLevel.HEADING_2));
     children.push(rtlParagraph(`סוג: ${TYPE_LABEL[card.type]}`));
-    if (card.tags.length) children.push(rtlParagraph(`סיווגים: ${card.tags.join(" · ")}`));
+    const classification = classificationText(card);
+    if (classification) children.push(rtlParagraph(`סיווג: ${classification}`));
     children.push(rtlParagraph("תשובה:", true));
     answerLines(card).forEach((line) => children.push(rtlParagraph(line)));
     children.push(new Paragraph({ text: "" }));
@@ -105,7 +146,7 @@ function exportPdf(cards: Card[], title: string, filePrefix: string): void {
   const questions = cards.map((card, index) => `
     <section class="question">
       <h2>${index + 1}. ${escapeHtml(card.question)}</h2>
-      <div class="meta">סוג: ${escapeHtml(TYPE_LABEL[card.type])}${card.tags.length ? ` · סיווגים: ${escapeHtml(card.tags.join(" · "))}` : ""}</div>
+      <div class="meta">סוג: ${escapeHtml(TYPE_LABEL[card.type])}${classificationText(card) ? ` · סיווג: ${escapeHtml(classificationText(card))}` : ""}</div>
       <h3>תשובה</h3>
       ${answerLines(card).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
     </section>
@@ -147,5 +188,6 @@ export async function exportCardsDocument(
   filePrefix = "שאלות",
 ): Promise<void> {
   if (format === "docx") await exportDocx(cards, title, filePrefix);
+  else if (format === "xlsx" || format === "csv") exportSpreadsheet(cards, format, filePrefix);
   else exportPdf(cards, title, filePrefix);
 }

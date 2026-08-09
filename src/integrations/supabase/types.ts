@@ -858,33 +858,51 @@ export type Database = {
         }
         Relationships: []
       }
+      desktop_install_events: {
+        Row: { event_type: string; from_version: string | null; id: string; install_id: string; occurred_at: string; reported_at: string; to_version: string; user_id: string }
+        Insert: { event_type: string; from_version?: string | null; id?: string; install_id: string; occurred_at: string; reported_at?: string; to_version: string; user_id: string }
+        Update: { event_type?: string; from_version?: string | null; id?: string; install_id?: string; occurred_at?: string; reported_at?: string; to_version?: string; user_id?: string }
+        Relationships: [{ foreignKeyName: "desktop_install_events_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
+      }
       user_activity_daily: {
         Row: {
           active_seconds: number
           activity_date: string
+          desktop_active_seconds: number
+          desktop_login_count: number
           first_seen_at: string
           last_login_at: string | null
           last_seen_at: string
           login_count: number
           user_id: string
+          web_active_seconds: number
+          web_login_count: number
         }
         Insert: {
           active_seconds?: number
           activity_date: string
+          desktop_active_seconds?: number
+          desktop_login_count?: number
           first_seen_at?: string
           last_login_at?: string | null
           last_seen_at?: string
           login_count?: number
           user_id: string
+          web_active_seconds?: number
+          web_login_count?: number
         }
         Update: {
           active_seconds?: number
           activity_date?: string
+          desktop_active_seconds?: number
+          desktop_login_count?: number
           first_seen_at?: string
           last_login_at?: string | null
           last_seen_at?: string
           login_count?: number
           user_id?: string
+          web_active_seconds?: number
+          web_login_count?: number
         }
         Relationships: [
           {
@@ -1136,7 +1154,11 @@ export type Database = {
         Returns: undefined
       }
       record_user_activity: {
-        Args: { p_active_seconds?: number; p_event?: string }
+        Args: { p_active_seconds?: number; p_client_type?: string; p_event?: string }
+        Returns: undefined
+      }
+      record_desktop_install_event: {
+        Args: { p_event_type: string; p_from_version: string | null; p_install_id: string; p_occurred_at: string; p_to_version: string }
         Returns: undefined
       }
       email_for_username: { Args: { p_username: string }; Returns: string }

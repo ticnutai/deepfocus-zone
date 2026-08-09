@@ -4,11 +4,19 @@ const { app, BrowserWindow, shell, Menu, protocol, ipcMain } = require("electron
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 
 const isDev = process.env.ELECTRON_DEV === "1";
 const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:5000";
 
-const automatedReportPath = process.env.ELECTRON_E2E_HOME_REPORT || process.env.ELECTRON_PERF_SIDEBAR_REPORT;
+const automatedReportPath = process.env.ELECTRON_E2E_HOME_REPORT
+  || process.env.ELECTRON_E2E_SHAS_REPORT
+  || process.env.ELECTRON_PERF_SIDEBAR_REPORT;
+
+if (automatedReportPath) {
+  const reportKey = crypto.createHash("sha256").update(automatedReportPath).digest("hex").slice(0, 12);
+  app.setPath("userData", path.join(app.getPath("temp"), `lemaan-e2e-${reportKey}`));
+}
 
 if (automatedReportPath) {
   fs.writeFileSync(`${automatedReportPath}.startup`, JSON.stringify({
@@ -160,7 +168,7 @@ if (isDev && process.env.ELECTRON_DEBUG_PORT) {
 
 // ---------------------------------------------------------------------------
 // shas:// — offline access to the bundled Shas library (public/shas → dist/shas).
-// The renderer is loaded via file://, where fetch() cannot read local JSON, so
+// The renderer is loaded via file://, where fetch() cannot read local files, so
 // the local-first layer (src/lib/study/localShas.ts) fetches shas://local/<path>
 // and we serve the file from the packaged app (asar-aware via fs.readFile).
 // ---------------------------------------------------------------------------
@@ -184,9 +192,10 @@ function registerShasProtocol() {
         return new Response("forbidden", { status: 403 });
       }
       const data = await fs.promises.readFile(filePath); // asar-aware
+      const isGzip = filePath.endsWith(".gz");
       return new Response(data, {
         status: 200,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
+        headers: { "Content-Type": isGzip ? "application/gzip" : "application/json; charset=utf-8" },
       });
     } catch {
       return new Response("not found", { status: 404 });
@@ -195,6 +204,37 @@ function registerShasProtocol() {
 }
 
 let mainWindow = null;
+let installationState = null;
+
+function configureInstallationTracking() {
+  const statePath = path.join(app.getPath("userData"), "installation-state.json");
+  const currentVersion = app.getVersion();
+  try {
+    installationState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch {
+    installationState = { installId: crypto.randomUUID(), currentVersion: null, pendingEvents: [] };
+  }
+  installationState.installId ||= crypto.randomUUID();
+  installationState.pendingEvents ||= [];
+  if (!isDev && installationState.currentVersion !== currentVersion) {
+    installationState.pendingEvents.push({
+      id: crypto.randomUUID(),
+      eventType: installationState.currentVersion ? "update" : "install",
+      fromVersion: installationState.currentVersion,
+      toVersion: currentVersion,
+      installId: installationState.installId,
+      occurredAt: new Date().toISOString(),
+    });
+    installationState.currentVersion = currentVersion;
+    fs.writeFileSync(statePath, JSON.stringify(installationState, null, 2), "utf8");
+  }
+  ipcMain.handle("installation:get-pending", () => isDev ? [] : installationState.pendingEvents);
+  ipcMain.handle("installation:ack", (_event, eventId) => {
+    installationState.pendingEvents = installationState.pendingEvents.filter((item) => item.id !== eventId);
+    fs.writeFileSync(statePath, JSON.stringify(installationState, null, 2), "utf8");
+    return { ok: true };
+  });
+}
 
 function sendUpdateStatus(status) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -377,6 +417,46 @@ async function runHomeNavigationE2E(window) {
   }
 }
 
+async function runShasStorageE2E(window) {
+  const reportPath = process.env.ELECTRON_E2E_SHAS_REPORT;
+  if (!reportPath) return;
+  const report = { startedAt: new Date().toISOString(), passed: false };
+  try {
+    const result = await window.webContents.executeJavaScript(`(async () => {
+      const started = Date.now();
+      const response = await fetch("shas://local/Berakhot.json.gz");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+      const payload = await new Response(stream).json();
+      const amud = payload.amudim?.["2a"];
+      return {
+        status: response.status,
+        isGzip,
+        schema: payload.schema_version,
+        slug: payload.slug,
+        amudId: amud?.id,
+        gemaraSegments: amud?.gemara?.length ?? 0,
+        elapsedMs: Date.now() - started,
+      };
+    })()`, true);
+    report.result = result;
+    report.passed = Boolean(
+      result.status === 200
+      && result.isGzip
+      && result.schema === 3
+      && result.slug === "Berakhot"
+      && result.gemaraSegments > 0
+    );
+  } catch (error) {
+    report.error = error?.stack || error?.message || String(error);
+  } finally {
+    report.finishedAt = new Date().toISOString();
+    await fs.promises.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+    if (process.env.ELECTRON_E2E_EXIT === "1") app.quit();
+  }
+}
+
 function createWindow() {
   traceE2E("create-window");
   const appIconPath = path.join(__dirname, "build", "icon.png");
@@ -424,6 +504,10 @@ function createWindow() {
           return runHomeNavigationE2E(mainWindow);
         })
         .catch((error) => logElectron("e2e-load-failed", { message: error?.message || String(error) }));
+    } else if (process.env.ELECTRON_E2E_SHAS_REPORT) {
+      void loadPromise
+        .then(() => runShasStorageE2E(mainWindow))
+        .catch((error) => logElectron("shas-e2e-load-failed", { message: error?.message || String(error) }));
     }
     // A detached DevTools window is convenient for manual development, but
     // automated CDP checks do not need a second window.
@@ -441,6 +525,10 @@ function createWindow() {
       void loadPromise
         .then(() => runHomeNavigationE2E(mainWindow))
         .catch((error) => logElectron("e2e-load-failed", { message: error?.message || String(error) }));
+    } else if (process.env.ELECTRON_E2E_SHAS_REPORT) {
+      void loadPromise
+        .then(() => runShasStorageE2E(mainWindow))
+        .catch((error) => logElectron("shas-e2e-load-failed", { message: error?.message || String(error) }));
     }
     if (process.env.ELECTRON_DEBUG === "1") {
       mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -458,7 +546,9 @@ function createWindow() {
     }
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!automatedReportPath) mainWindow?.show();
+  });
 
   // Open external links in the system browser, not inside the app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -475,7 +565,9 @@ function createWindow() {
 }
 
 // Single-instance lock so users don't accidentally launch multiple copies
-const gotLock = app.requestSingleInstanceLock();
+// Automated checks run hidden and must not steal focus from, or require
+// closing, a user's installed copy of the application.
+const gotLock = automatedReportPath ? true : app.requestSingleInstanceLock();
 traceE2E("single-instance-lock", { gotLock });
 if (!gotLock) {
   app.quit();
@@ -490,6 +582,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     traceE2E("app-ready");
     registerShasProtocol();
+    configureInstallationTracking();
     configureAutoUpdater();
     createWindow();
   });

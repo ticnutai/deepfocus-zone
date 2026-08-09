@@ -13,7 +13,7 @@
 import { useMemo, useState, useRef, useCallback, useEffect, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  Folder, FolderOpen, Home, ChevronLeft, FileText, Pencil, Trash2, Plus,
+  Folder, FolderOpen, Home, ChevronLeft, ChevronRight, FileText, Pencil, Trash2, Plus,
   BookOpen, LayoutList, Edit3, Copy, Download, Star, Layers, FolderPlus,
   ArrowRightLeft, Sparkles, Check, X, Clipboard,
 } from "lucide-react";
@@ -640,6 +640,11 @@ export function CategoryBrowseView({ selectedCategory, onSelectCategory, onAddCa
     onSelectCategory(null);
   }, [onSelectCategory]);
 
+  const goBackOneLevel = useCallback(() => {
+    if (path.length === 0) return;
+    navigateToIndex(path.length - 2);
+  }, [navigateToIndex, path.length]);
+
   const handleChipClick = useCallback((cat: Category) => {
     enterFolder(cat);
   }, [enterFolder]);
@@ -688,6 +693,17 @@ export function CategoryBrowseView({ selectedCategory, onSelectCategory, onAddCa
     <div dir="rtl" className="flex flex-col gap-0 h-full min-h-0">
       {/* ── Breadcrumb bar ── */}
       <div className="flex items-center gap-1 px-3 pt-2 pb-1 flex-wrap">
+        <button
+          type="button"
+          onClick={goBackOneLevel}
+          disabled={path.length === 0}
+          title="חזור לשלב הקודם"
+          aria-label="חזור לשלב הקודם"
+          className="inline-flex items-center gap-1 h-8 px-2 rounded-md border border-gold/40 bg-background/70 text-xs font-medium transition-colors hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="h-4 w-4" />
+          חזרה
+        </button>
         <button
           type="button"
           onClick={goHome}

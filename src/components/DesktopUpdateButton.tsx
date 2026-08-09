@@ -77,12 +77,19 @@ export function DesktopUpdateButton() {
         title={hasUpdate ? "קיים עדכון חדש" : "בדוק עדכוני תוכנה"}
         aria-label={hasUpdate ? "קיים עדכון חדש" : "בדוק עדכוני תוכנה"}
         className={cn(
-          "relative flex h-7 w-7 items-center justify-center rounded-full border transition-colors",
-          hasUpdate ? "border-gold bg-gold text-navy shadow-gold" : "border-gold/70 bg-card text-navy hover:bg-secondary",
+          "relative flex h-7 w-7 items-center justify-center rounded-full border transition-all",
+          hasUpdate
+            ? "border-red-600 bg-red-600 text-white shadow-[0_0_8px_rgba(220,38,38,0.95),0_0_18px_rgba(239,68,68,0.75)] motion-safe:animate-pulse"
+            : "border-gold/70 bg-card text-navy hover:bg-secondary",
         )}
       >
+        {hasUpdate && (
+          <span className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-red-500 bg-red-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-[0_0_10px_rgba(239,68,68,0.7)]">
+            לעדכון
+          </span>
+        )}
         <CircleArrowUp className="h-4 w-4" />
-        {hasUpdate && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />}
+        {hasUpdate && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-200 ring-2 ring-red-700" />}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

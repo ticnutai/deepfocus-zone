@@ -1,5 +1,5 @@
 // שכבת ש"ס מקומי — ברירת המחדל של האפליקציה.
-// הנתונים: public/shas/{Slug}/{daf}{a|b}.json (נוצר ע"י scripts/import-local-shas.mjs)
+// הנתונים: public/shas/{Slug}.json.gz — קובץ דחוס אחד לכל מסכת.
 // כל עמוד: { gemara: string[], commentaries: [{key,he,en,segments[]}], ... }
 //
 // סדר נסיונות טעינה:
@@ -52,6 +52,7 @@ const isElectron =
   typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
 
 const amudCache = new Map<string, LocalAmud | null>();
+const masechetCache = new Map<string, Promise<Record<string, LocalAmud> | null>>();
 let indexCache: LocalShasIndex | null | undefined;
 
 async function tryFetchJson<T>(url: string): Promise<T | null> {
@@ -59,6 +60,27 @@ async function tryFetchJson<T>(url: string): Promise<T | null> {
     const res = await fetch(url);
     if (!res.ok) return null;
     return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function tryFetchGzipJson<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const isStillGzipped = bytes[0] === 0x1f && bytes[1] === 0x8b;
+
+    // Some web servers transparently decode files ending in .gz while the
+    // Electron protocol returns their original bytes. Detect the gzip magic
+    // header so the same loader works reliably in both environments.
+    if (!isStillGzipped) {
+      return JSON.parse(new TextDecoder().decode(bytes)) as T;
+    }
+    if (typeof DecompressionStream === "undefined") return null;
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return (await new Response(stream).json()) as T;
   } catch {
     return null;
   }
@@ -85,10 +107,32 @@ export async function fetchLocalAmud(
 ): Promise<LocalAmud | null> {
   const rel = `${slug}/${daf}${amud}.json`;
   if (amudCache.has(rel)) return amudCache.get(rel)!;
-  let result: LocalAmud | null = null;
-  for (const url of candidates(rel)) {
-    result = await tryFetchJson<LocalAmud>(url);
-    if (result) break;
+
+  let masechetPromise = masechetCache.get(slug);
+  if (!masechetPromise) {
+    masechetPromise = (async () => {
+      for (const url of candidates(`${slug}.json.gz`)) {
+        const packed = await tryFetchGzipJson<{
+          schema_version: number;
+          slug: string;
+          amudim: Record<string, LocalAmud>;
+        }>(url);
+        if (packed?.amudim) return packed.amudim;
+      }
+      return null;
+    })();
+    masechetCache.set(slug, masechetPromise);
+  }
+
+  const masechet = await masechetPromise;
+  let result = masechet?.[`${daf}${amud}`] ?? null;
+
+  // Backward compatibility for development folders or an older deployment.
+  if (!result) {
+    for (const url of candidates(rel)) {
+      result = await tryFetchJson<LocalAmud>(url);
+      if (result) break;
+    }
   }
   amudCache.set(rel, result);
   return result;

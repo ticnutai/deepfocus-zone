@@ -27,6 +27,7 @@ performance/reports/
 
 # Local backup files (uploaded to cloud, not needed in repo)
 *.json.gz
+!public/shas/*.json.gz
 
 # Editor directories and files
 .vscode/*

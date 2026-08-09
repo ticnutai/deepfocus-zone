@@ -3471,10 +3471,17 @@ export function useStudy() {
     const profileBActive = isProfileBMode();
     setState((s) => ({ ...s, cards: [...s.cards, full] }));
     if (profileBActive) markProfileBCardCreated(userId, full.id);
-    if (userId === GUEST_ID) enqueueOfflineQuestion(full);
-    bg(supabase.from("cards").insert(cardToRow(full, userId)));
+    if (userId === GUEST_ID) {
+      // Guest/local questions have their own durable outbox. Never send them
+      // through the regular cloud writer: that path has no authenticated owner
+      // and older builds could accidentally associate them with the bundled
+      // library owner, making them disappear from admin moderation.
+      enqueueOfflineQuestion(full);
+    } else {
+      bg(supabase.from("cards").insert(cardToRow(full, userId)));
+    }
     // Only mirror into card_decks if the card has a deck
-    if (full.deckId) {
+    if (full.deckId && userId !== GUEST_ID) {
       bg(supabase.from("card_decks").insert({
         card_id: full.id, deck_id: full.deckId, user_id: userId, sort_order: 0,
       }), "card_decks.insert");
@@ -3532,10 +3539,12 @@ export function useStudy() {
       cards: [...s.cards, ...full],
       cardDecks: [...(s.cardDecks ?? []), ...links],
     }));
-    for (const part of chunk(full, 500)) {
-      bg(supabase.from("cards").insert(part.map((c) => cardToRow(c, userId))), "cards.bulkInsert");
+    if (userId !== GUEST_ID) {
+      for (const part of chunk(full, 500)) {
+        bg(supabase.from("cards").insert(part.map((c) => cardToRow(c, userId))), "cards.bulkInsert");
+      }
     }
-    if (links.length) {
+    if (links.length && userId !== GUEST_ID) {
       const cdRows = links.map((l) => ({
         card_id: l.cardId, deck_id: l.deckId, user_id: userId, sort_order: 0,
       }));

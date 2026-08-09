@@ -2209,13 +2209,16 @@ export function CategoryExplorerView({ selectedCategory, onSelectCategory, onAdd
         >
           <PanelLeft className={cn("h-4 w-4 transition-colors", mobileSidebarOpen && "text-gold")} />
         </button>
-        {/* History */}
-        <div className="flex items-center gap-0.5 border border-gold/40 rounded-md p-0.5">
-          <button onClick={goBack} disabled={historyIdx <= 0} title="חזור (Alt+→)"
-            className="h-8 w-8 rounded flex items-center justify-center hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed">
+        {/* History — keep the back action explicit and adjacent to the breadcrumb. */}
+        <div className="flex items-center gap-0.5 border border-gold/40 rounded-md p-0.5 bg-background/70">
+          <button onClick={goBack} disabled={historyIdx <= 0} title="חזור לשלב הקודם (Alt+→)"
+            aria-label="חזור לשלב הקודם"
+            className="h-8 px-2 rounded flex items-center justify-center gap-1 text-xs font-medium hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed">
             <ChevronRight className="h-4 w-4" />
+            <span>חזרה</span>
           </button>
           <button onClick={goForward} disabled={historyIdx >= history.length - 1} title="קדימה (Alt+←)"
+            aria-label="עבור לשלב הבא"
             className="h-8 w-8 rounded flex items-center justify-center hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed">
             <ChevronLeft className="h-4 w-4" />
           </button>

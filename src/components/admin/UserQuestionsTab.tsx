@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, Pencil, Printer,
+  CheckCircle2, Eye, EyeOff, FileSpreadsheet, FileText, Loader2, Pencil, Printer,
   RefreshCw, Search, Send, Trash2, Users,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -75,13 +76,12 @@ function rowToCard(row: CardRow): StudyCard {
   return { ...base, type: "combo", answer: row.answer ?? undefined, options: stringArray(row.options), correctIndices: numberArray(row.correct_indices), explanation: row.explanation ?? undefined };
 }
 
-async function fetchAllCards(excludedUserId: string | null): Promise<CardRow[]> {
+async function fetchAllCards(): Promise<CardRow[]> {
   // Filtering in SQL is essential: downloading the entire bundled library
   // (22K+ cards) made this admin screen time out before user questions appeared.
   const { data, error } = await supabase.rpc("get_admin_user_questions" as never);
   if (error) throw error;
-  const rows = (data ?? []) as CardRow[];
-  return excludedUserId ? rows.filter((row) => row.user_id !== excludedUserId) : rows;
+  return (data ?? []) as CardRow[];
 }
 
 export function UserQuestionsTab() {
@@ -102,31 +102,29 @@ export function UserQuestionsTab() {
   const [editOptions, setEditOptions] = useState("");
   const [editCorrect, setEditCorrect] = useState("");
   const [deleting, setDeleting] = useState<CardRow | null>(null);
-  const [sourceUserId, setSourceUserId] = useState<string | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<UserQuestionExportFormat | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkPublishing, setBulkPublishing] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sourceResult, authResult] = await Promise.all([
-        supabase.rpc("get_guest_source_user_id"),
-        supabase.auth.getUser(),
-      ]);
-      const sourceId = typeof sourceResult.data === "string" ? sourceResult.data : null;
+      const authResult = await supabase.auth.getUser();
       const [{ data: profileData, error: profileError }, cardRows] = await Promise.all([
         supabase.from("profiles").select("id,display_name,email"),
-        fetchAllCards(sourceId),
+        fetchAllCards(),
       ]);
       if (profileError) throw profileError;
-      setSourceUserId(sourceId);
       setMeId(authResult.data.user?.id ?? null);
       setProfiles((profileData ?? []) as ProfileRow[]);
       setRows(cardRows.filter((row) => {
         const tags = stringArray(row.tags);
-        return row.user_id !== sourceId
-          && !tags.some((tag) => tag.startsWith("source:builtin") || tag === "source:site_library");
+        return !tags.some((tag) => tag.startsWith("source:builtin") || tag === "source:site_library");
       }));
+      setSelectedIds((current) => new Set([...current].filter((id) => cardRows.some((row) => row.id === id && row.moderation_status !== "published"))));
     } catch (error) {
       toast.error(errorMessage(error, "טעינת שאלות המשתמשים נכשלה"));
     } finally {
@@ -206,42 +204,46 @@ export function UserQuestionsTab() {
   const publish = async (row: CardRow) => {
     if (!meId) return toast.error("לא נמצא משתמש מנהל מחובר");
     setBusyId(row.id);
-    const publishedId = crypto.randomUUID();
-    const tags = [...new Set([...stringArray(row.tags), "source:site_library", `source:user:${row.user_id}`])];
-    const { error: insertError } = await supabase.from("cards").insert({
-      id: publishedId,
-      user_id: sourceUserId ?? meId,
-      deck_id: null,
-      type: row.type,
-      question: row.question,
-      answer: row.answer,
-      options: row.options,
-      correct_indices: row.correct_indices,
-      correct_boolean: row.correct_boolean,
-      explanation: row.explanation,
-      tags,
-      srs: defaultSrs() as unknown as Json,
-      stats: { totalReviews: 0, correct: 0, incorrect: 0 },
-      masechta: row.masechta,
-      daf: row.daf,
-      amud: row.amud,
-      moderation_status: "published",
-      moderated_at: new Date().toISOString(),
-      moderated_by: meId,
-    });
-    if (insertError) {
-      setBusyId(null);
-      return toast.error(insertError.message);
-    }
-    const { error: updateError } = await supabase.from("cards").update({
-      moderation_status: "published",
-      published_card_id: publishedId,
-      moderated_at: new Date().toISOString(),
-      moderated_by: meId,
-    }).eq("id", row.id);
+    const { error } = await supabase.rpc("publish_user_question" as never, { p_card_id: row.id } as never);
     setBusyId(null);
-    if (updateError) return toast.error(updateError.message);
-    toast.success("השאלה אושרה והועתקה למאגר האתר");
+    if (error) return toast.error(error.message);
+    toast.success("השאלה אושרה ונוספה למאגר המרכזי בסיווג שנבחר");
+    await load();
+  };
+
+  const selectableFiltered = useMemo(
+    () => filtered.filter((row) => (row.moderation_status || "private") !== "published"),
+    [filtered],
+  );
+  const allFilteredSelected = selectableFiltered.length > 0 && selectableFiltered.every((row) => selectedIds.has(row.id));
+
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = (checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const row of selectableFiltered) {
+        if (checked) next.add(row.id); else next.delete(row.id);
+      }
+      return next;
+    });
+  };
+
+  const publishSelected = async () => {
+    const ids = [...selectedIds].filter((id) => rows.some((row) => row.id === id && (row.moderation_status || "private") !== "published"));
+    if (!ids.length) return;
+    setBulkPublishing(true);
+    const { error } = await supabase.rpc("publish_user_questions" as never, { p_card_ids: ids } as never);
+    setBulkPublishing(false);
+    if (error) return toast.error(error.message);
+    toast.success(`${ids.length.toLocaleString("he-IL")} שאלות אושרו ונוספו למאגר לפי הסיווג שלהן`);
+    setSelectedIds(new Set());
     await load();
   };
 
@@ -257,6 +259,25 @@ export function UserQuestionsTab() {
     await load();
   };
 
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedIds.has(row.id)),
+    [rows, selectedIds],
+  );
+
+  const deleteSelected = async () => {
+    const ids = selectedRows.map((row) => row.id);
+    if (!ids.length) return;
+    setBulkDeleting(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("cards").update({ deleted_at: now, updated_at: now }).in("id", ids);
+    setBulkDeleting(false);
+    if (error) return toast.error(error.message);
+    toast.success(`${ids.length.toLocaleString("he-IL")} שאלות הוסרו בהצלחה`);
+    setConfirmBulkDelete(false);
+    setSelectedIds(new Set());
+    await load();
+  };
+
   const doExport = async (format: UserQuestionExportFormat) => {
     if (!filtered.length) return;
     setExporting(format);
@@ -264,6 +285,19 @@ export function UserQuestionsTab() {
       const userName = userFilter === "all" ? "כל המשתמשים" : (profileMap.get(userFilter)?.display_name || profileMap.get(userFilter)?.email || "משתמש");
       await exportCardsDocument(filtered.map(rowToCard), format, `שאלות משתמשים — ${userName}`, "שאלות-משתמשים");
       toast.success(`יוצאו ${filtered.length.toLocaleString("he-IL")} שאלות`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "הייצוא נכשל");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportSelected = async (format: UserQuestionExportFormat) => {
+    if (!selectedRows.length) return;
+    setExporting(format);
+    try {
+      await exportCardsDocument(selectedRows.map(rowToCard), format, "שאלות ותשובות שנבחרו", "שאלות-נבחרות");
+      toast.success(`יוצאו ${selectedRows.length.toLocaleString("he-IL")} שאלות שנבחרו`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "הייצוא נכשל");
     } finally {
@@ -289,21 +323,63 @@ export function UserQuestionsTab() {
             <h3 className="flex items-center gap-2 text-xl font-bold"><Users className="h-5 w-5 text-gold" />שאלות משתמשים</h3>
             <p className="text-sm text-muted-foreground">תוכן פרטי נשאר פרטי עד לפעולת „אשר והעבר למאגר”. מאגר האתר אינו מוצג כאן.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => void doExport("docx")} disabled={!filtered.length || exporting !== null}><FileText className="h-4 w-4 ml-1" />Word</Button>
+            <Button variant="outline" onClick={() => void doExport("xlsx")} disabled={!filtered.length || exporting !== null}><FileSpreadsheet className="h-4 w-4 ml-1" />Excel</Button>
+            <Button variant="outline" onClick={() => void doExport("csv")} disabled={!filtered.length || exporting !== null}><FileSpreadsheet className="h-4 w-4 ml-1" />CSV</Button>
             <Button variant="outline" onClick={() => void doExport("pdf")} disabled={!filtered.length || exporting !== null}><Printer className="h-4 w-4 ml-1" />PDF</Button>
             <Button size="icon" variant="outline" onClick={() => void load()} title="רענון"><RefreshCw className="h-4 w-4" /></Button>
           </div>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <div className="relative md:col-span-2"><Search className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש בשאלה, תשובה, משתמש או סיווג…" className="pr-9" /></div>
-          <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, profile, count }) => <SelectItem key={id} value={id}>{profile?.display_name || profile?.email || id.slice(0, 8)} ({count})</SelectItem>)}</SelectContent></Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visible">הכול מלבד מוסתרות</SelectItem><SelectItem value="all">כל הסטטוסים</SelectItem>{Object.entries(STATUS_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
-          <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">כל סוגי השאלות</SelectItem>{Object.entries(TYPE_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
-          <div className="flex gap-1"><Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} title="מתאריך" /><Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} title="עד תאריך" /></div>
+        <div className="grid min-w-0 gap-3 rounded-lg border bg-muted/10 p-3 md:grid-cols-2 xl:grid-cols-12">
+          <div className="relative min-w-0 md:col-span-2 xl:col-span-4">
+            <Label htmlFor="user-questions-search" className="mb-1 block text-xs text-muted-foreground">חיפוש</Label>
+            <Search className="absolute right-3 top-8 h-4 w-4 text-muted-foreground" />
+            <Input id="user-questions-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="שאלה, תשובה, משתמש או סיווג…" className="min-w-0 pr-9" />
+          </div>
+          <div className="min-w-0 xl:col-span-2">
+            <Label className="mb-1 block text-xs text-muted-foreground">משתמש</Label>
+            <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, profile, count }) => <SelectItem key={id} value={id}>{profile?.display_name || profile?.email || id.slice(0, 8)} ({count})</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div className="min-w-0 xl:col-span-2">
+            <Label className="mb-1 block text-xs text-muted-foreground">סטטוס</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="visible">הכול מלבד מוסתרות</SelectItem><SelectItem value="all">כל הסטטוסים</SelectItem>{Object.entries(STATUS_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div className="min-w-0 xl:col-span-2">
+            <Label className="mb-1 block text-xs text-muted-foreground">סוג שאלה</Label>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">כל סוגי השאלות</SelectItem>{Object.entries(TYPE_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:col-span-2 xl:col-span-2">
+            <div className="min-w-0"><Label htmlFor="user-questions-from" className="mb-1 block text-xs text-muted-foreground">מתאריך</Label><Input id="user-questions-from" className="min-w-0 px-2" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></div>
+            <div className="min-w-0"><Label htmlFor="user-questions-to" className="mb-1 block text-xs text-muted-foreground">עד תאריך</Label><Input id="user-questions-to" className="min-w-0 px-2" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></div>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 text-sm"><Badge variant="outline">{filtered.length.toLocaleString("he-IL")} מוצגות</Badge><Badge variant="outline">{rows.length.toLocaleString("he-IL")} שאלות משתמשים</Badge><Badge variant="outline">{userChoices.length.toLocaleString("he-IL")} משתמשים</Badge></div>
+        <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 lg:grid-cols-[minmax(260px,1fr)_auto]">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 font-medium">
+              <Checkbox checked={allFilteredSelected} onCheckedChange={(value) => toggleAllFiltered(value === true)} disabled={!selectableFiltered.length} />
+              בחר את כל השאלות המוצגות
+            </label>
+            <Badge variant="secondary">{selectedIds.size.toLocaleString("he-IL")} נבחרו</Badge>
+            <Button onClick={() => void publishSelected()} disabled={!selectedIds.size || bulkPublishing}>
+              {bulkPublishing ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Send className="ml-1 h-4 w-4" />}
+              אשר נבחרות לסיווג
+            </Button>
+            <Button variant="destructive" onClick={() => setConfirmBulkDelete(true)} disabled={!selectedRows.length || bulkDeleting}>
+              {bulkDeleting ? <Loader2 className="ml-1 h-4 w-4 animate-spin" /> : <Trash2 className="ml-1 h-4 w-4" />}
+              מחק נבחרות
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background/70 p-2">
+            <span className="w-full text-xs font-medium text-muted-foreground sm:w-auto">הורדת הנבחרות</span>
+            <Button size="sm" variant="outline" onClick={() => void exportSelected("docx")} disabled={!selectedRows.length || exporting !== null}><FileText className="ml-1 h-4 w-4" />Word</Button>
+            <Button size="sm" variant="outline" onClick={() => void exportSelected("xlsx")} disabled={!selectedRows.length || exporting !== null}><FileSpreadsheet className="ml-1 h-4 w-4" />Excel</Button>
+            <Button size="sm" variant="outline" onClick={() => void exportSelected("csv")} disabled={!selectedRows.length || exporting !== null}><FileSpreadsheet className="ml-1 h-4 w-4" />CSV</Button>
+            <Button size="sm" variant="outline" onClick={() => void exportSelected("pdf")} disabled={!selectedRows.length || exporting !== null}><Printer className="ml-1 h-4 w-4" />PDF</Button>
+          </div>
+        </div>
       </Card>
 
       <div className="grid gap-3">
@@ -312,8 +388,16 @@ export function UserQuestionsTab() {
           const status = (row.moderation_status || "private") as ModerationStatus;
           const options = stringArray(row.options);
           const correct = numberArray(row.correct_indices);
+          const classification = stringArray(row.tags).filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4));
           return <Card key={row.id} className="gold-frame p-4 space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
+              <Checkbox
+                className="mt-1"
+                checked={selectedIds.has(row.id)}
+                disabled={status === "published"}
+                aria-label={`בחר שאלה: ${row.question}`}
+                onCheckedChange={(value) => toggleSelected(row.id, value === true)}
+              />
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2"><Badge>{TYPE_LABEL[row.type] || row.type}</Badge><Badge variant="outline">{STATUS_LABEL[status]}</Badge><span className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString("he-IL")}</span></div>
                 <p className="font-bold text-foreground whitespace-pre-wrap">{row.question}</p>
@@ -323,7 +407,7 @@ export function UserQuestionsTab() {
                 <Button size="icon" variant="outline" title="עריכה" onClick={() => startEdit(row)}><Pencil className="h-4 w-4" /></Button>
                 {status === "hidden" ? <Button size="icon" variant="outline" title="הצג מחדש" onClick={() => void updateModeration(row, "reviewed")}><Eye className="h-4 w-4" /></Button> : <Button size="icon" variant="outline" title="הסתר מרשימת ברירת המחדל" onClick={() => void updateModeration(row, "hidden")}><EyeOff className="h-4 w-4" /></Button>}
                 <Button size="icon" variant="outline" title="סמן כנבדקה" onClick={() => void updateModeration(row, "reviewed")}><CheckCircle2 className="h-4 w-4" /></Button>
-                <Button size="icon" variant="outline" title="אשר והעבר למאגר האתר" disabled={status === "published" || busyId === row.id} onClick={() => void publish(row)}><Send className="h-4 w-4" /></Button>
+                <Button variant="outline" title="אישור בלחיצה אחת לסיווג שנבחר" disabled={status === "published" || busyId === row.id} onClick={() => void publish(row)}><Send className="ml-1 h-4 w-4" />{status === "published" ? "אושרה" : "אשר לסיווג"}</Button>
                 <Button size="icon" variant="destructive" title="מחיקה" onClick={() => setDeleting(row)}><Trash2 className="h-4 w-4" /></Button>
               </div>
             </div>
@@ -333,7 +417,12 @@ export function UserQuestionsTab() {
               {options.map((option, index) => <p key={`${row.id}-${index}`} className={correct.includes(index) ? "font-bold text-emerald-700" : ""}>{correct.includes(index) ? "✓" : "○"} {option}</p>)}
               {row.explanation && <p className="mt-2"><b>הסבר:</b> {row.explanation}</p>}
             </div>
-            {stringArray(row.tags).length > 0 && <div className="flex flex-wrap gap-1">{stringArray(row.tags).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div>}
+            <div className="flex flex-wrap items-center gap-1 text-sm">
+              <b>סיווג:</b>
+              {classification.length > 0
+                ? classification.map((name, index) => <span key={`${name}-${index}`} className="flex items-center gap-1"><Badge variant="outline">{name}</Badge>{index < classification.length - 1 && <span className="text-muted-foreground">←</span>}</span>)
+                : <Badge variant="outline">ללא סיווג</Badge>}
+            </div>
           </Card>;
         })}
         {!filtered.length && <Card className="gold-frame p-10 text-center text-muted-foreground">לא נמצאו שאלות התואמות לסינון.</Card>}
@@ -350,6 +439,21 @@ export function UserQuestionsTab() {
       </Dialog>
 
       <AlertDialog open={!!deleting} onOpenChange={(value) => !value && setDeleting(null)}><AlertDialogContent dir="rtl"><AlertDialogHeader><AlertDialogTitle>להסיר את השאלה?</AlertDialogTitle><AlertDialogDescription>השאלה תוסר מהמערכת, אך תישמר כמחיקה רכה בבסיס הנתונים לצורך שחזור.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>ביטול</AlertDialogCancel><AlertDialogAction onClick={() => void softDelete()} className="bg-destructive text-destructive-foreground">הסר שאלה</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={confirmBulkDelete} onOpenChange={setConfirmBulkDelete}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>למחוק {selectedRows.length.toLocaleString("he-IL")} שאלות שנבחרו?</AlertDialogTitle>
+            <AlertDialogDescription>השאלות יוסרו יחד מהרשימה באמצעות מחיקה רכה, כך שהמידע יישאר בבסיס הנתונים לצורך שחזור.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void deleteSelected()} disabled={bulkDeleting} className="bg-destructive text-destructive-foreground">
+              {bulkDeleting && <Loader2 className="ml-1 h-4 w-4 animate-spin" />}
+              מחק את השאלות
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

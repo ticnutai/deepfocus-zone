@@ -16,6 +16,10 @@ declare global {
       isElectron: boolean;
       platform: string;
       versions: Record<string, string>;
+      installation?: {
+        getPendingEvents: () => Promise<Array<{ id: string; eventType: "install" | "update"; fromVersion: string | null; toVersion: string; installId: string; occurredAt: string }>>;
+        acknowledge: (eventId: string) => Promise<unknown>;
+      };
       updates?: {
         getVersion: () => Promise<string>;
         check: () => Promise<unknown>;

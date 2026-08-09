@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "2.6.14",
+  "version": "2.6.19",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -30,10 +30,14 @@
     "update-browsers": "npm install caniuse-lite@latest --legacy-peer-deps",
     "generate:joshua": "node scripts/generate-joshua-builtins.mjs --from 2 --to 11 --count 10",
     "generate:offline-library": "node scripts/generate-offline-library.mjs",
+    "pack:shas": "node scripts/pack-local-shas.mjs --remove-source",
     "quiz:pipeline": "node scripts/run-community-quiz-pipeline.mjs",
     "ship": "node scripts/build-and-push.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
     "@capacitor/android": "^8.3.2",
     "@capacitor/cli": "^8.3.2",
     "@capacitor/core": "^8.3.2",
@@ -81,7 +85,6 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "docx": "^9.7.1",
-    "electron-updater": "^6.8.9",
     "embla-carousel-react": "^8.6.0",
     "file-saver": "^2.0.5",
     "fuse.js": "^7.3.0",
@@ -101,9 +104,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
-    "zod": "^3.25.76"
-  },
-  "devDependencies": {
+    "zod": "^3.25.76",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",

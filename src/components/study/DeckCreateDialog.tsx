@@ -1,5 +1,5 @@
 import { startTransition, useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Plus, Search, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, Folder, FolderOpen, LayoutGrid, Maximize2, Minimize2, ChevronsDown, Clock3 } from "lucide-react";
+import { Plus, Search, FolderTree, Check, Pin, PinOff, ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, LayoutGrid, Maximize2, Minimize2, ChevronsDown, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -667,6 +667,16 @@ export function DeckCreateDialog({ open, onOpenChange, onCreated }: Props) {
                 <section className="space-y-3">
                   <div className="text-xs text-muted-foreground border border-gold/20 rounded-md px-2 py-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={normalizedCardsPath.length === 0}
+                        className="inline-flex items-center gap-1 rounded-md border border-gold/40 bg-background px-2 py-1 font-medium text-foreground hover:bg-secondary disabled:opacity-35 disabled:cursor-not-allowed"
+                        onClick={() => setCardsPathAndPersist(normalizedCardsPath.slice(0, -1))}
+                        title="חזור לשלב הקודם"
+                        aria-label="חזור לשלב הקודם"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" /> חזרה
+                      </button>
                       <button type="button" className="hover:underline" onClick={() => setCardsPathAndPersist([])}>סיווג</button>
                       <span>/</span>
                       <button type="button" className="hover:underline" onClick={() => setCardsPathAndPersist([])}>ראשי</button>
