@@ -20,9 +20,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { ChangeNotesTab } from "./ChangeNotesTab";
+import { sourceFromTags } from "@/lib/app/clientSource";
 
 type CardRow = Database["public"]["Tables"]["cards"]["Row"];
-type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "display_name" | "email">;
+type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "display_name" | "username" | "email">;
+type OfflineDeviceRow = { user_id: string; local_username: string | null; display_name: string };
 type ModerationStatus = "private" | "reviewed" | "hidden" | "published";
 
 const STATUS_LABEL: Record<ModerationStatus, string> = {
@@ -87,6 +89,7 @@ async function fetchAllCards(): Promise<CardRow[]> {
 export function UserQuestionsTab() {
   const [rows, setRows] = useState<CardRow[]>([]);
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [offlineDevices, setOfflineDevices] = useState<OfflineDeviceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -113,13 +116,16 @@ export function UserQuestionsTab() {
     setLoading(true);
     try {
       const authResult = await supabase.auth.getUser();
-      const [{ data: profileData, error: profileError }, cardRows] = await Promise.all([
-        supabase.from("profiles").select("id,display_name,email"),
+      const [{ data: profileData, error: profileError }, { data: deviceData, error: deviceError }, cardRows] = await Promise.all([
+        supabase.from("profiles").select("id,display_name,username,email"),
+        supabase.from("offline_question_devices").select("user_id,local_username,display_name"),
         fetchAllCards(),
       ]);
       if (profileError) throw profileError;
+      if (deviceError) throw deviceError;
       setMeId(authResult.data.user?.id ?? null);
       setProfiles((profileData ?? []) as ProfileRow[]);
+      setOfflineDevices((deviceData ?? []) as OfflineDeviceRow[]);
       setRows(cardRows.filter((row) => {
         const tags = stringArray(row.tags);
         return !tags.some((tag) => tag.startsWith("source:builtin") || tag === "source:site_library");
@@ -135,6 +141,16 @@ export function UserQuestionsTab() {
   useEffect(() => { void load(); }, [load]);
 
   const profileMap = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+  const deviceMap = useMemo(() => {
+    const map = new Map<string, OfflineDeviceRow>();
+    for (const device of offlineDevices) if (!map.has(device.user_id)) map.set(device.user_id, device);
+    return map;
+  }, [offlineDevices]);
+  const userLabel = useCallback((id: string) => {
+    const profile = profileMap.get(id);
+    const device = deviceMap.get(id);
+    return device?.local_username || profile?.username || profile?.display_name || device?.display_name || profile?.email || id.slice(0, 8);
+  }, [deviceMap, profileMap]);
   const userChoices = useMemo(() => {
     const ids = [...new Set(rows.map((row) => row.user_id))];
     return ids.map((id) => ({ id, profile: profileMap.get(id), count: rows.filter((row) => row.user_id === id).length }));
@@ -151,9 +167,10 @@ export function UserQuestionsTab() {
     const q = search.trim().toLocaleLowerCase("he");
     if (!q) return true;
     const profile = profileMap.get(row.user_id);
-    return [row.question, row.answer, row.explanation, ...stringArray(row.options), ...stringArray(row.tags), profile?.display_name, profile?.email]
+    const device = deviceMap.get(row.user_id);
+    return [row.question, row.answer, row.explanation, ...stringArray(row.options), ...stringArray(row.tags), profile?.username, profile?.display_name, profile?.email, device?.local_username, device?.display_name]
       .some((value) => value?.toLocaleLowerCase("he").includes(q));
-  }), [dateFrom, dateTo, profileMap, rows, search, statusFilter, typeFilter, userFilter]);
+  }), [dateFrom, dateTo, deviceMap, profileMap, rows, search, statusFilter, typeFilter, userFilter]);
 
   const updateModeration = async (row: CardRow, status: ModerationStatus) => {
     setBusyId(row.id);
@@ -340,7 +357,7 @@ export function UserQuestionsTab() {
           </div>
           <div className="min-w-0 xl:col-span-2">
             <Label className="mb-1 block text-xs text-muted-foreground">משתמש</Label>
-            <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, profile, count }) => <SelectItem key={id} value={id}>{profile?.display_name || profile?.email || id.slice(0, 8)} ({count})</SelectItem>)}</SelectContent></Select>
+            <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, count }) => <SelectItem key={id} value={id}>{userLabel(id)} ({count})</SelectItem>)}</SelectContent></Select>
           </div>
           <div className="min-w-0 xl:col-span-2">
             <Label className="mb-1 block text-xs text-muted-foreground">סטטוס</Label>
@@ -388,7 +405,9 @@ export function UserQuestionsTab() {
           const status = (row.moderation_status || "private") as ModerationStatus;
           const options = stringArray(row.options);
           const correct = numberArray(row.correct_indices);
-          const classification = stringArray(row.tags).filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4));
+          const tags = stringArray(row.tags);
+          const classification = tags.filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4));
+          const source = sourceFromTags(tags);
           return <Card key={row.id} className="gold-frame p-4 space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <Checkbox
@@ -399,9 +418,9 @@ export function UserQuestionsTab() {
                 onCheckedChange={(value) => toggleSelected(row.id, value === true)}
               />
               <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2"><Badge>{TYPE_LABEL[row.type] || row.type}</Badge><Badge variant="outline">{STATUS_LABEL[status]}</Badge><span className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString("he-IL")}</span></div>
+                <div className="mb-1 flex flex-wrap items-center gap-2"><Badge>{TYPE_LABEL[row.type] || row.type}</Badge><Badge variant="outline">{STATUS_LABEL[status]}</Badge><Badge variant="secondary">{source === "desktop" ? "אפליקציה" : source === "web" ? "אתר" : "מקור ישן"}</Badge><span className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString("he-IL")}</span></div>
                 <p className="font-bold text-foreground whitespace-pre-wrap">{row.question}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{profile?.display_name || "ללא שם"} · {profile?.email || row.user_id}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{userLabel(row.user_id)} · {profile?.email || row.user_id}</p>
               </div>
               <div className="flex flex-wrap gap-1">
                 <Button size="icon" variant="outline" title="עריכה" onClick={() => startEdit(row)}><Pencil className="h-4 w-4" /></Button>

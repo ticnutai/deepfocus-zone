@@ -98,6 +98,7 @@ export function UserActivityTab() {
   const desktopLogins = rows.reduce((sum, row) => sum + row.desktop_login_count, 0);
   const webSeconds = rows.reduce((sum, row) => sum + row.web_active_seconds, 0);
   const desktopSeconds = rows.reduce((sum, row) => sum + row.desktop_active_seconds, 0);
+  const unclassifiedLogins = Math.max(0, totalLogins - webLogins - desktopLogins);
   const installs = installEvents.filter((event) => event.event_type === "install").length;
   const updates = installEvents.filter((event) => event.event_type === "update").length;
   const maxDailyUsers = Math.max(1, ...daily.map((day) => day.users.size));
@@ -120,6 +121,12 @@ export function UserActivityTab() {
         <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><Download className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">התקנות שדווחו</div><div className="text-xl font-bold">{installs}</div></div></Card>
         <Card className="gold-frame flex items-center gap-3 p-4"><span className="gold-icon-circle"><RefreshCw className="h-4 w-4" /></span><div><div className="text-xs text-muted-foreground">עדכונים שדווחו</div><div className="text-xl font-bold">{updates}</div></div></Card>
       </div>
+      {unclassifiedLogins > 0 && (
+        <Card className="gold-frame border-dashed p-3 text-sm text-muted-foreground">
+          <b className="text-foreground">{unclassifiedLogins.toLocaleString("he-IL")} כניסות היסטוריות ללא זיהוי ערוץ.</b>{" "}
+          הן נרשמו לפני שנוספה ההפרדה בין אתר לאפליקציה ואינן משויכות בדיעבד לערוץ שגוי.
+        </Card>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[

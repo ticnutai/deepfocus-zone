@@ -35,6 +35,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { loadBundledOfflineLibrary } from "./offlineLibrary";
 import { enqueueOfflineQuestion, reconcileOfflineQuestions } from "./offlineQuestionSync";
+import { withClientSource } from "@/lib/app/clientSource";
 
 /** Active guest profile's pinned source user id, or null to use the global guest_source. */
 const getActiveGuestSourceUserId = (): string | null => {
@@ -3459,7 +3460,7 @@ export function useStudy() {
     const existing = memState.cards.find((c) => normalizeQuestionKey(c.question) === questionKey);
     if (existing) return existing;
     // Enforce: every card must have ≥1 cat: tag. If none → auto-tag "ללא סיווג".
-    const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
+    const tags = withClientSource(Array.isArray(card.tags) ? card.tags : []);
     if (!tags.some((t) => t.startsWith("cat:"))) {
       ensureUncategorized();
       tags.push(UNCATEGORIZED_TAG);
@@ -3517,7 +3518,7 @@ export function useStudy() {
     ensureUncategorized();
     const now = Date.now();
     const full: Card[] = filteredInput.map((card) => {
-      const tags = Array.isArray(card.tags) ? card.tags.slice() : [];
+      const tags = withClientSource(Array.isArray(card.tags) ? card.tags : []);
       if (!tags.some((t) => t.startsWith("cat:"))) tags.push(UNCATEGORIZED_TAG);
       return {
         ...card, tags, id: uid(), createdAt: now,
