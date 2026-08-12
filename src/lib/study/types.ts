@@ -248,6 +248,9 @@ export interface UiPrefs {
   studyToolsOpen?: boolean;
   // CardEditor: pinned category names (synced)
   pinnedCats?: string[];
+  // CategoryPicker: last classification layout and tree expansion behavior (synced across devices)
+  categoryPickerClassificationView?: "tree" | "cards" | "list";
+  categoryPickerExpansionMode?: "all" | "level";
   // CardEditor: last selected create-mode question types (synced)
   cardEditorLastCreateTypes?: CardType[];
   // CardsManager: deck list view mode (synced)

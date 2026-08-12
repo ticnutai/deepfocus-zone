@@ -4,7 +4,7 @@
  * leaving the card creation flow.
  */
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, ChevronRight, Pin, PinOff, Check, LayoutGrid, List, FolderTree, ChevronsDown, Plus, Clock3, FolderPlus } from "lucide-react";
+import { Search, Folder, FolderOpen, ChevronDown, ChevronLeft, ChevronRight, Pin, PinOff, Check, LayoutGrid, List, FolderTree, ChevronsDown, ChevronsUp, Plus, Clock3, FolderPlus, Layers3 } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,10 @@ const HEBREW_LETTER_VALUES: Record<string, number> = {
 const hebrewToNum = (value: string) => [...value].reduce((sum, char) => sum + (HEBREW_LETTER_VALUES[char] ?? 0), 0);
 
 type ClassificationViewMode = "tree" | "cards" | "list";
+type ExpansionMode = "all" | "level";
+
+const isClassificationViewMode = (value: unknown): value is ClassificationViewMode =>
+  value === "tree" || value === "cards" || value === "list";
 
 interface Props {
   open?: boolean;
@@ -44,13 +48,18 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [classificationView, setClassificationViewState] = useState<ClassificationViewMode>(() => {
+    const cloud = state.uiPrefs?.categoryPickerClassificationView;
+    if (isClassificationViewMode(cloud)) return cloud;
     try {
       const saved = localStorage.getItem(VIEW_MODE_KEY);
-      return saved === "tree" || saved === "list" || saved === "cards" ? saved : "cards";
+      return isClassificationViewMode(saved) ? saved : "cards";
     } catch {
       return "cards";
     }
   });
+  const [expansionMode, setExpansionModeState] = useState<ExpansionMode>(
+    state.uiPrefs?.categoryPickerExpansionMode === "level" ? "level" : "all",
+  );
   const [cardsPath, setCardsPath] = useState<string[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
@@ -103,6 +112,25 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
       // The current session still keeps the selected view when storage is unavailable.
     }
     setUiPref("categoryPickerClassificationView", mode);
+  }, [setUiPref]);
+
+  // The merged uiPrefs object is last-write-wins between local cache and cloud.
+  // Reading it here makes the last selected layout roam to another computer.
+  useEffect(() => {
+    const cloud = state.uiPrefs?.categoryPickerClassificationView;
+    if (!isClassificationViewMode(cloud) || cloud === classificationView) return;
+    setClassificationViewState(cloud);
+    try { localStorage.setItem(VIEW_MODE_KEY, cloud); } catch { /* keep in memory */ }
+  }, [classificationView, state.uiPrefs?.categoryPickerClassificationView]);
+
+  useEffect(() => {
+    const cloud = state.uiPrefs?.categoryPickerExpansionMode;
+    if ((cloud === "all" || cloud === "level") && cloud !== expansionMode) setExpansionModeState(cloud);
+  }, [expansionMode, state.uiPrefs?.categoryPickerExpansionMode]);
+
+  const setExpansionMode = useCallback((mode: ExpansionMode) => {
+    setExpansionModeState(mode);
+    setUiPref("categoryPickerExpansionMode", mode);
   }, [setUiPref]);
 
   const categories = useMemo(
@@ -293,11 +321,6 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     );
   };
 
-  const topLevelCategories = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return childrenOf(null).filter((cat) => !q || matchesSearch(cat, q));
-  }, [childrenOf, matchesSearch, search]);
-
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>();
     for (const c of categories) map.set(c.id, c);
@@ -367,12 +390,76 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
     });
   }, [addCategory, addingParent, addingParentId, categories, inline, newCategoryName, onConfirm, pushRecent]);
 
-  const expandFirstLevel = useCallback(() => {
-    setExpanded(Object.fromEntries(topLevelCategories.map((cat) => [cat.id, true])));
-    setCardsPath([]);
-  }, [topLevelCategories]);
+  const branchIds = useMemo(
+    () => categories.filter((cat) => childrenOf(cat.id).length > 0).map((cat) => cat.id),
+    [categories, childrenOf],
+  );
 
-  const hasExpandedBranches = useMemo(() => Object.values(expanded).some(Boolean), [expanded]);
+  const categoryDepth = useCallback((category: Category): number => {
+    let depth = 0;
+    let current: Category | undefined = category;
+    const seen = new Set<string>();
+    while (current?.parentId && !seen.has(current.id)) {
+      seen.add(current.id);
+      depth += 1;
+      current = categoryById.get(current.parentId);
+    }
+    return depth;
+  }, [categoryById]);
+
+  const expandedDepth = useMemo(() => {
+    let deepest = -1;
+    for (const id of branchIds) {
+      if (!expanded[id]) continue;
+      const category = categoryById.get(id);
+      if (category) deepest = Math.max(deepest, categoryDepth(category));
+    }
+    return deepest;
+  }, [branchIds, categoryById, categoryDepth, expanded]);
+
+  const hasExpandedBranches = expandedDepth >= 0;
+  const allBranchesExpanded = branchIds.length > 0 && branchIds.every((id) => expanded[id]);
+
+  const expandTree = useCallback(() => {
+    // Expansion is a tree operation. Make the result immediately visible even
+    // when the user currently uses cards/list layout.
+    if (classificationView !== "tree") setClassificationView("tree");
+    setCardsPath([]);
+
+    if (expansionMode === "all") {
+      setExpanded(Object.fromEntries(branchIds.map((id) => [id, true])));
+      return;
+    }
+
+    if (branchIds.length === 0) return;
+    const maxDepth = Math.max(...branchIds.map((id) => {
+      const category = categoryById.get(id);
+      return category ? categoryDepth(category) : 0;
+    }));
+    if (expandedDepth >= maxDepth) return;
+    const nextDepth = expandedDepth + 1;
+    setExpanded((current) => ({
+      ...current,
+      ...Object.fromEntries(branchIds.filter((id) => {
+        const category = categoryById.get(id);
+        return category ? categoryDepth(category) <= nextDepth : false;
+      }).map((id) => [id, true])),
+    }));
+  }, [branchIds, categoryById, categoryDepth, classificationView, expandedDepth, expansionMode, setClassificationView]);
+
+  const collapseOneLevel = useCallback(() => {
+    if (classificationView !== "tree") setClassificationView("tree");
+    if (!hasExpandedBranches) return;
+    if (expansionMode === "all") {
+      setExpanded({});
+      return;
+    }
+    setExpanded((current) => Object.fromEntries(Object.entries(current).filter(([id, open]) => {
+      if (!open) return false;
+      const category = categoryById.get(id);
+      return category ? categoryDepth(category) < expandedDepth : false;
+    })));
+  }, [categoryById, categoryDepth, classificationView, expandedDepth, expansionMode, hasExpandedBranches, setClassificationView]);
 
   const pickerContent = (
     <>
@@ -399,30 +486,45 @@ export function CategoryPickerDialog({ open, onOpenChange, inline = false, selec
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="h-7 w-7 rounded-full border-2 border-gold/40"
-              onClick={expandFirstLevel}
-              title="פתח רמה ראשונה בלבד"
-            >
-              <ChevronsDown className="h-3.5 w-3.5" />
-            </Button>
-
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className={cn(
-                "h-7 w-7 rounded-full border-2 transition-all",
-                hasExpandedBranches ? "border-navy bg-navy/10 text-navy" : "border-gold/40",
-              )}
-              onClick={() => setExpanded({})}
-              title="כווץ את כל הענפים"
-            >
-              <Plus className={cn("h-3.5 w-3.5 transition-transform duration-200", hasExpandedBranches && "rotate-45")} />
-            </Button>
+            <div className="flex items-center overflow-hidden rounded-full border-2 border-gold/40 bg-background">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 rounded-none border-l border-gold/30"
+                onClick={expandTree}
+                disabled={allBranchesExpanded}
+                title={expansionMode === "all" ? "הרחב את כל העץ" : "הרחב שלב אחד"}
+              >
+                <ChevronsDown className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 rounded-none border-l border-gold/30"
+                onClick={collapseOneLevel}
+                disabled={!hasExpandedBranches}
+                title={expansionMode === "all" ? "מזער את כל העץ" : "מזער שלב אחד"}
+              >
+                <ChevronsUp className="h-3.5 w-3.5" />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-none" title="בחר אופן הרחבה ומזעור">
+                    <Layers3 className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-[210px]">
+                  <DropdownMenuItem className="gap-2" onClick={() => setExpansionMode("all")}>
+                    <ChevronsDown className="h-4 w-4" /> הרחב/מזער את הכול {expansionMode === "all" ? "✓" : ""}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2" onClick={() => setExpansionMode("level")}>
+                    <Layers3 className="h-4 w-4" /> הרחב/מזער שלב־שלב {expansionMode === "level" ? "✓" : ""}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
