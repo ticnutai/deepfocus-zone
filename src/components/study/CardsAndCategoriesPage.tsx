@@ -1,10 +1,12 @@
 import { memo, useEffect, useState, type ComponentType } from "react";
-import { BookOpen, CircleHelp, FolderTree } from "lucide-react";
+import { BookOpen, CircleHelp, FolderTree, LayoutGrid, LayoutList, Network } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { CardsManager } from "./CardsManager";
 import { CategoriesPage } from "./CategoriesPage";
 import { QuestionCreationPage } from "./QuestionCreationPage";
+import { ShasDeckBuilder } from "./ShasDeckBuilder";
+import { useStudy } from "@/lib/study/store";
 
 type SubTab = "categories" | "decks" | "questions";
 const STORAGE_KEY = "cards-categories:sub-tab";
@@ -20,12 +22,12 @@ const PAGE_META: Record<SubTab, {
     icon: FolderTree,
   },
   decks: {
-    title: "יצירת מבחנים",
+    title: "בניית מבחנים",
     description: "בניית מבחנים מהשאלות והקטגוריות שכבר קיימות במערכת.",
     icon: BookOpen,
   },
   questions: {
-    title: "יצירת שאלות",
+    title: "בניית שאלות",
     description: "הוספת שאלות חדשות, תשובות וסיווגן במקום הנכון.",
     icon: CircleHelp,
   },
@@ -50,6 +52,8 @@ function CardsAndCategoriesPage({
   hideNavigation?: boolean;
 }) {
   const [page, setPage] = useState<SubTab>(() => readInitialPage(initialTab));
+  const { state, setUiPref } = useStudy();
+  const deckLayout = state.uiPrefs?.deckBuilderLayout ?? "shas-overview";
   const meta = PAGE_META[page];
   const PageIcon = meta.icon;
 
@@ -106,21 +110,33 @@ function CardsAndCategoriesPage({
         </nav>
       </Card>}
 
-      <header className="rounded-2xl border-2 border-gold/35 bg-gradient-to-l from-gold/10 via-card to-card p-5 shadow-sm">
-        <div className="flex items-center gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card text-gold shadow-sm">
-            <PageIcon className="h-7 w-7" />
-          </span>
-          <div className="text-right">
-            <h1 className="font-display text-2xl font-bold text-foreground">{meta.title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+      {page !== "decks" && <header className="rounded-2xl border-2 border-gold/35 bg-gradient-to-l from-gold/10 via-card to-card p-5 shadow-sm">
+          <div className="flex items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card text-gold shadow-sm">
+              <PageIcon className="h-7 w-7" />
+            </span>
+            <div className="text-right">
+              <h1 className="font-display text-2xl font-bold text-foreground">{meta.title}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>}
 
       <main key={page} className="animate-fade-in">
         {page === "categories" && <CategoriesPage />}
-        {page === "decks" && <CardsManager />}
+        {page === "decks" && <div className="space-y-5">
+          <Card className="gold-frame flex flex-wrap items-center justify-between gap-3 p-3">
+            <div><strong>פריסת בניית מבחנים</strong><p className="text-xs text-muted-foreground">הבחירה נשמרת גם לכניסה הבאה.</p></div>
+            <div className="flex gap-2">
+              <button onClick={() => setUiPref("deckBuilderLayout", "shas-tree")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-tree" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><Network className="h-4 w-4" />עץ ש״ס קודם</button>
+              <button onClick={() => setUiPref("deckBuilderLayout", "shas-spacious")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-spacious" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><LayoutGrid className="h-4 w-4" />עץ ש״ס מרווח</button>
+              <button onClick={() => setUiPref("deckBuilderLayout", "shas-overview")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-overview" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><BookOpen className="h-4 w-4" />סקירה מלאה</button>
+              <button onClick={() => setUiPref("deckBuilderLayout", "classic")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "classic" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><LayoutList className="h-4 w-4" />ניהול רגיל</button>
+            </div>
+          </Card>
+          {deckLayout !== "classic" && <ShasDeckBuilder mode={deckLayout === "shas-overview" ? "overview" : deckLayout === "shas-spacious" ? "spacious" : "compact"} />}
+          <CardsManager />
+        </div>}
         {page === "questions" && <QuestionCreationPage />}
       </main>
     </div>

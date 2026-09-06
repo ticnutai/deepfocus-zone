@@ -1562,11 +1562,15 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     updated_at: new Date(n.updatedAt).toISOString(),
   }));
 
-  const cardDeckRows = (state.cardDecks ?? []).map((x) => ({
+  const cardDeckRows = (state.cardDecks ?? []).map((x, index) => ({
     user_id: userId,
     card_id: x.cardId,
     deck_id: x.deckId,
-    sort_order: x.sortOrder ?? 0,
+    // Repair legacy links that accidentally used Date.now() and exceed the
+    // PostgreSQL INTEGER range. A full-sync retry can now heal them in place.
+    sort_order: Number.isSafeInteger(x.sortOrder) && x.sortOrder >= 0 && x.sortOrder <= 2_147_483_647
+      ? x.sortOrder
+      : index,
     updated_at: new Date((x.updatedAt ?? Date.now())).toISOString(),
   }));
 
@@ -4452,14 +4456,53 @@ export function useStudy() {
   // === Card <-> Deck linkage (many-to-many) ===
   const addCardToDeck = useCallback((cardId: string, deckId: string) => {
     const userId = requireUser();
+    // `card_decks.sort_order` is a PostgreSQL INTEGER (32-bit), therefore a
+    // millisecond timestamp must never be stored here.
+    const sortOrder = (memState.cardDecks ?? []).reduce(
+      (max, link) => link.deckId === deckId ? Math.max(max, link.sortOrder ?? 0) : max,
+      -1,
+    ) + 1;
     setState((s) => {
       const links = s.cardDecks ?? [];
       if (links.some((l) => l.cardId === cardId && l.deckId === deckId)) return s;
-      return { ...s, cardDecks: [...links, { cardId, deckId, sortOrder: Date.now() }] };
+      return { ...s, cardDecks: [...links, { cardId, deckId, sortOrder }] };
     });
     bg(supabase.from("card_decks").upsert({
-      card_id: cardId, deck_id: deckId, user_id: userId, sort_order: Date.now(),
+      card_id: cardId, deck_id: deckId, user_id: userId, sort_order: sortOrder,
     }, { onConflict: "card_id,deck_id" }), "card_decks.upsert");
+  }, []);
+
+  /** Link many cards to one deck in one local update and one cloud request. */
+  const addCardsToDeck = useCallback((cardIds: string[], deckId: string) => {
+    const userId = requireUser();
+    const uniqueIds = [...new Set(cardIds)].filter(Boolean);
+    if (!uniqueIds.length) return;
+    const existing = new Set((memState.cardDecks ?? []).filter((link) => link.deckId === deckId).map((link) => link.cardId));
+    const missingIds = uniqueIds.filter((cardId) => !existing.has(cardId));
+    if (!missingIds.length) return;
+    const firstSortOrder = (memState.cardDecks ?? []).reduce(
+      (max, link) => link.deckId === deckId ? Math.max(max, link.sortOrder ?? 0) : max,
+      -1,
+    ) + 1;
+    setState((s) => {
+      const links = s.cardDecks ?? [];
+      const liveExisting = new Set(links.filter((link) => link.deckId === deckId).map((link) => link.cardId));
+      const liveMissing = missingIds.filter((cardId) => !liveExisting.has(cardId));
+      if (!liveMissing.length) return s;
+      return {
+        ...s,
+        cardDecks: [
+          ...links,
+          ...liveMissing.map((cardId, index) => ({ cardId, deckId, sortOrder: firstSortOrder + index })),
+        ],
+      };
+    });
+    bg(supabase.from("card_decks").upsert(
+      missingIds.map((cardId, index) => ({
+        card_id: cardId, deck_id: deckId, user_id: userId, sort_order: firstSortOrder + index,
+      })),
+      { onConflict: "card_id,deck_id" },
+    ), "card_decks.bulkUpsert");
   }, []);
 
   const removeCardFromDeck = useCallback((cardId: string, deckId: string) => {
@@ -5589,7 +5632,7 @@ export function useStudy() {
     addGoal, updateGoal, deleteGoal, toggleGoalDate,
     setShasPlan, setActiveShasPlan, clearShasPlan, deleteShasPlan, completeShasDaf, undoLastShasDaf, setShasUnit,
     setNotificationsEnabled, setReminderTime, setDayNote,
-    addCardToDeck, removeCardFromDeck, setCardDecks, setDeckCategories, updateDeckCategoryIds,
+    addCardToDeck, addCardsToDeck, removeCardFromDeck, setCardDecks, setDeckCategories, updateDeckCategoryIds,
     renameDeck,
     moveCategory, reorderCategories, moveCardToDeck, setCardCategories,
     loadCategoryChildren, isCategoryChildrenLoaded, isCategoryChildrenLoading, getCategoryHasChildren,

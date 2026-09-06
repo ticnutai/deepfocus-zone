@@ -101,3 +101,44 @@ describe("dafCards performance (load test)", () => {
     expect(ms).toBeLessThan(800);
   });
 });
+
+describe("dafCards amud filtering", () => {
+  const categories: Category[] = [
+    { id: "m", name: MASECHTA, parentId: null, createdAt: 0 },
+    { id: "d", name: dafLabel(35), parentId: "m", createdAt: 0 },
+    { id: "a", name: 'ע"א', parentId: "d", createdAt: 0 },
+    { id: "b", name: 'ע"ב', parentId: "d", createdAt: 0 },
+  ];
+  const makeCard = (id: string, amud: 1 | 2 | null): Card => ({
+    id,
+    deckId: null,
+    type: "flashcard",
+    question: id,
+    answer: "answer",
+    masechta: MASECHTA,
+    daf: 35,
+    amud,
+    tags: amud ? [`cat:${amud === 1 ? "a" : "b"}`] : ["cat:d"],
+    createdAt: 0,
+    srs: { ease: 2.5, interval: 0, repetitions: 0, dueAt: 0, lastReviewedAt: null },
+    stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+  } as Card);
+  const cards = [makeCard("general", null), makeCard("amud-a", 1), makeCard("amud-b", 2)];
+
+  it("shows only explicitly assigned questions in amud-only mode", () => {
+    expect(filterCardsByDafAmud(cards, categories, MASECHTA, 35, 1, { includeDafOnly: false }).map((c) => c.id))
+      .toEqual(["amud-a"]);
+    expect(filterCardsByDafAmud(cards, categories, MASECHTA, 35, 2, { includeDafOnly: false }).map((c) => c.id))
+      .toEqual(["amud-b"]);
+  });
+
+  it("keeps legacy daf-only questions available when explicitly requested", () => {
+    expect(filterCardsByDafAmud(cards, categories, MASECHTA, 35, 1).map((c) => c.id))
+      .toEqual(["general", "amud-a"]);
+  });
+
+  it("counts visible questions per amud and unique questions per daf", () => {
+    expect(countCardsPerDaf(cards, categories, MASECHTA, TOTAL_PAGES).get(35))
+      .toEqual({ a: 2, b: 2, total: 3 });
+  });
+});

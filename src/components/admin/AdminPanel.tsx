@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library, BarChart3 } from "lucide-react";
+import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library, BarChart3, CircleHelp } from "lucide-react";
 import { UsersTab } from "./UsersTab";
+import { GuidesConfigTab } from "./GuidesConfigTab";
 import { RolesTab } from "./RolesTab";
 import { ApprovalTab } from "./ApprovalTab";
 import { UserPermOverrides } from "./UserPermOverrides";
@@ -114,6 +115,9 @@ export function AdminPanel() {
             <TabsTrigger value="usage" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>ניתוח שימוש</span><BarChart3 className="h-4 w-4" />
             </TabsTrigger>
+            <TabsTrigger value="guides" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+              <span>מדריכי כניסה</span><CircleHelp className="h-4 w-4" />
+            </TabsTrigger>
           </TabsList>
         </Card>
 
@@ -127,6 +131,7 @@ export function AdminPanel() {
         <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
         <TabsContent value="user-questions" className="mt-4"><UserQuestionsTab /></TabsContent>
         <TabsContent value="usage" className="mt-4"><UserActivityTab /></TabsContent>
+        <TabsContent value="guides" className="mt-4"><GuidesConfigTab /></TabsContent>
       </Tabs>
     </div>
   );

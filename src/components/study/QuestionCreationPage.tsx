@@ -23,8 +23,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CardEditor } from "./CardEditor";
+import { consumePendingGuideRequest } from "@/lib/onboarding/guideTriggers";
+import { GuideMarker } from "./GuideMarker";
 
 const QUESTION_GUIDE_HIDDEN_KEY = "question-creation-guide-hidden-v1";
+
+// Absolute paths like "/question-guide/x.png" resolve to the OS filesystem
+// root under Electron's file:// protocol, leaving the guide images blank
+// there. BASE_URL is "./" in the Electron build and "/" on the web — this
+// keeps the images working in both.
+const GUIDE_IMG_BASE = `${import.meta.env.BASE_URL}question-guide/`;
 
 const GUIDE_STEPS = [
   {
@@ -36,7 +44,7 @@ const GUIDE_STEPS = [
       "אחרי שבחרת את הקטגוריה הרצויה, לחץ על סימן ה־✓ שמסומן במספר 3 כדי לאשר את הסיווג.",
     ],
     tip: "גם „כללי”, „טור” ו„תנ״ך” הן קטגוריות. בדוגמה הזאת מתמקדים רק ב„ש״ס”.",
-    image: "/question-guide/categories.png",
+    image: `${GUIDE_IMG_BASE}categories.png`,
     imageAlt: "צילום אמיתי של אזור בחירת הקטגוריות",
     imageHint: "1 הוא כרטיס הקטגוריה. 2 הוא כפתור הפתיחה. 3 הוא סימן ה־✓ שמאשר את הבחירה.",
     imageDisplayWidth: 771,
@@ -56,7 +64,7 @@ const GUIDE_STEPS = [
       "אפשר לבחור יותר מסוג אחד אם רוצים ליצור כמה גרסאות של אותה שאלה.",
     ],
     tip: "לשאלה עם כמה תשובות אפשריות בחר „אמריקאי”.",
-    image: "/question-guide/question-types.png",
+    image: `${GUIDE_IMG_BASE}question-types.png`,
     imageAlt: "צילום אמיתי של כפתורי סוגי השאלות",
     imageHint: "הכפתור הכחול מראה מה בחרת.",
     imageDisplayWidth: 771,
@@ -77,7 +85,7 @@ const GUIDE_STEPS = [
       "כשהעיגול מסומן, המערכת יודעת שזו התשובה הנכונה.",
     ],
     tip: "אפשר לסמן יותר מעיגול אחד רק כאשר יש לשאלה כמה תשובות נכונות.",
-    image: "/question-guide/question-and-answers.png",
+    image: `${GUIDE_IMG_BASE}question-and-answers.png`,
     imageAlt: "צילום אמיתי של שדה השאלה, אפשרויות התשובה ועיגולי הסימון",
     imageHint: "העיגולים נמצאים בצד שמאל של כל תשובה — לחץ על העיגול הנכון.",
     imageDisplayWidth: 771,
@@ -98,7 +106,7 @@ const GUIDE_STEPS = [
       "לחץ שוב על הכותרת כדי למזער את האזור.",
     ],
     tip: "אם אינך צריך תגיות או מערכת מבחן, אפשר לדלג על השלב הזה.",
-    image: "/question-guide/optional-settings.png",
+    image: `${GUIDE_IMG_BASE}optional-settings.png`,
     imageAlt: "צילום אמיתי של אזור האפשרויות האופציונליות",
     imageHint: "כל מה שמופיע באזור הזה הוא רשות ולא חובה.",
     imageDisplayWidth: 771,
@@ -120,7 +128,7 @@ const GUIDE_STEPS = [
       "לאחר השמירה הטופס יתנקה ותוכל ליצור שאלה נוספת.",
     ],
     tip: "אם הכפתור לא שומר, חזור למעלה ובדוק שלא שכחת שאלה, תשובה או עיגול נכון.",
-    image: "/question-guide/save-question.png",
+    image: `${GUIDE_IMG_BASE}save-question.png`,
     imageAlt: "צילום אמיתי של כפתור הוסף שאלה",
     imageHint: "רק לחיצה על „הוסף שאלה” שומרת את השאלה.",
     imageDisplayWidth: 166,
@@ -181,9 +189,12 @@ export function QuestionCreationPage() {
 
   useEffect(() => {
     try {
+      // The first-visit guides hub can request this guide explicitly — force
+      // it open even if the user dismissed it forever, since they asked for it.
+      const forceOpen = consumePendingGuideRequest("questions");
       const hidden = localStorage.getItem(QUESTION_GUIDE_HIDDEN_KEY) === "1";
       setDontShowGuideAgain(hidden);
-      if (!hidden) setGuideOpen(true);
+      if (forceOpen || !hidden) setGuideOpen(true);
     } catch {
       setGuideOpen(true);
     }
@@ -251,7 +262,9 @@ export function QuestionCreationPage() {
                   }`}
                 >
                   <Check className="h-5 w-5" />
-                  <span className="absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
+                  {/* Hangs outward (away from the chevron button beside it) so
+                      the "3" and "2" badges never collide in the shared gap. */}
+                  <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
                     3
                   </span>
                 </button>
@@ -268,7 +281,7 @@ export function QuestionCreationPage() {
                   <ChevronLeft
                     className={`h-5 w-5 transition-transform ${guideDemoCategoryOpen ? "-rotate-90" : ""}`}
                   />
-                  <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
+                  <span className="absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
                     2
                   </span>
                 </button>
@@ -566,17 +579,16 @@ export function QuestionCreationPage() {
                             : {}),
                         }}
                       />
-                      <span
-                        aria-label={`סימון ${marker.number}: ${marker.label}`}
-                        title={`${marker.number}. ${marker.label}`}
-                        className="absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-navy text-xs font-extrabold text-primary-foreground shadow-lg ring-4 ring-gold/80"
+                      <GuideMarker
+                        number={marker.number}
+                        size={30}
+                        className="absolute -translate-x-1/2 -translate-y-1/2"
                         style={{
                           left: `${marker.x + marker.offsetX}%`,
                           top: `${marker.y + marker.offsetY}%`,
                         }}
-                      >
-                        {marker.number}
-                      </span>
+                      />
+                      <span className="sr-only">{`סימון ${marker.number}: ${marker.label}`}</span>
                     </span>
                   ))}
                 </div>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect } from "react";
-import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2, ListPlus, FolderPlus, Save } from "lucide-react";
+import { Plus, X, FolderTree, ChevronUp, ChevronDown, Sparkles, Loader2, ListPlus, FolderPlus, Save, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -99,9 +99,10 @@ interface Props {
   onClose?: () => void;
   editCard?: StudyCardType; // when provided, edit instead of create
   prefillCategories?: string[]; // pre-select category names when creating a new card
+  prefillDaf?: { masechta: string; daf: number; amud: 1 | 2 }; // page context is itself a valid classification
 }
 
-export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Props) {
+export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefillDaf }: Props) {
   const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, state, forkSourceCard, isCardFromSource } = useStudy();
   const { isAdmin } = usePermissions();
   const isEdit = !!editCard;
@@ -150,9 +151,9 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
   );
 
   // === Daf/Amud assignment ===
-  const initMasechta = (editCard as AnyCard | undefined)?.masechta ?? "";
-  const initDaf = (editCard as AnyCard | undefined)?.daf;
-  const initAmud = ((editCard as AnyCard | undefined)?.amud ?? 1) as 1 | 2;
+  const initMasechta = (editCard as AnyCard | undefined)?.masechta ?? prefillDaf?.masechta ?? "";
+  const initDaf = (editCard as AnyCard | undefined)?.daf ?? prefillDaf?.daf;
+  const initAmud = ((editCard as AnyCard | undefined)?.amud ?? prefillDaf?.amud ?? 1) as 1 | 2;
   const [masechta, setMasechta] = useState<string>(initMasechta);
   const [daf, setDaf] = useState<number | undefined>(initDaf);
   const [amud, setAmud] = useState<1 | 2>(initAmud);
@@ -221,7 +222,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       showMissingField("צריך לכתוב את נוסח השאלה.");
       return;
     }
-    if (!isEdit && selectedCategoryNames.length === 0) {
+    if (!isEdit && selectedCategoryNames.length === 0 && !prefillDaf) {
       showMissingField("לצורך יצירת שאלה נדרש לבחור לפחות סיווג אחד.");
       return;
     }
@@ -424,7 +425,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
 
   return (
     <div dir="rtl" className="space-y-4">
-      {!isEdit && (
+      {!isEdit && !prefillDaf && (
         <div className="flex items-center gap-3 rounded-xl border-2 border-gold/55 bg-gold/10 px-4 py-3 text-right" role="note">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card text-gold">
             <FolderTree className="h-5 w-5" />
@@ -435,12 +436,21 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
           </div>
         </div>
       )}
+      {prefillDaf && !isEdit && (
+        <div className="flex items-center gap-3 rounded-xl border-2 border-emerald-500/45 bg-emerald-50 px-4 py-3 text-right text-emerald-950" role="note">
+          <BookOpen className="h-5 w-5 shrink-0" />
+          <div>
+            <div className="font-bold">השאלה תסווג אוטומטית לעמוד זה</div>
+            <div className="text-sm">{prefillDaf.masechta} · דף {prefillDaf.daf} · עמוד {prefillDaf.amud === 1 ? "א׳" : "ב׳"}</div>
+          </div>
+        </div>
+      )}
       <div
         dir="ltr"
-        className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(22rem,0.7fr)] xl:items-start"
+        className={cn("grid gap-4 xl:items-start", !prefillDaf && "xl:grid-cols-[minmax(0,1.3fr)_minmax(22rem,0.7fr)]")}
       >
       {/* === Categories — moved to TOP === */}
-      <div
+      {!prefillDaf && <div
         dir="rtl"
         className="space-y-2 rounded-xl border-2 border-gold/40 bg-secondary/20 p-3 xl:col-start-2 xl:row-start-1 xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto"
       >
@@ -518,7 +528,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             הסיווג מתקדם נטען רק כשפותחים אותו, כדי שהדיאלוג יעלה מיד.
           </div>
         )}
-      </div>
+      </div>}
 
       <div dir="rtl" className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
       <div className="space-y-2">
@@ -784,7 +794,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
       </Collapsible>
 
       <DialogFooter className="flex-wrap gap-2 sm:justify-start">
-        {!isEdit && (
+        {!isEdit && !prefillDaf && (
           <Button
             type="button"
             variant="outline"
@@ -796,7 +806,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             שמור והוסף שאלה בסיווג חדש
           </Button>
         )}
-        {!isEdit && (
+        {!isEdit && !prefillDaf && (
           <Button
             type="button"
             variant="outline"
@@ -808,9 +818,19 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories }: Pro
             שמור והוסף שאלה באותו סיווג
           </Button>
         )}
-        <Button onClick={() => handleSave("close")} className="bg-gradient-navy text-primary-foreground rounded-xl">
-          {isEdit ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          {isEdit ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים") : "שמור וצא"}
+        <Button
+          onClick={() => handleSave("close")}
+          className={cn(
+            "rounded-xl bg-gradient-navy text-primary-foreground",
+            prefillDaf && !isEdit && "mr-auto h-12 min-w-64 gap-2 px-6 text-base font-bold shadow-elegant ring-2 ring-gold/40",
+          )}
+        >
+          {isEdit || prefillDaf ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+          {isEdit
+            ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים")
+            : prefillDaf
+              ? "הוסף שאלה לעמוד זה"
+              : "שמור וצא"}
         </Button>
       </DialogFooter>
 

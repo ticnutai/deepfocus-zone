@@ -111,9 +111,11 @@ export function filterCardsByDafAmud(
   masechta: string,
   daf: number,
   amud: 1 | 2 | null,
+  options?: { includeDafOnly?: boolean },
 ): Card[] {
+  const includeDafOnly = options?.includeDafOnly ?? true;
   const resultCache = getReferenceCache(_filterCache, cards, categories);
-  const resultKey = `${masechta}::${daf}::${amud ?? 0}`;
+  const resultKey = `${masechta}::${daf}::${amud ?? 0}::${includeDafOnly ? "with-daf" : "amud-only"}`;
   const cachedResult = resultCache.get(resultKey);
   if (cachedResult) return cachedResult;
 
@@ -121,7 +123,7 @@ export function filterCardsByDafAmud(
   const idx = buildCatIndex(categories, masechta, totalPagesHint);
   const matchingCategoryPayloads = new Set<string>();
   const matchesTarget = (hits: CatHit[]) => hits.some((hit) => (
-    hit.daf === daf && (!amud || hit.amud === 0 || hit.amud === amud)
+    hit.daf === daf && (!amud || hit.amud === amud || (includeDafOnly && hit.amud === 0))
   ));
   for (const [payload, hits] of idx.byName) {
     if (matchesTarget(hits)) matchingCategoryPayloads.add(payload);
@@ -132,9 +134,9 @@ export function filterCardsByDafAmud(
 
   const out: Card[] = [];
   for (const card of cards) {
-    if (card.masechta === masechta && card.daf === daf
-      && (!amud || !card.amud || card.amud === amud)) {
-      out.push(card);
+    if (card.masechta === masechta && card.daf === daf) {
+      const resolvedAmud = card.amud === 1 || card.amud === 2 ? card.amud : null;
+      if (!amud || resolvedAmud === amud || (includeDafOnly && !resolvedAmud)) out.push(card);
       continue;
     }
     for (const tag of card.tags ?? []) {
@@ -165,8 +167,11 @@ export function countCardsPerDaf(
 
   const bump = (d: number, a: boolean, b: boolean) => {
     const cur = out.get(d) ?? { a: 0, b: 0, total: 0 };
-    if (a) { cur.a += 1; cur.total += 1; }
-    if (b) { cur.b += 1; cur.total += 1; }
+    if (a) cur.a += 1;
+    if (b) cur.b += 1;
+    // total represents unique questions on the daf. A daf-only question is
+    // visible on both amudim, but must contribute only once to this total.
+    if (a || b) cur.total += 1;
     out.set(d, cur);
   };
 
@@ -174,8 +179,9 @@ export function countCardsPerDaf(
     if (card.masechta === masechta && card.daf) {
       const d = card.daf;
       if (d >= 2 && d <= totalPages + 1) {
-        if (card.amud === 1) bump(d, true, false);
-        else if (card.amud === 2) bump(d, false, true);
+        const resolvedAmud = card.amud === 1 || card.amud === 2 ? card.amud : null;
+        if (resolvedAmud === 1) bump(d, true, false);
+        else if (resolvedAmud === 2) bump(d, false, true);
         else bump(d, true, true);
       }
       continue;

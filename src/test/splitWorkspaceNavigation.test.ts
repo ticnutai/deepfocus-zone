@@ -12,14 +12,14 @@ describe("split categories, exams and questions navigation", () => {
   it("publishes three independent profile choices and no legacy combined choice", () => {
     expect(ALL_SIDEBAR_ITEMS.filter((item) => splitIds.includes(item.id))).toEqual([
       { id: "categories", label: "קטגוריות" },
-      { id: "decks", label: "יצירת מבחנים" },
-      { id: "questions", label: "יצירת שאלות" },
+      { id: "decks", label: "בניית מבחנים" },
+      { id: "questions", label: "בניית שאלות" },
     ]);
     expect(ALL_SIDEBAR_ITEMS.some((item) => item.id === "cards")).toBe(false);
     expect(DEFAULT_SIDEBAR_ITEMS.filter((item) => splitIds.includes(item.id)).map((item) => item.label)).toEqual([
       "קטגוריות",
-      "יצירת מבחנים",
-      "יצירת שאלות",
+      "בניית מבחנים",
+      "בניית שאלות",
     ]);
     expect(DEFAULT_SIDEBAR_ITEMS.some((item) => item.id === "cards")).toBe(false);
   });

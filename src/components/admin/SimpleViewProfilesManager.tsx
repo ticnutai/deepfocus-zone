@@ -49,6 +49,7 @@ interface UnifiedProfile {
   widgetLayout: WidgetLayout;
   sidebarConfig: SidebarConfig[];
   categoryTemplate: CategoryTemplateItem[];
+  compactInnerPages: boolean;
   updatedAt: number;
 }
 
@@ -56,7 +57,7 @@ const ADMIN_ONLY_SECTION_IDS = new Set(["admin", "system-rubric", "db-inspector"
 
 const SECURITY_MODULE_LABELS: Record<string, string> = {
   cards: "קטגוריות ויצירת שאלות",
-  decks: "יצירת מבחנים",
+  decks: "בניית מבחנים",
   goals: "יעדים",
   shas: 'לוח ש"ס',
   analytics: "סיכום וניתוחים",
@@ -157,6 +158,7 @@ function mergeProfiles(
       widgetLayout: layoutWithUnifiedVisibility(layout?.widgetLayout ?? {}),
       sidebarConfig: layoutOrderOnly(layout?.sidebarConfig ?? []),
       categoryTemplate: layout?.categoryTemplate ?? [],
+      compactInnerPages: layout?.compactInnerPages === true,
       updatedAt: Math.max(layout?.updatedAt ?? 0, block?.updatedAt ?? 0),
     };
   }).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -254,6 +256,7 @@ export function SimpleViewProfilesManager({
       widgetLayout: currentWidgetLayout,
       sidebarConfig: currentSidebar.length ? currentSidebar : defaultSidebar(),
       categoryTemplate: currentCategories,
+      compactInnerPages: false,
       updatedAt: Date.now(),
     };
     setProfiles((prev) => [profile, ...prev]);
@@ -374,6 +377,7 @@ export function SimpleViewProfilesManager({
             widgetLayout: normalized.widgetLayout,
             sidebarConfig: normalized.sidebarConfig,
             categoryTemplate: normalized.categoryTemplate,
+            compactInnerPages: normalized.compactInnerPages,
             updatedAt: now,
           },
         ], { scope }),
@@ -652,6 +656,18 @@ export function SimpleViewProfilesManager({
                   <LayoutTemplate className="h-3.5 w-3.5" /> העתק את הסדר והגדלים מהמסך הנוכחי
                 </Button>
               </div>
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border-2 border-gold/30 bg-gold/5 p-3">
+                <Checkbox
+                  checked={draft.compactInnerPages}
+                  onCheckedChange={(checked) => setDraft({ ...draft, compactInnerPages: checked === true })}
+                />
+                <span>
+                  <span className="block font-semibold">פריסה מרווחת לעמודים פנימיים</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    הכותרת הגדולה נשארת בעמוד הבית בלבד ומוסתרת בלימוד דף ובשאר אזורי הבית, כדי לפנות מקום לתוכן.
+                  </span>
+                </span>
+              </label>
             </section>
 
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">

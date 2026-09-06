@@ -41,6 +41,9 @@ import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBM
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
 import { getLocalAccount } from "@/lib/auth/localAccount";
+import { GuidesDialog } from "@/components/onboarding/GuidesDialog";
+import { SortableConfigItem, type SortableConfigDef } from "@/components/study/SortableConfigItem";
+import { hasSeenGuides, markGuidesSeen } from "@/lib/onboarding/guideTopics";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
 import { getHomeLocation } from "@/lib/study/homeNavigation";
@@ -441,15 +444,14 @@ const StaticLazyPanelPreview = ({ compact = false }: { compact?: boolean }) => (
 
 // ─── Tab config types & defaults ───────────────────────────────────────────
 type TabDef = { v: string; l: string; I: typeof Gauge };
-type SortableConfigDef = { id: string; label: string; icon: typeof Gauge };
 const DEFAULT_TABS: TabDef[] = [
   { v: "overview",      l: "כללי",  I: Gauge },
   { v: "summary",       l: "סיכום",         I: LineChart },
-  { v: "study",         l: "חזרות לימוד",  I: GraduationCap },
-  { v: "daf",           l: "לימוד דף",      I: BookOpen },
+  { v: "study",         l: "חזרות",         I: GraduationCap },
+  { v: "daf",           l: "תרגול",          I: BookOpen },
   { v: "categories",    l: "קטגוריות",      I: FolderTree },
-  { v: "decks",         l: "יצירת מבחנים",  I: BookOpen },
-  { v: "questions",     l: "יצירת שאלות",   I: CircleHelp },
+  { v: "decks",         l: "בניית מבחנים",  I: BookOpen },
+  { v: "questions",     l: "בניית שאלות",   I: CircleHelp },
   { v: "goals",         l: "יעדים",         I: Target },
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
@@ -520,36 +522,6 @@ const USER_INFO_WIDTH_MAX = 75;
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-function SortableConfigItem({
-  item,
-  visible,
-  onToggle,
-  toggleDisabled = false,
-}: {
-  item: SortableConfigDef;
-  visible: boolean;
-  onToggle: () => void;
-  toggleDisabled?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
-  const Icon = item.icon;
-  return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-secondary">
-      <span className="text-sm flex-1 text-right">{item.label}</span>
-      <Icon className="h-4 w-4 text-navy" />
-      <input
-        type="checkbox"
-        checked={visible}
-        onChange={onToggle}
-        disabled={toggleDisabled}
-        className="h-4 w-4 accent-[hsl(var(--gold))] disabled:opacity-60 disabled:cursor-not-allowed"
-      />
-      <button {...listeners} {...attributes} className="cursor-grab text-muted-foreground touch-none"><GripVertical className="h-4 w-4" /></button>
-    </div>
-  );
-}
-
 const Index = () => {
   const initialSection = typeof window !== "undefined"
     ? (new URLSearchParams(window.location.search).get("section") ?? "home")
@@ -565,6 +537,10 @@ const Index = () => {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [guidesOpen, setGuidesOpen] = useState(false);
+  useEffect(() => {
+    if (!hasSeenGuides()) setGuidesOpen(true);
+  }, []);
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
   const { user, signOut, isGuest, guestProfile, loading: authLoading } = useAuth();
   const { isAdmin: permissionIsAdmin, can, roles, loading: permsLoading } = usePermissions();
@@ -1229,65 +1205,6 @@ const Index = () => {
     }));
   }, [active, activeTab, sidebarActiveId]);
 
-  // The branding title + top tab strip normally only appears on the "home"
-  // page. Sidebar-derived pages that were added to that same strip (e.g. the
-  // "book" page renamed to "לוח ש"ס") render through renderSidebarPage instead,
-  // so without this they'd show no header at all. Reusable so any such page
-  // can opt in by rendering it above its own content.
-  const renderHomeHeaderStrip = (activeValue: string) => (
-    <>
-      <div className="text-center space-y-2 animate-fade-in">
-        <p className="font-display text-3xl sm:text-5xl lg:text-7xl font-bold text-gold leading-tight">למען תהיה תורת ה' בפיך</p>
-        <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-semibold text-foreground">מערכת לימוד וחזרות</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">עקוב אחר ההתקדמות שלך וקבל תובנות מתקדמות</p>
-      </div>
-      <Tabs
-        value={activeValue}
-        onValueChange={(v) => {
-          setHomeLandingTab(null);
-          if (!HOME_TAB_IDS.has(v)) {
-            void selectSidebarItem(v);
-            return;
-          }
-          setActive("home");
-          setActiveTab(v);
-          setVisitedTabs((s) => {
-            const next = s.has(v) ? s : new Set(s);
-            next.add(v);
-            return next;
-          });
-          try { localStorage.setItem("active-tab", v); } catch { /* ignore */ }
-        }}
-        className="w-full" dir="rtl"
-      >
-        <Card className="gold-frame p-1.5 sm:p-2 relative">
-          <TabsList
-            className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
-            dir="rtl"
-          >
-            {HOME_TAB_IDS.has(activeValue) && !visibleTabs.some((tab) => tab.v === activeValue) && (
-              <TabsTrigger value={activeValue} className="hidden" aria-hidden tabIndex={-1} />
-            )}
-            {visibleTabs.map(({ v, l, I }) => (
-              <TabsTrigger
-                key={v} value={v}
-                className="w-full min-w-0 justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
-              >
-                <span className="relative">
-                  {l}
-                  {v === "study" && showStudiedBadge && studiedToday && (
-                    <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
-                  )}
-                </span>
-                <I className="h-4 w-4" />
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Card>
-      </Tabs>
-    </>
-  );
-
   const renderSidebarPage = (pageId: string) => {
     // Defence in depth: do not even mount privileged components when a stale
     // URL, persisted active tab or programmatic navigation targets them.
@@ -1490,12 +1407,7 @@ const Index = () => {
       case "backup-restore":
         return <BackupRestorePage />;
       case "shas-board":
-        return (
-          <>
-            {renderHomeHeaderStrip("shas-board")}
-            <ShasBoard />
-          </>
-        );
+        return <ShasBoard />;
       case "db-inspector":
         return <SupabaseInspectorPage />;
       case "perf":
@@ -1589,6 +1501,13 @@ const Index = () => {
                 <DesktopAppDownloadButton />
               </div>
               <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
+                <button
+                  onClick={() => setGuidesOpen(true)}
+                  title="מדריכים והדרכה"
+                  className="flex items-center justify-center aspect-square h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors [&_svg]:size-3"
+                >
+                  <CircleHelp className="h-3 w-3" />
+                </button>
                 <ThemeSwitcher />
                 <UserQuestionsExportButton />
                 <button
@@ -1696,6 +1615,13 @@ const Index = () => {
                         <DesktopAppDownloadButton />
                       </div>
                       <div className="mt-1.5 flex w-full items-center justify-end gap-1.5 border-t border-gold/20 pt-1.5">
+                        <button
+                          onClick={() => { setGuidesOpen(true); setMobileSidebarOpen(false); }}
+                          title="מדריכים והדרכה"
+                          className="flex items-center justify-center aspect-square h-6 w-6 rounded-full border border-gold/70 bg-card text-navy hover:bg-secondary transition-colors [&_svg]:size-3"
+                        >
+                          <CircleHelp className="h-3 w-3" />
+                        </button>
                         <ThemeSwitcher />
                         <UserQuestionsExportButton />
                         <button
@@ -1752,11 +1678,11 @@ const Index = () => {
               </Suspense>
             ) : (
             <>
-            <div className="text-center space-y-2 animate-fade-in">
+            {activeTab === "overview" && <div className="text-center space-y-2 animate-fade-in">
               <p className="font-display text-3xl sm:text-5xl lg:text-7xl font-bold text-gold leading-tight">למען תהיה תורת ה' בפיך</p>
               <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-semibold text-foreground">מערכת לימוד וחזרות</h1>
               <p className="text-muted-foreground text-sm sm:text-base">עקוב אחר ההתקדמות שלך וקבל תובנות מתקדמות</p>
-            </div>
+            </div>}
 
             <Tabs
               value={activeTab}
@@ -1779,9 +1705,9 @@ const Index = () => {
               }}
               className="w-full" dir="rtl"
             >
-              <Card className="gold-frame p-1.5 sm:p-2 relative">
+              <Card className="gold-frame p-1 relative">
                 <TabsList
-                  className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-4 bg-transparent gap-2 sm:gap-3 h-auto px-1"
+                  className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 sm:grid-cols-3 md:grid-cols-5"
                   dir="rtl"
                 >
                   {HOME_TAB_IDS.has(activeTab) && !visibleTabs.some((tab) => tab.v === activeTab) && (
@@ -1790,7 +1716,7 @@ const Index = () => {
                   {visibleTabs.map(({ v, l, I }) => (
                     <TabsTrigger
                       key={v} value={v}
-                      className="w-full min-w-0 justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-3 py-2 text-xs sm:text-sm whitespace-nowrap border border-gold/20 sm:border-0 bg-card/40 sm:bg-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-elegant data-[state=active]:border-transparent"
+                      className="w-full min-w-0 justify-center gap-1 rounded-lg border border-gold/20 bg-card/40 px-2 py-1.5 text-xs whitespace-nowrap sm:bg-transparent data-[state=active]:border-transparent data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
                     >
                       <span className="relative">
                         {l}
@@ -1798,13 +1724,13 @@ const Index = () => {
                           <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
                         )}
                       </span>
-                      <I className="h-4 w-4" />
+                      <I className="h-3.5 w-3.5" />
                     </TabsTrigger>
                   ))}
                 </TabsList>
               </Card>
 
-              <TabsContent value="overview" className="mt-6">
+              <TabsContent value="overview" className="mt-3">
                 {visitedTabs.has("overview") && (
                   homeOverviewReady ? <Suspense fallback={<StaticLazyPanelPreview />}>
                     <WidgetGrid
@@ -1830,7 +1756,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="summary" className="mt-6">
+              <TabsContent value="summary" className="mt-3">
                 {visitedTabs.has("summary") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <SummaryDashboard />
@@ -1838,7 +1764,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="study" className="mt-6">
+              <TabsContent value="study" className="mt-3">
                 {visitedTabs.has("study") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <StudyTab showBadge={showStudiedBadge} onToggleBadge={toggleStudiedBadge} />
@@ -1846,7 +1772,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="daf" className="mt-6" forceMount>
+              <TabsContent value="daf" className="mt-3" forceMount>
                 {visitedTabs.has("daf") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <DafLearningTab isVisible={activeTab === "daf"} />
@@ -1854,7 +1780,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="goals" className="mt-6">
+              <TabsContent value="goals" className="mt-3">
                 {visitedTabs.has("goals") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <WidgetGrid
@@ -1872,7 +1798,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="analytics" className="mt-6">
+              <TabsContent value="analytics" className="mt-3">
                 {visitedTabs.has("analytics") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <KnowledgeAnalytics />
@@ -1880,7 +1806,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="categories" className="mt-6" forceMount>
+              <TabsContent value="categories" className="mt-3" forceMount>
                 {visitedTabs.has("categories") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <CardsAndCategoriesPage initialTab="categories" hideNavigation />
@@ -1888,7 +1814,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="decks" className="mt-6" forceMount>
+              <TabsContent value="decks" className="mt-3" forceMount>
                 {visitedTabs.has("decks") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <CardsAndCategoriesPage initialTab="decks" hideNavigation />
@@ -1896,7 +1822,7 @@ const Index = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="questions" className="mt-6" forceMount>
+              <TabsContent value="questions" className="mt-3" forceMount>
                 {visitedTabs.has("questions") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <CardsAndCategoriesPage initialTab="questions" hideNavigation />
@@ -1912,7 +1838,7 @@ const Index = () => {
                 </TabsContent>
               ))}
 
-              <TabsContent value="backup" className="mt-6" forceMount>
+              <TabsContent value="backup" className="mt-3" forceMount>
                 {visitedTabs.has("backup") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
                     <BackupRestorePage />
@@ -1995,6 +1921,22 @@ const Index = () => {
           </Sheet>
         </main>
       </div>
+
+      {/* First-visit guides hub — reopens every launch until explicitly
+          acknowledged via "כבר קראתי"; also reopenable anytime from the "?"
+          sidebar button. */}
+      <GuidesDialog
+        open={guidesOpen}
+        onOpenChange={setGuidesOpen}
+        onNavigate={(id) => {
+          void selectSidebarItem(id);
+          setGuidesOpen(false);
+        }}
+        onMarkRead={() => {
+          markGuidesSeen();
+          setGuidesOpen(false);
+        }}
+      />
 
       {/* Global Smart Search modal — Ctrl+K / Cmd+K */}
       <Dialog open={searchModalOpen} onOpenChange={setSearchModalOpen}>

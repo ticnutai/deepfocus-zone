@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { ChevronRight, ChevronLeft, BookOpen, ListChecks, GraduationCap, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -19,17 +19,20 @@ import { GemaraViewer } from "./GemaraViewer";
 import { StudySession } from "./StudySession";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
+import { CardEditor } from "./CardEditor";
 import { FitToContainer } from "./FitToContainer";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Card as StudyCardType } from "@/lib/study/types";
 
-type Layout = "split" | "text-only" | "cards-only";
+type Layout = "stacked" | "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
 type SplitSide = "gemara-right" | "gemara-left";
 type NavStep = "seder" | "masechta" | "daf" | "amud";
+type ShasNavigationView = "expanded" | "drilldown";
 
 const STORAGE_KEY = "daf-learning-state";
+const NAV_VIEW_STORAGE_KEY = "daf-learning-navigation-view";
 
 interface SavedState {
   seder?: string;
@@ -54,11 +57,11 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
   if (layout === "split-v" || layout === "split-h") return "split";
   if (layout === "gemara") return "text-only";
   if (layout === "cards") return "cards-only";
-  if (layout === "split" || layout === "text-only" || layout === "cards-only") return layout;
-  return "split";
+  if (layout === "stacked" || layout === "split" || layout === "text-only" || layout === "cards-only") return layout;
+  return "stacked";
 }
 
-function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
+export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const { state, setUiPref } = useStudy();
   const navigate = useNavigate();
   const location = useLocation();
@@ -69,8 +72,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [daf, setDaf] = useState<number>(saved.daf ?? 2);
   const [amud, setAmud] = useState<1 | 2>(saved.amud ?? 1);
   const [layout, setLayout] = useState<Layout>(() => {
-    const fallback: Layout = window.innerWidth >= 1024 ? "split" : "cards-only";
-    return normalizeLayout(saved.layout) ?? fallback;
+    return normalizeLayout(saved.layout);
   });
   const [splitSide, setSplitSide] = useState<SplitSide>(saved.splitSide ?? "gemara-right");
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
@@ -89,6 +91,16 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [navDaf, setNavDaf] = useState<number>(saved.daf ?? 2);
   const [navAmud, setNavAmud] = useState<1 | 2>(saved.amud ?? 1);
   const [navDafPage, setNavDafPage] = useState(0);
+  const [expandedSeder, setExpandedSeder] = useState<string>(saved.seder ?? "מועד");
+  const [expandedMasechta, setExpandedMasechta] = useState<string>(saved.masechta ?? "שבת");
+  const [expandedDaf, setExpandedDaf] = useState<number | null>(saved.daf ?? null);
+  const [navigationView, setNavigationView] = useState<ShasNavigationView>(() => {
+    try { return localStorage.getItem(NAV_VIEW_STORAGE_KEY) === "drilldown" ? "drilldown" : "expanded"; }
+    catch { return "expanded"; }
+  });
+  const [inlineStep, setInlineStep] = useState<NavStep>("seder");
+  const showLegacyNavigator = false;
+  const [addQuestionOpen, setAddQuestionOpen] = useState(false);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -113,6 +125,10 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       practiceScale,
     });
   }, [seder, masechta, daf, amud, layout, splitSide, splitRatio, practiceMode, practiceScale]);
+
+  useEffect(() => {
+    try { localStorage.setItem(NAV_VIEW_STORAGE_KEY, navigationView); } catch { /* ignore */ }
+  }, [navigationView]);
 
   const setSplitRatio = (value: number) => {
     const next = Math.max(20, Math.min(80, Math.round(value)));
@@ -142,6 +158,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
   // איפוס מסכת אם הסדר השתנה ולא תואם
   const masechtos = useMemo(() => SHAS_BAVLI.filter((m) => m.seder === seder), [seder]);
+  useEffect(() => setExpandedSeder(seder), [seder]);
   useEffect(() => {
     if (!masechtos.find((m) => m.name === masechta)) {
       setMasechta(masechtos[0]?.name ?? "");
@@ -169,11 +186,42 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     [state.cards, state.categories, masechta, totalPages, countsReady],
   );
 
+  const expandedMasechtaPages = useMemo(
+    () => SHAS_BAVLI.find((entry) => entry.name === expandedMasechta)?.pages ?? 0,
+    [expandedMasechta],
+  );
+  const navigationDafCounts = useMemo(
+    () => (countsReady && expandedMasechta
+      ? countCardsPerDaf(state.cards, state.categories, expandedMasechta, expandedMasechtaPages)
+      : new Map<number, { a: number; b: number; total: number }>()),
+    [countsReady, state.cards, state.categories, expandedMasechta, expandedMasechtaPages],
+  );
+
+  // Match the number displayed on each amud button to the questions actually
+  // visible there, including legacy questions attached to the whole daf.
+  const expandedAmudCounts = useMemo(() => {
+    if (!expandedMasechta || expandedDaf === null) return { a: 0, b: 0 };
+    return {
+      a: filterCardsByDafAmud(state.cards, state.categories, expandedMasechta, expandedDaf, 1).length,
+      b: filterCardsByDafAmud(state.cards, state.categories, expandedMasechta, expandedDaf, 2).length,
+    };
+  }, [state.cards, state.categories, expandedMasechta, expandedDaf]);
+
   // כרטיסים לעמוד הנוכחי
-  const cards = useMemo(
+  const amudCards = useMemo(
+    () => filterCardsByDafAmud(state.cards, state.categories, masechta, daf, amud, { includeDafOnly: false }),
+    [state.cards, state.categories, masechta, daf, amud],
+  );
+  const cardsWithDafOnly = useMemo(
     () => filterCardsByDafAmud(state.cards, state.categories, masechta, daf, amud),
     [state.cards, state.categories, masechta, daf, amud],
   );
+  const amudCardIds = useMemo(() => new Set(amudCards.map((card) => card.id)), [amudCards]);
+  const dafOnlyCards = useMemo(
+    () => cardsWithDafOnly.filter((card) => !amudCardIds.has(card.id)),
+    [cardsWithDafOnly, amudCardIds],
+  );
+  const cards = cardsWithDafOnly;
   const cardIds = useMemo(() => cards.map((c) => c.id), [cards]);
 
   // ניווט דף קודם/הבא
@@ -276,6 +324,23 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setNavDialogOpen(false);
   };
 
+  const applyInlineAmudSelection = (pickedAmud: 1 | 2) => {
+    if (!expandedMasechta || expandedDaf === null) return;
+
+    // Keep the visible hierarchy and the active learning page in sync. Updating
+    // the complete selection together prevents the validation effect from
+    // restoring the previous amud while changing between sedarim/masechtot.
+    setSeder(expandedSeder);
+    setMasechta(expandedMasechta);
+    setDaf(expandedDaf);
+    setAmud(pickedAmud);
+    setNavSeder(expandedSeder);
+    setNavMasechta(expandedMasechta);
+    setNavDaf(expandedDaf);
+    setNavAmud(pickedAmud);
+    setLayout("stacked");
+  };
+
   const handleChooseSeder = (nextSeder: string) => {
     const nextMasechtos = SHAS_BAVLI.filter((m) => m.seder === nextSeder);
     const nextMasechta =
@@ -335,30 +400,188 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   // ====== Render ======
   const navigator = (
     <Card className="gold-frame p-3 space-y-3" dir="rtl">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
-        {/* סדר */}
-        <Button
-          type="button"
-          variant="outline"
-          className="h-10 w-full justify-between px-3"
-          onClick={() => openNavDialog("seder")}
-          title="בחר סדר"
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gold/30 bg-muted/20 p-2">
+        <ToggleGroup
+          type="single"
+          value={navigationView}
+          onValueChange={(value) => {
+            if (!value) return;
+            setNavigationView(value as ShasNavigationView);
+            if (value === "drilldown") setInlineStep("seder");
+          }}
+          className="rounded-lg border border-gold/30 bg-card p-0.5"
         >
-          <span>{seder}</span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
-        </Button>
+          <ToggleGroupItem value="expanded" className="h-8 px-3 text-xs">עץ פתוח</ToggleGroupItem>
+          <ToggleGroupItem value="drilldown" className="h-8 px-3 text-xs">שלב אחר שלב</ToggleGroupItem>
+        </ToggleGroup>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => openNavDialog("seder")}>בחירה בחלון</Button>
+          <Select value={layout} onValueChange={(value) => setLayout(value as Layout)}>
+            <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="פריסת תוכן" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="stacked">שאלות ומטה גמרא</SelectItem>
+              <SelectItem value="split">טקסט + שאלות</SelectItem>
+              <SelectItem value="text-only">טקסט בלבד</SelectItem>
+              <SelectItem value="cards-only">שאלות בלבד</SelectItem>
+            </SelectContent>
+          </Select>
+          {layout === "split" && (
+            <Button size="icon" variant="outline" className="h-9 w-9" onClick={handleSplitPageToggle} title={isStandaloneSplitPage ? "חזור למסך הראשי" : "פתח בעמוד נפרד"}>
+              {isStandaloneSplitPage ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
+      </div>
 
-        {/* מסכת */}
-        <Button
+      {navigationView === "drilldown" && inlineStep !== "seder" && (
+        <button
           type="button"
-          variant="outline"
-          className="h-10 w-full justify-between px-3"
-          onClick={() => openNavDialog("masechta")}
-          title="בחר מסכת"
+          className="flex w-full items-center justify-between rounded-xl border-2 border-gold/40 bg-gold/5 px-4 py-2 text-right hover:bg-gold/10"
+          onClick={() => {
+            setExpandedMasechta("");
+            setExpandedDaf(null);
+            setInlineStep("masechta");
+          }}
         >
-          <span>{masechta}</span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
-        </Button>
+          <strong>סדר {expandedSeder}</strong>
+          <span className="text-xs text-muted-foreground">לחץ לפתיחת הסדר מחדש</span>
+        </button>
+      )}
+
+      {(navigationView === "expanded" || inlineStep === "seder") && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="סדרי הש״ס">
+        {SEDARIM.map((item) => {
+          const tractateCount = SHAS_BAVLI.filter((entry) => entry.seder === item).length;
+          const selected = item === expandedSeder;
+          return (
+            <button
+              key={item}
+              type="button"
+              aria-expanded={selected}
+              className={cn(
+                "rounded-xl border-2 px-3 py-3 text-center transition-colors",
+                selected
+                  ? "border-gold bg-gradient-navy text-primary-foreground shadow-sm"
+                  : "border-gold/30 bg-card hover:border-gold/70 hover:bg-gold/5",
+              )}
+              onClick={() => {
+                setExpandedSeder(item);
+                setExpandedMasechta("");
+                setExpandedDaf(null);
+                if (navigationView === "drilldown") setInlineStep("masechta");
+              }}
+            >
+              <BookOpen className="mx-auto mb-1 h-4 w-4" />
+              <span className="block font-semibold">{item}</span>
+              <span className={cn("text-[11px]", selected ? "text-primary-foreground/75" : "text-muted-foreground")}>
+                {tractateCount} מסכתות
+              </span>
+            </button>
+          );
+        })}
+      </div>}
+
+      {(navigationView === "expanded" || inlineStep === "masechta") && <div className="rounded-xl border border-gold/35 bg-gold/5 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <strong>סדר {expandedSeder}</strong>
+          {navigationView === "drilldown"
+            ? <Button size="sm" variant="ghost" onClick={() => setInlineStep("seder")}><ChevronRight className="ml-1 h-4 w-4" />חזרה לסדרים</Button>
+            : <span className="text-xs text-muted-foreground">בחר מסכת לפתיחה</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {SHAS_BAVLI.filter((entry) => entry.seder === expandedSeder).map((entry) => (
+            <Button
+              key={entry.name}
+              type="button"
+              size="sm"
+              variant={entry.name === expandedMasechta ? "default" : "outline"}
+              className={cn("justify-between", entry.name === expandedMasechta && "bg-gradient-navy text-primary-foreground")}
+              onClick={() => {
+                setExpandedMasechta(entry.name);
+                setExpandedDaf(null);
+                if (navigationView === "drilldown") setInlineStep("daf");
+              }}
+            >
+              <span>{entry.name}</span>
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+          ))}
+        </div>
+      </div>}
+
+      {expandedMasechta && (navigationView === "expanded" || inlineStep === "daf") && (() => {
+        const selectedMasechta = SHAS_BAVLI.find((entry) => entry.name === expandedMasechta);
+        const pages = Array.from({ length: selectedMasechta?.pages ?? 0 }, (_, index) => index + 2);
+        return (
+          <div className="rounded-xl border border-gold/35 bg-card p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <strong>{expandedMasechta} — בחירת דף</strong>
+              {navigationView === "drilldown"
+                ? <Button size="sm" variant="ghost" onClick={() => setInlineStep("masechta")}><ChevronRight className="ml-1 h-4 w-4" />חזרה למסכתות</Button>
+                : <span className="text-xs text-muted-foreground">כל דפי המסכת</span>}
+            </div>
+            <div className="grid max-h-52 grid-cols-5 gap-1.5 overflow-y-auto p-1 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-14">
+              {pages.map((page) => (
+                <Button
+                  key={page}
+                  type="button"
+                  size="sm"
+                  variant={expandedDaf === page ? "default" : "outline"}
+                  className={cn("h-9 px-1", expandedDaf === page && "bg-gradient-navy text-primary-foreground")}
+                  onClick={() => {
+                    setExpandedDaf(page);
+                    if (navigationView === "drilldown") setInlineStep("amud");
+                  }}
+                >
+                  <span>{dafLabel(page).replace(".", "")}</span>
+                  <span
+                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-gold/70 bg-white px-1 text-[10px] font-bold tabular-nums text-gold shadow-sm"
+                    data-testid={`inline-daf-${page}-count`}
+                    title="סך כל השאלות בדף"
+                  >
+                    {navigationDafCounts.get(page)?.total ?? 0}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {expandedMasechta && expandedDaf !== null && (navigationView === "expanded" || inlineStep === "amud") && (
+        <div className="rounded-xl border-2 border-gold/45 bg-gold/5 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 font-semibold">
+            <span>{expandedMasechta}, דף {dafLabel(expandedDaf).replace(".", "")} — בחר עמוד</span>
+            {navigationView === "drilldown" && <Button size="sm" variant="ghost" onClick={() => setInlineStep("daf")}><ChevronRight className="ml-1 h-4 w-4" />חזרה לדפים</Button>}
+          </div>
+          <div className="mx-auto grid max-w-md grid-cols-2 gap-2">
+            {([1, 2] as const).map((pageSide) => (
+              <Button
+                key={pageSide}
+                type="button"
+                variant={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide ? "default" : "outline"}
+                className={cn(
+                  "h-11 text-base",
+                  masechta === expandedMasechta && daf === expandedDaf && amud === pageSide && "bg-gradient-navy text-primary-foreground",
+                )}
+                aria-pressed={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide}
+                data-testid={`inline-amud-${pageSide}`}
+                onClick={() => applyInlineAmudSelection(pageSide)}
+              >
+                <span>עמוד {pageSide === 1 ? "א׳" : "ב׳"}</span>
+                <span
+                  className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-gold/70 bg-white px-1.5 text-xs font-bold tabular-nums text-gold shadow-sm"
+                  data-testid={`inline-amud-${pageSide}-count`}
+                  title={`מספר השאלות המשויכות לעמוד ${pageSide === 1 ? "א׳" : "ב׳"}`}
+                >
+                  {pageSide === 1 ? expandedAmudCounts.a : expandedAmudCounts.b}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showLegacyNavigator && <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" aria-hidden="true">
 
         {/* דף */}
         <Button
@@ -402,6 +625,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         <Select value={layout} onValueChange={(v) => setLayout(v as Layout)}>
           <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
           <SelectContent>
+            <SelectItem value="stacked">שאלות ומטה גמרא</SelectItem>
             <SelectItem value="split">טקסט + שאלות</SelectItem>
             <SelectItem value="text-only">טקסט בלבד</SelectItem>
             <SelectItem value="cards-only">שאלות בלבד</SelectItem>
@@ -456,12 +680,13 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             )}
           </div>
         </div>
-      </div>
+      </div>}
     </Card>
   );
 
   const gemara = (
     <GemaraViewer
+      key={`${masechta}-${daf}-${amud}`}
       masechta={masechta}
       daf={daf}
       amud={amud}
@@ -501,7 +726,7 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     <Card className="gold-frame p-3 flex flex-col h-full" dir="rtl">
       <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-sm font-semibold flex items-center gap-1">
-          <GraduationCap className="h-4 w-4 text-gold" /> תרגול · {cards.length} שאלות
+          <Play className="h-4 w-4 fill-current text-gold" /> תרגול · {cards.length} שאלות
         </h3>
         <div className="flex items-center gap-1">
           <Popover>
@@ -558,12 +783,16 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
   const cardsPanel = (
     <Card className="gold-frame p-4 flex flex-col h-full" dir="rtl">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold flex items-center gap-1">
-          <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({cards.length})
-        </h3>
-        {cards.length > 0 && (
-          <div className="flex items-center gap-1">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            size="lg"
+            className="h-12 gap-2 rounded-xl bg-gradient-navy px-6 text-base font-bold text-primary-foreground shadow-elegant ring-2 ring-gold/40 transition hover:brightness-110"
+            onClick={() => setAddQuestionOpen(true)}
+          >
+            <Plus className="h-5 w-5" /> הוספת שאלות לעמוד זה
+          </Button>
+          {cards.length > 0 && <>
             <Button
               size="icon"
               variant="outline"
@@ -575,19 +804,22 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             </Button>
             {practiceModeMenu}
             <Button onClick={startPractice} size="sm" className="bg-gradient-navy text-primary-foreground">
-              <GraduationCap className="h-4 w-4" /> תרגול
+              <Play className="h-4 w-4 fill-current" /> תרגול
             </Button>
-          </div>
-        )}
+          </>}
+        </div>
+        <h3 className="text-sm font-semibold flex items-center gap-1">
+          <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({amudCards.length})
+        </h3>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+      <div className="flex-1 overflow-y-auto space-y-2 pr-1" data-testid="daf-question-list">
         {cards.length === 0 ? (
           <div className="text-sm text-muted-foreground text-center py-12">
             אין שאלות משויכות לעמוד זה.<br />
             <span className="text-xs">תוכל להוסיף שאלות בלשונית &quot;שאלות חזרה&quot; ולשייך אותן לקטגוריית &quot;{masechta} › דף {toGematria(daf)} › {amud === 1 ? 'ע"א' : 'ע"ב'}&quot;.</span>
           </div>
-        ) : (
-          cards.map((c, i) => (
+        ) : (<>
+          {amudCards.map((c, i) => (
             <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
               <div className="flex items-start gap-2">
                 <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
@@ -602,8 +834,29 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                 </div>
               </div>
             </div>
-          ))
-        )}
+          ))}
+          {dafOnlyCards.length > 0 && (
+            <div className="sticky top-0 z-10 mt-3 rounded-lg border border-gold/30 bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
+              שאלות כלליות לדף ({dafOnlyCards.length}) — ללא שיוך לעמוד א׳ או ב׳
+            </div>
+          )}
+          {dafOnlyCards.map((c, i) => (
+            <div key={c.id} className="rounded-lg border border-border/70 bg-muted/20 p-3 hover:border-gold/50 transition-colors">
+              <div className="flex items-start gap-2">
+                <span className="text-xs text-muted-foreground font-bold shrink-0 mt-0.5">{i + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-foreground">{c.question}</div>
+                  <div className="text-xs text-muted-foreground mt-1 capitalize">
+                    {c.type === "flashcard" && "פתוחה"}
+                    {c.type === "multiple" && "אמריקאית"}
+                    {c.type === "boolean" && "נכון/לא נכון"}
+                    {c.type === "combo" && "משולבת"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </>)}
       </div>
     </Card>
   );
@@ -616,6 +869,13 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     <div className="space-y-4" dir="rtl">
       {navigator}
       <div style={{ height: "calc(100vh - 280px)", minHeight: 500 }}>
+        {layout === "stacked" && (
+          <div className="grid h-full min-h-0 grid-rows-2 gap-4">
+            <div className="min-h-0">{cardsContent}</div>
+            <div className="min-h-0">{gemara}</div>
+          </div>
+        )}
+
         {layout === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
@@ -695,6 +955,19 @@ function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         open={bulkDeckDialogOpen}
         onOpenChange={setBulkDeckDialogOpen}
       />
+
+      <Dialog open={addQuestionOpen} onOpenChange={setAddQuestionOpen}>
+        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right">הוספת שאלות לעמוד זה</DialogTitle>
+          </DialogHeader>
+          <CardEditor
+            deckId={null}
+            prefillDaf={{ masechta, daf, amud }}
+            onClose={() => setAddQuestionOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={navDialogOpen} onOpenChange={setNavDialogOpen} modal={false}>
         <DialogContent
@@ -889,15 +1162,7 @@ type LearnMode = "shas" | "mishna" | "chumash" | "neviim-ketuvim";
 const MODE_STORAGE_KEY = "daf-learning-mode";
 
 function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
-  const [mode, setMode] = useState<LearnMode>(() => {
-    try {
-      const stored = localStorage.getItem(MODE_STORAGE_KEY);
-      if (stored === "daf") return "shas";
-      if (stored === "shas" || stored === "mishna" || stored === "chumash" || stored === "neviim-ketuvim") return stored;
-      return "shas";
-    }
-    catch { return "shas"; }
-  });
+  const [mode, setMode] = useState<LearnMode>("shas");
   useEffect(() => {
     try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch { /* ignore */ }
   }, [mode]);

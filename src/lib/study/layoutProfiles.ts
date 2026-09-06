@@ -22,6 +22,8 @@ export interface RoleLayoutProfile {
   widgetLayout: WidgetLayout;
   sidebarConfig: SidebarConfig[];
   categoryTemplate: LayoutProfileCategory[];
+  /** Hide the large home hero while an inner home workspace is open. */
+  compactInnerPages?: boolean;
   updatedAt: number;
 }
 
@@ -38,6 +40,7 @@ export interface ResolvedRoleLayoutProfile {
   widgetLayout: WidgetLayout;
   sidebarConfig: SidebarConfig[];
   categoryTemplate: LayoutProfileCategory[];
+  compactInnerPages: boolean;
 }
 
 const LAYOUT_PROFILES_KEY: Record<LayoutScope, string> = {
@@ -77,6 +80,7 @@ const normalizeProfile = (item: unknown): RoleLayoutProfile | null => {
       ? normalizeSplitWorkspaceSidebarConfig(raw.sidebarConfig as SidebarConfig[])
       : [],
     categoryTemplate: Array.isArray(raw.categoryTemplate) ? (raw.categoryTemplate as LayoutProfileCategory[]) : [],
+    compactInnerPages: raw.compactInnerPages === true,
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
   };
 };
@@ -165,5 +169,6 @@ export async function resolveRoleLayoutProfile(roleId: string, opts?: { force?: 
     widgetLayout: profile.widgetLayout,
     sidebarConfig: profile.sidebarConfig,
     categoryTemplate: profile.categoryTemplate,
+    compactInnerPages: profile.compactInnerPages === true,
   };
 }

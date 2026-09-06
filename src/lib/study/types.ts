@@ -255,6 +255,8 @@ export interface UiPrefs {
   cardEditorLastCreateTypes?: CardType[];
   // CardsManager: deck list view mode (synced)
   cardsDeckView?: "list" | "grid" | "compact";
+  // Deck builder: classic manager or Shas drag-and-drop workspace (synced)
+  deckBuilderLayout?: "classic" | "shas-tree" | "shas-spacious" | "shas-overview";
   // StudyPlansCard: plans list view mode (synced local + cloud)
   studyPlansView?: "classic" | "grid2" | "grid3" | "table" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)

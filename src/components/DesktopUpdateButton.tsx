@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { CircleArrowUp, Download, RefreshCw, RotateCcw, WifiOff } from "lucide-react";
+import { CircleArrowUp, Download, RefreshCw, RotateCcw, WifiOff, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { usePreUpdateBackup, type PreUpdateBackupResult } from "@/hooks/usePreUpdateBackup";
 
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const BACKUP_TIMEOUT_MS = 25000;
+const INSTALL_COUNTDOWN_S = 6;
 
 type UpdateStatus =
   | { type: "idle" }
@@ -13,9 +16,11 @@ type UpdateStatus =
   | { type: "available"; version: string }
   | { type: "not-available"; version?: string }
   | { type: "downloading"; percent: number }
-  | { type: "downloaded"; version: string }
+  | { type: "downloaded"; version: string; installInMs?: number }
   | { type: "development"; version: string }
   | { type: "error"; message: string };
+
+type BackupPhase = "idle" | "running" | "done" | "failed";
 
 export function DesktopUpdateButton() {
   const updates = window.desktop?.updates;
@@ -25,6 +30,50 @@ export function DesktopUpdateButton() {
   const [status, setStatus] = useState<UpdateStatus>({ type: "idle" });
   const [currentVersion, setCurrentVersion] = useState("");
   const [open, setOpen] = useState(false);
+  const [installCountdown, setInstallCountdown] = useState(0);
+  const [backupPhase, setBackupPhase] = useState<BackupPhase>("idle");
+  const runPreUpdateBackup = usePreUpdateBackup();
+
+  // Mandatory update, step 1: back up everything the user added BEFORE
+  // installing, so a forced update can never lose local work. Bounded by a
+  // timeout so a stalled network still lets the (equally mandatory) update
+  // proceed instead of hanging forever.
+  useEffect(() => {
+    if (status.type !== "downloaded") {
+      setBackupPhase("idle");
+      return;
+    }
+    let cancelled = false;
+    setBackupPhase("running");
+    const withTimeout = Promise.race<PreUpdateBackupResult>([
+      runPreUpdateBackup(),
+      new Promise((resolve) => window.setTimeout(() => resolve({ ok: false, method: "error" }), BACKUP_TIMEOUT_MS)),
+    ]);
+    void withTimeout.then((result) => {
+      if (!cancelled) setBackupPhase(result.ok ? "done" : "failed");
+    });
+    return () => { cancelled = true; };
+  }, [status, runPreUpdateBackup]);
+
+  // Mandatory update, step 2: once the backup attempt is settled (done OR
+  // failed — it must not block the update forever), install automatically
+  // after a short, visible countdown. The renderer drives this; the main
+  // process (electron/main.cjs) keeps a much longer fallback timer in case
+  // this component never runs at all.
+  useEffect(() => {
+    if (status.type !== "downloaded" || backupPhase === "idle" || backupPhase === "running") return;
+    setInstallCountdown(INSTALL_COUNTDOWN_S);
+    const intervalId = window.setInterval(() => {
+      setInstallCountdown((s) => Math.max(0, s - 1));
+    }, 1000);
+    const timeoutId = window.setTimeout(() => {
+      void updates?.install();
+    }, INSTALL_COUNTDOWN_S * 1000);
+    return () => {
+      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [status, backupPhase, updates]);
 
   useEffect(() => {
     if (!enabled || !updates) return;
@@ -33,7 +82,7 @@ export function DesktopUpdateButton() {
     const unsubscribe = updates.onStatus((next) => {
       if (!active) return;
       setStatus(next);
-      if (next.type === "available" || next.type === "downloaded") setOpen(true);
+      if (next.type === "available" || next.type === "downloading" || next.type === "downloaded") setOpen(true);
     });
     const check = () => {
       if (!navigator.onLine) return;
@@ -92,8 +141,27 @@ export function DesktopUpdateButton() {
         {hasUpdate && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-200 ring-2 ring-red-700" />}
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent dir="rtl" className="max-w-md text-right">
+      {/* Mandatory update: once a download starts, the dialog can't be
+          dismissed — the update proceeds and installs regardless either way,
+          this just keeps the user informed instead of letting them forget
+          about it mid-way. */}
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && (status.type === "downloading" || status.type === "downloaded")) return;
+          setOpen(next);
+        }}
+      >
+        <DialogContent
+          dir="rtl"
+          className="max-w-md text-right"
+          onPointerDownOutside={(e) => {
+            if (status.type === "downloading" || status.type === "downloaded") e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (status.type === "downloading" || status.type === "downloaded") e.preventDefault();
+          }}
+        >
           <DialogHeader className="text-right">
             <DialogTitle>עדכוני תוכנה</DialogTitle>
             <DialogDescription className="text-right">
@@ -108,34 +176,53 @@ export function DesktopUpdateButton() {
             {status.type === "development" && <p>בדיקת עדכונים זמינה בגרסה המותקנת בלבד, ולא במצב פיתוח.</p>}
             {status.type === "available" && (
               <div className="space-y-2">
-                <p className="font-bold text-foreground">גרסה חדשה {status.version} זמינה להתקנה.</p>
-                <p className="text-sm text-muted-foreground">אפשר להמשיך לעבוד בזמן הורדת העדכון.</p>
+                <p className="font-bold text-foreground">גרסה חדשה {status.version} זמינה — ההורדה מתחילה אוטומטית.</p>
+                <p className="text-sm text-muted-foreground">אפשר להמשיך לעבוד בזמן הורדת העדכון ברקע.</p>
               </div>
             )}
             {status.type === "downloading" && (
               <div className="space-y-2">
-                <p className="font-semibold">מוריד את העדכון — {status.percent}%</p>
+                <p className="font-semibold flex items-center gap-2"><Download className="h-4 w-4" /> מוריד עדכון ברקע — {status.percent}%</p>
                 <Progress value={status.percent} />
+                <p className="text-xs text-muted-foreground">העדכון חובה ומתבצע אוטומטית. אפשר להמשיך לעבוד בינתיים.</p>
               </div>
             )}
             {status.type === "downloaded" && (
               <div className="space-y-2">
-                <p className="font-bold text-foreground">גרסה {status.version} מוכנה להתקנה.</p>
-                <p className="text-sm text-muted-foreground">המערכת תיסגר, תתקין את העדכון ותיפתח מחדש.</p>
+                <p className="font-bold text-foreground">גרסה {status.version} מוכנה — מעדכן גרסה…</p>
+                {backupPhase === "running" && (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> מגבה את הנתונים שלך (שאלות, מבחנים, קטגוריות…) לפני ההתקנה…
+                  </p>
+                )}
+                {backupPhase === "done" && (
+                  <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+                    <ShieldCheck className="h-4 w-4" /> הגיבוי הושלם בהצלחה.
+                  </p>
+                )}
+                {backupPhase === "failed" && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    הגיבוי לא הושלם כרגע (יתבצע שוב מאוחר יותר) — העדכון ממשיך בכל זאת.
+                  </p>
+                )}
+                {(backupPhase === "done" || backupPhase === "failed") && (
+                  <p className="text-sm text-muted-foreground">
+                    המערכת תיסגר ותתקין את העדכון אוטומטית בעוד {installCountdown} {installCountdown === 1 ? "שנייה" : "שניות"}, ותיפתח מחדש.
+                  </p>
+                )}
               </div>
             )}
             {status.type === "error" && <p className="flex items-start gap-2 text-destructive"><WifiOff className="mt-0.5 h-4 w-4 shrink-0" /> {status.message}</p>}
           </div>
 
           <DialogFooter className="flex-row-reverse gap-2 sm:justify-start">
-            {status.type === "available" && (
-              <Button onClick={() => void updates.download()} className="gap-2 bg-navy text-white">
-                <Download className="h-4 w-4" /> הורד עדכון
-              </Button>
-            )}
             {status.type === "downloaded" && (
-              <Button onClick={() => void updates.install()} className="gap-2 bg-navy text-white">
-                <RotateCcw className="h-4 w-4" /> הפעל מחדש והתקן
+              <Button
+                onClick={() => void updates.install()}
+                disabled={backupPhase === "running"}
+                className="gap-2 bg-navy text-white"
+              >
+                <RotateCcw className="h-4 w-4" /> התקן עכשיו
               </Button>
             )}
             {(status.type === "idle" || status.type === "not-available" || status.type === "error") && (
@@ -143,7 +230,9 @@ export function DesktopUpdateButton() {
                 <RefreshCw className="h-4 w-4" /> בדוק שוב
               </Button>
             )}
-            <Button variant="ghost" onClick={() => setOpen(false)}>סגור</Button>
+            {status.type !== "downloading" && status.type !== "downloaded" && (
+              <Button variant="ghost" onClick={() => setOpen(false)}>סגור</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

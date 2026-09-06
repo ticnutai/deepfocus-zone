@@ -3,8 +3,15 @@ import { BookOpen, Check, ChevronLeft, ChevronRight, CircleHelp, EyeOff, FolderT
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { consumePendingGuideRequest } from "@/lib/onboarding/guideTriggers";
+import { GuideMarker } from "./GuideMarker";
 
 const HIDDEN_KEY = "deck-creation-guide-hidden-v1";
+// Absolute paths like "/question-guide/x.png" resolve to the OS filesystem
+// root under Electron's file:// protocol, leaving the guide images blank
+// there. BASE_URL is "./" in the Electron build and "/" on the web — this
+// keeps the images working in both.
+const GUIDE_IMG_BASE = `${import.meta.env.BASE_URL}question-guide/`;
 
 const STEPS = [
   {
@@ -42,9 +49,12 @@ export function DeckCreationGuide() {
 
   useEffect(() => {
     try {
+      // The first-visit guides hub can request this guide explicitly — force
+      // it open even if the user dismissed it forever, since they asked for it.
+      const forceOpen = consumePendingGuideRequest("decks");
       const stored = localStorage.getItem(HIDDEN_KEY) === "1";
       setHidden(stored);
-      if (!stored) setOpen(true);
+      if (forceOpen || !stored) setOpen(true);
     } catch {
       setOpen(true);
     }
@@ -70,8 +80,8 @@ export function DeckCreationGuide() {
     <figure key="open" className="mx-auto max-w-[790px] overflow-hidden rounded-2xl border-2 border-gold/45 bg-card p-3 shadow-sm">
       <div className="mb-3 text-right font-semibold">צילום אמיתי של עמוד המבחנים</div>
       <div className="relative overflow-hidden rounded-xl border border-gold/30">
-        <img src="/question-guide/create-test-dialog.png" alt="צילום אמיתי של עמוד המבחנים" className="block h-auto w-full" />
-        <span aria-label="סימון 1: כפתור יצירת מבחן" className="absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-navy text-base font-bold text-white shadow-lg" style={{ left: "40%", top: "50%" }}>1</span>
+        <img src={`${GUIDE_IMG_BASE}create-test-dialog.png`} alt="צילום אמיתי של עמוד המבחנים" className="block h-auto w-full" />
+        <GuideMarker number={1} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "40%", top: "50%" }} />
       </div>
       <figcaption className="mt-3 rounded-lg bg-navy/5 px-3 py-2 text-right text-sm"><strong>1.</strong> לחץ על הפס הכחול „יצירת מבחן”.</figcaption>
     </figure>,
@@ -84,18 +94,18 @@ export function DeckCreationGuide() {
         <div>
           <div className="mb-2 font-semibold">שם המבחן</div>
           <div className="rounded-xl border-2 border-gold/50 px-4 py-3">כל מסכת חגיגה</div>
-          <span className="absolute left-3 top-7 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-navy font-bold text-white shadow-lg">1</span>
+          <GuideMarker number={1} className="absolute left-3 top-6" />
         </div>
         <div>
           <div className="mb-2 flex items-center gap-2 font-semibold"><FolderTree className="h-4 w-4 text-gold" /> סיווג קיים</div>
           <div className="flex flex-wrap gap-2">
             {['ש״ס', 'מועד', 'חגיגה'].map((name) => <span key={name} className="rounded-full border border-gold/50 bg-gold/5 px-3 py-1.5">{name}</span>)}
           </div>
-          <span className="absolute left-3 top-[7.5rem] flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-navy font-bold text-white shadow-lg">2</span>
+          <GuideMarker number={2} className="absolute left-3 top-[7rem]" />
         </div>
         <div className="flex justify-start">
           <div className="rounded-xl bg-navy px-5 py-2.5 font-bold text-white">שמור מבחן</div>
-          <span className="absolute bottom-4 left-3 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-green-600 font-bold text-white shadow-lg">3</span>
+          <GuideMarker number={3} tone="success" className="absolute bottom-3 left-3" />
         </div>
       </div>
       <figcaption className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
@@ -110,10 +120,10 @@ export function DeckCreationGuide() {
         <div className="text-xs text-muted-foreground">המספרים מראים איפה ללחוץ</div>
       </div>
       <div className="relative mx-auto overflow-hidden rounded-xl border border-gold/30" style={{ maxWidth: 771 }}>
-        <img src="/question-guide/categories.png" alt="צילום אמיתי של אזור בחירת הקטגוריות עם סימוני הדרכה" className="block h-auto w-full" />
-        <span aria-label="סימון 1: כרטיס הקטגוריה" className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-navy text-sm font-bold text-white shadow-lg" style={{ left: "8%", top: "60%" }}>1</span>
-        <span aria-label="סימון 2: כפתור פתיחת הקטגוריה" className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-navy text-sm font-bold text-white shadow-lg" style={{ left: "89%", top: "60%" }}>2</span>
-        <span aria-label="סימון 3: סימן הווי לבחירת הקטגוריה" className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-green-600 text-sm font-bold text-white shadow-lg" style={{ left: "56%", top: "60%" }}>3</span>
+        <img src={`${GUIDE_IMG_BASE}categories.png`} alt="צילום אמיתי של אזור בחירת הקטגוריות עם סימוני הדרכה" className="block h-auto w-full" />
+        <GuideMarker number={1} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "8%", top: "60%" }} />
+        <GuideMarker number={2} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "89%", top: "60%" }} />
+        <GuideMarker number={3} tone="success" className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "56%", top: "60%" }} />
       </div>
       <figcaption className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
         <div className="rounded-lg bg-navy/5 px-3 py-2"><strong>1.</strong> בחר את כרטיס הקטגוריה הרצויה.</div>
@@ -124,9 +134,9 @@ export function DeckCreationGuide() {
     <figure key="save" className="mx-auto max-w-[790px] overflow-hidden rounded-2xl border-2 border-gold/45 bg-card p-3 shadow-sm">
       <div className="mb-3 text-right font-semibold">כך מבחן שמור נראה ברשימה האמיתית</div>
       <div className="relative overflow-hidden rounded-xl border border-gold/30">
-        <img src="/question-guide/create-test-dialog.png" alt="צילום אמיתי של מבחן קיים ברשימת המבחנים" className="block h-auto w-full" />
-        <span aria-label="סימון 1: כרטיס מבחן קיים" className="absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-navy text-base font-bold text-white shadow-lg" style={{ left: "40%", top: "69%" }}>1</span>
-        <span aria-label="סימון 2: כפתור התרגול" className="absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-green-600 text-base font-bold text-white shadow-lg" style={{ left: "70%", top: "58%" }}>2</span>
+        <img src={`${GUIDE_IMG_BASE}create-test-dialog.png`} alt="צילום אמיתי של מבחן קיים ברשימת המבחנים" className="block h-auto w-full" />
+        <GuideMarker number={1} size={38} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "40%", top: "69%" }} />
+        <GuideMarker number={2} tone="success" size={38} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: "70%", top: "58%" }} />
       </div>
       <figcaption className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
         <div className="rounded-lg bg-navy/5 px-3 py-2"><strong>1.</strong> המבחן החדש מופיע ברשימת המבחנים.</div>
