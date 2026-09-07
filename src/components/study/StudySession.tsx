@@ -89,6 +89,32 @@ const QUIZ_ANSWER_MODE_KEY = "study-quiz-answer-mode-v1"; // "instant" | "button
 const QUIZ_THEME_KEY = "study-quiz-theme-v1"; // "classic" | "millionaire" | "navy" | "dark" | "colorful" | "custom"
 const CUSTOM_QUIZ_THEME_KEY = "study-quiz-custom-theme-v1";
 const QUESTION_ALIGN_KEY = "study-question-align-v1";
+
+function readableTextColor(foreground: string | undefined, background: string | undefined): string | undefined {
+  const parseHex = (color: string | undefined) => {
+    const match = color?.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+    if (!match) return null;
+    const hex = match[1].length === 3 ? [...match[1]].map((char) => char + char).join("") : match[1];
+    return [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+  };
+  const luminance = (rgb: number[]) => {
+    const channels = rgb.map((value) => {
+      const channel = value / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const fg = parseHex(foreground);
+  const bg = parseHex(background);
+  if (!fg || !bg) return foreground;
+  const fgL = luminance(fg);
+  const bgL = luminance(bg);
+  const contrast = (Math.max(fgL, bgL) + 0.05) / (Math.min(fgL, bgL) + 0.05);
+  if (contrast >= 4.5) return foreground;
+  const whiteContrast = 1.05 / (bgL + 0.05);
+  const blackContrast = (bgL + 0.05) / 0.05;
+  return whiteContrast >= blackContrast ? "#ffffff" : "#000000";
+}
 const QUIZ_HISTORY_KEY = "study-quiz-history-v1";
 const LAST_QUICK_DECK_KEY = "study-last-quick-deck-id-v1";
 const TOOLS_OPEN_KEY = "study-desktop-tools-open-v1";
@@ -1776,6 +1802,27 @@ export function StudySession({
     ...typographyToBgStyle(typography),
   };
 
+  const effectiveQuestionBg = typography.bgColor || (quizTheme === "custom"
+    ? customQuizTheme.questionBg
+    : quizTheme === "millionaire"
+      ? "#061022"
+      : quizTheme === "dark"
+        ? "#111827"
+        : quizTheme === "navy"
+          ? "#ffffff"
+          : undefined);
+  const requestedQuestionText = typography.textColor || (quizTheme === "custom"
+    ? customQuizTheme.questionText
+    : quizTheme === "millionaire" || quizTheme === "dark"
+      ? "#ffffff"
+      : quizTheme === "navy"
+        ? "#0c1831"
+        : undefined);
+  const accessibleQuestionText = readableTextColor(requestedQuestionText, effectiveQuestionBg);
+  const hasDarkQuestionSurface = effectiveQuestionBg
+    ? readableTextColor("#111827", effectiveQuestionBg) === "#ffffff"
+    : quizTheme === "millionaire" || quizTheme === "dark";
+
   const questionTextCls =
     quizTheme === "millionaire"
       ? "text-white"
@@ -1796,6 +1843,7 @@ export function StudySession({
       : {}),
     // Typography overlay (always applied on top of theme)
     ...typographyToStyle(typography),
+    ...(accessibleQuestionText ? { color: accessibleQuestionText } : {}),
     // Alignment from dedicated toggle (typography.align wins when explicitly set)
     textAlign: typography.align,
   };
@@ -2512,12 +2560,12 @@ export function StudySession({
         {/* Top-right corner: card type badge */}
         <Badge
           variant="outline"
-          className="absolute top-3 right-3 border-gold text-navy text-xs"
+          className={cn("absolute top-3 right-3 border-gold text-xs", hasDarkQuestionSurface ? "text-white" : "text-navy")}
           style={
             quizTheme === "custom"
               ? {
                   borderColor: customQuizTheme.badgeBorderColor,
-                  color: customQuizTheme.badgeTextColor,
+                  color: readableTextColor(customQuizTheme.badgeTextColor, effectiveQuestionBg),
                 }
               : {}
           }
@@ -2533,11 +2581,11 @@ export function StudySession({
         {/* Top-left corner: category breadcrumb */}
         {categoryBreadcrumb && (
           <span
-            className="absolute top-3 left-3 text-xs text-muted-foreground max-w-[55%] truncate"
+            className={cn("absolute top-3 left-3 max-w-[55%] truncate text-xs", hasDarkQuestionSurface ? "text-white/75" : "text-muted-foreground")}
             dir="rtl"
             style={
               quizTheme === "custom"
-                ? { color: customQuizTheme.breadcrumbColor }
+                ? { color: readableTextColor(customQuizTheme.breadcrumbColor, effectiveQuestionBg) }
                 : {}
             }
           >

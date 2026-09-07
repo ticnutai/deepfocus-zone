@@ -11,9 +11,11 @@ import {
   EyeOff,
   SkipForward,
   SlidersHorizontal,
+  LayoutPanelTop,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -25,8 +27,10 @@ import {
 import { CardEditor } from "./CardEditor";
 import { consumePendingGuideRequest } from "@/lib/onboarding/guideTriggers";
 import { GuideMarker } from "./GuideMarker";
+import { ShasDeckBuilder } from "./ShasDeckBuilder";
 
 const QUESTION_GUIDE_HIDDEN_KEY = "question-creation-guide-hidden-v1";
+const QUESTION_LAYOUT_KEY = "question-creation-layout-v1";
 
 // Absolute paths like "/question-guide/x.png" resolve to the OS filesystem
 // root under Electron's file:// protocol, leaving the guide images blank
@@ -183,6 +187,9 @@ export function QuestionCreationPage() {
   const [guideDemoCorrectIndex, setGuideDemoCorrectIndex] = useState<number | null>(null);
   const [guideDemoOptionsOpen, setGuideDemoOptionsOpen] = useState(false);
   const [guideDemoSaved, setGuideDemoSaved] = useState(false);
+  const [creationLayout, setCreationLayout] = useState<"classic" | "content-tree">(() => {
+    try { return localStorage.getItem(QUESTION_LAYOUT_KEY) === "content-tree" ? "content-tree" : "classic"; } catch { return "classic"; }
+  });
   const resetEditor = useCallback(() => setEditorKey((key) => key + 1), []);
   const currentGuideStep = GUIDE_STEPS[guideStep];
   const GuideIcon = currentGuideStep.icon;
@@ -199,6 +206,10 @@ export function QuestionCreationPage() {
       setGuideOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(QUESTION_LAYOUT_KEY, creationLayout); } catch { /* ignore unavailable storage */ }
+  }, [creationLayout]);
 
   const setGuideVisibility = (open: boolean) => {
     setGuideOpen(open);
@@ -442,26 +453,18 @@ export function QuestionCreationPage() {
   })();
 
   return (
-    <Card className="gold-frame mx-auto w-full max-w-7xl p-4 sm:p-6" dir="rtl">
-      <div className="mb-5 flex items-center justify-end gap-3 text-right">
-        <div>
-          <h2 className="font-display text-xl font-bold text-foreground">יצירת שאלות</h2>
-          <p className="text-sm text-muted-foreground">
-            יצירת שאלה חדשה ושיוכה לקטגוריות או למערכת מבחנים.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setGuideVisibility(true)}
-          aria-label="פתח מדריך אינטראקטיבי ליצירת שאלות"
-          title="איך יוצרים שאלה?"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-gold/60 text-gold transition-colors hover:border-gold hover:bg-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
-        >
-          <CircleHelp className="h-5 w-5" />
-        </button>
+    <Card className="gold-frame relative mx-auto w-full max-w-7xl p-4 pt-14 sm:p-6 sm:pt-14" dir="rtl">
+      <div className="absolute left-4 top-3 flex items-center gap-2">
+        <Select value={creationLayout} onValueChange={(value) => setCreationLayout(value as typeof creationLayout)}>
+          <SelectTrigger className="h-9 w-44 border-gold/60 bg-card font-semibold" aria-label="בחר פריסת בניית שאלות"><LayoutPanelTop className="ml-2 h-4 w-4 text-gold" /><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="content-tree">עץ תוכן + שאלה</SelectItem><SelectItem value="classic">טופס רגיל</SelectItem></SelectContent>
+        </Select>
+        <button type="button" onClick={() => setGuideVisibility(true)} aria-label="פתח מדריך אינטראקטיבי ליצירת שאלות" title="איך יוצרים שאלה?" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold/60 text-gold transition-colors hover:bg-gold/10"><CircleHelp className="h-4 w-4" /></button>
       </div>
 
-      <CardEditor key={editorKey} deckId={null} onClose={resetEditor} />
+      {creationLayout === "content-tree"
+        ? <ShasDeckBuilder purpose="question" mode="top-bottom" layout="shas-top-bottom" />
+        : <CardEditor key={editorKey} deckId={null} onClose={resetEditor} />}
 
       <Dialog open={guideOpen} onOpenChange={setGuideVisibility}>
         <DialogContent dir="rtl" className="max-h-[92vh] max-w-4xl overflow-y-auto">

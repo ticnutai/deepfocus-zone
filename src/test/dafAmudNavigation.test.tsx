@@ -38,20 +38,29 @@ describe("Daf learning amud navigation", () => {
     }));
   });
 
-  it("switches from amud B to A and back without restoring the previous side", async () => {
+  it("keeps saved content hidden until an amud is chosen, then switches sides", async () => {
     render(<DafLearningTabInner isVisible />);
 
-    expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("ברכות-13-2");
-    expect(screen.getByTestId("inline-amud-2")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByTestId("active-gemara-page")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inline-amud-2")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /מועד 12 מסכתות/ }));
+    fireEvent.click(screen.getByRole("button", { name: "עירובין" }));
+    fireEvent.click(screen.getByText("יג").closest("button")!);
+
+    expect(screen.getByTestId("inline-amud-2")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("inline-amud-1-count")).toHaveTextContent("0");
     expect(screen.getByTestId("inline-amud-2-count")).toHaveTextContent("0");
 
+    fireEvent.click(screen.getByTestId("inline-amud-2"));
+    await waitFor(() => expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("עירובין-13-2"));
+
     fireEvent.click(screen.getByTestId("inline-amud-1"));
-    await waitFor(() => expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("ברכות-13-1"));
+    await waitFor(() => expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("עירובין-13-1"));
     expect(screen.getByTestId("inline-amud-1")).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByTestId("inline-amud-2"));
-    await waitFor(() => expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("ברכות-13-2"));
+    await waitFor(() => expect(screen.getByTestId("active-gemara-page")).toHaveTextContent("עירובין-13-2"));
     expect(screen.getByTestId("inline-amud-2")).toHaveAttribute("aria-pressed", "true");
   });
 });

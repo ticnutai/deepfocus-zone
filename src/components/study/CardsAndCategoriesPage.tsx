@@ -1,6 +1,7 @@
 import { memo, useEffect, useState, type ComponentType } from "react";
-import { BookOpen, CircleHelp, FolderTree, LayoutGrid, LayoutList, Network } from "lucide-react";
+import { BookOpen, CircleHelp, FolderTree } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CardsManager } from "./CardsManager";
 import { CategoriesPage } from "./CategoriesPage";
@@ -52,6 +53,7 @@ function CardsAndCategoriesPage({
   hideNavigation?: boolean;
 }) {
   const [page, setPage] = useState<SubTab>(() => readInitialPage(initialTab));
+  const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const { state, setUiPref } = useStudy();
   const deckLayout = state.uiPrefs?.deckBuilderLayout ?? "shas-overview";
   const meta = PAGE_META[page];
@@ -125,17 +127,9 @@ function CardsAndCategoriesPage({
       <main key={page} className="animate-fade-in">
         {page === "categories" && <CategoriesPage />}
         {page === "decks" && <div className="space-y-5">
-          <Card className="gold-frame flex flex-wrap items-center justify-between gap-3 p-3">
-            <div><strong>פריסת בניית מבחנים</strong><p className="text-xs text-muted-foreground">הבחירה נשמרת גם לכניסה הבאה.</p></div>
-            <div className="flex gap-2">
-              <button onClick={() => setUiPref("deckBuilderLayout", "shas-tree")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-tree" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><Network className="h-4 w-4" />עץ ש״ס קודם</button>
-              <button onClick={() => setUiPref("deckBuilderLayout", "shas-spacious")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-spacious" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><LayoutGrid className="h-4 w-4" />עץ ש״ס מרווח</button>
-              <button onClick={() => setUiPref("deckBuilderLayout", "shas-overview")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "shas-overview" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><BookOpen className="h-4 w-4" />סקירה מלאה</button>
-              <button onClick={() => setUiPref("deckBuilderLayout", "classic")} className={cn("flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold", deckLayout === "classic" ? "border-navy bg-gradient-navy text-white" : "border-gold/40")}><LayoutList className="h-4 w-4" />ניהול רגיל</button>
-            </div>
-          </Card>
-          {deckLayout !== "classic" && <ShasDeckBuilder mode={deckLayout === "shas-overview" ? "overview" : deckLayout === "shas-spacious" ? "spacious" : "compact"} />}
-          <CardsManager />
+          {deckLayout !== "classic" && <ShasDeckBuilder editingDeckId={editingDeckId} onEditingComplete={() => setEditingDeckId(null)} layout={deckLayout} onLayoutChange={(layout) => setUiPref("deckBuilderLayout", layout)} mode={deckLayout === "shas-overview" ? "overview" : deckLayout === "shas-spacious" ? "spacious" : deckLayout === "shas-top-bottom" ? "top-bottom" : "compact"} />}
+          {deckLayout === "classic" && <Card className="gold-frame flex items-center justify-between gap-3 p-3"><div><strong>תצוגת ניהול רגיל</strong><p className="text-xs text-muted-foreground">אפשר לחזור מכאן לכל אחת מתצוגות הבנייה.</p></div><Select value={deckLayout} onValueChange={(layout) => setUiPref("deckBuilderLayout", layout as typeof deckLayout)}><SelectTrigger className="w-52 border-gold/60 font-semibold"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="shas-tree">עץ ש״ס קודם</SelectItem><SelectItem value="shas-spacious">עץ ש״ס מרווח</SelectItem><SelectItem value="shas-overview">סקירה מלאה</SelectItem><SelectItem value="shas-top-bottom">תוכן למעלה, מבחן למטה</SelectItem><SelectItem value="classic">ניהול רגיל</SelectItem></SelectContent></Select></Card>}
+          <CardsManager onEditDeckInBuilder={deckLayout === "classic" ? undefined : (deckId) => { setEditingDeckId(deckId); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
         </div>}
         {page === "questions" && <QuestionCreationPage />}
       </main>

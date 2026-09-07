@@ -217,14 +217,21 @@ function DeckCreateLauncher({ onCreated }: { onCreated: (id: string) => void }) 
   );
 }
 
-function CardsManager() {
+function CardsManager({ onEditDeckInBuilder }: { onEditDeckInBuilder?: (deckId: string) => void } = {}) {
   const { isGuest } = useAuth();
   const { state, addDeck, deleteDeck, deleteCard, moveCardToDeck, addCardToDeck, setCardCategories, setDeckCategories, duplicateCard, moveCategory, reorderCategories, duplicateCategoryUnder, setUiPref, setWidgetLayout } = useStudy();
   const [activeDeckId, setActiveDeckId] = useState<string | null>(state.decks[0]?.id ?? null);
   const [deckEditOpen, setDeckEditOpen] = useState(false);
   const [deckEditingId, setDeckEditingId] = useState<string | null>(null);
 
-  const openDeckEdit = (deckId: string) => { setDeckEditingId(deckId); setDeckEditOpen(true); };
+  const openDeckEdit = (deckId: string) => {
+    if (onEditDeckInBuilder) {
+      onEditDeckInBuilder(deckId);
+      return;
+    }
+    setDeckEditingId(deckId);
+    setDeckEditOpen(true);
+  };
 
   const duplicateDeck = (deckId: string) => {
     const src = state.decks.find((d) => d.id === deckId);

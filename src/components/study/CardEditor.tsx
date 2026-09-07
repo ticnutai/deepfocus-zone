@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { dafLabel } from "@/lib/study/shasGen";
 
 const RECENT_CATS_KEY = "card-editor:recent-cats";
 const MAX_RECENT = 6;
@@ -441,7 +442,7 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
           <BookOpen className="h-5 w-5 shrink-0" />
           <div>
             <div className="font-bold">השאלה תסווג אוטומטית לעמוד זה</div>
-            <div className="text-sm">{prefillDaf.masechta} · דף {prefillDaf.daf} · עמוד {prefillDaf.amud === 1 ? "א׳" : "ב׳"}</div>
+            <div className="text-sm">{prefillDaf.masechta} · דף {dafLabel(prefillDaf.daf).replace(".", "")} · עמוד {prefillDaf.amud === 1 ? "א׳" : "ב׳"}</div>
           </div>
         </div>
       )}
