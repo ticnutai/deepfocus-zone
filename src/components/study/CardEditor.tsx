@@ -619,7 +619,12 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
 
       {showMultiFields && (
         <div className="space-y-2 rounded-lg border border-gold/30 bg-secondary/10 p-2">
-        <Label className="block text-right text-xs text-muted-foreground">אפשרויות אמריקאיות (סמן את הנכונות · חצים לסידור)</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-right">
+            <Label className="text-xs text-muted-foreground">אפשרויות אמריקאיות (חצים לסידור)</Label>
+            <strong className="rounded-lg border border-gold/60 bg-gold/15 px-3 py-1.5 text-sm font-extrabold text-foreground">
+              נא לסמן תשובה נכונה
+            </strong>
+          </div>
           {options.map((opt, i) => {
             const move = (dir: -1 | 1) => {
               const j = i + dir;

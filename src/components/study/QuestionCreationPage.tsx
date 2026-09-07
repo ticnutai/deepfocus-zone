@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -455,15 +455,28 @@ export function QuestionCreationPage() {
   return (
     <Card className="gold-frame relative mx-auto w-full max-w-7xl p-4 pt-14 sm:p-6 sm:pt-14" dir="rtl">
       <div className="absolute left-4 top-3 flex items-center gap-2">
-        <Select value={creationLayout} onValueChange={(value) => setCreationLayout(value as typeof creationLayout)}>
-          <SelectTrigger className="h-9 w-44 border-gold/60 bg-card font-semibold" aria-label="בחר פריסת בניית שאלות"><LayoutPanelTop className="ml-2 h-4 w-4 text-gold" /><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="content-tree">עץ תוכן + שאלה</SelectItem><SelectItem value="classic">טופס רגיל</SelectItem></SelectContent>
-        </Select>
+        {creationLayout === "classic" && <DropdownMenu dir="rtl">
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0 border-gold/60" title="בחר פריסת בניית שאלות" aria-label="בחר פריסת בניית שאלות">
+              <LayoutPanelTop className="h-4 w-4 text-gold" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52" dir="rtl">
+            <DropdownMenuLabel>פריסת בניית שאלות</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setCreationLayout("content-tree")} className={creationLayout === "content-tree" ? "bg-gold/10" : undefined}>
+              <Check className={`ml-2 h-4 w-4 ${creationLayout !== "content-tree" ? "opacity-0" : ""}`} />עץ תוכן + שאלה
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setCreationLayout("classic")} className={creationLayout === "classic" ? "bg-gold/10" : undefined}>
+              <Check className={`ml-2 h-4 w-4 ${creationLayout !== "classic" ? "opacity-0" : ""}`} />טופס רגיל
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>}
         <button type="button" onClick={() => setGuideVisibility(true)} aria-label="פתח מדריך אינטראקטיבי ליצירת שאלות" title="איך יוצרים שאלה?" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold/60 text-gold transition-colors hover:bg-gold/10"><CircleHelp className="h-4 w-4" /></button>
       </div>
 
       {creationLayout === "content-tree"
-        ? <ShasDeckBuilder purpose="question" mode="top-bottom" layout="shas-top-bottom" />
+        ? <ShasDeckBuilder purpose="question" mode="top-bottom" layout="shas-top-bottom" questionCreationLayout={creationLayout} onQuestionCreationLayoutChange={setCreationLayout} />
         : <CardEditor key={editorKey} deckId={null} onClose={resetEditor} />}
 
       <Dialog open={guideOpen} onOpenChange={setGuideVisibility}>

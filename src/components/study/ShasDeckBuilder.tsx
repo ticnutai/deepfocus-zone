@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { BookOpen, BookText, Check, CheckCheck, ChevronDown, ChevronLeft, GripVertical, Layers3, List, Plus, Save, Scroll, Trash2, X } from "lucide-react";
+import { BookOpen, BookText, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Layers3, LayoutPanelTop, List, ListTree, Plus, Save, Scroll, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useStudy } from "@/lib/study/store";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { dafLabel } from "@/lib/study/shasGen";
@@ -38,6 +39,8 @@ export function ShasDeckBuilder({
   layout = "shas-overview",
   onLayoutChange,
   purpose = "exam",
+  questionCreationLayout,
+  onQuestionCreationLayoutChange,
 }: {
   mode?: "compact" | "spacious" | "overview" | "top-bottom";
   editingDeckId?: string | null;
@@ -45,11 +48,13 @@ export function ShasDeckBuilder({
   layout?: "classic" | "shas-tree" | "shas-spacious" | "shas-overview" | "shas-top-bottom";
   onLayoutChange?: (layout: "classic" | "shas-tree" | "shas-spacious" | "shas-overview" | "shas-top-bottom") => void;
   purpose?: "exam" | "question";
+  questionCreationLayout?: "classic" | "content-tree";
+  onQuestionCreationLayoutChange?: (layout: "classic" | "content-tree") => void;
 }) {
   const spacious = mode === "spacious";
   const overview = mode === "overview";
   const topBottom = mode === "top-bottom";
-  const { state, addDeck, addCardsToDeck, removeCardFromDeck, updateCard, renameDeck, setDeckCategories, updateDeckCategoryIds } = useStudy();
+  const { state, addDeck, addCardsToDeck, removeCardFromDeck, updateCard, renameDeck, setDeckCategories, updateDeckCategoryIds, setUiPref } = useStudy();
   const [seder, setSeder] = useState("מועד");
   const [masechta, setMasechta] = useState("שבת");
   const [daf, setDaf] = useState(2);
@@ -66,7 +71,9 @@ export function ShasDeckBuilder({
   const [questionEditorKey, setQuestionEditorKey] = useState(0);
   const [genericCategoryPath, setGenericCategoryPath] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [navigationStep, setNavigationStep] = useState<1 | 2 | 3 | 4>(1);
   const loadedDeckId = useRef<string | null>(null);
+  const navigationMode = state.uiPrefs?.deckBuilderNavigationMode ?? "expanded";
 
   const masechtot = useMemo(() => SHAS_BAVLI.filter((item) => item.seder === seder), [seder]);
   const displayedMasechtot = overview ? SHAS_BAVLI : masechtot;
@@ -269,28 +276,59 @@ export function ShasDeckBuilder({
         <div><h2 className={cn("font-bold", spacious ? "text-2xl" : overview ? "text-lg" : "text-xl")}>{purpose === "question" ? "בחירת סיווג לשאלה" : "בחירת תוכן למבחן"}</h2><p className={cn("text-muted-foreground", spacious ? "mt-1 text-base" : overview ? "text-xs" : "mt-1 text-sm")}>{purpose === "question" ? "בחר קטגוריה או עמוד; הטופס למטה יקבל את הסיווג אוטומטית." : contentArea === "shas" ? "בחר את המיקום בעץ וגרור מסכת, דף או עמוד אל מסגרת המבחן." : "בחר וגרור קטגוריה או תת־קטגוריה אל מסגרת המבחן."}</p></div>
         <div className="flex items-center gap-2">
           {onLayoutChange && <Select value={layout} onValueChange={(value) => onLayoutChange(value as typeof layout)}><SelectTrigger className="h-9 w-44 border-gold/60 bg-card font-semibold"><SelectValue placeholder="בחר תצוגה" /></SelectTrigger><SelectContent><SelectItem value="shas-tree">עץ ש״ס קודם</SelectItem><SelectItem value="shas-spacious">עץ ש״ס מרווח</SelectItem><SelectItem value="shas-overview">סקירה מלאה</SelectItem><SelectItem value="shas-top-bottom">תוכן למעלה, מבחן למטה</SelectItem><SelectItem value="classic">ניהול רגיל</SelectItem></SelectContent></Select>}
+          {onQuestionCreationLayoutChange && <DropdownMenu dir="rtl">
+            <DropdownMenuTrigger asChild><Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0 border-gold/60" title="בחר פריסת בניית שאלות" aria-label="בחר פריסת בניית שאלות"><LayoutPanelTop className="h-4 w-4 text-gold" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52" dir="rtl">
+              <DropdownMenuLabel>פריסת בניית שאלות</DropdownMenuLabel><DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onQuestionCreationLayoutChange("content-tree")} className={cn(questionCreationLayout === "content-tree" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", questionCreationLayout !== "content-tree" && "opacity-0")} />עץ תוכן + שאלה</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onQuestionCreationLayoutChange("classic")} className={cn(questionCreationLayout === "classic" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", questionCreationLayout !== "classic" && "opacity-0")} />טופס רגיל</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>}
+          <DropdownMenu dir="rtl">
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0 border-gold/60" title="בחר תצוגת ניווט" aria-label="בחר תצוגת ניווט">
+                <ListTree className="h-4 w-4 text-gold" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52" dir="rtl">
+              <DropdownMenuLabel>תצוגת ניווט</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setUiPref("deckBuilderNavigationMode", "expanded")} className={cn(navigationMode === "expanded" && "bg-gold/10")}>
+                <Check className={cn("ml-2 h-4 w-4", navigationMode !== "expanded" && "opacity-0")} />עץ פתוח
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setUiPref("deckBuilderNavigationMode", "drilldown"); setNavigationStep(1); setQuestionSource(null); }} className={cn(navigationMode === "drilldown" && "bg-gold/10")}>
+                <Check className={cn("ml-2 h-4 w-4", navigationMode !== "drilldown" && "opacity-0")} />שלב אחר שלב
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {purpose === "exam" && <Button type="button" variant={multiSelect ? "default" : "outline"} size="sm" onClick={toggleMultiSelect} className={cn("border-gold/60", multiSelect && "bg-gradient-navy text-white")} title="לחיצה ראשונה מפעילה בחירה מרובה; בש״ס ניתן לבחור את כל דפי המסכת בלבד"><CheckCheck className="ml-1 h-4 w-4" />{!multiSelect ? "בחירה מרובה" : selectedSources.length > 0 ? "נקה הכול" : contentArea === "shas" ? "בחר את כל הדפים" : "סיום בחירה"}</Button>}
           {purpose === "exam" && multiSelect && selectedSources.length > 0 && <span className="rounded-full bg-gold/15 px-2 py-1 text-xs font-bold">{selectedSources.length} נבחרו</span>}
           <span className={cn("flex shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card", spacious ? "h-12 w-12" : overview ? "h-8 w-8" : "h-10 w-10")}><GripVertical className={cn("text-gold", spacious ? "h-6 w-6" : overview ? "h-4 w-4" : "h-5 w-5")} /></span>
         </div>
       </div>
       {contentArea === "shas" ? <div className={cn("grid", !overview && "xl:grid-cols-[1.15fr_1.5fr_0.85fr]", overview ? "gap-2.5 p-2.5" : spacious ? "gap-5 p-5 md:p-7" : topBottom ? "gap-3 p-3" : "gap-3 p-4")}>
-        <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
-          {stepTitle(1, "בחר סדר ומסכת")}
-          <div className={cn("grid grid-cols-2 sm:grid-cols-3", overview ? "gap-1" : "gap-2")}>{SEDARIM.map((item) => <button key={item} onClick={() => { setSeder(item); setQuestionSource(null); const first = SHAS_BAVLI.find((m) => m.seder === item); if (first) { setMasechta(first.name); setDaf(2); } }} className={cn("rounded-xl border font-semibold transition", overview ? "min-h-8 px-2 py-1 text-xs" : "min-h-10 px-3 py-2 text-sm", seder === item ? "border-gold bg-gradient-navy text-white shadow-sm" : "border-gold/40 bg-card hover:bg-gold/10")}>{item}</button>)}</div>
-          <div className={cn("grid rounded-xl border border-gold/30 bg-background/60", overview ? "max-h-40 grid-cols-2 gap-1 overflow-y-auto p-1.5 xl:grid-cols-3" : "grid-cols-2 overflow-y-auto p-2", spacious ? "max-h-80 gap-2" : !overview && "max-h-52 gap-1")}>{displayedMasechtot.map((item) => {
+        {(navigationMode === "expanded" || navigationStep <= 2) && <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", navigationMode === "drilldown" && "col-span-full", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
+          {stepTitle(1, navigationMode === "drilldown" && navigationStep === 1 ? "בחר סדר" : "בחר סדר ומסכת")}
+          {(navigationMode === "expanded" || navigationStep === 1) && <div className={cn("grid grid-cols-2 sm:grid-cols-3", overview ? "gap-1" : "gap-2")}>{SEDARIM.map((item) => <button key={item} onClick={() => { setSeder(item); setQuestionSource(null); const first = SHAS_BAVLI.find((m) => m.seder === item); if (first) { setMasechta(first.name); setDaf(2); } if (navigationMode === "drilldown") setNavigationStep(2); }} className={cn("rounded-xl border font-semibold transition", overview ? "min-h-8 px-2 py-1 text-xs" : "min-h-10 px-3 py-2 text-sm", seder === item ? "border-gold bg-gradient-navy text-white shadow-sm" : "border-gold/40 bg-card hover:bg-gold/10")}>{item}</button>)}</div>}
+          {(navigationMode === "expanded" || navigationStep === 2) && <>
+          {navigationMode === "drilldown" && <Button type="button" variant="ghost" size="sm" onClick={() => setNavigationStep(1)}><ChevronRight className="ml-1 h-4 w-4" />חזרה לסדרים</Button>}
+          {navigationMode === "drilldown" && <h3 className="font-bold">בחר מסכת — סדר {seder}</h3>}
+          <div className={cn("grid rounded-xl border border-gold/30 bg-background/60", overview ? "max-h-40 grid-cols-2 gap-1 overflow-y-auto p-1.5 xl:grid-cols-3" : "grid-cols-2 overflow-y-auto p-2", spacious ? "max-h-80 gap-2" : !overview && "max-h-52 gap-1")}>{(navigationMode === "drilldown" ? masechtot : displayedMasechtot).map((item) => {
             const source = makeSource({ kind: "masechta", masechta: item.name });
-            return <div key={item.name} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setSeder(item.seder); setMasechta(item.name); setDaf(2); setQuestionSource(null); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, masechta === item.name && "border-gold bg-gold/15", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span>{item.name}</span><span className={cn("flex items-center gap-1 text-xs text-muted-foreground", selectedSourceIds.has(source.id) && "text-gold")}>{selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר דף <ChevronLeft className="h-4 w-4" /></> : <>גרור <ChevronLeft className="h-4 w-4" /></>}</span></div>;
+            return <div key={item.name} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setSeder(item.seder); setMasechta(item.name); setDaf(2); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(3); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, masechta === item.name && "border-gold bg-gold/15", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span>{item.name}</span><span className={cn("flex items-center gap-1 text-xs text-muted-foreground", selectedSourceIds.has(source.id) && "text-gold")}>{selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר דף <ChevronLeft className="h-4 w-4" /></> : <>גרור <ChevronLeft className="h-4 w-4" /></>}</span></div>;
           })}</div>
-        </div>
-        <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
+          </>}
+        </div>}
+        {(navigationMode === "expanded" || navigationStep === 3) && <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", navigationMode === "drilldown" && "col-span-full", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
+          {navigationMode === "drilldown" && <Button type="button" variant="ghost" size="sm" onClick={() => setNavigationStep(2)} className="mb-1"><ChevronRight className="ml-1 h-4 w-4" />חזרה למסכתות</Button>}
           {stepTitle(2, `בחר דפים — ${selectedMasechta?.name ?? ""}`)}
           <div className={cn("grid rounded-xl border border-gold/30 bg-background/60", overview ? "max-h-48 grid-cols-3 gap-1 overflow-y-auto p-1.5 xl:grid-cols-5" : "grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4", spacious ? "max-h-96 p-3" : !overview && "max-h-72 p-2")}>{dafim.map((item) => {
             const source = makeSource({ kind: "daf", masechta: selectedMasechta!.name, daf: item });
-            return <button key={item} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setDaf(item); setQuestionSource(null); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, "justify-center", daf === item && "border-gold bg-gradient-navy text-white", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}>דף {dafLabel(item)}{selectedSourceIds.has(source.id) && <Check className="h-3.5 w-3.5" />}</button>;
+            return <button key={item} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setDaf(item); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(4); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, "justify-center", daf === item && "border-gold bg-gradient-navy text-white", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}>דף {dafLabel(item)}{selectedSourceIds.has(source.id) && <Check className="h-3.5 w-3.5" />}</button>;
           })}</div>
-        </div>
-        <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
+        </div>}
+        {(navigationMode === "expanded" || navigationStep === 4) && <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", navigationMode === "drilldown" && "col-span-full", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
+          {navigationMode === "drilldown" && <Button type="button" variant="ghost" size="sm" onClick={() => { setNavigationStep(3); setQuestionSource(null); }} className="mb-1"><ChevronRight className="ml-1 h-4 w-4" />חזרה לדפים</Button>}
           {stepTitle(3, `בחר עמוד — דף ${dafLabel(daf)}`)}
           <div className="grid grid-cols-2 gap-3">
             {[1, 2].map((side) => {
@@ -299,7 +337,7 @@ export function ShasDeckBuilder({
             })}
           </div>
           <p className={cn("rounded-xl border border-gold/25 bg-card text-muted-foreground", overview ? "p-2 text-xs leading-5" : "p-4 text-sm leading-6")}>אפשר לגרור כמה פריטים, גם ממסכתות ומדפים שונים. שאלות כפולות ייכנסו פעם אחת בלבד.</p>
-        </div>
+        </div>}
       </div> : <div className={cn("p-3", spacious && "p-6")}>
         <div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold">{CONTENT_TABS.find((tab) => tab.id === contentArea)?.label}</h3><p className="text-sm text-muted-foreground">פתח רמה בלחיצה או גרור קטגוריה שלמה למסגרת המבחן.</p></div><span className="rounded-full bg-gold/15 px-3 py-1 text-xs font-bold">{genericVisibleCategories.length} ברמה זו</span></div>
         {activeRootCategory ? <>

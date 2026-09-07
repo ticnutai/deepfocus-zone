@@ -257,6 +257,8 @@ export interface UiPrefs {
   cardsDeckView?: "list" | "grid" | "compact";
   // Deck builder: classic manager or Shas drag-and-drop workspace (synced)
   deckBuilderLayout?: "classic" | "shas-tree" | "shas-spacious" | "shas-overview" | "shas-top-bottom";
+  // Question/exam content picker: show the whole Shas path or advance one level at a time.
+  deckBuilderNavigationMode?: "expanded" | "drilldown";
   // StudyPlansCard: plans list view mode (synced local + cloud)
   studyPlansView?: "classic" | "grid2" | "grid3" | "table" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)
