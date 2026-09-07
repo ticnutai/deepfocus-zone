@@ -135,6 +135,18 @@ describe("dafCards amud filtering", () => {
   it("keeps legacy daf-only questions available when explicitly requested", () => {
     expect(filterCardsByDafAmud(cards, categories, MASECHTA, 35, 1).map((c) => c.id))
       .toEqual(["general", "amud-a"]);
+    expect(filterCardsByDafAmud(cards, categories, MASECHTA, 35, 2).map((c) => c.id))
+      .toEqual(["general", "amud-b"]);
+  });
+
+  it("keeps a classified question permanently isolated to its assigned amud", () => {
+    const classified = { ...makeCard("classified", null), amud: 1 as const };
+    expect(filterCardsByDafAmud([classified], categories, MASECHTA, 35, 1).map((c) => c.id))
+      .toEqual(["classified"]);
+    expect(filterCardsByDafAmud([classified], categories, MASECHTA, 35, 2).map((c) => c.id))
+      .toEqual([]);
+    expect(filterCardsByDafAmud([classified], categories, MASECHTA, 35, 1, { includeDafOnly: false }).map((c) => c.id))
+      .toEqual(["classified"]);
   });
 
   it("counts visible questions per amud and unique questions per daf", () => {

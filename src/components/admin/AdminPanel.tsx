@@ -68,7 +68,7 @@ export function AdminPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-right" dir="rtl">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="font-display text-2xl font-bold text-foreground">מרכז ניהול</h2>
@@ -76,13 +76,13 @@ export function AdminPanel() {
         </div>
       </header>
 
-      <Tabs defaultValue="users" className="w-full">
+      <Tabs defaultValue="users" className="w-full" dir="rtl">
         <Card className="gold-frame p-2">
           <TabsList className="w-full bg-transparent justify-between gap-1 h-auto flex-wrap">
-            <TabsTrigger value="users" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="users" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>משתמשים</span><Users className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="approval" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="approval" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>אישורים</span><UserCheck className="h-4 w-4" />
               {pendingApprovals > 0 && (
                 <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
@@ -90,32 +90,32 @@ export function AdminPanel() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="roles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="roles" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תפקידים</span><Layers className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="overrides" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="overrides" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>הרשאות אישיות</span><UserCog className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="sync-monitor" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="sync-monitor" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>ניטור סנכרון</span><Activity className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="defaults" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="defaults" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>הרשאות ותצוגה</span><LayoutDashboard className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="preview" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="preview" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>תצוגה מקדימה</span><Monitor className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="guest-profiles" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="guest-profiles" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>פרופילי אורח</span><UserX className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="user-questions" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="user-questions" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>שאלות משתמשים</span><Library className="h-4 w-4" />
               {pendingNotes > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingNotes}</span>}
             </TabsTrigger>
-            <TabsTrigger value="usage" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="usage" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>ניתוח שימוש</span><BarChart3 className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="guides" className="flex-1 gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+            <TabsTrigger value="guides" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
               <span>מדריכי כניסה</span><CircleHelp className="h-4 w-4" />
             </TabsTrigger>
           </TabsList>

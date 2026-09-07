@@ -1,10 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockState, mockUpdateCard } = vi.hoisted(() => ({
+  mockState: { cards: [] as Array<Record<string, unknown>>, categories: [], uiPrefs: {} },
+  mockUpdateCard: vi.fn(),
+}));
+
 vi.mock("@/lib/study/store", () => ({
   useStudy: () => ({
-    state: { cards: [], categories: [], uiPrefs: {} },
+    state: mockState,
     setUiPref: vi.fn(),
+    updateCard: mockUpdateCard,
   }),
 }));
 
@@ -27,6 +33,8 @@ import { DafLearningTabInner } from "@/components/study/DafLearningTab";
 
 describe("Daf learning amud navigation", () => {
   beforeEach(() => {
+    mockState.cards = [];
+    mockUpdateCard.mockClear();
     localStorage.clear();
     localStorage.setItem("daf-learning-navigation-view", "expanded");
     localStorage.setItem("daf-learning-state", JSON.stringify({
@@ -37,6 +45,43 @@ describe("Daf learning amud navigation", () => {
       layout: "stacked",
     }));
   });
+
+  it("classifies a dragged daf question into an existing amud target", async () => {
+    mockState.cards = [{
+      id: "card-daf-only",
+      deckId: null,
+      type: "flashcard",
+      question: "שאלה כללית לדף",
+      answer: "תשובה",
+      tags: [],
+      masechta: "עירובין",
+      daf: 13,
+      amud: null,
+      createdAt: 1,
+      srs: { ease: 2.5, interval: 0, repetitions: 0, dueAt: 0, lastReviewedAt: null },
+      stats: { totalReviews: 0, correct: 0, incorrect: 0 },
+    }];
+
+    render(<DafLearningTabInner isVisible />);
+    fireEvent.click(screen.getByRole("button", { name: /מועד 12 מסכתות/ }));
+    fireEvent.click(screen.getByRole("button", { name: "עירובין" }));
+    fireEvent.click(screen.getByText("יג").closest("button")!);
+    fireEvent.click(screen.getByTestId("inline-amud-1"));
+
+    await screen.findByText("שאלה כללית לדף");
+    fireEvent.drop(screen.getByTestId("inline-amud-2"), {
+      dataTransfer: {
+        getData: (type: string) => type === "application/x-study-card-id" ? "card-daf-only" : "",
+      },
+    });
+
+    expect(mockUpdateCard).toHaveBeenCalledWith("card-daf-only", {
+      masechta: "עירובין",
+      daf: 13,
+      amud: 2,
+    });
+  });
+
 
   it("keeps saved content hidden until an amud is chosen, then switches sides", async () => {
     render(<DafLearningTabInner isVisible />);

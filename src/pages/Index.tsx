@@ -1705,7 +1705,7 @@ const Index = () => {
               }}
               className="w-full" dir="rtl"
             >
-              <Card className="gold-frame p-1 relative">
+              <Card className="gold-frame relative p-1 lg:hidden">
                 <TabsList
                   className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 sm:grid-cols-3 md:grid-cols-5"
                   dir="rtl"

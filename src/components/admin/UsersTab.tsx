@@ -290,7 +290,7 @@ export function UsersTab() {
           </Tooltip>
           <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetAddForm(); }}>
             <DialogTrigger asChild>
-              <Button className="gap-1 bg-gradient-navy text-primary-foreground hover:opacity-90">
+              <Button className="order-first gap-1 bg-gradient-navy text-primary-foreground hover:opacity-90">
                 <Plus className="h-4 w-4" />
                 הוסף משתמש
               </Button>
@@ -423,19 +423,19 @@ export function UsersTab() {
                 <div className="flex items-start gap-2 flex-wrap">
                   <div className="flex-1 min-w-0 flex items-start justify-between gap-2 flex-wrap">
                   <div className="space-y-0.5 min-w-0 flex-1 text-right">
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <div className="flex items-center gap-2 flex-wrap justify-start">
                       {isMe && <Badge variant="outline" className="text-xs border-gold/60">אתה</Badge>}
                       <Badge variant={STATUS_VARIANT[p.status] ?? "outline"} className="text-xs">
                         {STATUS_LABEL[p.status] ?? p.status}
                       </Badge>
                       <span className="font-medium text-foreground">{friendlyName(p)}</span>
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center justify-start gap-2 text-xs text-muted-foreground">
                       {p.username && <span>שם משתמש: <strong className="text-foreground">{p.username}</strong></span>}
                       {p.email && !isTechnicalEmail(p.email) && <span dir="ltr">{p.email}</span>}
                       {isTechnicalEmail(p.email) && <Badge variant="outline" className="text-[10px]">חשבון מקומי</Badge>}
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center justify-start gap-3 text-[11px] text-muted-foreground">
                       <span>כניסות: <strong className="text-foreground">{activityByUser[p.id]?.loginCount ?? 0}</strong></span>
                       <span>זמן שימוש: <strong className="text-foreground">{formatDuration(activityByUser[p.id]?.activeSeconds ?? 0)}</strong></span>
                       {activityByUser[p.id]?.lastSeenAt && <span>נראה לאחרונה: {new Date(activityByUser[p.id].lastSeenAt!).toLocaleString("he-IL")}</span>}
@@ -550,7 +550,7 @@ export function UsersTab() {
                   </div>
                   <button
                     onClick={() => toggleSelect(p.id)}
-                    className="shrink-0 mt-0.5 text-muted-foreground hover:text-gold transition-colors"
+                    className="order-first shrink-0 mt-0.5 text-muted-foreground hover:text-gold transition-colors"
                     title={selected.has(p.id) ? "בטל בחירה" : "בחר"}
                   >
                     {selected.has(p.id)
@@ -559,7 +559,7 @@ export function UsersTab() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap justify-end">
+                <div className="flex items-center gap-2 flex-wrap justify-start">
                   {availableRoles.length > 0 && (
                     <Select onValueChange={(v) => assign(p.id, v)}>
                       <SelectTrigger className="w-44 h-7 text-xs">
@@ -609,7 +609,7 @@ export function UsersTab() {
                 <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} type="email" dir="ltr" />
               </div>
             </div>
-            <DialogFooter className="flex-row-reverse">
+            <DialogFooter className="sm:justify-start">
               <Button onClick={saveEdit} disabled={busy}>שמור</Button>
               <Button variant="outline" onClick={() => setEditing(null)}>ביטול</Button>
             </DialogFooter>
@@ -636,7 +636,7 @@ export function UsersTab() {
                 onKeyDown={(e) => e.key === "Enter" && savePassword()}
               />
             </div>
-            <DialogFooter className="flex-row-reverse">
+            <DialogFooter className="sm:justify-start">
               <Button onClick={savePassword} disabled={busy || !newPwd.length}>שמור סיסמה</Button>
               <Button variant="outline" onClick={() => { setPwdTarget(null); setNewPwd(""); }}>ביטול</Button>
             </DialogFooter>
@@ -652,7 +652,7 @@ export function UsersTab() {
                 האם למחוק את {selected.size} המשתמשים הנבחרים? פעולה זו אינה הפיכה.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter className="flex-row-reverse">
+            <AlertDialogFooter className="sm:justify-start">
               <AlertDialogAction onClick={bulkDelete} disabled={busy} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 מחק הכל
               </AlertDialogAction>
@@ -670,7 +670,7 @@ export function UsersTab() {
                 האם למחוק את <strong>{deleting?.display_name || deleting?.email}</strong>? פעולה זו אינה הפיכה.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter className="flex-row-reverse">
+            <AlertDialogFooter className="sm:justify-start">
               <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 מחק
               </AlertDialogAction>

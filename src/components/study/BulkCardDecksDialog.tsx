@@ -1,5 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Layers, BookOpen, Pencil, Check as CheckIcon, X as XIcon } from "lucide-react";
+import { Layers, BookOpen, Pencil, Check as CheckIcon, X as XIcon, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,7 +33,7 @@ interface Props {
 }
 
 export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
-  const { state, setCardDecks, renameDeck } = useStudy();
+  const { state, setCardDecks, renameDeck, deleteCard } = useStudy();
   const [activeTab, setActiveTab] = useState<DialogTab>("existing");
   const [contentReady, setContentReady] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
@@ -33,6 +43,7 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
   // Inline deck rename state
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const [editingDeckName, setEditingDeckName] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   // Ref so we can read latest state.cards without making it a useEffect dependency.
   // This prevents the dialog from resetting every time a background sync updates state.cards.
@@ -99,6 +110,17 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
 
   const selectAll = useCallback(() => setSelectedCardIds(new Set(cards.map((c) => c.id))), [cards]);
   const clearAll = useCallback(() => setSelectedCardIds(new Set()), []);
+
+  const deleteSelectedCards = useCallback(() => {
+    const ids = Array.from(selectedCardIds);
+    for (const id of ids) deleteCard(id);
+    setSelectedCardIds(new Set());
+    setDeleteConfirmOpen(false);
+    toast({
+      title: ids.length === 1 ? "השאלה נמחקה" : "השאלות נמחקו",
+      description: `${ids.length} ${ids.length === 1 ? "שאלה הוסרה" : "שאלות הוסרו"} מהמערכת.`,
+    });
+  }, [deleteCard, selectedCardIds]);
 
   const startEditDeck = useCallback((deckId: string, currentName: string) => {
     setEditingDeckId(deckId);
@@ -224,6 +246,15 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="outline" className="h-7" onClick={selectAll}>בחר הכל</Button>
                 <Button size="sm" variant="outline" className="h-7" onClick={clearAll}>נקה הכל</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={selectedCount === 0}
+                  onClick={() => setDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> מחק נבחרות
+                </Button>
               </div>
             </div>
 
@@ -375,6 +406,25 @@ export function BulkCardDecksDialog({ cards, open, onOpenChange }: Props) {
         )}
       </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader className="text-right">
+            <AlertDialogTitle>למחוק את השאלות מהמערכת?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedCount === 1
+                ? "השאלה הנבחרת תימחק מכל הערכות והסיווגים. לא ניתן לבטל פעולה זו."
+                : `${selectedCount} השאלות הנבחרות יימחקו מכל הערכות והסיווגים. לא ניתן לבטל פעולה זו.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteSelectedCards} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              <Trash2 className="ml-2 h-4 w-4" /> מחק מהמערכת
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {deckCreateOpen && (
         <Suspense fallback={null}>

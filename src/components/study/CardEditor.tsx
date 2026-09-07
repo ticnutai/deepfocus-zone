@@ -795,6 +795,18 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
       </Collapsible>
 
       <DialogFooter className="flex-wrap gap-2 sm:justify-start">
+        {!isEdit && prefillDaf && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleSave("same-classification")}
+            title="שמור את השאלה והשאר את הסיווג לעמוד הנוכחי"
+            className="h-12 gap-2 rounded-xl border-2 border-gold/60 px-5 text-base font-bold"
+          >
+            <ListPlus className="h-4 w-4" />
+            הוסף שאלה נוספת לעמוד זה
+          </Button>
+        )}
         {!isEdit && !prefillDaf && (
           <Button
             type="button"
@@ -823,14 +835,14 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
           onClick={() => handleSave("close")}
           className={cn(
             "rounded-xl bg-gradient-navy text-primary-foreground",
-            prefillDaf && !isEdit && "mr-auto h-12 min-w-64 gap-2 px-6 text-base font-bold shadow-elegant ring-2 ring-gold/40",
+            prefillDaf && !isEdit && "h-12 min-w-36 gap-2 px-6 text-base font-bold shadow-elegant ring-2 ring-gold/40",
           )}
         >
-          {isEdit || prefillDaf ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+          {isEdit ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
           {isEdit
             ? (editingSourceCard ? "צור עותק ושמור" : "שמור שינויים")
             : prefillDaf
-              ? "הוסף שאלה לעמוד זה"
+              ? "שמור"
               : "שמור וצא"}
         </Button>
       </DialogFooter>

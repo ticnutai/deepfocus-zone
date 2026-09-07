@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check } from "lucide-react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -22,6 +22,7 @@ import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
 import { CardEditor } from "./CardEditor";
 import { FitToContainer } from "./FitToContainer";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Card as StudyCardType } from "@/lib/study/types";
 
@@ -55,14 +56,14 @@ function saveState(s: SavedState) {
 
 function normalizeLayout(layout: SavedState["layout"] | string | undefined): Layout {
   if (layout === "split-v" || layout === "split-h") return "split";
-  if (layout === "gemara") return "text-only";
+  if (layout === "gemara" || layout === "text-only") return "cards-only";
   if (layout === "cards") return "cards-only";
   if (layout === "stacked" || layout === "split" || layout === "text-only" || layout === "cards-only") return layout;
   return "stacked";
 }
 
 export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
-  const { state, setUiPref } = useStudy();
+  const { state, setUiPref, updateCard } = useStudy();
   const navigate = useNavigate();
   const location = useLocation();
   const saved = useMemo(() => loadSaved(), []);
@@ -104,6 +105,8 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const showLegacyNavigator = false;
   const [addQuestionOpen, setAddQuestionOpen] = useState(false);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [dragOverAmud, setDragOverAmud] = useState<1 | 2 | null>(null);
+  const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -244,7 +247,10 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
   // === הצמדות לגישה מהירה ===
   type DafPin = NonNullable<typeof state.uiPrefs>["dafLearningPins"] extends Array<infer P> | undefined ? P : never;
-  const pins: DafPin[] = state.uiPrefs?.dafLearningPins ?? [];
+  const pins: DafPin[] = useMemo(
+    () => state.uiPrefs?.dafLearningPins ?? [],
+    [state.uiPrefs?.dafLearningPins],
+  );
   const pinId = (m: string, d: number, a: 1 | 2) => `${m}::${d}::${a}`;
   const currentPinId = pinId(masechta, daf, amud);
   const isCurrentPinned = pins.some((p) => p.id === currentPinId);
@@ -262,6 +268,11 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setMasechta(p.masechta);
     setDaf(p.daf);
     setAmud(p.amud);
+    setExpandedSeder(p.seder);
+    setExpandedMasechta(p.masechta);
+    setExpandedDaf(p.daf);
+    setSelectionConfirmed(true);
+    setPinsDialogOpen(false);
   }, []);
 
 
@@ -345,6 +356,20 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     setSelectionConfirmed(true);
   };
 
+  const classifyDraggedQuestion = (cardId: string, targetAmud: 1 | 2) => {
+    if (!expandedMasechta || expandedDaf === null) return;
+    updateCard(cardId, {
+      masechta: expandedMasechta,
+      daf: expandedDaf,
+      amud: targetAmud,
+    });
+    setDragOverAmud(null);
+    toast({
+      title: `השאלה סווגה לעמוד ${targetAmud === 1 ? "א׳" : "ב׳"}`,
+      description: `${expandedMasechta}, דף ${dafLabel(expandedDaf).replace(".", "")}`,
+    });
+  };
+
   const handleChooseSeder = (nextSeder: string) => {
     const nextMasechtos = SHAS_BAVLI.filter((m) => m.seder === nextSeder);
     const nextMasechta =
@@ -409,21 +434,40 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           <DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="h-9 w-9 border-gold/50" title="בחר תצוגת ניווט" aria-label="בחר תצוגת ניווט"><ListTree className="h-4 w-4 text-gold" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52" dir="rtl"><DropdownMenuLabel>תצוגת ניווט</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setNavigationView("expanded")} className={cn(navigationView === "expanded" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "expanded" && "opacity-0")} />עץ פתוח</DropdownMenuItem><DropdownMenuItem onClick={() => { setNavigationView("drilldown"); setInlineStep("seder"); }} className={cn(navigationView === "drilldown" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "drilldown" && "opacity-0")} />שלב אחר שלב</DropdownMenuItem></DropdownMenuContent>
         </DropdownMenu>
-        <div className="flex items-center gap-2">
-          <Select value={layout} onValueChange={(value) => setLayout(value as Layout)}>
-            <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="פריסת תוכן" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="stacked">שאלות ומטה גמרא</SelectItem>
-              <SelectItem value="split">טקסט + שאלות</SelectItem>
-              <SelectItem value="text-only">טקסט בלבד</SelectItem>
-              <SelectItem value="cards-only">שאלות בלבד</SelectItem>
-            </SelectContent>
-          </Select>
-          {layout === "split" && (
-            <Button size="icon" variant="outline" className="h-9 w-9" onClick={handleSplitPageToggle} title={isStandaloneSplitPage ? "חזור למסך הראשי" : "פתח בעמוד נפרד"}>
-              {isStandaloneSplitPage ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-          )}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="icon"
+            variant={isCurrentPinned ? "default" : "outline"}
+            className={cn("h-9 w-9 shrink-0 border-gold/50", isCurrentPinned && "bg-gradient-navy text-primary-foreground")}
+            onClick={togglePinCurrent}
+            disabled={!selectionConfirmed}
+            title={isCurrentPinned ? "הסר את העמוד הנוכחי מההצמדות" : "הצמד את המסכת, הדף והעמוד הנוכחיים"}
+            aria-label={isCurrentPinned ? "הסר הצמדה" : "הוסף הצמדה"}
+          >
+            {isCurrentPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4 text-gold" />}
+          </Button>
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+            {[...pins].slice(-3).reverse().map((p) => {
+              const activePin = p.id === currentPinId;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => jumpToPin(p)}
+                  className={cn("h-8 shrink-0 rounded-lg border px-2.5 text-xs font-semibold transition", activePin ? "border-navy bg-gradient-navy text-white" : "border-gold/40 bg-card hover:bg-gold/10")}
+                  title={`${p.masechta} · דף ${dafLabel(p.daf).replace(".", "")} · עמוד ${p.amud === 1 ? "א׳" : "ב׳"}`}
+                >
+                  {p.masechta} · {dafLabel(p.daf).replace(".", "")} · {p.amud === 1 ? "ע״א" : "ע״ב"}
+                </button>
+              );
+            })}
+          </div>
+          <Button type="button" variant="outline" className="h-9 shrink-0 gap-1.5 border-gold/50" onClick={() => setPinsDialogOpen(true)} title="הצג את כל ההצמדות">
+            <ListTree className="h-4 w-4 text-gold" />
+            <span className="hidden sm:inline">כל ההצמדות</span>
+            {pins.length > 0 && <span className="rounded-full bg-gold/15 px-1.5 text-xs">{pins.length}</span>}
+          </Button>
         </div>
       </div>
 
@@ -558,12 +602,30 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                 type="button"
                 variant={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide ? "default" : "outline"}
                 className={cn(
-                  "h-11 text-base",
+                  "h-11 text-base transition-all",
                   masechta === expandedMasechta && daf === expandedDaf && amud === pageSide && "bg-gradient-navy text-primary-foreground",
+                  dragOverAmud === pageSide && "scale-[1.02] border-gold bg-gold/20 ring-4 ring-gold/25",
                 )}
                 aria-pressed={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide}
                 data-testid={`inline-amud-${pageSide}`}
                 onClick={() => applyInlineAmudSelection(pageSide)}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setDragOverAmud(pageSide);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverAmud(null);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const cardId = event.dataTransfer.getData("application/x-study-card-id") || event.dataTransfer.getData("text/plain");
+                  if (cardId) classifyDraggedQuestion(cardId, pageSide);
+                  else setDragOverAmud(null);
+                }}
               >
                 <span>עמוד {pageSide === 1 ? "א׳" : "ב׳"}</span>
                 <span
@@ -806,9 +868,31 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             </Button>
           </>}
         </div>
-        <h3 className="text-sm font-semibold flex items-center gap-1">
-          <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({amudCards.length})
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold flex items-center gap-1">
+            <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({amudCards.length})
+          </h3>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="outline" className="h-8 w-8 border-gold/50" title="בחר תצוגת שאלות וטקסט" aria-label="בחר תצוגת שאלות וטקסט">
+                <PanelRightOpen className="h-4 w-4 text-gold" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64" dir="rtl">
+              <DropdownMenuLabel>תצוגת שאלות וטקסט</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setLayout("cards-only")} className={cn(layout === "cards-only" && "bg-gold/10")}>
+                <Check className={cn("ml-2 h-4 w-4", layout !== "cards-only" && "opacity-0")} /> שאלות בלבד
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLayout("stacked")} className={cn(layout === "stacked" && "bg-gold/10")}>
+                <Check className={cn("ml-2 h-4 w-4", layout !== "stacked" && "opacity-0")} /> שאלות וגמרא למטה
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLayout("split")} className={cn(layout === "split" && "bg-gold/10")}>
+                <Check className={cn("ml-2 h-4 w-4", layout !== "split" && "opacity-0")} /> שאלות וגמרא בחלוקה
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto space-y-2 pr-1" data-testid="daf-question-list">
         {cards.length === 0 ? (
@@ -818,8 +902,19 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </div>
         ) : (<>
           {amudCards.map((c, i) => (
-            <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
+            <div
+              key={c.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("application/x-study-card-id", c.id);
+                event.dataTransfer.setData("text/plain", c.id);
+              }}
+              onDragEnd={() => setDragOverAmud(null)}
+              className="group rounded-lg border border-gold/30 bg-card p-3 transition-colors hover:border-gold/60"
+            >
               <div className="flex items-start gap-2">
+                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gold/70 opacity-60 group-hover:opacity-100 active:cursor-grabbing" aria-label="גרור לסיווג בעמוד א׳ או ב׳" />
                 <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-foreground">{c.question}</div>
@@ -835,12 +930,23 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           ))}
           {dafOnlyCards.length > 0 && (
             <div className="sticky top-0 z-10 mt-3 rounded-lg border border-gold/30 bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
-              שאלות כלליות לדף ({dafOnlyCards.length}) — ללא שיוך לעמוד א׳ או ב׳
+              שאלות שטרם סווגו לעמוד — {dafOnlyCards.length} שאלות
             </div>
           )}
           {dafOnlyCards.map((c, i) => (
-            <div key={c.id} className="rounded-lg border border-border/70 bg-muted/20 p-3 hover:border-gold/50 transition-colors">
+            <div
+              key={c.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("application/x-study-card-id", c.id);
+                event.dataTransfer.setData("text/plain", c.id);
+              }}
+              onDragEnd={() => setDragOverAmud(null)}
+              className="group rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:border-gold/50"
+            >
               <div className="flex items-start gap-2">
+                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gold/70 opacity-60 group-hover:opacity-100 active:cursor-grabbing" aria-label="גרור לסיווג בעמוד א׳ או ב׳" />
                 <span className="text-xs text-muted-foreground font-bold shrink-0 mt-0.5">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-foreground">{c.question}</div>
@@ -1152,6 +1258,43 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={pinsDialogOpen} onOpenChange={setPinsDialogOpen}>
+        <DialogContent className="max-w-2xl" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-end gap-2 text-right">
+              <Pin className="h-5 w-5 text-gold" /> כל ההצמדות
+            </DialogTitle>
+          </DialogHeader>
+          {pins.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-gold/35 p-8 text-center text-sm text-muted-foreground">
+              עדיין אין הצמדות. בחר מסכת, דף ועמוד ולחץ על סמל ההצמדה.
+            </div>
+          ) : (
+            <div className="grid max-h-[60vh] grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+              {[...pins].reverse().map((p) => (
+                <div key={p.id} className="flex items-center gap-2 rounded-xl border-2 border-gold/35 bg-card p-2">
+                  <button type="button" onClick={() => jumpToPin(p)} className="min-w-0 flex-1 rounded-lg px-3 py-2 text-right hover:bg-gold/10">
+                    <strong className="block truncate">{p.masechta}</strong>
+                    <span className="text-xs text-muted-foreground">דף {dafLabel(p.daf).replace(".", "")} · עמוד {p.amud === 1 ? "א׳" : "ב׳"}</span>
+                  </button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setUiPref("dafLearningPins", pins.filter((item) => item.id !== p.id))}
+                    title="הסר הצמדה"
+                    aria-label={`הסר הצמדה של ${p.masechta}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1223,7 +1366,7 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
           setMode(v as LearnMode);
           setPracticeChoice(null);
         }}
-        className="w-full flex justify-center gap-1 rounded-xl border-2 border-gold/40 bg-card p-1"
+        className="flex w-full justify-center gap-1 rounded-xl border-2 border-gold/40 bg-card p-1 lg:gap-3 lg:rounded-2xl lg:p-3"
       >
         {tabs.map((t) => {
           const Icon = t.icon;
@@ -1231,9 +1374,9 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
             <ToggleGroupItem
               key={t.id}
               value={t.id}
-              className="flex-1 max-w-[200px] gap-2 data-[state=on]:bg-gradient-navy data-[state=on]:text-primary-foreground"
+              className="h-10 flex-1 gap-2 rounded-lg px-2 text-sm font-semibold data-[state=on]:bg-gradient-navy data-[state=on]:text-primary-foreground lg:h-16 lg:max-w-none lg:gap-3 lg:rounded-xl lg:px-5 lg:text-lg"
             >
-              <Icon className="h-4 w-4" /> {t.label}
+              <Icon className="h-4 w-4 shrink-0 lg:h-6 lg:w-6" /> {t.label}
             </ToggleGroupItem>
           );
         })}
