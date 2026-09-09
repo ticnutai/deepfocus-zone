@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CircleArrowUp, Download, RefreshCw, RotateCcw, WifiOff, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,6 +21,8 @@ type UpdateStatus =
   | { type: "error"; message: string };
 
 type BackupPhase = "idle" | "running" | "done" | "failed";
+type BackupMethod = PreUpdateBackupResult["method"] | null;
+type LocalCopyChoice = "pending" | "downloading" | "downloaded" | "skipped" | "failed" | null;
 
 export function DesktopUpdateButton() {
   const updates = window.desktop?.updates;
@@ -32,28 +34,38 @@ export function DesktopUpdateButton() {
   const [open, setOpen] = useState(false);
   const [installCountdown, setInstallCountdown] = useState(0);
   const [backupPhase, setBackupPhase] = useState<BackupPhase>("idle");
+  const [backupMethod, setBackupMethod] = useState<BackupMethod>(null);
+  const [localCopyChoice, setLocalCopyChoice] = useState<LocalCopyChoice>(null);
   const runPreUpdateBackup = usePreUpdateBackup();
+  const backupRunnerRef = useRef(runPreUpdateBackup);
+  backupRunnerRef.current = runPreUpdateBackup;
+  const downloadedVersion = status.type === "downloaded" ? status.version : null;
 
   // Mandatory update, step 1: back up everything the user added BEFORE
   // installing, so a forced update can never lose local work. Bounded by a
   // timeout so a stalled network still lets the (equally mandatory) update
   // proceed instead of hanging forever.
   useEffect(() => {
-    if (status.type !== "downloaded") {
+    if (!downloadedVersion) {
       setBackupPhase("idle");
+      setBackupMethod(null);
+      setLocalCopyChoice(null);
       return;
     }
     let cancelled = false;
     setBackupPhase("running");
     const withTimeout = Promise.race<PreUpdateBackupResult>([
-      runPreUpdateBackup(),
+      backupRunnerRef.current(),
       new Promise((resolve) => window.setTimeout(() => resolve({ ok: false, method: "error" }), BACKUP_TIMEOUT_MS)),
     ]);
     void withTimeout.then((result) => {
-      if (!cancelled) setBackupPhase(result.ok ? "done" : "failed");
+      if (cancelled) return;
+      setBackupMethod(result.method);
+      setBackupPhase(result.ok ? "done" : "failed");
+      setLocalCopyChoice(result.ok && result.method === "cloud" ? "pending" : null);
     });
     return () => { cancelled = true; };
-  }, [status, runPreUpdateBackup]);
+  }, [downloadedVersion]);
 
   // Mandatory update, step 2: once the backup attempt is settled (done OR
   // failed — it must not block the update forever), install automatically
@@ -61,7 +73,13 @@ export function DesktopUpdateButton() {
   // process (electron/main.cjs) keeps a much longer fallback timer in case
   // this component never runs at all.
   useEffect(() => {
-    if (status.type !== "downloaded" || backupPhase === "idle" || backupPhase === "running") return;
+    if (
+      status.type !== "downloaded"
+      || backupPhase === "idle"
+      || backupPhase === "running"
+      || localCopyChoice === "pending"
+      || localCopyChoice === "downloading"
+    ) return;
     setInstallCountdown(INSTALL_COUNTDOWN_S);
     const intervalId = window.setInterval(() => {
       setInstallCountdown((s) => Math.max(0, s - 1));
@@ -73,7 +91,13 @@ export function DesktopUpdateButton() {
       window.clearInterval(intervalId);
       window.clearTimeout(timeoutId);
     };
-  }, [status, backupPhase, updates]);
+  }, [status, backupPhase, localCopyChoice, updates]);
+
+  const downloadLocalCopy = async () => {
+    setLocalCopyChoice("downloading");
+    const result = await runPreUpdateBackup({ localCopyOnly: true });
+    setLocalCopyChoice(result.ok ? "downloaded" : "failed");
+  };
 
   useEffect(() => {
     if (!enabled || !updates) return;
@@ -196,16 +220,49 @@ export function DesktopUpdateButton() {
                   </p>
                 )}
                 {backupPhase === "done" && (
-                  <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
-                    <ShieldCheck className="h-4 w-4" /> הגיבוי הושלם בהצלחה.
-                  </p>
+                  <div className="space-y-2">
+                    <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+                      <ShieldCheck className="h-4 w-4" /> הגיבוי הושלם בהצלחה.
+                    </p>
+                    {backupMethod === "cloud" && (
+                      <p className="text-sm text-muted-foreground">
+                        שני גיבויי העדכון האחרונים נשמרים בענן ומתחלפים אוטומטית.
+                      </p>
+                    )}
+                  </div>
                 )}
                 {backupPhase === "failed" && (
                   <p className="text-sm text-amber-700 dark:text-amber-400">
                     הגיבוי לא הושלם כרגע (יתבצע שוב מאוחר יותר) — העדכון ממשיך בכל זאת.
                   </p>
                 )}
-                {(backupPhase === "done" || backupPhase === "failed") && (
+                {backupMethod === "cloud" && localCopyChoice === "pending" && (
+                  <div className="rounded-lg border border-gold/50 bg-card p-3">
+                    <p className="mb-3 text-sm font-semibold">רוצה להוריד גם עותק גיבוי למחשב?</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => void downloadLocalCopy()} className="gap-2 bg-navy text-white">
+                        <Download className="h-4 w-4" /> הורד למחשב
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setLocalCopyChoice("skipped")}>
+                        לא עכשיו
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {localCopyChoice === "downloading" && (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> מכין עותק להורדה למחשב…
+                  </p>
+                )}
+                {localCopyChoice === "downloaded" && (
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400">עותק הגיבוי הורד גם למחשב.</p>
+                )}
+                {localCopyChoice === "failed" && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">ההורדה למחשב לא הצליחה. הגיבוי בענן נשמר.</p>
+                )}
+                {(backupPhase === "done" || backupPhase === "failed")
+                  && localCopyChoice !== "pending"
+                  && localCopyChoice !== "downloading" && (
                   <p className="text-sm text-muted-foreground">
                     המערכת תיסגר ותתקין את העדכון אוטומטית בעוד {installCountdown} {installCountdown === 1 ? "שנייה" : "שניות"}, ותיפתח מחדש.
                   </p>
@@ -219,7 +276,7 @@ export function DesktopUpdateButton() {
             {status.type === "downloaded" && (
               <Button
                 onClick={() => void updates.install()}
-                disabled={backupPhase === "running"}
+                disabled={backupPhase === "running" || localCopyChoice === "pending" || localCopyChoice === "downloading"}
                 className="gap-2 bg-navy text-white"
               >
                 <RotateCcw className="h-4 w-4" /> התקן עכשיו

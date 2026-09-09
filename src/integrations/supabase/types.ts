@@ -1118,6 +1118,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      prune_preupdate_backups: {
+        Args: { p_keep?: number }
+        Returns: number
+      }
       admin_save_access_profile: {
         Args: { p_scope: string; p_layout: Json; p_block: Json; p_role_ids: string[]; p_permissions?: Json | null; p_expected_permissions?: Json | null; p_expected_updated_at?: number | null };
         Returns: undefined;

@@ -9,6 +9,10 @@ export interface PreUpdateBackupResult {
   method: "cloud" | "local" | "error";
 }
 
+export interface PreUpdateBackupOptions {
+  localCopyOnly?: boolean;
+}
+
 /**
  * Backs up everything the user added (cards, decks/tests, categories, goals,
  * ש"ס progress, ...) right before a mandatory app update installs, so a
@@ -24,21 +28,34 @@ export function usePreUpdateBackup() {
   const { state, requestCloudSyncNow } = useStudy();
   const { user, isGuest } = useAuth();
 
-  return useCallback(async (): Promise<PreUpdateBackupResult> => {
+  return useCallback(async (options: PreUpdateBackupOptions = {}): Promise<PreUpdateBackupResult> => {
     try {
+      const snapshot = buildSnapshot(
+        state,
+        user?.email ?? "גיבוי אוטומטי לפני עדכון",
+      );
+
+      if (options.localCopyOnly) {
+        exportJson(snapshot);
+        return { ok: true, method: "local" };
+      }
+
       if (!isGuest && user?.id) {
         await requestCloudSyncNow("pre-update-backup");
-        const snapshot = buildSnapshot(state, user.email ?? undefined);
         await saveCloudBackup(
           supabase,
           user.id,
           `גיבוי אוטומטי לפני עדכון — ${new Date().toLocaleString("he-IL")}`,
           snapshot,
+          ["system:pre-update"],
         );
+
+        const { error: pruneError } = await supabase.rpc("prune_preupdate_backups", { p_keep: 2 });
+        if (pruneError) throw pruneError;
+
         return { ok: true, method: "cloud" };
       }
 
-      const snapshot = buildSnapshot(state, "גיבוי אוטומטי לפני עדכון");
       exportJson(snapshot);
       return { ok: true, method: "local" };
     } catch (err) {
