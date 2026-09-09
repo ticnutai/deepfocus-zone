@@ -1,206 +1,206 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { resolvePublishedPermissions } from "@/lib/auth/localPermissionBoundary";
+import {
+  ACCESS_POLICY_EVENT, accessKindForIdentity, cachedAccessPolicy, loadAccessPolicy,
+  type AccessKind, type AccessRolePolicy,
+} from "@/lib/auth/accessRolePolicy";
 
 export type PermissionModule = "decks" | "cards" | "goals" | "shas" | "analytics" | "users" | "roles" | "settings";
 export type PermissionAction = "view" | "create" | "edit" | "delete" | "manage";
-
 interface PermSet {
   isAdmin: boolean;
-  matrix: Record<string, boolean>; // key = `${module}:${action}`
+  matrix: Record<string, boolean>;
   roles: { id: string; name: string }[];
 }
-
 type PermissionsCtx = PermSet & {
   loading: boolean;
+  /** The signed-in account's real administrator state (before role preview). */
+  viewerIsAdmin: boolean;
+  previewRoleId?: string;
+  accessKind?: AccessKind | 'admin';
   can: (m: PermissionModule, a: PermissionAction) => boolean;
   reload: () => Promise<void>;
 };
-
 const empty: PermSet = { isAdmin: false, matrix: {}, roles: [] };
-
-type UserRoleRow = { role_id: string; app_roles: { id: string; name: string } | null };
-type RolePermRow = { module: string; action: string; allowed: boolean };
-
 const PermissionsContext = createContext<PermissionsCtx>({
-  ...empty,
-  loading: true,
-  can: () => false,
-  reload: async () => {},
+  ...empty, loading: true, viewerIsAdmin: false, can: () => false, reload: async () => {},
 });
 
-const LS_PERMS_KEY = (uid: string) => `pashash:perms:${uid}`;
+type Role = { id: string; name: string; access_kind: string | null };
+type PermissionRow = { module: string; action: string; allowed: boolean };
 
-function readCachedPerms(uid: string): PermSet | null {
-  try {
-    const raw = localStorage.getItem(LS_PERMS_KEY(uid));
-    if (!raw) return null;
-    return JSON.parse(raw) as PermSet;
-  } catch { return null; }
-}
-
-function writeCachedPerms(uid: string, perms: PermSet): void {
-  try { localStorage.setItem(LS_PERMS_KEY(uid), JSON.stringify(perms)); } catch { /* ignore */ }
-}
-
-function runWhenBrowserIdle(fn: () => void, timeout = 2000): void {
-  const ric = (window as typeof window & {
-    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
-  }).requestIdleCallback;
-  if (typeof ric === "function") {
-    ric(() => fn(), { timeout });
-    return;
-  }
-  window.setTimeout(fn, 0);
-}
-
-async function fetchUserRoles(userId: string): Promise<{ isAdmin: boolean; roles: { id: string; name: string }[]; roleIds: string[] }> {
-  const { data: ur } = await supabase
-    .from("user_roles")
-    .select("role_id, app_roles(id,name)")
-    .eq("user_id", userId);
-
-  const urRows = (ur ?? []) as unknown as UserRoleRow[];
-  const roleIds = urRows.map((r) => r.role_id).filter((id): id is string => !!id);
-  const roles = urRows.map((r) => ({ id: r.app_roles?.id, name: r.app_roles?.name })).filter((r) => r.id) as { id: string; name: string }[];
-  const isAdmin = roles.some((r) => r.name === "admin");
-  return { isAdmin, roles, roleIds };
-}
-
-async function fetchRoleMatrix(roleIds: string[]): Promise<Record<string, boolean>> {
+async function fetchCloudPermissions(userId: string, policy: AccessRolePolicy, signal: AbortSignal): Promise<PermSet> {
+  const { data, error } = await supabase.from('user_roles')
+    .select('app_roles(id,name,access_kind)').eq('user_id', userId).abortSignal(signal);
+  if (error) throw error;
+  const assigned = ((data ?? []) as unknown as { app_roles: Role | null }[])
+    .flatMap((row) => row.app_roles ? [row.app_roles] : []);
+  if (assigned.some((role) => role.name === 'admin')) return { isAdmin: true, roles: assigned, matrix: {} };
+  const baseline = policy.registered;
+  if (!baseline) throw new Error('Registered access policy is missing');
+  // Connectivity roles are automatic, never additive manually assigned privileges.
+  const custom = assigned.filter((role) => !role.access_kind && role.id !== baseline.id);
+  const roles = [baseline, ...custom];
+  const [permissions, overrides] = await Promise.all([
+    supabase.from('role_permissions').select('module,action,allowed')
+      .in('role_id', roles.map((role) => role.id)).abortSignal(signal),
+    supabase.from('user_permission_overrides').select('module,action,allowed')
+      .eq('user_id', userId).abortSignal(signal),
+  ]);
+  if (permissions.error) throw permissions.error;
+  if (overrides.error) throw overrides.error;
   const matrix: Record<string, boolean> = {};
-  if (!roleIds.length) return matrix;
-  const { data: rp } = await supabase
-    .from("role_permissions")
-    .select("module, action, allowed")
-    .in("role_id", roleIds);
-  ((rp ?? []) as unknown as RolePermRow[]).forEach((row) => {
-    const key = `${row.module}:${row.action}`;
-    if (row.allowed) matrix[key] = true;
-  });
-  return matrix;
+  for (const row of (permissions.data ?? []) as PermissionRow[]) {
+    if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
+  }
+  for (const row of (overrides.data ?? []) as PermissionRow[]) {
+    matrix[`${row.module}:${row.action}`] = row.allowed;
+  }
+  for (const key of Object.keys(matrix)) {
+    if (key.startsWith('users:') || key.startsWith('roles:')) matrix[key] = false;
+  }
+  return { isAdmin: false, roles: roles.map(({ id, name }) => ({ id, name })), matrix };
 }
 
-async function fetchPerms(userId: string, opts?: { deferMatrix?: boolean; seedMatrix?: Record<string, boolean> }): Promise<PermSet> {
-  const rolesData = await fetchUserRoles(userId);
-  if (rolesData.isAdmin || !rolesData.roleIds.length) {
-    return { isAdmin: rolesData.isAdmin, matrix: {}, roles: rolesData.roles };
+/**
+ * Resolve exactly one role for the protected admin preview. This deliberately
+ * ignores the administrator's own roles and personal overrides so the UI is
+ * rendered from the selected role's effective matrix instead of leaking the
+ * administrator matrix into the preview iframe.
+ */
+async function fetchPreviewRolePermissions(roleId: string, signal: AbortSignal): Promise<PermSet> {
+  const [roleResult, permissionResult] = await Promise.all([
+    supabase.from('app_roles').select('id,name,access_kind').eq('id', roleId).abortSignal(signal).maybeSingle(),
+    supabase.from('role_permissions').select('module,action,allowed').eq('role_id', roleId).abortSignal(signal),
+  ]);
+  if (roleResult.error) throw roleResult.error;
+  if (permissionResult.error) throw permissionResult.error;
+  const role = roleResult.data as Role | null;
+  if (!role) throw new Error('Preview role was not found');
+  if (role.name === 'admin') return { isAdmin: true, roles: [{ id: role.id, name: role.name }], matrix: {} };
+  const matrix: Record<string, boolean> = {};
+  for (const row of (permissionResult.data ?? []) as PermissionRow[]) {
+    matrix[`${row.module}:${row.action}`] = row.allowed === true;
   }
-  if (opts?.deferMatrix) {
-    return {
-      isAdmin: false,
-      roles: rolesData.roles,
-      matrix: opts.seedMatrix ?? {},
-    };
+  for (const key of Object.keys(matrix)) {
+    if (key.startsWith('users:') || key.startsWith('roles:')) matrix[key] = false;
   }
-  const matrix = await fetchRoleMatrix(rolesData.roleIds);
-  return { isAdmin: false, matrix, roles: rolesData.roles };
+  return { isAdmin: false, roles: [{ id: role.id, name: role.name }], matrix };
 }
 
-/** Mount once (inside AuthProvider) — all usePermissions() calls share a single fetch. */
+/** One permission authority. Cached cloud/admin identities are never published offline. */
 export function PermissionsProvider({ children }: { children: ReactNode }) {
-  const { user, isGuest, guestProfile } = useAuth();
-  const [perms, setPerms] = useState<PermSet>(empty);
+  const { user, isGuest, localIdentity } = useAuth();
+  const userId = !isGuest && !user?.is_anonymous ? user?.id ?? null : null;
+  const identity = `${userId ?? 'guest'}:${isGuest ? localIdentity : 'cloud'}`;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [networkFailed, setNetworkFailed] = useState(false);
+  const [policy, setPolicy] = useState(cachedAccessPolicy);
+  const previewRoleId = useMemo(() => typeof window === 'undefined'
+    ? ''
+    : new URLSearchParams(window.location.search).get('previewRole') ?? '', []);
+  const [snapshot, setSnapshot] = useState<{ owner: string; viewer: PermSet; preview: PermSet | null } | null>(null);
   const [loading, setLoading] = useState(true);
+  const request = useRef<AbortController | null>(null);
+  const readyIdentity = useRef<string | null>(null);
 
-  // Use userId string (not user object) as dep — avoids re-fetch on token refresh
-  // where user object reference changes but user.id stays the same.
-  const userId = user?.id ?? null;
-
-  const matrixRefreshInFlight = useRef<string | null>(null);
-
-  const load = useCallback(async (forceNetwork = false) => {
-    if (isGuest) {
-      if (!guestProfile) {
-        setPerms(empty);
+  const reload = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const valid = () => !controller.signal.aborted && identityRef.current === identity && navigator.onLine;
+    if (!navigator.onLine) {
+      setSnapshot(null);
+      setLoading(false);
+      return;
+    }
+    if (readyIdentity.current !== identity) setLoading(true);
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    try {
+      const latest = await loadAccessPolicy(controller.signal);
+      if (!valid()) return;
+      setPolicy(latest);
+      const viewer = userId ? await fetchCloudPermissions(userId, latest, controller.signal) : null;
+      if (!valid()) return;
+      const preview = previewRoleId && viewer?.isAdmin
+        ? await fetchPreviewRolePermissions(previewRoleId, controller.signal)
+        : null;
+      if (!valid()) return;
+      setNetworkFailed(false);
+      setSnapshot(viewer ? { owner: identity, viewer, preview } : null);
+    } catch (error) {
+      if (identityRef.current === identity && request.current === controller) {
+        if (!controller.signal.aborted) console.warn('[permissions] using offline role:', error instanceof Error ? error.message : String(error));
+        setSnapshot(null);
+        setNetworkFailed(true);
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (identityRef.current === identity && request.current === controller) {
+        readyIdentity.current = identity;
         setLoading(false);
-        return;
       }
-
-      // Guest/local mode never resolves a live cloud role. A guest profile is
-      // only a presentation/content preset; its published permission snapshot
-      // is clamped by the central non-admin boundary.
-      setPerms(resolvePublishedPermissions(empty, true, guestProfile));
-
-      setLoading(false);
-      return;
     }
+  }, [identity, previewRoleId, userId]);
 
-    if (!userId) { setPerms(empty); setLoading(false); return; }
-
-    const cached = forceNetwork ? null : readCachedPerms(userId);
-
-    // Serve stale immediately so the page renders without waiting for network.
-    if (cached) {
-      setPerms(cached);
+  useEffect(() => {
+    setSnapshot(null);
+    void reload();
+    const onOnline = () => { setOnline(true); void reload(); };
+    const onOffline = () => {
+      request.current?.abort();
+      setOnline(false);
+      setSnapshot(null);
       setLoading(false);
-    } else {
-      setLoading(true);
-    }
-
-    const seedMatrix = cached?.matrix ?? {};
-    const base = await fetchPerms(userId, { deferMatrix: !forceNetwork, seedMatrix });
-    setPerms(base);
-    setLoading(false);
-    writeCachedPerms(userId, base);
-
-    if (base.isAdmin) return;
-
-    const roleKey = `${userId}:${base.roles.map((r) => r.id).sort().join(",")}`;
-    if (matrixRefreshInFlight.current === roleKey) return;
-    matrixRefreshInFlight.current = roleKey;
-
-    const refreshMatrix = async () => {
-      try {
-        const latest = await fetchUserRoles(userId);
-        if (latest.isAdmin || !latest.roleIds.length) {
-          const next: PermSet = { isAdmin: latest.isAdmin, roles: latest.roles, matrix: {} };
-          setPerms(next);
-          writeCachedPerms(userId, next);
-          return;
-        }
-        const matrix = await fetchRoleMatrix(latest.roleIds);
-        const next: PermSet = { isAdmin: false, roles: latest.roles, matrix };
-        setPerms(next);
-        writeCachedPerms(userId, next);
-      } finally {
-        matrixRefreshInFlight.current = null;
-      }
     };
+    const onPolicyChange = () => { void reload(); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    window.addEventListener(ACCESS_POLICY_EVENT, onPolicyChange);
+    const timer = window.setInterval(() => { if (navigator.onLine) void reload(); }, 60000);
+    return () => {
+      request.current?.abort();
+      window.clearInterval(timer);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener(ACCESS_POLICY_EVENT, onPolicyChange);
+    };
+  }, [reload]);
 
-    if (forceNetwork) {
-      await refreshMatrix();
-      return;
-    }
-
-    runWhenBrowserIdle(() => {
-      void refreshMatrix();
-    });
-  }, [guestProfile, isGuest, userId]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  // Switching from a cloud administrator to the machine-local profile must be
-  // fail-closed synchronously. React effects run after render, so publishing
-  // the previous `perms` state here would otherwise expose one render with the
-  // administrator navigation still enabled.
-  const publishedPerms = resolvePublishedPermissions(perms, isGuest, guestProfile);
-
-  const can = useCallback(
-    (m: PermissionModule, a: PermissionAction) => publishedPerms.isAdmin || !!publishedPerms.matrix[`${m}:${a}`],
-    [publishedPerms],
-  );
-
+  const connected = online && !networkFailed;
+  const kind = accessKindForIdentity(!!userId, isGuest && localIdentity === 'account', connected);
+  const role = policy[kind];
+  // Guard during render, not just effects: a former admin must not leak for one frame.
+  const viewer: PermSet = useMemo(() => connected && userId && snapshot?.owner === identity
+    ? snapshot.viewer
+    : { isAdmin: false, matrix: role?.matrix ?? {}, roles: role ? [{ id: role.id, name: role.name }] : [] },
+  [connected, userId, snapshot, identity, role]);
+  // Preview requests fail closed until both the real administrator and the
+  // selected role have been verified. This prevents even a one-frame admin UI
+  // leak while the iframe is loading.
+  const published: PermSet = useMemo(() => previewRoleId
+    ? (viewer.isAdmin && snapshot?.owner === identity && snapshot.preview ? snapshot.preview : empty)
+    : viewer,
+  [identity, previewRoleId, snapshot, viewer]);
+  const can = useCallback((m: PermissionModule, a: PermissionAction) =>
+    published.isAdmin || (!!published.matrix[`${m}:view`] && !!published.matrix[`${m}:${a}`]), [published]);
   return (
-    <PermissionsContext.Provider value={{ ...publishedPerms, loading, can, reload: () => load(true) }}>
+    <PermissionsContext.Provider value={{
+      ...published,
+      viewerIsAdmin: viewer.isAdmin,
+      previewRoleId: previewRoleId || undefined,
+      accessKind: published.isAdmin ? 'admin' : kind,
+      loading,
+      can,
+      reload,
+    }}>
       {children}
     </PermissionsContext.Provider>
   );
 }
 
-/** Read permissions from the nearest PermissionsProvider (single shared fetch). */
-export function usePermissions() {
-  return useContext(PermissionsContext);
-}
+export function usePermissions() { return useContext(PermissionsContext); }

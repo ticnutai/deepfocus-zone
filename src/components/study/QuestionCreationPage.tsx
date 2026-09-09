@@ -464,8 +464,8 @@ export function QuestionCreationPage() {
           <DropdownMenuContent align="start" className="w-52" dir="rtl">
             <DropdownMenuLabel>פריסת בניית שאלות</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setCreationLayout("content-tree")} className={creationLayout === "content-tree" ? "bg-gold/10" : undefined}>
-              <Check className={`ml-2 h-4 w-4 ${creationLayout !== "content-tree" ? "opacity-0" : ""}`} />עץ תוכן + שאלה
+            <DropdownMenuItem onClick={() => setCreationLayout("content-tree")}>
+              <Check className="ml-2 h-4 w-4 opacity-0" />עץ תוכן + שאלה
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setCreationLayout("classic")} className={creationLayout === "classic" ? "bg-gold/10" : undefined}>
               <Check className={`ml-2 h-4 w-4 ${creationLayout !== "classic" ? "opacity-0" : ""}`} />טופס רגיל

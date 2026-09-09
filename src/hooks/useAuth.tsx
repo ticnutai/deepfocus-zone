@@ -16,6 +16,7 @@ import { startCloudActivityTracking } from "@/lib/auth/activityTracking";
 
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
+const LOCAL_IDENTITY_KEY = "local-identity-kind";
 const GUEST_USER = { id: GUEST_ID, email: "guest@local", role: "authenticated" } as unknown as User;
 const SESSION_BOOT_TIMEOUT_MS = 3500;
 
@@ -24,13 +25,15 @@ interface AuthCtx {
   session: Session | null;
   loading: boolean;
   isGuest: boolean;
+  localIdentity: 'anonymous' | 'account';
   guestProfile: GuestViewProfile | null;
   signOut: () => Promise<void>;
-  signInAsGuest: (profileId?: string | null) => void;
+  signInAsGuest: (profileId?: string | null, identity?: 'anonymous' | 'account') => void;
 }
 
 const Ctx = createContext<AuthCtx>({
   user: null, session: null, loading: true, isGuest: false,
+  localIdentity: 'anonymous',
   guestProfile: null,
   signOut: async () => {}, signInAsGuest: () => {},
 });
@@ -50,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestMode, setGuestMode] = useState(() => localStorage.getItem(GUEST_KEY) === "1");
+  const [localIdentity, setLocalIdentity] = useState<'anonymous' | 'account'>(() =>
+    localStorage.getItem(LOCAL_IDENTITY_KEY) === 'account' ? 'account' : 'anonymous');
   const [guestProfile, setGuestProfile] = useState<GuestViewProfile | null>(() => {
     const activeProfile = getActiveGuestViewProfile();
     return activeProfile?.id === LOCAL_OFFLINE_PROFILE_ID
@@ -104,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
     if (guestMode) {
       localStorage.removeItem(GUEST_KEY);
+      localStorage.removeItem(LOCAL_IDENTITY_KEY);
+      setLocalIdentity('anonymous');
       guestModeRef.current = false;
       setGuestProfile(null);
       setGuestMode(false);
@@ -112,7 +119,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, [guestMode]);
 
-  const signInAsGuest = useCallback((profileId?: string | null) => {
+  const signInAsGuest = useCallback((profileId?: string | null, identity: 'anonymous' | 'account' = 'anonymous') => {
+    localStorage.setItem(LOCAL_IDENTITY_KEY, identity);
+    setLocalIdentity(identity);
     try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
     const fallbackProfileId = getActiveGuestViewProfileId() ?? listGuestViewProfiles()[0]?.id ?? null;
     const effectiveProfileId = profileId ?? fallbackProfileId;
@@ -155,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // and on every `online` event. Only runs from local mode so it never
   // hijacks an already-authenticated session.
   useEffect(() => {
-    if (!guestMode || session) return;
+    if (!guestMode || session || localIdentity !== 'account') return;
     if (!getPendingRegistration()) return;
 
     let cancelled = false;
@@ -163,6 +172,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await attemptDeferredRegistration();
       if (cancelled) return;
       if (result.status === "registered") {
+        const { data } = await supabase.auth.getSession();
+        if (cancelled || !data.session) return;
+        // Only this verified registration may hand local mode back to the cloud.
+        guestModeRef.current = false;
+        localStorage.removeItem(GUEST_KEY);
+        initialSessionPromise = Promise.resolve(data.session);
+        setSession(data.session);
+        setGuestMode(false);
+        setGuestProfile(null);
+        supabase.auth.startAutoRefresh();
         toast.success("החשבון שנוצר באופליין נרשם לשרת והנתונים מסתנכרנים.");
       } else if (result.status === "failed" && result.message) {
         console.warn("[deferred-registration] failed:", result.message);
@@ -175,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.removeEventListener("online", run);
     };
-  }, [guestMode, session]);
+  }, [guestMode, session, localIdentity]);
 
   const effectiveUser = guestMode ? GUEST_USER : (session?.user ?? null);
 
@@ -192,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: effectiveUser,
         loading,
         isGuest: guestMode,
+        localIdentity,
         guestProfile,
         signOut,
         signInAsGuest,

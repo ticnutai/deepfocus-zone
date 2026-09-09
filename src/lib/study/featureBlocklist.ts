@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ACCESS_POLICY_EVENT, cachedAccessPolicy } from "@/lib/auth/accessRolePolicy";
+import bundledAccess from "@/lib/auth/bundledAccessDefaults.json";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 import { normalizeSplitWorkspaceSections } from "@/lib/study/sidebarItems";
 
@@ -57,17 +59,7 @@ export const LOCAL_OFFLINE_DEFAULT_BLOCKLIST: FeatureBlocklist = {
   widgets: {},
 };
 
-/**
- * Role id carried by the bundled "עבודה מקומית (אופליין)" guest profile.
- *
- * Offline accounts (username + password, registered with no connection) enter
- * under this synthetic role. It is not a row in `app_roles`, so it never
- * matched a blocklist assignment and `resolveRoleFeatureBlocklist` fell through
- * to the GLOBAL blocklist — meaning a broad global block emptied the offline
- * experience too, even though the offline profile grants full permissions.
- * Giving the role its own assignable profile makes offline independently
- * controllable from the admin screen.
- */
+/** Legacy identifier accepted only while reading old cached layouts. Not an access role. */
 export const LOCAL_OFFLINE_ROLE_ID = "local-offline";
 export const LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID = "blocklist-local-offline";
 const KEY: Record<BlocklistScope, string> = {
@@ -156,10 +148,11 @@ export async function loadFeatureBlocklist(opts?: { force?: boolean; scope?: Blo
 export async function saveFeatureBlocklist(value: FeatureBlocklist, opts?: { scope?: BlocklistScope }): Promise<void> {
   const scope = opts?.scope ?? "desktop";
   const normalized = normalizeBlocklist(value);
-  await supabase.from("site_settings").upsert(
+  const { error } = await supabase.from("site_settings").upsert(
     [{ key: KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
     { onConflict: "key" },
   );
+  if (error) throw error;
   updateSiteSettingCache(KEY[scope], normalized);
   emit(scope, normalized);
 }
@@ -221,16 +214,6 @@ export async function loadFeatureBlocklistProfiles(opts?: { force?: boolean; sco
   return rows;
 }
 
-export async function saveFeatureBlocklistProfiles(value: FeatureBlocklistProfile[], opts?: { scope?: BlocklistScope }): Promise<void> {
-  const scope = opts?.scope ?? "desktop";
-  const normalized = normalizeProfiles(value);
-  await supabase.from("site_settings").upsert(
-    [{ key: PROFILES_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
-    { onConflict: "key" },
-  );
-  profilesCache.set(scope, normalized);
-  updateSiteSettingCache(PROFILES_KEY[scope], normalized);
-}
 
 export async function loadRoleBlocklistAssignments(opts?: { force?: boolean; scope?: BlocklistScope }): Promise<RoleBlocklistAssignment[]> {
   const force = !!opts?.force;
@@ -243,68 +226,12 @@ export async function loadRoleBlocklistAssignments(opts?: { force?: boolean; sco
   return rows;
 }
 
-export async function saveRoleBlocklistAssignments(value: RoleBlocklistAssignment[], opts?: { scope?: BlocklistScope }): Promise<void> {
-  const scope = opts?.scope ?? "desktop";
-  const normalized = normalizeRoleAssignments(value);
-  await supabase.from("site_settings").upsert(
-    [{ key: ROLE_ASSIGNMENTS_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
-    { onConflict: "key" },
-  );
-  roleAssignmentsCache.set(scope, normalized);
-  updateSiteSettingCache(ROLE_ASSIGNMENTS_KEY[scope], normalized);
-}
 
 // mergeBlocklists intentionally removed: role-assigned profiles fully
 // override the global blocklist (see resolveRoleFeatureBlocklist).
 
-/**
- * Ensures the offline role owns an editable blocklist profile + assignment.
- *
- * Created unblocked (nothing hidden) so a local account behaves like a full
- * install, and editable from the admin screen like any other profile. Runs at
- * most once per scope per session and is a no-op when already present.
- */
-const localOfflineEnsured = new Set<BlocklistScope>();
 
-export async function ensureLocalOfflineBlocklistProfile(
-  opts?: { scope?: BlocklistScope },
-): Promise<void> {
-  const scope = opts?.scope ?? "desktop";
-  if (localOfflineEnsured.has(scope)) return;
-  localOfflineEnsured.add(scope);
 
-  const [profiles, assignments] = await Promise.all([
-    loadFeatureBlocklistProfiles({ scope }),
-    loadRoleBlocklistAssignments({ scope }),
-  ]);
-
-  const hasProfile = profiles.some((p) => p.id === LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID);
-  const hasAssignment = assignments.some((a) => a.roleId === LOCAL_OFFLINE_ROLE_ID);
-  if (hasProfile && hasAssignment) return;
-
-  if (!hasProfile) {
-    await saveFeatureBlocklistProfiles([
-      ...profiles,
-      {
-        id: LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID,
-        name: "עבודה מקומית (אופליין)",
-        blocklist: LOCAL_OFFLINE_DEFAULT_BLOCKLIST,
-        updatedAt: Date.now(),
-      },
-    ], { scope });
-  }
-
-  if (!hasAssignment) {
-    await saveRoleBlocklistAssignments([
-      ...assignments,
-      {
-        id: crypto.randomUUID(),
-        roleId: LOCAL_OFFLINE_ROLE_ID,
-        profileId: LOCAL_OFFLINE_BLOCKLIST_PROFILE_ID,
-      },
-    ], { scope });
-  }
-}
 
 export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { force?: boolean; scope?: BlocklistScope }): Promise<FeatureBlocklist> {
   const scope = opts?.scope ?? "desktop";
@@ -321,6 +248,8 @@ export async function resolveRoleFeatureBlocklist(roleIds: string[], opts?: { fo
     .map((roleId) => assignments.find((row) => row.roleId === roleId))
     .find((row): row is RoleBlocklistAssignment => !!row);
   if (!assignment) {
+    const systemIds = Object.values(cachedAccessPolicy()).map((role) => role.id);
+    if (uniqueRoleIds.some((id) => systemIds.includes(id))) return normalizeBlocklist(bundledAccess.blocklists[scope]);
     // A fresh offline machine cannot download its assigned profile yet. Keep
     // the bundled restricted view until the administrator's profile is cached.
     if (uniqueRoleIds.includes(LOCAL_OFFLINE_ROLE_ID)) return LOCAL_OFFLINE_DEFAULT_BLOCKLIST;
@@ -373,12 +302,19 @@ export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: 
 
   useEffect(() => {
     let cancelled = false;
-    void resolveRoleFeatureBlocklist(roleIds, { scope }).then((next) => {
+    const refresh = () => { void resolveRoleFeatureBlocklist(roleIds, { scope, force: navigator.onLine }).then((next) => {
       if (!cancelled) setResolved(next);
     }).catch(() => {
       if (!cancelled) setResolved(EMPTY);
-    });
-    return () => { cancelled = true; };
+    }); };
+    refresh();
+    window.addEventListener(ACCESS_POLICY_EVENT, refresh);
+    window.addEventListener('online', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ACCESS_POLICY_EVENT, refresh);
+      window.removeEventListener('online', refresh);
+    };
   }, [scope, JSON.stringify(Array.from(new Set(roleIds.filter(Boolean))).sort())]);
 
   return resolved;

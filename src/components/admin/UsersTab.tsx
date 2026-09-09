@@ -30,7 +30,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 
 interface Profile { id: string; display_name: string | null; username: string | null; email: string | null; created_at: string; status: string; }
-interface Role { id: string; name: string; description: string | null; }
+interface Role { id: string; name: string; description: string | null; access_kind?: string | null; }
 interface UR { user_id: string; role_id: string; }
 interface ActivitySummary { loginCount: number; activeSeconds: number; lastSeenAt: string | null; }
 
@@ -77,12 +77,12 @@ export function UsersTab() {
   const load = async () => {
     const [{ data: p }, { data: r }, { data: ur }, { data: activity }] = await Promise.all([
       supabase.from("profiles").select("id, display_name, username, email, created_at, status").order("created_at", { ascending: false }),
-      supabase.from("app_roles").select("id, name, description").order("name"),
+      supabase.from("app_roles").select("id, name, description, access_kind").order("name"),
       supabase.from("user_roles").select("user_id, role_id"),
       supabase.from("user_activity_daily").select("user_id,login_count,active_seconds,last_seen_at"),
     ]);
     setProfiles((p ?? []) as Profile[]);
-    setRoles((r ?? []) as Role[]);
+    setRoles((r ?? []).filter((role) => !role.access_kind || ["admin", "registered"].includes(role.access_kind)) as Role[]);
     setUserRoles((ur ?? []) as UR[]);
     const summaries: Record<string, ActivitySummary> = {};
     for (const row of activity ?? []) {
@@ -96,8 +96,12 @@ export function UsersTab() {
   };
   useEffect(() => { load(); }, []);
 
-  const rolesOf = (uid: string) =>
-    userRoles.filter((u) => u.user_id === uid).map((u) => roles.find((r) => r.id === u.role_id)).filter(Boolean) as Role[];
+  const rolesOf = (uid: string) => {
+    const assigned = userRoles.filter((u) => u.user_id === uid).map((u) => roles.find((r) => r.id === u.role_id)).filter(Boolean) as Role[];
+    const baseline = roles.find((role) => role.access_kind === 'registered');
+    return baseline && !assigned.some((role) => role.name === 'admin' || role.id === baseline.id)
+      ? [baseline, ...assigned] : assigned;
+  };
 
   const assign = async (uid: string, roleId: string) => {
     if (!roleId) return;
@@ -575,14 +579,14 @@ export function UsersTab() {
                   )}
                   {userRolesList.map((r) => (
                     <Badge key={r.id} variant={r.name === "admin" ? "default" : "secondary"} className="gap-1">
-                      <button
+                      {r.access_kind !== 'registered' && <button
                         onClick={() => remove(p.id, r.id)}
                         disabled={busy || (r.name === "admin" && isMe)}
                         className="hover:text-destructive disabled:opacity-50"
                         aria-label="הסר תפקיד"
                       >
                         <X className="h-3 w-3" />
-                      </button>
+                      </button>}
                       {r.name}
                     </Badge>
                   ))}

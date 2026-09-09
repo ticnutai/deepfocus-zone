@@ -105,7 +105,7 @@ interface Props {
 
 export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefillDaf }: Props) {
   const { addCard, updateCard, addCategory, deleteCategory, addDeck, updateDeckCategoryIds, state, forkSourceCard, isCardFromSource } = useStudy();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, can } = usePermissions();
   const isEdit = !!editCard;
 
   // Deck assignment is optional. A deckId passed by an explicit "new question"
@@ -211,6 +211,9 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
   };
 
   const handleSave = (followUp: "close" | "same-classification" | "new-classification" = "close") => {
+    if (!can('cards', isEdit && !editingSourceCard ? 'edit' : 'create')) {
+      return toast({ title: 'אין הרשאה לשמירת שאלות בתפקיד הנוכחי', variant: 'destructive' });
+    }
     const showMissingField = (description: string) => {
       toast({
         title: "לא ניתן עדיין לשמור את השאלה",

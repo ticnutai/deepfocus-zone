@@ -1,4 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { isRolePreview } from "@/lib/auth/rolePreview";
+import { usePermissions } from "@/hooks/usePermissions";
+import { createStudyActionGuard } from "@/lib/auth/studyActionGuard";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
@@ -19,19 +22,9 @@ import {
   markProfileBDeckCreated,
 } from "./profileBMode";
 import {
-  loadRoleLayoutProfileAssignments,
-  loadRoleLayoutProfiles,
   resolveRoleLayoutProfile,
-  saveRoleLayoutProfileAssignments,
-  saveRoleLayoutProfiles,
   type LayoutScope,
 } from "./layoutProfiles";
-import {
-  loadFeatureBlocklistProfiles,
-  loadRoleBlocklistAssignments,
-  saveFeatureBlocklistProfiles,
-  saveRoleBlocklistAssignments,
-} from "./featureBlocklist";
 import { supabase } from "@/integrations/supabase/client";
 import { loadBundledOfflineLibrary } from "./offlineLibrary";
 import { enqueueOfflineQuestion, reconcileOfflineQuestions } from "./offlineQuestionSync";
@@ -816,7 +809,7 @@ function setState(updater: (s: StudyState) => StudyState) {
   // Test/SSR fallback inside requestStoreNotify uses a microtask, so callers
   // that read memState synchronously after setState still see fresh data.
   requestStoreNotify();
-  scheduleStateCachePersist();
+  if (!isRolePreview()) scheduleStateCachePersist();
 }
 
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID
@@ -2633,6 +2626,14 @@ async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<
 
 export function useStudy() {
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const permissionRef = useRef(can);
+  permissionRef.current = can;
+  const guardRef = useRef<ReturnType<typeof createStudyActionGuard>>();
+  if (!guardRef.current) guardRef.current = createStudyActionGuard(() => permissionRef.current, () => {
+    toast({ title: 'אין הרשאה לפעולה זו', description: 'אפשר לפנות למנהל לשינוי פרופיל ההרשאות.', variant: 'destructive' });
+  });
+  const guard = guardRef.current;
   const [, force] = useState(0);
 
 
@@ -4822,6 +4823,7 @@ export function useStudy() {
   }, []);
 
   const setTabConfig = useCallback((tabs: TabConfig[]) => {
+    if (isRolePreview()) return;
     const userId = requireUser();
     setState((s) => ({ ...s, tabConfig: tabs }));
     const sidebar = memState.sidebarConfig ?? [];
@@ -4831,118 +4833,22 @@ export function useStudy() {
     ), "user_settings.tab_config");
   }, []);
 
-  const persistPreviewRoleScopedLayout = useCallback(async (
-    roleId: string,
-    scope: LayoutScope,
-    patch: { sidebar?: SidebarConfig[]; layout?: WidgetLayout },
-  ) => {
-    const [profiles, assignments, blockProfiles, blockAssignments] = await Promise.all([
-      loadRoleLayoutProfiles({ scope }),
-      loadRoleLayoutProfileAssignments({ scope }),
-      loadFeatureBlocklistProfiles({ scope }),
-      loadRoleBlocklistAssignments({ scope }),
-    ]);
-
-    const existingAssignment = assignments.find((row) => row.roleId === roleId) ?? null;
-    const existingBlockAssignment = blockAssignments.find((row) => row.roleId === roleId) ?? null;
-    const profileId = existingAssignment?.profileId ?? existingBlockAssignment?.profileId ?? uid();
-    const existingProfile = profiles.find((row) => row.id === profileId) ?? null;
-    const existingBlockProfile = blockProfiles.find((row) => row.id === profileId) ?? null;
-
-    const nextProfiles = [
-      ...profiles.filter((row) => row.id !== profileId),
-      {
-        id: profileId,
-        name: existingProfile?.name ?? `תצוגת תפקיד · ${roleId.slice(0, 6)}`,
-        widgetLayout: patch.layout ?? existingProfile?.widgetLayout ?? {},
-        sidebarConfig: patch.sidebar ?? existingProfile?.sidebarConfig ?? [],
-        categoryTemplate: existingProfile?.categoryTemplate ?? [],
-        updatedAt: Date.now(),
-      },
-    ];
-
-    const nextAssignments = [
-      ...assignments.filter((row) => row.roleId !== roleId),
-      { id: existingAssignment?.id ?? uid(), roleId, profileId },
-    ];
-    const nextBlockProfiles = existingBlockProfile
-      ? blockProfiles
-      : [...blockProfiles, {
-          id: profileId,
-          name: existingProfile?.name ?? `תצוגת תפקיד · ${roleId.slice(0, 6)}`,
-          blocklist: { sections: [], widgets: {} },
-          updatedAt: Date.now(),
-        }];
-    const nextBlockAssignments = [
-      ...blockAssignments.filter((row) => row.roleId !== roleId),
-      { id: existingBlockAssignment?.id ?? uid(), roleId, profileId },
-    ];
-
-    await Promise.all([
-      saveRoleLayoutProfiles(nextProfiles, { scope }),
-      saveRoleLayoutProfileAssignments(nextAssignments, { scope }),
-      saveFeatureBlocklistProfiles(nextBlockProfiles, { scope }),
-      saveRoleBlocklistAssignments(nextBlockAssignments, { scope }),
-      ...(scope === "desktop" ? [supabase.from("role_layout_defaults").delete().eq("role_id", roleId)] : []),
-    ]);
-  }, []);
-
   const setSidebarConfig = useCallback((sidebar: SidebarConfig[]) => {
+    if (isRolePreview()) return;
     const userId = requireUser();
     setState((s) => ({ ...s, sidebarConfig: sidebar }));
-    const previewRoleId = (typeof window !== "undefined")
-      ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
-      : null;
-    const previewLayoutScope: LayoutScope = (typeof window !== "undefined")
-      ? ((window as unknown as { __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope ?? "desktop")
-      : "desktop";
-    if (previewRoleId) {
-      void (async () => {
-        const { error } = await (async () => {
-          try {
-            await persistPreviewRoleScopedLayout(previewRoleId, previewLayoutScope, { sidebar });
-            return { error: null as { message?: string } | null };
-          } catch (e) {
-            return { error: { message: e instanceof Error ? e.message : String(e) } };
-          }
-        })();
-        if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
-      })();
-      return;
-    }
     const home = memState.tabConfig ?? [];
     bg(supabase.from("user_settings").upsert(
       { user_id: userId, tab_config: { home, sidebar } as unknown as Json },
       { onConflict: "user_id" },
     ), "user_settings.sidebar_config");
-  }, [persistPreviewRoleScopedLayout]);
+  }, []);
 
   const setWidgetLayout = useCallback((layout: WidgetLayout) => {
+    if (isRolePreview()) return;
     const userId = requireUser();
     const now = Date.now();
     setState((s) => ({ ...s, widgetLayout: layout }));
-    const previewRoleId = (typeof window !== "undefined")
-      ? (window as unknown as { __previewRoleId?: string | null }).__previewRoleId ?? null
-      : null;
-    const previewLayoutScope: LayoutScope = (typeof window !== "undefined")
-      ? ((window as unknown as { __previewLayoutScope?: LayoutScope | null }).__previewLayoutScope ?? "desktop")
-      : "desktop";
-    if (previewRoleId) {
-      // Preview mode: redirect save to the same unified profile used by the
-      // admin editor; do NOT touch the administrator's personal settings.
-      void (async () => {
-        const { error } = await (async () => {
-          try {
-            await persistPreviewRoleScopedLayout(previewRoleId, previewLayoutScope, { layout });
-            return { error: null as { message?: string } | null };
-          } catch (e) {
-            return { error: { message: e instanceof Error ? e.message : String(e) } };
-          }
-        })();
-        if (error) toast({ title: "שמירה לתפקיד נכשלה", description: error.message, variant: "destructive" });
-      })();
-      return;
-    }
     // 1. Sync writes: localStorage (instant) + IDB (immediate, survives localStorage clear)
     writeWidgetLayoutCache(userId, layout, now);
     void writeWidgetLayoutIdb(userId, layout, now);
@@ -4985,7 +4891,7 @@ export function useStudy() {
       };
       void trySaveToCloud(1);
     }
-  }, [persistPreviewRoleScopedLayout]);
+  }, []);
 
   /**
    * Non-persisting preview-mode setter. Applies a sidebar+widget layout to local
@@ -5002,6 +4908,7 @@ export function useStudy() {
   }, []);
 
   const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {
+    if (isRolePreview()) return;
     const userId = requireUser();
     const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };
     setState((s) => ({ ...s, uiPrefs: next }));
@@ -5624,37 +5531,45 @@ export function useStudy() {
   }, []);
 
   return {
-    state, addDeck, deleteDeck, addCard, bulkAddCards, bulkAddDecks, updateCard, duplicateCard, deleteCard,
-    forkSourceCard, isCardFromSource,
-    reviewCard, undoReview, deleteReviewLog, addCategory, addCategoriesBulk, deleteCategory,
-    ensureUncategorized,
-    renameCategory, duplicateCategory, duplicateCategoryUnder,
-    addGoal, updateGoal, deleteGoal, toggleGoalDate,
-    setShasPlan, setActiveShasPlan, clearShasPlan, deleteShasPlan, completeShasDaf, undoLastShasDaf, setShasUnit,
+    state,
+    addDeck: guard('decks','create',addDeck), deleteDeck: guard('decks','delete',deleteDeck),
+    addCard: guard('cards','create',addCard), bulkAddCards: guard('cards','create',bulkAddCards),
+    bulkAddDecks: guard('decks','create',bulkAddDecks), updateCard: guard('cards','edit',updateCard),
+    duplicateCard: guard('cards','create',duplicateCard), deleteCard: guard('cards','delete',deleteCard),
+    forkSourceCard: guard('cards','create',forkSourceCard), isCardFromSource,
+    reviewCard: guard("cards","view",reviewCard), undoReview: guard("cards","view",undoReview), deleteReviewLog: guard("cards","view",deleteReviewLog),
+    addCategory: guard('cards','create',addCategory), addCategoriesBulk: guard('cards','create',addCategoriesBulk),
+    deleteCategory: guard('cards','delete',deleteCategory),
+    ensureUncategorized: guard("cards","create",ensureUncategorized),
+    renameCategory: guard('cards','edit',renameCategory), duplicateCategory: guard('cards','create',duplicateCategory),
+    duplicateCategoryUnder: guard('cards','create',duplicateCategoryUnder),
+    addGoal: guard('goals','create',addGoal), updateGoal: guard('goals','edit',updateGoal), deleteGoal: guard('goals','delete',deleteGoal), toggleGoalDate: guard("goals","edit",toggleGoalDate),
+    setShasPlan: guard("shas","create",setShasPlan), setActiveShasPlan: guard("shas","edit",setActiveShasPlan), clearShasPlan: guard("shas","delete",clearShasPlan), deleteShasPlan: guard("shas","delete",deleteShasPlan), completeShasDaf: guard("shas","edit",completeShasDaf), undoLastShasDaf: guard("shas","edit",undoLastShasDaf), setShasUnit: guard("shas","edit",setShasUnit),
     setNotificationsEnabled, setReminderTime, setDayNote,
-    addCardToDeck, addCardsToDeck, removeCardFromDeck, setCardDecks, setDeckCategories, updateDeckCategoryIds,
-    renameDeck,
-    moveCategory, reorderCategories, moveCardToDeck, setCardCategories,
+    addCardToDeck: guard("decks","edit",addCardToDeck), addCardsToDeck: guard("decks","edit",addCardsToDeck), removeCardFromDeck: guard("decks","edit",removeCardFromDeck), setCardDecks: guard("decks","edit",setCardDecks), setDeckCategories: guard("decks","edit",setDeckCategories), updateDeckCategoryIds: guard("decks","edit",updateDeckCategoryIds),
+    renameDeck: guard('decks','edit',renameDeck),
+    moveCategory: guard('cards','edit',moveCategory), reorderCategories: guard('cards','edit',reorderCategories), moveCardToDeck: guard("decks","edit",moveCardToDeck),
+    setCardCategories: guard('cards','edit',setCardCategories),
     loadCategoryChildren, isCategoryChildrenLoaded, isCategoryChildrenLoading, getCategoryHasChildren,
     getCategoryPerfSnapshot,
-    markShasReviewDone, unmarkShasReviewDone, rescheduleShasReview,
-    setShasReviewNote, deleteShasReview, addManualShasReview, setReviewIntervals,
-    scheduleShasReviewsAt,
-    setPlanReviewIntervals,
-    addLearningSession, updateLearningSession, deleteLearningSession,
+    markShasReviewDone: guard("shas","edit",markShasReviewDone), unmarkShasReviewDone: guard("shas","edit",unmarkShasReviewDone), rescheduleShasReview: guard("shas","edit",rescheduleShasReview),
+    setShasReviewNote: guard("shas","edit",setShasReviewNote), deleteShasReview: guard("shas","delete",deleteShasReview), addManualShasReview: guard("shas","create",addManualShasReview), setReviewIntervals: guard("shas","edit",setReviewIntervals),
+    scheduleShasReviewsAt: guard("shas","edit",scheduleShasReviewsAt),
+    setPlanReviewIntervals: guard("shas","edit",setPlanReviewIntervals),
+    addLearningSession: guard("analytics","create",addLearningSession), updateLearningSession: guard("analytics","edit",updateLearningSession), deleteLearningSession: guard("analytics","delete",deleteLearningSession),
     setTabConfig,
     setSidebarConfig,
     setWidgetLayout,
     _applyPreviewLayout,
     setUiPref,
-    addGeneralPlan, deleteGeneralPlan, updateGeneralPlan, completeGeneralPlanUnit, undoLastGeneralPlanUnit,
+    addGeneralPlan: guard("goals","create",addGeneralPlan), deleteGeneralPlan: guard("goals","delete",deleteGeneralPlan), updateGeneralPlan: guard("goals","edit",updateGeneralPlan), completeGeneralPlanUnit: guard("goals","edit",completeGeneralPlanUnit), undoLastGeneralPlanUnit: guard("goals","edit",undoLastGeneralPlanUnit),
     /**
      * Cumulative progress setter — marks units[0..targetCount-1] as done and
      * un-marks the rest. Used to keep "כל היחידות" and "לוח ביצוע" perfectly
      * in sync: clicking any unit (or any calendar day) sets the progress to
      * that point.
      */
-    setGeneralPlanProgressTo: (planId: string, targetCount: number): void => {
+    setGeneralPlanProgressTo: guard("goals", "edit", (planId: string, targetCount: number): void => {
       const plan = (memState.generalPlans ?? []).find((p) => p.id === planId);
       if (!plan) return;
       const max = plan.units.length;
@@ -5670,21 +5585,21 @@ export function useStudy() {
           undoLastGeneralPlanUnit(planId);
         }
       }
-    },
-    addMasecthaReviewPlan,
-    addDeckReviewPlan,
-    markPlanReviewDone, undoPlanReviewDone, postponePlanReview, setPlanReviewNote,
-    addCustomTemplate, updateCustomTemplate, deleteCustomTemplate,
-    addQuizPlan, updateQuizPlan, deleteQuizPlan, setActiveQuizPlan,
-    addQuizAttempt, updateQuizAttempt, deleteQuizAttempt,
+    }),
+    addMasecthaReviewPlan: guard("goals","create",addMasecthaReviewPlan),
+    addDeckReviewPlan: guard("goals","create",addDeckReviewPlan),
+    markPlanReviewDone: guard("goals","edit",markPlanReviewDone), undoPlanReviewDone: guard("goals","edit",undoPlanReviewDone), postponePlanReview: guard("goals","edit",postponePlanReview), setPlanReviewNote: guard("goals","edit",setPlanReviewNote),
+    addCustomTemplate: guard('cards','create',addCustomTemplate), updateCustomTemplate: guard('cards','edit',updateCustomTemplate), deleteCustomTemplate: guard('cards','delete',deleteCustomTemplate),
+    addQuizPlan: guard("decks","create",addQuizPlan), updateQuizPlan: guard("decks","edit",updateQuizPlan), deleteQuizPlan: guard("decks","delete",deleteQuizPlan), setActiveQuizPlan: guard("decks","edit",setActiveQuizPlan),
+    addQuizAttempt: guard("decks","view",addQuizAttempt), updateQuizAttempt: guard("decks","view",updateQuizAttempt), deleteQuizAttempt: guard("decks","view",deleteQuizAttempt),
     getHydrationSnapshot,
     getCloudSyncSnapshot,
     getRecordSyncStatus,
     requestCloudSyncNow,
     getDeleteAuditHistory,
-    deleteAllUserData, deleteCategoriesWithData,
+    deleteAllUserData: guard('settings','delete',deleteAllUserData), deleteCategoriesWithData: guard('cards','delete',deleteCategoriesWithData),
     // === Stub methods (no-op shims for not-yet-implemented features) ===
-    uncompleteSpecificUnit: (planId: string, unit: string): void => {
+    uncompleteSpecificUnit: guard("goals", "edit", (planId: string, unit: string): void => {
       const userId = requireUser();
       const updated = (memState.generalPlans ?? []).map((p) =>
         p.id !== planId ? p :
@@ -5695,8 +5610,8 @@ export function useStudy() {
         { user_id: userId, general_plans: updated as unknown as Json },
         { onConflict: "user_id" },
       ), "user_settings.general_plans.uncomplete");
-    },
-    setPlanUnitNote: (planId: string, unit: string, note: string): void => {
+    }),
+    setPlanUnitNote: guard("goals", "edit", (planId: string, unit: string, note: string): void => {
       const userId = requireUser();
       const updated = (memState.generalPlans ?? []).map((p) => {
         if (p.id !== planId) return p;
@@ -5711,9 +5626,9 @@ export function useStudy() {
         { user_id: userId, general_plans: updated as unknown as Json },
         { onConflict: "user_id" },
       ), "user_settings.general_plans.unitNote");
-    },
+    }),
     reschedulePlanReviews: (_planId: string): void => { /* TODO */ },
-    archiveGeneralPlan: (planId: string): void => {
+    archiveGeneralPlan: guard("goals", "edit", (planId: string): void => {
       const userId = requireUser();
       const updated = (memState.generalPlans ?? []).map((p) =>
         p.id === planId ? { ...p, archivedAt: Date.now() } : p,
@@ -5723,8 +5638,8 @@ export function useStudy() {
         { user_id: userId, general_plans: updated as unknown as Json },
         { onConflict: "user_id" },
       ), "user_settings.general_plans.archive");
-    },
-    unarchiveGeneralPlan: (planId: string): void => {
+    }),
+    unarchiveGeneralPlan: guard("goals", "edit", (planId: string): void => {
       const userId = requireUser();
       const updated = (memState.generalPlans ?? []).map((p) =>
         p.id === planId ? { ...p, archivedAt: undefined } : p,
@@ -5734,7 +5649,7 @@ export function useStudy() {
         { user_id: userId, general_plans: updated as unknown as Json },
         { onConflict: "user_id" },
       ), "user_settings.general_plans.unarchive");
-    },
+    }),
   };
 }
 

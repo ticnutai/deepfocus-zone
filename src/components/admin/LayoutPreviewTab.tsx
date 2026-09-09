@@ -4,21 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, Monitor, RefreshCw, X, ExternalLink, Info, MousePointerClick, Save, CheckCircle2 } from "lucide-react";
+import { Eye, Monitor, RefreshCw, X, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
-import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
-import { saveGuestViewProfile, setActiveGuestViewProfile } from "@/lib/auth/guestViewProfile";
-import { resolveRoleLayoutProfile, type LayoutScope } from "@/lib/study/layoutProfiles";
-import { toast } from "sonner";
+import { type LayoutScope } from "@/lib/study/layoutProfiles";
 
 interface AppRole { id: string; name: string }
-interface RolePermissionRow { module: string; action: string; allowed: boolean }
-interface RoleLayoutDefaultsRow {
-  sidebar_config: SidebarConfig[] | null;
-  widget_layout: WidgetLayout | null;
-}
-
 const ROLE_LABEL: Record<string, string> = {
   admin: "מנהל",
   user: "משתמש רגיל",
@@ -26,8 +17,17 @@ const ROLE_LABEL: Record<string, string> = {
 };
 const roleLabel = (n: string) => ROLE_LABEL[n] ?? n;
 
-export function LayoutPreviewTab() {
-  const [roles, setRoles] = useState<AppRole[]>([]);
+export function LayoutPreviewTab({
+  roles: suppliedRoles,
+  preferredRoleIds = [],
+  profileName = "",
+}: {
+  roles?: AppRole[];
+  preferredRoleIds?: string[];
+  profileName?: string;
+}) {
+  const [loadedRoles, setLoadedRoles] = useState<AppRole[]>([]);
+  const roles = suppliedRoles ?? loadedRoles;
   const [selected, setSelected] = useState<string[]>([]);
   const [section, setSection] = useState<string>("home");
   const [scope, setScope] = useState<LayoutScope>("desktop");
@@ -35,17 +35,18 @@ export function LayoutPreviewTab() {
 
   useEffect(() => {
     (async () => {
+      if (suppliedRoles) return;
       const { data } = await supabase.from("app_roles").select("id,name").order("name");
       if (data) {
-        setRoles(data as AppRole[]);
-        // default: pick admin + user if available
-        const admin = data.find((r) => r.name === "admin");
-        const user = data.find((r) => r.name === "user");
-        const pick = [admin?.id, user?.id].filter(Boolean) as string[];
-        setSelected(pick.length ? pick : [data[0]?.id].filter(Boolean) as string[]);
+        setLoadedRoles(data as AppRole[]);
       }
     })();
-  }, []);
+  }, [suppliedRoles]);
+
+  useEffect(() => {
+    const valid = preferredRoleIds.filter((id) => roles.some((role) => role.id === id)).slice(0, 3);
+    setSelected(valid);
+  }, [preferredRoleIds, roles]);
 
   const toggleRole = (id: string) => {
     setSelected((prev) => {
@@ -61,61 +62,14 @@ export function LayoutPreviewTab() {
     return "grid-cols-1 lg:grid-cols-3";
   }, [selected.length]);
 
-  const buildUrl = (roleId: string) => {
+  const buildUrl = (roleId: string, embedded = false) => {
     const params = new URLSearchParams();
     params.set("section", section);
     params.set("previewRole", roleId);
     params.set("previewViewport", scope);
+    if (embedded) params.set("previewEmbedded", "1");
     params.set("_t", String(reloadToken));
     return `/?${params.toString()}`;
-  };
-
-  const saveRoleAsGuestProfile = async (roleId: string) => {
-    const role = roles.find((r) => r.id === roleId);
-    if (!role) return;
-
-    const [assignedProfile, { data: perms, error: permsError }, { data: defaults, error: defaultsError }] = await Promise.all([
-      resolveRoleLayoutProfile(roleId, { scope }).catch(() => null),
-      supabase
-        .from("role_permissions")
-        .select("module,action,allowed")
-        .eq("role_id", roleId),
-      supabase
-        .from("role_layout_defaults")
-        .select("sidebar_config,widget_layout")
-        .eq("role_id", roleId)
-        .maybeSingle(),
-    ]);
-
-    if (permsError) {
-      toast.error(`טעינת הרשאות נכשלה: ${permsError.message}`);
-      return;
-    }
-    if (defaultsError) {
-      toast.error(`טעינת פריסת תפקיד נכשלה: ${defaultsError.message}`);
-      return;
-    }
-
-    const matrix: Record<string, boolean> = {};
-    ((perms ?? []) as RolePermissionRow[]).forEach((row) => {
-      if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
-    });
-
-    const snapshot = saveGuestViewProfile({
-      id: `role:${roleId}`,
-      label: `תצוגת אורח: ${roleLabel(role.name)}`,
-      roleId,
-      roleName: role.name,
-      isAdmin: role.name === "admin",
-      roles: [{ id: roleId, name: role.name }],
-      matrix,
-      sidebarConfig: assignedProfile?.sidebarConfig
-        ?? ((defaults as { sidebar_config?: unknown } | null)?.sidebar_config as RoleLayoutDefaultsRow["sidebar_config"] | undefined),
-      widgetLayout: assignedProfile?.widgetLayout
-        ?? ((defaults as { widget_layout?: unknown } | null)?.widget_layout as RoleLayoutDefaultsRow["widget_layout"] | undefined),
-    });
-    setActiveGuestViewProfile(snapshot.id);
-    toast.success(`נשמר פרופיל אורח עבור ${roleLabel(role.name)} והוגדר כברירת מחדל בכניסת אורח`);
   };
 
   return (
@@ -124,44 +78,16 @@ export function LayoutPreviewTab() {
         <div className="flex items-center gap-2">
           <span className="gold-icon-circle"><Monitor className="h-4 w-4" /></span>
           <div>
-            <h3 className="font-display text-lg font-bold">תצוגה מקדימה והשוואה לפי תפקיד</h3>
+            <h3 className="font-display text-lg font-bold">בדיקת הרשאות ותצוגה לפי תפקיד</h3>
             <p className="text-xs text-muted-foreground">
-              בחר עד 3 תפקידים ואת הדף להצגה. לכל תפקיד מוצג iframe של האתר האמיתי עם הפריסה השמורה לאותו תפקיד.
+              {profileName ? `הפרופיל שנבדק: ${profileName}. ` : ""}בחר עד 3 תפקידים ואת הדף להצגה. כל חלון מחיל את ההרשאות, הנראות והפריסה השמורות של התפקיד.
             </p>
           </div>
         </div>
 
-        {/* How-it-works banner */}
-        <div className="rounded-lg border-2 border-primary/40 bg-primary/5 p-3 text-xs space-y-2">
-          <div className="flex items-center gap-2 font-bold text-sm text-primary">
-            <Info className="h-4 w-4" />
-            איך עורכים פריסה לתפקיד?
-          </div>
-          <ol className="space-y-1.5 mr-5 list-decimal text-foreground/90 leading-relaxed">
-            <li>
-              <strong>בחר תפקיד</strong> (לדוגמה: editor, user, moderator) מהרשימה למטה — ייפתח iframe עם הפריסה הנוכחית של אותו תפקיד.
-            </li>
-            <li>
-              בתוך ה-iframe יופיע <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 text-black px-2 py-0.5 font-bold"><Eye className="h-3 w-3" />עריכת תפקיד</span> — סימן שאתה במצב עריכה לאותו תפקיד.
-            </li>
-            <li>
-              <span className="inline-flex items-center gap-1 font-semibold"><MousePointerClick className="h-3.5 w-3.5" />גרור, הסתר, הוסף ווידג'טים וטאבים</span> בתוך ה-iframe (לא בחלון הראשי!) — <strong>כל שינוי נשמר אוטומטית לתפקיד</strong>, לא להגדרות האישיות שלך.
-            </li>
-            <li>
-              <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-green-600" />כל משתמש</span> שייכנס עם אותו תפקיד יראה את הפריסה החדשה כברירת מחדל (אם הוא לא שינה לעצמו ידנית).
-            </li>
-            <li>
-              לחיצה על <strong>"שמור כאורח"</strong> מייצרת פרופיל אורח מהפריסה השמורה — שימושי לתצוגה ללא התחברות.
-            </li>
-          </ol>
-          <div className="flex items-start gap-1.5 pt-1 text-[11px] text-muted-foreground border-t border-primary/20">
-            <Save className="h-3 w-3 mt-0.5 shrink-0" />
-            <span>
-              <strong>שמירה אוטומטית עובדת רק במחשב (desktop).</strong> במובייל יש להשתמש ב"פרופילי פריסה + שיוך" בלשונית "ברירות מחדל לתפקידים".
-            </span>
-          </div>
-        </div>
-
+        <p className="rounded-lg border border-emerald-500/40 bg-emerald-50 p-3 text-sm text-emerald-950 dark:bg-emerald-950/25 dark:text-emerald-100">
+          מצב בדיקה מוגן: פעולות כתיבה חסומות, ותפריטים ופעולות מחושבים לפי התפקיד הנבחר. נתוני המשתמש אינם מתחזים לחשבון אמיתי; אכיפת הנתונים נבדקת בנפרד מול השרת ו־RLS.
+        </p>
 
         <div className="flex flex-wrap items-end gap-4">
           {/* Roles multi-select */}
@@ -232,6 +158,7 @@ export function LayoutPreviewTab() {
           {selected.map((roleId) => {
             const role = roles.find((r) => r.id === roleId);
             const url = buildUrl(roleId);
+            const iframeUrl = buildUrl(roleId, true);
             return (
               <Card key={roleId} className="gold-frame p-2 space-y-2 overflow-hidden">
                 <div className="flex items-center justify-between gap-2 px-1">
@@ -243,15 +170,7 @@ export function LayoutPreviewTab() {
                     <span className="text-[10px] text-muted-foreground truncate">{url}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-[11px]"
-                      title="שמור תפקיד זה כפרופיל אורח"
-                      onClick={() => void saveRoleAsGuestProfile(roleId)}
-                    >
-                      שמור כאורח
-                    </Button>
+
                     <Button
                       size="icon"
                       variant="ghost"
@@ -278,7 +197,7 @@ export function LayoutPreviewTab() {
                       <div className="relative h-full max-h-[680px] w-[390px] max-w-full rounded-[28px] border-2 border-gold/40 bg-background shadow-xl overflow-hidden">
                         <iframe
                           key={`${roleId}-${scope}-${reloadToken}`}
-                          src={url}
+                          src={iframeUrl}
                           title={`preview-${role?.name}`}
                           className="absolute inset-0 w-full h-full bg-background"
                         />
@@ -287,7 +206,7 @@ export function LayoutPreviewTab() {
                   ) : (
                     <iframe
                       key={`${roleId}-${scope}-${reloadToken}`}
-                      src={url}
+                      src={iframeUrl}
                       title={`preview-${role?.name}`}
                       className="absolute inset-0 w-full h-full rounded-md border border-gold/30 bg-background"
                     />

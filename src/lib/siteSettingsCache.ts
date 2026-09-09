@@ -23,6 +23,15 @@ const STARTUP_KEYS = [
 ] as const;
 
 const cache = new Map<string, CacheEntry>();
+const PERSISTED_KEYS = new Set(STARTUP_KEYS.filter((key) => key.startsWith('role_layout_') || key.startsWith('feature_blocklist')));
+function persistSetting(key: string, value: unknown): void {
+  if (!PERSISTED_KEYS.has(key as typeof STARTUP_KEYS[number])) return;
+  try { localStorage.setItem('public-role-setting:' + key, JSON.stringify(value)); } catch { /* unavailable storage */ }
+}
+function readPersistedSetting(key: string): unknown {
+  if (!PERSISTED_KEYS.has(key as typeof STARTUP_KEYS[number])) return null;
+  try { return JSON.parse(localStorage.getItem('public-role-setting:' + key) ?? 'null'); } catch { return null; }
+}
 let inFlight: Promise<void> | null = null;
 const queuedKeys = new Set<string>();
 
@@ -44,10 +53,13 @@ async function flushQueuedKeys(force = false): Promise<void> {
   queuedKeys.clear();
   if (!keysToFetch.length) return;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("site_settings")
     .select("key,value")
     .in("key", keysToFetch);
+
+  // Losing connectivity must not replace a downloaded role profile with null.
+  if (error) return;
 
   const now = Date.now();
   const rows = (data ?? []) as { key: string; value: unknown }[];
@@ -56,12 +68,14 @@ async function flushQueuedKeys(force = false): Promise<void> {
   rows.forEach((row) => {
     found.add(row.key);
     cache.set(row.key, { value: row.value, loadedAt: now });
+    persistSetting(row.key, row.value);
   });
 
   // Missing keys are cached as null to avoid repetitive misses.
   keysToFetch.forEach((key) => {
     if (!found.has(key)) {
       cache.set(key, { value: null, loadedAt: now });
+      persistSetting(key, null);
     }
   });
 }
@@ -87,14 +101,16 @@ async function ensureLoaded(keys: string[], force = false): Promise<void> {
 }
 
 export async function getSiteSettingValue(key: string, opts?: { force?: boolean }): Promise<unknown> {
+  if (!navigator.onLine) return cache.get(key)?.value ?? readPersistedSetting(key);
   const force = !!opts?.force;
   if (!force && isFresh(key)) {
     return cache.get(key)?.value ?? null;
   }
   await ensureLoaded([key], force);
-  return cache.get(key)?.value ?? null;
+  return cache.get(key)?.value ?? readPersistedSetting(key);
 }
 
 export function updateSiteSettingCache(key: string, value: unknown): void {
   cache.set(key, { value, loadedAt: Date.now() });
+  persistSetting(key, value);
 }

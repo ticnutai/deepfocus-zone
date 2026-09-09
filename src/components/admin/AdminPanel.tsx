@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Monitor, UserX, Library, BarChart3, CircleHelp } from "lucide-react";
+import { Shield, Users, Layers, UserCheck, UserCog, Activity, LayoutDashboard, Library, BarChart3, CircleHelp } from "lucide-react";
 import { UsersTab } from "./UsersTab";
 import { GuidesConfigTab } from "./GuidesConfigTab";
 import { RolesTab } from "./RolesTab";
@@ -9,10 +9,9 @@ import { ApprovalTab } from "./ApprovalTab";
 import { UserPermOverrides } from "./UserPermOverrides";
 import { SyncMonitorTab } from "./SyncMonitorTab";
 import { RoleDefaultsTab } from "./RoleDefaultsTab";
-import { LayoutPreviewTab } from "./LayoutPreviewTab";
-import { GuestProfilesTab } from "./GuestProfilesTab";
 import { UserQuestionsTab } from "./UserQuestionsTab";
 import { UserActivityTab } from "./UserActivityTab";
+import { GuestContentSettings } from "./GuestProfilesTab";
 import { usePermissions } from "@/hooks/usePermissions";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -76,62 +75,75 @@ export function AdminPanel() {
         </div>
       </header>
 
-      <Tabs defaultValue="users" className="w-full" dir="rtl">
+      <Tabs defaultValue="people" className="w-full" dir="rtl">
         <Card className="gold-frame p-2">
-          <TabsList className="w-full bg-transparent justify-between gap-1 h-auto flex-wrap">
-            <TabsTrigger value="users" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
+          <TabsList aria-label="תחומי מרכז הניהול" className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent sm:grid-cols-3 xl:grid-cols-5">
+            <TabsTrigger value="people" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>משתמשים</span><Users className="h-4 w-4" />
+              {pendingApprovals > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingApprovals}</span>}
             </TabsTrigger>
-            <TabsTrigger value="approval" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>אישורים</span><UserCheck className="h-4 w-4" />
-              {pendingApprovals > 0 && (
-                <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
-                  {pendingApprovals}
-                </span>
-              )}
+            <TabsTrigger value="access" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>גישה ותפקידים</span><Layers className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="roles" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>תפקידים</span><Layers className="h-4 w-4" />
+            <TabsTrigger value="operations" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>תפעול</span><Activity className="h-4 w-4" />
             </TabsTrigger>
-            <TabsTrigger value="overrides" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>הרשאות אישיות</span><UserCog className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="sync-monitor" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>ניטור סנכרון</span><Activity className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="defaults" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>הרשאות ותצוגה</span><LayoutDashboard className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="preview" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>תצוגה מקדימה</span><Monitor className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="guest-profiles" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>פרופילי אורח</span><UserX className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="user-questions" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>שאלות משתמשים</span><Library className="h-4 w-4" />
+            <TabsTrigger value="content" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>תוכן והדרכה</span><Library className="h-4 w-4" />
               {pendingNotes > 0 && <span className="rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{pendingNotes}</span>}
             </TabsTrigger>
-            <TabsTrigger value="usage" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>ניתוח שימוש</span><BarChart3 className="h-4 w-4" />
-            </TabsTrigger>
-            <TabsTrigger value="guides" className="flex-1 flex-row-reverse gap-1.5 rounded-xl px-2 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground text-sm">
-              <span>מדריכי כניסה</span><CircleHelp className="h-4 w-4" />
+            <TabsTrigger value="reports" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+              <span>דוחות</span><BarChart3 className="h-4 w-4" />
             </TabsTrigger>
           </TabsList>
         </Card>
 
-        <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
-        <TabsContent value="approval" className="mt-4"><ApprovalTab /></TabsContent>
-        <TabsContent value="roles" className="mt-4"><RolesTab /></TabsContent>
-        <TabsContent value="overrides" className="mt-4"><UserPermOverrides /></TabsContent>
-        <TabsContent value="sync-monitor" className="mt-4"><SyncMonitorTab /></TabsContent>
-        <TabsContent value="defaults" className="mt-4"><RoleDefaultsTab /></TabsContent>
-        <TabsContent value="preview" className="mt-4"><LayoutPreviewTab /></TabsContent>
-        <TabsContent value="guest-profiles" className="mt-4"><GuestProfilesTab /></TabsContent>
-        <TabsContent value="user-questions" className="mt-4"><UserQuestionsTab /></TabsContent>
-        <TabsContent value="usage" className="mt-4"><UserActivityTab /></TabsContent>
-        <TabsContent value="guides" className="mt-4"><GuidesConfigTab /></TabsContent>
+        <TabsContent value="people" className="mt-4">
+          <Tabs defaultValue="users" dir="rtl" className="space-y-4">
+            <Card className="gold-frame p-2">
+              <TabsList aria-label="ניהול משתמשים" className="grid h-auto w-full grid-cols-1 gap-1 bg-transparent sm:grid-cols-3">
+                <TabsTrigger value="users" className="gap-2 py-2.5"><Users className="h-4 w-4" /> רשימת משתמשים</TabsTrigger>
+                <TabsTrigger value="approval" className="gap-2 py-2.5"><UserCheck className="h-4 w-4" /> אישורים {pendingApprovals > 0 && `(${pendingApprovals})`}</TabsTrigger>
+                <TabsTrigger value="overrides" className="gap-2 py-2.5"><UserCog className="h-4 w-4" /> חריגות הרשאה</TabsTrigger>
+              </TabsList>
+            </Card>
+            <TabsContent value="users"><UsersTab /></TabsContent>
+            <TabsContent value="approval"><ApprovalTab /></TabsContent>
+            <TabsContent value="overrides"><UserPermOverrides /></TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="access" forceMount className="mt-4 data-[state=inactive]:hidden">
+          <Tabs defaultValue="profiles" dir="rtl" className="space-y-4">
+            <Card className="gold-frame p-2">
+              <TabsList aria-label="גישה ותפקידים" className="grid h-auto w-full grid-cols-1 gap-1 bg-transparent sm:grid-cols-2">
+                <TabsTrigger value="profiles" className="gap-2 py-2.5"><LayoutDashboard className="h-4 w-4" /> פרופילי גישה</TabsTrigger>
+                <TabsTrigger value="roles" className="gap-2 py-2.5"><Layers className="h-4 w-4" /> תפקידים ושיוכים</TabsTrigger>
+              </TabsList>
+            </Card>
+            <TabsContent value="profiles" forceMount className="data-[state=inactive]:hidden"><RoleDefaultsTab /></TabsContent>
+            <TabsContent value="roles"><RolesTab /></TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="operations" className="mt-4"><SyncMonitorTab /></TabsContent>
+
+        <TabsContent value="content" className="mt-4">
+          <Tabs defaultValue="user-questions" dir="rtl" className="space-y-4">
+            <Card className="gold-frame p-2">
+              <TabsList aria-label="תוכן והדרכה" className="grid h-auto w-full grid-cols-1 gap-1 bg-transparent sm:grid-cols-3">
+                <TabsTrigger value="user-questions" className="gap-2 py-2.5"><Library className="h-4 w-4" /> שאלות משתמשים {pendingNotes > 0 && `(${pendingNotes})`}</TabsTrigger>
+                <TabsTrigger value="shared-library" className="gap-2 py-2.5"><Layers className="h-4 w-4" /> ספרייה משותפת</TabsTrigger>
+                <TabsTrigger value="guides" className="gap-2 py-2.5"><CircleHelp className="h-4 w-4" /> מדריכי כניסה</TabsTrigger>
+              </TabsList>
+            </Card>
+            <TabsContent value="user-questions"><UserQuestionsTab /></TabsContent>
+            <TabsContent value="shared-library"><GuestContentSettings /></TabsContent>
+            <TabsContent value="guides"><GuidesConfigTab /></TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="reports" className="mt-4"><UserActivityTab /></TabsContent>
       </Tabs>
     </div>
   );

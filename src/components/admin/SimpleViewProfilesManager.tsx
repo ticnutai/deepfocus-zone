@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Copy, Eye, LayoutTemplate, Plus, Save, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Check, Circle, Copy, Eye, LayoutTemplate, Plus, Save, ShieldCheck, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import {
   buildDisplaySecurityRows,
+  permissionsWithVisibility,
   PROFILE_ACTIONS,
   SECURITY_MODULE_SECTIONS,
   type ProfileAction,
   type ProfileActionPermissions,
 } from "@/lib/auth/displaySecurity";
+import { ACCESS_POLICY_EVENT } from "@/lib/auth/accessRolePolicy";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,8 +22,6 @@ import { mergeLayout, WIDGET_DEFS } from "@/lib/study/widgetLayout";
 import {
   loadFeatureBlocklistProfiles,
   loadRoleBlocklistAssignments,
-  saveFeatureBlocklistProfiles,
-  saveRoleBlocklistAssignments,
   LOCAL_OFFLINE_ROLE_ID,
   type BlocklistScope,
   type FeatureBlocklistProfile,
@@ -29,8 +30,6 @@ import {
 import {
   loadRoleLayoutProfileAssignments,
   loadRoleLayoutProfiles,
-  saveRoleLayoutProfileAssignments,
-  saveRoleLayoutProfiles,
   type LayoutScope,
   type RoleLayoutProfile,
   type RoleLayoutProfileAssignment,
@@ -127,7 +126,7 @@ function rolePermissionsToProfile(
 ): ProfileActionPermissions {
   if (!roleId) return {};
   const result: ProfileActionPermissions = {};
-  rows.filter((row) => row.role_id === roleId && PROFILE_ACTIONS.includes(row.action as ProfileAction)).forEach((row) => {
+  rows.filter((row) => row.role_id === roleId && (row.action === 'view' || PROFILE_ACTIONS.includes(row.action as ProfileAction))).forEach((row) => {
     result[row.module] = { ...result[row.module], [row.action]: row.allowed };
   });
   return result;
@@ -147,13 +146,15 @@ function mergeProfiles(
     const assignedRoleId = layoutAssignments.find((row) => row.profileId === id)?.roleId
       ?? blockAssignments.find((row) => row.profileId === id)?.roleId;
     const storedPermissions = layout?.actionPermissions ?? {};
+    const actionPermissions = assignedRoleId && assignedRoleId !== LOCAL_OFFLINE_ROLE_ID
+      ? rolePermissionsToProfile(permissionRows, assignedRoleId) : storedPermissions;
+    const deniedPages = Object.entries(SECURITY_MODULE_SECTIONS)
+      .flatMap(([module, sections]) => actionPermissions[module]?.view === false ? sections : []);
     return {
       id,
       name: layout?.name ?? block?.name ?? "ללא שם",
-      actionPermissions: Object.keys(storedPermissions).length
-        ? storedPermissions
-        : rolePermissionsToProfile(permissionRows, assignedRoleId),
-      hiddenSections: block?.blocklist.sections ?? [],
+      actionPermissions,
+      hiddenSections: Array.from(new Set([...(block?.blocklist.sections ?? []), ...deniedPages])),
       hiddenWidgets: normalizeHiddenWidgets(block?.blocklist.widgets ?? {}),
       widgetLayout: layoutWithUnifiedVisibility(layout?.widgetLayout ?? {}),
       sidebarConfig: layoutOrderOnly(layout?.sidebarConfig ?? []),
@@ -170,12 +171,19 @@ export function SimpleViewProfilesManager({
   currentWidgetLayout,
   currentSidebar,
   currentCategories,
+  onEditorStateChange,
 }: {
   scope: LayoutScope;
   roles: AppRole[];
   currentWidgetLayout: WidgetLayout;
   currentSidebar: SidebarConfig[];
   currentCategories: CategoryTemplateItem[];
+  onEditorStateChange?: (state: {
+    dirty: boolean;
+    profileId: string;
+    profileName: string;
+    assignedRoleIds: string[];
+  }) => void;
 }) {
   const [profiles, setProfiles] = useState<UnifiedProfile[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -183,17 +191,17 @@ export function SimpleViewProfilesManager({
   const [layoutAssignments, setLayoutAssignments] = useState<RoleLayoutProfileAssignment[]>([]);
   const [blockAssignments, setBlockAssignments] = useState<RoleBlocklistAssignment[]>([]);
   const [assignedRoleIds, setAssignedRoleIds] = useState<string[]>([]);
+  const [permissionRows, setPermissionRows] = useState<Array<{role_id:string;module:string;action:string;allowed:boolean}>>([]);
+  const [permissionDirty, setPermissionDirty] = useState(false);
+  const [draftDirty, setDraftDirty] = useState(false);
+  const [persistedVersions, setPersistedVersions] = useState<Record<string,number>>({});
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const availableRoles = useMemo(() => {
     // Administrator is intentionally excluded: it is always fail-open for
     // administration and must never be weakened by a display profile.
-    const configurableRoles = roles.filter((role) => role.name !== "admin");
-    const withLocal = configurableRoles.some((r) => r.id === LOCAL_OFFLINE_ROLE_ID)
-      ? configurableRoles
-      : [...configurableRoles, { id: LOCAL_OFFLINE_ROLE_ID, name: LOCAL_OFFLINE_ROLE_ID, description: "חשבון מקומי ללא ענן" }];
-    return withLocal;
+    return roles.filter((role) => role.name !== "admin");
   }, [roles]);
 
   const load = useCallback(async () => {
@@ -215,6 +223,10 @@ export function SimpleViewProfilesManager({
         (permissionResult.data ?? []) as Array<{ role_id: string; module: string; action: string; allowed: boolean }>,
       );
       setProfiles(merged);
+      setPermissionRows(permissionResult.data ?? []);
+      setPersistedVersions(Object.fromEntries(merged.map(p => [p.id, p.updatedAt])));
+      setPermissionDirty(false);
+      setDraftDirty(false);
       setLayoutAssignments(layoutLinks);
       setBlockAssignments(blockLinks);
       const nextId = merged[0]?.id ?? "";
@@ -230,6 +242,25 @@ export function SimpleViewProfilesManager({
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    onEditorStateChange?.({
+      dirty: draftDirty,
+      profileId: draft?.id ?? "",
+      profileName: draft?.name ?? "",
+      assignedRoleIds,
+    });
+  }, [assignedRoleIds, draft?.id, draft?.name, draftDirty, onEditorStateChange]);
+
+  useEffect(() => {
+    if (!draftDirty) return;
+    const preventAccidentalExit = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventAccidentalExit);
+    return () => window.removeEventListener("beforeunload", preventAccidentalExit);
+  }, [draftDirty]);
+
+  useEffect(() => {
     if (!selectedId) {
       setAssignedRoleIds([]);
       return;
@@ -240,12 +271,18 @@ export function SimpleViewProfilesManager({
   }, [selectedId, layoutAssignments, blockAssignments]);
 
   const selectProfile = (profileId: string) => {
+    if (draftDirty && profileId !== selectedId && !window.confirm("יש שינויים שלא נשמרו. לעבור לפרופיל אחר ולבטל אותם?")) return;
+    setPermissionDirty(false);
+    setDraftDirty(false);
     setSelectedId(profileId);
     const profile = profiles.find((p) => p.id === profileId) ?? null;
     setDraft(profile ? { ...profile, hiddenSections: [...profile.hiddenSections] } : null);
   };
 
   const createProfile = () => {
+    if (draftDirty && !window.confirm("יש שינויים שלא נשמרו. ליצור פרופיל חדש ולבטל אותם?")) return;
+    setPermissionDirty(true);
+    setDraftDirty(true);
     const id = uid();
     const profile: UnifiedProfile = {
       id,
@@ -266,6 +303,8 @@ export function SimpleViewProfilesManager({
   };
 
   const duplicateProfile = () => {
+    setPermissionDirty(true);
+    setDraftDirty(true);
     if (!draft) return;
     const copy: UnifiedProfile = {
       ...draft,
@@ -288,10 +327,14 @@ export function SimpleViewProfilesManager({
     if (!draft) return;
     const hidden = new Set(draft.hiddenSections);
     if (hidden.has(sectionId)) hidden.delete(sectionId); else hidden.add(sectionId);
-    setDraft({ ...draft, hiddenSections: Array.from(hidden) });
+    setPermissionDirty(true);
+    setDraftDirty(true);
+    setDraft({ ...draft, hiddenSections: Array.from(hidden), actionPermissions: permissionsWithVisibility(draft.actionPermissions, Array.from(hidden)) });
   };
 
   const toggleAction = (module: string, action: ProfileAction) => {
+    setPermissionDirty(true);
+    setDraftDirty(true);
     if (!draft) return;
     setDraft({
       ...draft,
@@ -312,6 +355,7 @@ export function SimpleViewProfilesManager({
     const next = { ...draft.hiddenWidgets };
     if (hidden.size) next[tabId] = Array.from(hidden); else delete next[tabId];
     setDraft({ ...draft, hiddenWidgets: next });
+    setDraftDirty(true);
   };
 
   const setAllWidgetsVisible = (visible: boolean) => {
@@ -322,16 +366,23 @@ export function SimpleViewProfilesManager({
         ? {}
         : Object.fromEntries(Object.entries(WIDGET_DEFS).map(([tabId, defs]) => [tabId, defs.map((widget) => widget.id)])),
     });
+    setDraftDirty(true);
   };
 
   const setAllVisible = (visible: boolean) => {
     if (!draft) return;
-    setDraft({ ...draft, hiddenSections: visible ? [] : ALL_SIDEBAR_ITEMS.map((item) => item.id) });
+    setPermissionDirty(true);
+    setDraftDirty(true);
+    const hiddenSections = visible ? [] : ALL_SIDEBAR_ITEMS.map(item => item.id);
+    setDraft({ ...draft, hiddenSections, actionPermissions: permissionsWithVisibility(draft.actionPermissions, hiddenSections) });
   };
 
   const setSafeUserPreset = () => {
     if (!draft) return;
-    setDraft({ ...draft, hiddenSections: Array.from(ADMIN_ONLY_SECTION_IDS) });
+    setPermissionDirty(true);
+    setDraftDirty(true);
+    const hiddenSections = Array.from(ADMIN_ONLY_SECTION_IDS);
+    setDraft({ ...draft, hiddenSections, actionPermissions: permissionsWithVisibility(draft.actionPermissions, hiddenSections) });
   };
 
   const applyCurrentLayout = () => {
@@ -342,10 +393,13 @@ export function SimpleViewProfilesManager({
       sidebarConfig: layoutOrderOnly(currentSidebar),
       categoryTemplate: currentCategories,
     });
+    setDraftDirty(true);
     toast.success("תבנית המסך הנוכחית הועתקה לפרופיל. לחץ שמור כדי לאשר.");
   };
 
   const toggleRole = (roleId: string) => {
+    setPermissionDirty(true);
+    setDraftDirty(true);
     setAssignedRoleIds((prev) => prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]);
   };
 
@@ -363,67 +417,26 @@ export function SimpleViewProfilesManager({
         sidebarConfig: layoutOrderOnly(draft.sidebarConfig),
         updatedAt: now,
       };
-      const nextProfiles = [normalized, ...profiles.filter((p) => p.id !== normalized.id)];
-
-      const existingLayouts = await loadRoleLayoutProfiles({ force: true, scope });
-      const existingBlocks = await loadFeatureBlocklistProfiles({ force: true, scope: scope as BlocklistScope });
-      await Promise.all([
-        saveRoleLayoutProfiles([
-          ...existingLayouts.filter((p) => p.id !== normalized.id),
-          {
-            id: normalized.id,
-            name: normalized.name,
-            actionPermissions: normalized.actionPermissions,
-            widgetLayout: normalized.widgetLayout,
-            sidebarConfig: normalized.sidebarConfig,
-            categoryTemplate: normalized.categoryTemplate,
-            compactInnerPages: normalized.compactInnerPages,
-            updatedAt: now,
-          },
-        ], { scope }),
-        saveFeatureBlocklistProfiles([
-          ...existingBlocks.filter((p) => p.id !== normalized.id),
-          {
-            id: normalized.id,
-            name: normalized.name,
-            blocklist: { sections: normalized.hiddenSections, widgets: normalized.hiddenWidgets },
-            updatedAt: now,
-          },
-        ], { scope: scope as BlocklistScope }),
-      ]);
-
-      const nextLayoutAssignments = [
-        ...layoutAssignments.filter((a) => !assignedRoleIds.includes(a.roleId) && a.profileId !== normalized.id),
-        ...assignedRoleIds.map((roleId) => ({ id: uid(), roleId, profileId: normalized.id })),
-      ];
-      const nextBlockAssignments = [
-        ...blockAssignments.filter((a) => !assignedRoleIds.includes(a.roleId) && a.profileId !== normalized.id),
-        ...assignedRoleIds.map((roleId) => ({ id: uid(), roleId, profileId: normalized.id })),
-      ];
-
-      // One-control rule: this profile owns page visibility and every action.
-      // Hiding all pages of a module forces all of its actions off.
-      const securityRows = buildDisplaySecurityRows(
-        normalized.hiddenSections,
-        availableRoles.filter((role) => assignedRoleIds.includes(role.id)),
-        LOCAL_OFFLINE_ROLE_ID,
-        normalized.actionPermissions,
-      );
-      await Promise.all([
-        saveRoleLayoutProfileAssignments(nextLayoutAssignments, { scope }),
-        saveRoleBlocklistAssignments(nextBlockAssignments, { scope: scope as BlocklistScope }),
-        ...(scope === "desktop" && assignedRoleIds.length
-          ? [supabase.from("role_layout_defaults").delete().in("role_id", assignedRoleIds)]
-          : []),
-        ...(securityRows.length
-          ? [supabase.from("role_permissions").upsert(securityRows as never[], { onConflict: "role_id,module,action" })]
-          : []),
-      ]);
-
-      setProfiles(nextProfiles);
-      setDraft(normalized);
-      setLayoutAssignments(nextLayoutAssignments);
-      setBlockAssignments(nextBlockAssignments);
+      const securityRows = permissionDirty ? buildDisplaySecurityRows(normalized.hiddenSections,
+        availableRoles.filter(role => assignedRoleIds.includes(role.id)), LOCAL_OFFLINE_ROLE_ID,
+        normalized.actionPermissions) : null;
+      const expectedPermissions = Object.fromEntries(permissionRows.filter(row => assignedRoleIds.includes(row.role_id))
+        .map(row => [row.role_id + ':' + row.module + ':' + row.action, row.allowed]));
+      const { error } = await supabase.rpc("admin_save_access_profile", {
+        p_scope: scope,
+        p_layout: { id: normalized.id, name: normalized.name, actionPermissions: normalized.actionPermissions,
+          widgetLayout: normalized.widgetLayout, sidebarConfig: normalized.sidebarConfig,
+          categoryTemplate: normalized.categoryTemplate, compactInnerPages: normalized.compactInnerPages, updatedAt: now } as unknown as Json,
+        p_block: { id: normalized.id, name: normalized.name,
+          blocklist: { sections: normalized.hiddenSections, widgets: normalized.hiddenWidgets }, updatedAt: now },
+        p_role_ids: assignedRoleIds,
+        p_permissions: securityRows as unknown as Json,
+        p_expected_permissions: securityRows ? expectedPermissions : null,
+        p_expected_updated_at: persistedVersions[normalized.id] ?? null,
+      });
+      if (error) throw error;
+      window.dispatchEvent(new Event(ACCESS_POLICY_EVENT));
+      await load();
       toast.success(`הפרופיל "${normalized.name}" נשמר; התצוגה וכל ההרשאות סונכרנו`);
     } catch (error) {
       toast.error("שמירת הפרופיל נכשלה: " + (error instanceof Error ? error.message : String(error)));
@@ -436,19 +449,13 @@ export function SimpleViewProfilesManager({
     if (!draft || !confirm(`למחוק את הפרופיל "${draft.name}"?`)) return;
     setBusy(true);
     try {
-      const layoutRows = (await loadRoleLayoutProfiles({ force: true, scope })).filter((p) => p.id !== draft.id);
-      const blockRows = (await loadFeatureBlocklistProfiles({ force: true, scope: scope as BlocklistScope })).filter((p) => p.id !== draft.id);
-      const layoutLinks = layoutAssignments.filter((a) => a.profileId !== draft.id);
-      const blockLinks = blockAssignments.filter((a) => a.profileId !== draft.id);
-      await Promise.all([
-        saveRoleLayoutProfiles(layoutRows, { scope }),
-        saveFeatureBlocklistProfiles(blockRows, { scope: scope as BlocklistScope }),
-        saveRoleLayoutProfileAssignments(layoutLinks, { scope }),
-        saveRoleBlocklistAssignments(blockLinks, { scope: scope as BlocklistScope }),
-      ]);
+      const { error } = await supabase.rpc("admin_delete_access_profile", {p_scope: scope, p_profile_id: draft.id});
+      if (error) throw error;
+      window.dispatchEvent(new Event(ACCESS_POLICY_EVENT));
       toast.success("הפרופיל נמחק");
       setSelectedId("");
       setDraft(null);
+      setDraftDirty(false);
       await load();
     } catch (error) {
       toast.error("מחיקת הפרופיל נכשלה: " + (error instanceof Error ? error.message : String(error)));
@@ -482,8 +489,8 @@ export function SimpleViewProfilesManager({
           <div className="flex items-center gap-3">
             <span className="gold-icon-circle"><LayoutTemplate className="h-5 w-5" /></span>
             <div>
-              <h2 className="font-display text-xl font-bold">פרופיל הרשאות, תצוגה ופריסה</h2>
-              <p className="text-sm text-muted-foreground">הגדרה אחת לכל האלמנטים: מה פתוח, מה מותר ואיך המסך מסודר.</p>
+              <h2 className="font-display text-xl font-bold">עריכת פרופיל ל{scope === "desktop" ? "מחשב" : "מובייל"}</h2>
+              <p className="text-sm text-muted-foreground">עובדים לפי הסדר: בוחרים פרופיל, מגדירים גישה ותצוגה, מסדרים את המסך ומשייכים לתפקיד.</p>
             </div>
           </div>
           <Button onClick={createProfile} disabled={loading || busy} className="gap-2">
@@ -492,19 +499,10 @@ export function SimpleViewProfilesManager({
         </div>
       </div>
 
-      <div className="grid gap-3 border-b-2 border-gold/20 bg-muted/20 p-4 md:grid-cols-3">
-        <div className="rounded-xl border bg-card p-3">
-          <div className="flex items-center gap-2 font-bold"><ShieldCheck className="h-4 w-4 text-emerald-600" /> הרשאה</div>
-          <p className="mt-1 text-xs text-muted-foreground">כיבוי עמוד חוסם גם כתובת ישירה וגם יצירה, עריכה, מחיקה וניהול באותו מודול.</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3">
-          <div className="flex items-center gap-2 font-bold"><Eye className="h-4 w-4 text-gold" /> מה רואים</div>
-          <p className="mt-1 text-xs text-muted-foreground">לא מסומן פירושו מוסתר, והרשאת הצפייה למודול המתאים נחסמת יחד איתו.</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3">
-          <div className="flex items-center gap-2 font-bold"><LayoutTemplate className="h-4 w-4 text-gold" /> איך מסודר</div>
-          <p className="mt-1 text-xs text-muted-foreground">הפריסה שומרת סדר וגודל בלבד; הנראות נשלטת במקום אחד כדי למנוע סתירות.</p>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b-2 border-gold/20 bg-muted/20 px-5 py-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-emerald-600" /><strong className="text-foreground">גישה:</strong> חוסמת גם כניסה ישירה ופעולות אסורות.</span>
+        <span className="flex items-center gap-1.5"><Eye className="h-4 w-4 text-gold" /><strong className="text-foreground">תצוגה:</strong> קובעת מה המשתמש רואה.</span>
+        <span className="flex items-center gap-1.5"><LayoutTemplate className="h-4 w-4 text-gold" /><strong className="text-foreground">פריסה:</strong> משנה סדר וגודל בלבד.</span>
       </div>
 
       {splitAssignmentCount > 0 && (
@@ -532,7 +530,11 @@ export function SimpleViewProfilesManager({
           {draft && (
             <div className="rounded-xl border-2 border-gold/30 bg-card p-3 space-y-2">
               <div className="text-sm font-bold">שם הפרופיל</div>
-              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="לדוגמה: משתמש רגיל" />
+              <Input value={draft.name} onChange={(e) => { setDraft({ ...draft, name: e.target.value }); setDraftDirty(true); }} placeholder="לדוגמה: משתמש רגיל" />
+              <div className={`flex items-center gap-1.5 text-xs font-semibold ${draftDirty ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}`}>
+                {draftDirty ? <Circle className="h-2.5 w-2.5 fill-current" /> : <Check className="h-3.5 w-3.5" />}
+                {draftDirty ? "טיוטה — יש שינויים שלא נשמרו" : "הפרופיל שמור ומעודכן"}
+              </div>
             </div>
           )}
         </div>
@@ -542,8 +544,8 @@ export function SimpleViewProfilesManager({
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="font-bold">2. כל העמודים וההרשאות</h3>
-                  <p className="text-xs text-muted-foreground">מסומן = מוצג ומאושרת צפייה. כיבוי כל עמודי המודול חוסם אוטומטית גם את כל הפעולות שלו.</p>
+                  <h3 className="font-bold">2. גישה — עמודים ופעולות</h3>
+                  <p className="text-xs text-muted-foreground">בחר אילו עמודים פתוחים. מתחת לכל תחום קבע אם מותר ליצור, לערוך, למחוק או לנהל.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => setAllVisible(true)}>הצג הכול</Button>
@@ -573,7 +575,7 @@ export function SimpleViewProfilesManager({
                 </p>
                 <div className="grid gap-3 lg:grid-cols-2">
                   {Object.entries(SECURITY_MODULE_SECTIONS).map(([module, sectionIds]) => {
-                    const moduleVisible = sectionIds.some((sectionId) => !draft.hiddenSections.includes(sectionId));
+                    const moduleVisible = draft.actionPermissions[module]?.view ?? sectionIds.some((sectionId) => !draft.hiddenSections.includes(sectionId));
                     return (
                       <div key={module} className={`rounded-xl border-2 p-3 ${moduleVisible ? "border-gold/35 bg-gold/5" : "border-border bg-muted/30"}`}>
                         <div className="mb-2 flex items-center justify-between gap-2">
@@ -612,8 +614,8 @@ export function SimpleViewProfilesManager({
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="font-bold">3. ווידג׳טים זמינים בתוך העמודים</h3>
-                  <p className="text-xs text-muted-foreground">מסומן = יוצג בפריסת ברירת המחדל. לא מסומן = לא יהיה זמין למשתמש.</p>
+                <h3 className="font-bold">3. תצוגה — רכיבים בתוך העמודים</h3>
+                <p className="text-xs text-muted-foreground">בחר אילו כרטיסים ורכיבים יופיעו. הגדרה זו אינה מעניקה הרשאות חדשות.</p>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setAllWidgetsVisible(true)}>הצג הכול</Button>
@@ -646,25 +648,25 @@ export function SimpleViewProfilesManager({
             </section>
 
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
-              <h3 className="font-bold">4. פריסת ברירת המחדל</h3>
-              <p className="mt-1 text-xs text-muted-foreground">סדר וגודל מועתקים מהמסך הנוכחי. בחירת הנראות נעשית רק בסעיפים 2–3, ולכן אין שתי הגדרות שסותרות זו את זו.</p>
+              <h3 className="font-bold">4. פריסה — סדר, גדלים וניצול מקום</h3>
+              <p className="mt-1 text-xs text-muted-foreground">הפריסה מעתיקה רק את סידור המסך הנוכחי. היא אינה מציגה רכיב חסום ואינה משנה הרשאות.</p>
               <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-muted/30 p-3 text-sm">
                 <span>{draft.sidebarConfig.length} פריטי ניווט מסודרים</span>
                 <span>·</span>
                 <span>{Object.keys(draft.widgetLayout).length} עמודי ווידג׳טים</span>
                 <Button size="sm" variant="outline" onClick={applyCurrentLayout} className="mr-auto gap-1">
-                  <LayoutTemplate className="h-3.5 w-3.5" /> העתק את הסדר והגדלים מהמסך הנוכחי
+                  <LayoutTemplate className="h-3.5 w-3.5" /> השתמש בסידור המסך הנוכחי
                 </Button>
               </div>
               <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border-2 border-gold/30 bg-gold/5 p-3">
                 <Checkbox
                   checked={draft.compactInnerPages}
-                  onCheckedChange={(checked) => setDraft({ ...draft, compactInnerPages: checked === true })}
+                  onCheckedChange={(checked) => { setDraft({ ...draft, compactInnerPages: checked === true }); setDraftDirty(true); }}
                 />
                 <span>
-                  <span className="block font-semibold">פריסה מרווחת לעמודים פנימיים</span>
+                  <span className="block font-semibold">ניצול מרבי של השטח בעמודים פנימיים</span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    הכותרת הגדולה נשארת בעמוד הבית בלבד ומוסתרת בלימוד דף ובשאר אזורי הבית, כדי לפנות מקום לתוכן.
+                    כשהאפשרות פעילה, הכותרת הגדולה נשארת בדף הבית ומוסתרת בעמודי העבודה כדי להציג יותר תוכן על המסך.
                   </span>
                 </span>
               </label>
@@ -692,8 +694,8 @@ export function SimpleViewProfilesManager({
             </section>
 
             <div className="sticky bottom-3 z-10 flex justify-end">
-              <Button size="lg" onClick={() => void save()} disabled={busy} className="min-w-56 gap-2 shadow-lg">
-                <Save className="h-4 w-4" /> {busy ? "שומר..." : "שמור פרופיל ושיוכים"}
+              <Button size="lg" onClick={() => void save()} disabled={busy || !draftDirty} className="min-w-56 gap-2 shadow-lg">
+                <Save className="h-4 w-4" /> {busy ? "שומר..." : draftDirty ? "שמור ופרסם את הפרופיל" : "הכול שמור"}
               </Button>
             </div>
           </div>

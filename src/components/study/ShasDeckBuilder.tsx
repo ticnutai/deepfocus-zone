@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useStudy } from "@/lib/study/store";
+import { usePermissions } from "@/hooks/usePermissions";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { dafLabel } from "@/lib/study/shasGen";
 import { cardsForShasDeckSources, shasDeckSourceLabel, type ShasDeckSource } from "@/lib/study/shasDeckBuilder";
@@ -16,6 +17,7 @@ import { CardEditor } from "./CardEditor";
 const DRAG_TYPE = "application/x-shas-deck-source";
 type QuestionView = "all" | "masechta" | "daf" | "amud";
 type ContentArea = "shas" | "mishna" | "chumash" | "neviim";
+type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
 
 const CONTENT_TABS = [
   { id: "shas", label: "ש״ס", icon: Layers3 },
@@ -24,11 +26,11 @@ const CONTENT_TABS = [
   { id: "neviim", label: "נביאים וכתובים", icon: BookOpen },
 ] as const;
 
-const sourceId = (source: Omit<ShasDeckSource, "id">) => source.kind === "category"
+const sourceId = (source: WithoutId<ShasDeckSource>) => source.kind === "category"
   ? `category:${source.categoryId}`
   : [source.kind, source.masechta, source.daf ?? "", source.amud ?? ""].join(":");
 
-function makeSource(source: Omit<ShasDeckSource, "id">): ShasDeckSource {
+function makeSource(source: WithoutId<ShasDeckSource>): ShasDeckSource {
   return { ...source, id: sourceId(source) };
 }
 
@@ -55,6 +57,7 @@ export function ShasDeckBuilder({
   const overview = mode === "overview";
   const topBottom = mode === "top-bottom";
   const { state, addDeck, addCardsToDeck, removeCardFromDeck, updateCard, renameDeck, setDeckCategories, updateDeckCategoryIds, setUiPref } = useStudy();
+  const { can } = usePermissions();
   const [seder, setSeder] = useState("מועד");
   const [masechta, setMasechta] = useState("שבת");
   const [daf, setDaf] = useState(2);
@@ -216,6 +219,9 @@ export function ShasDeckBuilder({
     } catch { /* unrelated drag */ }
   };
   const save = () => {
+    if (!can('decks', editingDeckId ? 'edit' : 'create')) {
+      return toast({ title: 'אין הרשאה לשמירת מבחנים בתפקיד הנוכחי', variant: 'destructive' });
+    }
     const trimmed = name.trim();
     if (!trimmed) return toast({ title: "יש לתת שם למבחן", variant: "destructive" });
     if (!editingDeckId && !sources.length) return toast({ title: "יש לגרור לפחות מסכת, דף או עמוד", variant: "destructive" });

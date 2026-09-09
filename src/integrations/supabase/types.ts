@@ -40,6 +40,7 @@ export type Database = {
       }
       app_roles: {
         Row: {
+          access_kind: string | null
           created_at: string
           description: string | null
           id: string
@@ -49,6 +50,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_kind?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -58,6 +60,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_kind?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -258,6 +261,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      offline_question_devices: {
+        Row: { device_key: string; user_id: string; display_name: string; local_username: string | null; created_at: string; last_seen_at: string }
+        Insert: { device_key: string; user_id: string; display_name: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
+        Update: { device_key?: string; user_id?: string; display_name?: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
+        Relationships: []
       }
       categories: {
         Row: {
@@ -1109,6 +1118,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_save_access_profile: {
+        Args: { p_scope: string; p_layout: Json; p_block: Json; p_role_ids: string[]; p_permissions?: Json | null; p_expected_permissions?: Json | null; p_expected_updated_at?: number | null };
+        Returns: undefined;
+      };
+      admin_delete_access_profile: { Args: { p_scope: string; p_profile_id: string }; Returns: undefined };
+      get_access_role_policy: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       admin_create_user:
         | {
             Args: {

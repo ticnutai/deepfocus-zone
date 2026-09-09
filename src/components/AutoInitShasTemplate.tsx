@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 import { CATEGORY_TEMPLATES } from "@/lib/study/categoryTemplates";
 import { toast } from "@/hooks/use-toast";
@@ -12,6 +13,7 @@ const FLAG_KEY = (uid: string) => `shas-auto-init-v1:${uid}`;
  */
 export function AutoInitShasTemplate() {
   const { user, isGuest } = useAuth();
+  const { can, loading: permissionsLoading } = usePermissions();
   const { state, addCategoriesBulk, getHydrationSnapshot } = useStudy();
   const { isHydrated } = getHydrationSnapshot();
   const ranRef = useRef(false);
@@ -19,6 +21,7 @@ export function AutoInitShasTemplate() {
   useEffect(() => {
     if (ranRef.current) return;
     if (!user || isGuest) return;
+    if (permissionsLoading || !can('cards','create')) return;
     if (!isHydrated) return;
 
     const uid = user.id;
@@ -50,7 +53,7 @@ export function AutoInitShasTemplate() {
       ranRef.current = false;
       console.error("[AutoInitShasTemplate] failed", err);
     }
-  }, [user, isGuest, isHydrated, state.categories, addCategoriesBulk]);
+  }, [user, isGuest, isHydrated, state.categories, addCategoriesBulk, can, permissionsLoading]);
 
   return null;
 }

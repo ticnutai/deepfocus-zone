@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Trash2, Lock, Star, X } from "lucide-react";
 
-interface Role { id: string; name: string; description: string | null; is_system: boolean; is_default_for_signup: boolean; }
+interface Role { id: string; name: string; description: string | null; is_system: boolean; is_default_for_signup: boolean; access_kind: string | null; }
 
 export function RolesTab() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -82,20 +82,20 @@ export function RolesTab() {
       <Card className="gold-frame p-4 space-y-2">
         <h3 className="font-display text-lg font-semibold mb-2">תפקידים קיימים</h3>
         <p className="text-xs text-muted-foreground pb-1">
-          התפקיד המסומן כברירת מחדל משויך אוטומטית לנרשמים חדשים. אפשר לבחור תפקיד אחר או לנקות את הבחירה.
+          כל חשבון רשום מקבל את בסיס „משתמש רשום”. סוגי האורח והאופליין נבחרים אוטומטית לפי החיבור. תפקיד מותאם יכול להוסיף הרשאות.
         </p>
         {roles.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border-2 border-gold/40 bg-card p-3">
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-foreground">{r.name}</span>
+                <span className="font-medium text-foreground">{r.name === 'admin' ? 'מנהל — כל ההרשאות' : r.name}</span>
                 {r.is_system && <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3" /> מובנה</Badge>}
                 {r.is_default_for_signup && <Badge className="gap-1"><Star className="h-3 w-3 fill-current" /> ברירת מחדל להרשמה</Badge>}
               </div>
               {r.description && <div className="text-xs text-muted-foreground mt-0.5">{r.description}</div>}
             </div>
             <div className="flex items-center gap-1">
-              {r.is_default_for_signup ? (
+              {!r.access_kind && (r.is_default_for_signup ? (
                 <Button variant="outline" size="sm" onClick={() => setSignupDefault(null)} disabled={busy}>
                   <X className="h-4 w-4" /> נקה ברירת מחדל
                 </Button>
@@ -103,7 +103,7 @@ export function RolesTab() {
                 <Button variant="outline" size="sm" onClick={() => setSignupDefault(r.id)} disabled={busy}>
                   <Star className="h-4 w-4" /> קבע כברירת מחדל
                 </Button>
-              )}
+              ))}
               {!r.is_system && (
                 <Button variant="ghost" size="icon" onClick={() => remove(r.id)} className="text-destructive">
                   <Trash2 className="h-4 w-4" />

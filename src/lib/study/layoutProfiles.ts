@@ -1,4 +1,3 @@
-import { supabase } from "@/integrations/supabase/client";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
 import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
@@ -118,16 +117,6 @@ export async function loadRoleLayoutProfiles(opts?: { force?: boolean; scope?: L
   return rows;
 }
 
-export async function saveRoleLayoutProfiles(value: RoleLayoutProfile[], opts?: { scope?: LayoutScope }): Promise<void> {
-  const scope = opts?.scope ?? "desktop";
-  const normalized = normalizeProfiles(value);
-  await supabase.from("site_settings").upsert(
-    [{ key: LAYOUT_PROFILES_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
-    { onConflict: "key" },
-  );
-  profilesCache.set(scope, normalized);
-  updateSiteSettingCache(LAYOUT_PROFILES_KEY[scope], normalized);
-}
 
 export async function loadRoleLayoutProfileAssignments(opts?: { force?: boolean; scope?: LayoutScope }): Promise<RoleLayoutProfileAssignment[]> {
   const force = !!opts?.force;
@@ -140,16 +129,6 @@ export async function loadRoleLayoutProfileAssignments(opts?: { force?: boolean;
   return rows;
 }
 
-export async function saveRoleLayoutProfileAssignments(value: RoleLayoutProfileAssignment[], opts?: { scope?: LayoutScope }): Promise<void> {
-  const scope = opts?.scope ?? "desktop";
-  const normalized = normalizeAssignments(value);
-  await supabase.from("site_settings").upsert(
-    [{ key: LAYOUT_ASSIGNMENTS_KEY[scope], value: normalized as unknown as import("@/integrations/supabase/types").Json }],
-    { onConflict: "key" },
-  );
-  assignmentsCache.set(scope, normalized);
-  updateSiteSettingCache(LAYOUT_ASSIGNMENTS_KEY[scope], normalized);
-}
 
 export async function resolveRoleLayoutProfile(roleId: string, opts?: { force?: boolean; scope?: LayoutScope }): Promise<ResolvedRoleLayoutProfile | null> {
   if (!roleId) return null;

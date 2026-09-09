@@ -1,68 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  getActiveGuestViewProfileId,
-  hydrateGuestProfilesFromSiteSettings,
-  listGuestViewProfiles,
-  loadGuestDefaultProfileIdFromSiteSettings,
-  removeGuestViewProfile,
-  saveGuestViewProfile,
-  saveGuestDefaultProfileIdToSiteSettings,
-  saveGuestViewProfilesToSiteSettings,
-  setActiveGuestViewProfile,
-  type GuestViewProfile,
-} from "@/lib/auth/guestViewProfile";
-import { buildGuestStudySeed } from "@/lib/auth/guestStudySeed";
-import { useStudy } from "@/lib/study/store";
-import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
 import { toast } from "sonner";
-import { CheckCircle2, RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { BookOpen, CheckCircle2, Info, LockKeyhole, UserRound, UsersRound } from "lucide-react";
 
-interface AppRole {
-  id: string;
-  name: string;
-}
-
-interface RolePermissionRow {
-  module: string;
-  action: string;
-  allowed: boolean;
-}
-
-const ROLE_LABEL: Record<string, string> = {
-  admin: "מנהל",
-  user: "משתמש רגיל",
-  moderator: "מנחה",
-  editor: "אדיטור",
-};
-
-const roleLabel = (name: string) => ROLE_LABEL[name] ?? name;
-
-const generateId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `guest-profile-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-};
-
-export function GuestProfilesTab() {
-  const { state: studyState } = useStudy();
-  const [roles, setRoles] = useState<AppRole[]>([]);
-  const [profiles, setProfiles] = useState<GuestViewProfile[]>([]);
-  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
-
-  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
-  const [profileLabel, setProfileLabel] = useState("");
-  const [profileSourceUserId, setProfileSourceUserId] = useState<string>("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
+/** Content source only. Guest permissions belong to the central role profiles. */
+export function GuestContentSettings() {
   // Guest cloud source — when enabled, guests read this user's data from the cloud
   // (read-only). When disabled, guests get an empty/clean app like before.
   const [sourceEnabled, setSourceEnabled] = useState(false);
@@ -135,213 +81,38 @@ export function GuestProfilesTab() {
     }
   };
 
-
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("app_roles").select("id,name").order("name");
-    // Administrator is an authenticated identity, never a guest preset.
-    const roleRows = ((data ?? []) as AppRole[]).filter((role) => role.name !== "admin");
-    setRoles(roleRows);
-
-    const { profiles: hydratedProfiles } = await hydrateGuestProfilesFromSiteSettings();
-    const localProfiles = listGuestViewProfiles();
-    const needsMigration = hydratedProfiles.length === 0 && localProfiles.length > 0;
-
-    if (needsMigration) {
-      await saveGuestViewProfilesToSiteSettings(localProfiles);
-      const localDefault = getActiveGuestViewProfileId() ?? localProfiles[0]?.id ?? null;
-      await saveGuestDefaultProfileIdToSiteSettings(localDefault);
-    }
-
-    const defaultProfileId = await loadGuestDefaultProfileIdFromSiteSettings();
-    const allProfiles = hydratedProfiles.length > 0 ? hydratedProfiles : localProfiles;
-    setProfiles(allProfiles);
-    const activeId = defaultProfileId ?? getActiveGuestViewProfileId();
-    setActiveProfileId(activeId);
-
-    if (!selectedRoleId && roleRows.length > 0) {
-      setSelectedRoleId(roleRows[0].id);
-      setProfileLabel(`תצוגת אורח: ${roleLabel(roleRows[0].name)}`);
-    }
-
-    await loadGuestSource();
-  }, [selectedRoleId, loadGuestSource]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-
-  const selectedRole = useMemo(
-    () => roles.find((r) => r.id === selectedRoleId) ?? null,
-    [roles, selectedRoleId],
-  );
-
-
-  const buildProfileFromRole = useCallback(async (opts: { roleId: string; id?: string; label?: string; sourceUserId?: string | null }) => {
-    const role = roles.find((r) => r.id === opts.roleId);
-    if (!role) throw new Error("תפקיד לא נמצא");
-    if (role.name === "admin") throw new Error("לא ניתן ליצור פרופיל אורח מתפקיד מנהל");
-
-    const existing = opts.id
-      ? listGuestViewProfiles().find((profile) => profile.id === opts.id)
-      : null;
-
-    const [{ data: perms, error: permsError }, resolvedLayout, studySeed] = await Promise.all([
-      supabase
-        .from("role_permissions")
-        .select("module,action,allowed")
-        .eq("role_id", role.id),
-      resolveRoleLayoutProfile(role.id, { force: true, scope: "desktop" }),
-      buildGuestStudySeed(studyState),
-    ]);
-
-    if (permsError) throw new Error(permsError.message);
-
-    const matrix: Record<string, boolean> = {};
-    ((perms ?? []) as RolePermissionRow[]).forEach((row) => {
-      if (row.allowed) matrix[`${row.module}:${row.action}`] = true;
-    });
-
-    const defaultLabel = `תצוגת אורח: ${roleLabel(role.name)}`;
-    return saveGuestViewProfile({
-      id: opts.id ?? generateId(),
-      label: (opts.label ?? "").trim() || defaultLabel,
-      roleId: role.id,
-      roleName: role.name,
-      isAdmin: false,
-      roles: [{ id: role.id, name: role.name }],
-      matrix,
-      sidebarConfig: resolvedLayout?.sidebarConfig,
-      widgetLayout: resolvedLayout?.widgetLayout,
-      studySeed: studySeed ?? existing?.studySeed,
-      sourceUserId: opts.sourceUserId !== undefined ? opts.sourceUserId : (existing?.sourceUserId ?? null),
-    });
-  }, [roles, studyState]);
-
-  const resetForm = () => {
-    setEditingId(null);
-    setProfileSourceUserId("");
-    if (roles.length > 0) {
-      setSelectedRoleId(roles[0].id);
-      setProfileLabel(`תצוגת אורח: ${roleLabel(roles[0].name)}`);
-    } else {
-      setSelectedRoleId("");
-      setProfileLabel("");
-    }
-  };
-
-  const submit = async () => {
-    if (!selectedRoleId) {
-      toast.error("בחר תפקיד");
-      return;
-    }
-    setBusy(true);
-    try {
-      const saved = await buildProfileFromRole({
-        roleId: selectedRoleId,
-        id: editingId ?? undefined,
-        label: profileLabel,
-        sourceUserId: profileSourceUserId || null,
-      });
-
-      const allProfiles = listGuestViewProfiles();
-      await saveGuestViewProfilesToSiteSettings(allProfiles);
-      const currentDefault = await loadGuestDefaultProfileIdFromSiteSettings();
-      const nextDefault = currentDefault && allProfiles.some((p) => p.id === currentDefault)
-        ? currentDefault
-        : saved.id;
-      await saveGuestDefaultProfileIdToSiteSettings(nextDefault);
-
-      toast.success(editingId ? "פרופיל אורח עודכן" : "פרופיל אורח נוצר");
-      await load();
-      resetForm();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "שמירת פרופיל נכשלה");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startEdit = (profile: GuestViewProfile) => {
-    setEditingId(profile.id);
-    setSelectedRoleId(profile.roleId ?? "");
-    setProfileLabel(profile.label);
-    setProfileSourceUserId(profile.sourceUserId ?? "");
-  };
-
-  const markAsDefault = async (profileId: string) => {
-    setBusy(true);
-    try {
-      setActiveGuestViewProfile(profileId);
-      await saveGuestDefaultProfileIdToSiteSettings(profileId);
-      setActiveProfileId(profileId);
-      toast.success("פרופיל ברירת המחדל לאורח עודכן");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "עדכון ברירת מחדל נכשל");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (profile: GuestViewProfile) => {
-    setBusy(true);
-    try {
-    removeGuestViewProfile(profile.id);
-    const nextProfiles = listGuestViewProfiles();
-    await saveGuestViewProfilesToSiteSettings(nextProfiles);
-
-    const currentDefault = await loadGuestDefaultProfileIdFromSiteSettings();
-    let nextDefault: string | null = currentDefault;
-    if (!nextDefault || nextDefault === profile.id || !nextProfiles.some((p) => p.id === nextDefault)) {
-      nextDefault = nextProfiles[0]?.id ?? null;
-    }
-    await saveGuestDefaultProfileIdToSiteSettings(nextDefault);
-
-    setActiveProfileId(nextDefault);
-    setProfiles(nextProfiles);
-    toast.success("פרופיל אורח נמחק");
-    if (editingId === profile.id) resetForm();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "מחיקת פרופיל נכשלה");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const refreshFromRole = async (profile: GuestViewProfile) => {
-    if (!profile.roleId) {
-      toast.error("לפרופיל אין תפקיד מקור");
-      return;
-    }
-    setBusy(true);
-    try {
-      await buildProfileFromRole({
-        roleId: profile.roleId,
-        id: profile.id,
-        label: profile.label,
-      });
-      const nextProfiles = listGuestViewProfiles();
-      await saveGuestViewProfilesToSiteSettings(nextProfiles);
-      setProfiles(nextProfiles);
-      toast.success("הפרופיל רוענן מהגדרות התפקיד");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "רענון נכשל");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+  useEffect(() => { void loadGuestSource(); }, [loadGuestSource]);
   return (
-    <div className="space-y-4" dir="rtl">
-      <Card className="gold-frame p-4 space-y-3">
-        <h3 className="font-display text-lg font-semibold">מקור נתונים לאורח (קריאה מהענן)</h3>
-        <p className="text-xs text-muted-foreground">
-          כאשר מופעל — האורח קורא את הקטגוריות והשאלות של המשתמש שנבחר (קריאה בלבד). בחירה במנהל כמקור מעבירה תוכן בלבד ולעולם אינה מעבירה את הרשאות המנהל.
-        </p>
-        <div className="grid md:grid-cols-3 gap-3 items-end">
-          <div className="space-y-1 md:col-span-2">
-            <Label>משתמש מקור</Label>
+    <Card className="gold-frame overflow-hidden" dir="rtl">
+      <div className="border-b-2 border-gold/25 bg-gradient-to-l from-gold/10 to-transparent p-5">
+        <div className="flex items-center gap-3">
+          <span className="gold-icon-circle"><BookOpen className="h-5 w-5" /></span>
+          <div>
+            <h2 className="font-display text-xl font-bold">ספריית תוכן משותפת</h2>
+            <p className="text-sm text-muted-foreground">מאגר שאלות וקטגוריות מרכזי שאפשר להציג לאורחים ולמשתמשים רשומים.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5">
+        <div className="flex items-start gap-3 rounded-xl border border-blue-300/60 bg-blue-50 p-3 text-sm text-blue-950 dark:bg-blue-950/25 dark:text-blue-100">
+          <Info className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <strong>מה ההגדרה עושה?</strong>
+            <p className="mt-1 text-xs leading-5">היא משתפת תוכן בקריאה בלבד. המשתמשים יכולים ללמוד מהספרייה, אבל הבעלות נשארת אצל בעל הספרייה. ההגדרה אינה מעניקה הרשאות מנהל ואינה מחליפה פרופיל גישה.</p>
+          </div>
+        </div>
+
+        <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+            <div>
+              <h3 className="font-bold">בחר בעל ספרייה</h3>
+              <p className="text-xs text-muted-foreground">הקטגוריות והשאלות של משתמש זה יהיו המקור המשותף.</p>
+            </div>
+          </div>
+          <div className="max-w-2xl space-y-1.5">
+            <Label className="flex items-center gap-1.5"><UserRound className="h-4 w-4" /> בעל הספרייה</Label>
             <Select
               value={sourceUserId ?? ""}
               onValueChange={(v) => void saveGuestSource(sourceEnabled, v || null)}
@@ -357,150 +128,65 @@ export function GuestProfilesTab() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => void saveGuestSource(!sourceEnabled, sourceUserId)}
-              disabled={sourceBusy || (!sourceEnabled && !sourceUserId)}
-              className={sourceEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-foreground"}
-            >
-              {sourceEnabled ? "פעיל — לחץ לכיבוי" : "כבוי — לחץ להפעלה"}
-            </Button>
-          </div>
-        </div>
-        {sourceEnabled && sourceUserLabel && (
-          <div className="text-xs text-emerald-700">
-            ✓ אורחים יקראו כעת מהמשתמש: <strong>{sourceUserLabel}</strong>
-          </div>
-        )}
-        <div className="mt-3 border-t pt-3 space-y-2">
-          <div className="flex items-center justify-between gap-3">
+        </section>
+
+        <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
             <div>
-              <div className="text-sm font-medium">משתמשים רשומים קוראים מהמקור</div>
-              <div className="text-xs text-muted-foreground">
-                כל משתמש רשום יראה גם את השאלות/קטגוריות של משתמש המקור (קריאה בלבד) — בנוסף למה ששייך לו.
-              </div>
-            </div>
-            <Button
-              onClick={() => void saveOverlayForUsers(!overlayForUsersEnabled)}
-              disabled={overlayBusy || !sourceUserId}
-              className={overlayForUsersEnabled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-muted text-foreground"}
-            >
-              {overlayForUsersEnabled ? "פעיל — לחץ לכיבוי" : "כבוי — לחץ להפעלה"}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="gold-frame p-4 space-y-3">
-
-        <h3 className="font-display text-lg font-semibold">
-          {editingId ? "עריכת פרופיל אורח" : "יצירת פרופיל אורח"}
-        </h3>
-        <p className="text-xs text-muted-foreground">
-          פרופיל אורח קובע תצוגה והרשאות לימוד מוגבלות. תפקיד מנהל אינו זמין כאן בכוונה.
-        </p>
-        <div className="grid md:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>תפקיד מקור</Label>
-            <Select
-              value={selectedRoleId}
-              onValueChange={(v) => {
-                setSelectedRoleId(v);
-                const role = roles.find((r) => r.id === v);
-                if (!editingId && role) setProfileLabel(`תצוגת אורח: ${roleLabel(role.name)}`);
-              }}
-            >
-              <SelectTrigger><SelectValue placeholder="בחר תפקיד" /></SelectTrigger>
-              <SelectContent>
-                {roles.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{roleLabel(r.name)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label>שם פרופיל להצגה במסך כניסה</Label>
-            <Input
-              value={profileLabel}
-              onChange={(e) => setProfileLabel(e.target.value)}
-              placeholder="למשל: אורח לימוד"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label>משתמש מקור לפרופיל זה (אופציונלי)</Label>
-          <Select
-            value={profileSourceUserId || "__default__"}
-            onValueChange={(v) => setProfileSourceUserId(v === "__default__" ? "" : v)}
-          >
-            <SelectTrigger><SelectValue placeholder="ברירת מחדל גלובלית" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default__">— ברירת מחדל גלובלית —</SelectItem>
-              {adminCandidates.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {(p.display_name || p.email || p.id)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            כשמוגדר — האורח שיפעיל את הפרופיל הזה יקרא קטגוריות/כרטיסים של המשתמש שנבחר. אם לא בוחרים — חוזרים למקור הגלובלי מהכרטיס למעלה.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => void submit()} disabled={busy || !selectedRole} className="bg-gradient-navy text-primary-foreground">
-            <UserPlus className="h-4 w-4" />
-            {editingId ? "עדכן פרופיל" : "צור פרופיל"}
-          </Button>
-          {editingId && (
-            <Button variant="outline" onClick={resetForm}>בטל עריכה</Button>
-          )}
-        </div>
-      </Card>
-
-      <Card className="gold-frame p-4 space-y-2">
-        <h3 className="font-display text-lg font-semibold">פרופילי אורח קיימים</h3>
-        {profiles.map((p) => (
-          <div key={p.id} className="rounded-xl border-2 border-gold/30 p-3 bg-card flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">{p.label}</span>
-                {activeProfileId === p.id && (
-                  <Badge className="bg-emerald-600 hover:bg-emerald-600">ברירת מחדל</Badge>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                תפקיד: {p.roleName ? roleLabel(p.roleName) : "לא הוגדר"} · עודכן {new Date(p.updatedAt).toLocaleString("he-IL")}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                מקור נתונים: {(() => {
-                  if (!p.sourceUserId) return "ברירת מחדל גלובלית";
-                  const u = adminCandidates.find((x) => x.id === p.sourceUserId);
-                  return u ? (u.display_name || u.email || u.id) : p.sourceUserId;
-                })()}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={() => void markAsDefault(p.id)} disabled={busy || activeProfileId === p.id}>
-                <CheckCircle2 className="h-4 w-4" /> ברירת מחדל
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void refreshFromRole(p)} disabled={busy}>
-                <RefreshCw className="h-4 w-4" /> רענן
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
-                ערוך
-              </Button>
-              <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void remove(p)} disabled={busy}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <h3 className="font-bold">בחר למי הספרייה מוצגת</h3>
+              <p className="text-xs text-muted-foreground">הפעלת הספרייה מציגה אותה לאורחים. לאחר מכן אפשר לצרף גם משתמשים רשומים.</p>
             </div>
           </div>
-        ))}
-        {profiles.length === 0 && (
-          <div className="text-center text-sm text-muted-foreground py-6">אין פרופילי אורח עדיין</div>
-        )}
-      </Card>
-    </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className={`flex items-center justify-between gap-4 rounded-xl border-2 p-4 ${sourceEnabled ? "border-emerald-400/70 bg-emerald-50 dark:bg-emerald-950/20" : "border-border bg-muted/20"}`}>
+              <div className="flex items-start gap-3">
+                <UserRound className="mt-0.5 h-5 w-5 text-gold" />
+                <div>
+                  <div className="font-semibold">אורחים — הפעלת הספרייה</div>
+                  <div className="text-xs text-muted-foreground">זו ההפעלה הראשית של מקור התוכן המשותף.</div>
+                </div>
+              </div>
+              <Switch
+                checked={sourceEnabled}
+                onCheckedChange={(checked) => void saveGuestSource(checked, sourceUserId)}
+                disabled={sourceBusy || (!sourceEnabled && !sourceUserId)}
+                aria-label="הצג ספרייה משותפת לאורחים"
+              />
+            </label>
+
+            <label className={`flex items-center justify-between gap-4 rounded-xl border-2 p-4 ${overlayForUsersEnabled ? "border-emerald-400/70 bg-emerald-50 dark:bg-emerald-950/20" : "border-border bg-muted/20"}`}>
+              <div className="flex items-start gap-3">
+                <UsersRound className="mt-0.5 h-5 w-5 text-gold" />
+                <div>
+                  <div className="font-semibold">משתמשים רשומים — קהל נוסף</div>
+                  <div className="text-xs text-muted-foreground">מוסיף את הספרייה לתוכן האישי שלהם לאחר שהספרייה הופעלה.</div>
+                </div>
+              </div>
+              <Switch
+                checked={sourceEnabled && overlayForUsersEnabled}
+                onCheckedChange={(checked) => void saveOverlayForUsers(checked)}
+                disabled={overlayBusy || !sourceUserId || !sourceEnabled}
+                aria-label="הצג ספרייה משותפת למשתמשים רשומים"
+              />
+            </label>
+          </div>
+        </section>
+
+        <div className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${sourceUserId && sourceEnabled ? "border-emerald-400/60 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/20 dark:text-emerald-100" : "bg-muted/30 text-muted-foreground"}`}>
+          {sourceUserId && sourceEnabled ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0" />}
+          <div>
+            <strong>{sourceUserId && sourceEnabled ? "הספרייה המשותפת פעילה" : "הספרייה המשותפת אינה מוצגת"}</strong>
+            <p className="mt-0.5 text-xs">
+              {sourceUserId && sourceEnabled
+                ? `בעל הספרייה: ${sourceUserLabel || "המשתמש שנבחר"}. מוצגת לאורחים${overlayForUsersEnabled ? " וגם למשתמשים רשומים" : " בלבד"}, בקריאה בלבד.`
+                : sourceUserId ? "בעל הספרייה נבחר, אך הספרייה עדיין כבויה." : "בחר בעל ספרייה ולאחר מכן הפעל אותה לאורחים."}
+            </p>
+          </div>
+        </div>
+      </div>
+    </Card>
+
+
   );
 }

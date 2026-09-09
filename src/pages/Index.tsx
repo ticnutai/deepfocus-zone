@@ -542,17 +542,17 @@ const Index = () => {
     if (!hasSeenGuides()) setGuidesOpen(true);
   }, []);
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
-  const { user, signOut, isGuest, guestProfile, loading: authLoading } = useAuth();
+  const { user, signOut, isGuest, localIdentity, loading: authLoading } = useAuth();
   const { isAdmin: permissionIsAdmin, can, roles, loading: permsLoading } = usePermissions();
   // Authentication identity always wins over a cached/preview permission
   // snapshot. An offline/local/guest identity can never be an administrator.
   const isAdmin = permissionIsAdmin && !isGuest;
   const displayUserPrimary = isGuest
-    ? (getLocalAccount()?.displayName ?? "אורח")
+    ? (localIdentity === "account" ? (getLocalAccount()?.displayName ?? "חשבון מקומי") : "אורח")
     : (user?.email ?? "");
   const displayUserRole = isAdmin
     ? "ADMIN"
-    : (isGuest ? (getLocalAccount() ? "חשבון מקומי" : (guestProfile?.roleName ?? "")) : "");
+    : (roles[0]?.name ?? "");
   const previewRoleId = useMemo(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";
@@ -583,30 +583,14 @@ const Index = () => {
     getHydrationSnapshot,
   } = useStudy();
   const { isHydrated } = getHydrationSnapshot();
-  const appliedGuestProfileRef = useRef<string | null>(null);
+  const effectiveRoleId = roles[0]?.id;
 
   useEffect(() => {
-    if (!isGuest) {
-      appliedGuestProfileRef.current = null;
-      return;
-    }
-
-    const profileId = guestProfile?.id ?? "__plain_guest__";
-    if (appliedGuestProfileRef.current === profileId) return;
-
-    if (guestProfile?.tabConfig) saveTabConfig(guestProfile.tabConfig);
-    if (guestProfile?.sidebarConfig) saveSidebarConfig(guestProfile.sidebarConfig);
-    if (guestProfile?.widgetLayout) saveWidgetLayout(guestProfile.widgetLayout);
-
-    appliedGuestProfileRef.current = profileId;
-  }, [guestProfile, isGuest, saveSidebarConfig, saveTabConfig, saveWidgetLayout]);
-
-  useEffect(() => {
-    if (!isGuest || !guestProfile?.roleId) return;
+    if (!isGuest || !effectiveRoleId) return;
 
     let cancelled = false;
     (async () => {
-      const assignedProfile = await resolveRoleLayoutProfile(guestProfile.roleId, { scope: isMobile ? "mobile" : "desktop" }).catch(() => null);
+      const assignedProfile = await resolveRoleLayoutProfile(effectiveRoleId, { scope: isMobile ? "mobile" : "desktop" }).catch(() => null);
       if (cancelled) return;
 
       if (assignedProfile) {
@@ -620,7 +604,7 @@ const Index = () => {
       const { data } = await supabase
         .from("role_layout_defaults")
         .select("sidebar_config,widget_layout")
-        .eq("role_id", guestProfile.roleId)
+        .eq("role_id", effectiveRoleId)
         .maybeSingle();
 
       if (cancelled || !data) return;
@@ -634,14 +618,12 @@ const Index = () => {
     return () => {
       cancelled = true;
     };
-  }, [guestProfile?.roleId, isGuest, isMobile, saveSidebarConfig, saveWidgetLayout]);
+  }, [effectiveRoleId, isGuest, isMobile, saveSidebarConfig, saveWidgetLayout]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const roleIds = isGuest
-      ? (guestProfile?.roleId ? [guestProfile.roleId] : [])
-      : roles.map((role) => role.id);
+    const roleIds = roles.map((role) => role.id);
 
     if (roleIds.length === 0) {
       setProfileBMode(false);
@@ -659,7 +641,7 @@ const Index = () => {
     return () => {
       cancelled = true;
     };
-  }, [guestProfile?.roleId, isGuest, isMobile, roles]);
+  }, [isMobile, roles]);
 
   useEffect(() => {
     if (!profileBActive) return;

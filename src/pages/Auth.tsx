@@ -33,7 +33,7 @@ import {
 import { loadBundledOfflineLibrary } from "@/lib/study/offlineLibrary";
 import {
   createLocalAccount,
-  verifyLocalCredentials,
+  findLocalAccountByCredentials,
   deleteLocalAccount,
   switchLocalAccount,
   listLocalAccounts,
@@ -157,7 +157,7 @@ export default function Auth() {
     // Make sure the bundled study library is present, then enter offline mode
     // as this account so the store hydrates from the freshly-swapped workspace.
     await ensureLocalOfflineProfile();
-    signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+    signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
     toast.success(`נכנסת לחשבון "${target?.displayName || uname}".`);
     navigate("/", { replace: true });
   };
@@ -203,12 +203,15 @@ export default function Auth() {
 
   // Sign in to the local offline account and enter the app.
   const enterOfflineFromSignIn = async (): Promise<boolean> => {
-    if (await verifyLocalCredentials(email, password)) {
+    const account = await findLocalAccountByCredentials(email, password);
+    if (account) {
+      if (!(await switchLocalAccount(account.username))) return false;
+      setActiveUsername(account.username);
       // Ensure the bundled study library (22k questions) is loaded into the
       // offline profile BEFORE entering, otherwise the store hydrates with an
       // empty seed and the review system shows nothing.
       await ensureLocalOfflineProfile();
-      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
       toast.success("התחברת לחשבון המקומי. הנתונים יסתנכרנו לשרת כשיהיה אינטרנט.");
       navigate("/", { replace: true });
       return true;
@@ -276,7 +279,7 @@ export default function Auth() {
       // entering, so the review system is populated on first load (avoids the
       // race where the store hydrates before the heavy seed finishes loading).
       await ensureLocalOfflineProfile();
-      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
+      signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
       toast.success("נרשמת מקומית! החשבון יירשם לשרת אוטומטית ברגע שיהיה חיבור לאינטרנט.");
       navigate("/", { replace: true });
     } else {
