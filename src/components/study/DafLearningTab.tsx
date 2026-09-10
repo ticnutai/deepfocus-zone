@@ -421,6 +421,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         deckId={null}
         mode="practice"
         cardIds={cardIds}
+        sourceContext={{ masechta, daf, amud }}
         onExit={closePractice}
       />
     );
@@ -430,6 +431,23 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const navigator = (
     <Card className="gold-frame p-3 space-y-3" dir="rtl">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gold/30 bg-muted/20 p-2">
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="h-9 w-9 border-gold/50"
+          disabled={!selectionConfirmed}
+          title="הצג תוצאות ומגמת שיפור לעמוד זה"
+          aria-label="תוצאות לעמוד זה"
+          onClick={() => {
+            try {
+              localStorage.setItem("practice-progress-filter-v1", JSON.stringify({ label: `${masechta}, ${dafLabel(daf)}, עמוד ${amud === 1 ? "א׳" : "ב׳"}`, masechta, daf, amud, cardIds }));
+            } catch { /* ignore */ }
+            window.dispatchEvent(new CustomEvent("deepfocus:open-progress"));
+          }}
+        >
+          <ListChecks className="h-4 w-4 text-gold" />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="h-9 w-9 border-gold/50" title="בחר תצוגת ניווט" aria-label="בחר תצוגת ניווט"><ListTree className="h-4 w-4 text-gold" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52" dir="rtl"><DropdownMenuLabel>תצוגת ניווט</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setNavigationView("expanded")} className={cn(navigationView === "expanded" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "expanded" && "opacity-0")} />עץ פתוח</DropdownMenuItem><DropdownMenuItem onClick={() => { setNavigationView("drilldown"); setInlineStep("seder"); }} className={cn(navigationView === "drilldown" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "drilldown" && "opacity-0")} />שלב אחר שלב</DropdownMenuItem></DropdownMenuContent>
@@ -833,6 +851,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             deckId={null}
             mode="practice"
             cardIds={cardIds}
+            sourceContext={{ masechta, daf, amud }}
             onExit={closePractice}
             fillHeight={practiceScale !== 1}
           />
@@ -1303,9 +1322,14 @@ type LearnMode = "shas" | "mishna" | "chumash" | "neviim-ketuvim";
 type PracticeSection = "general" | "decks";
 const MODE_STORAGE_KEY = "daf-learning-mode";
 
-function DeckPracticePanel() {
+function DeckPracticePanel({ requestedDeckId, onRequestHandled }: { requestedDeckId?: string | null; onRequestHandled?: () => void }) {
   const { state } = useStudy();
   const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!requestedDeckId) return;
+    setActiveDeckId(requestedDeckId);
+    onRequestHandled?.();
+  }, [requestedDeckId, onRequestHandled]);
   const deckCards = useMemo(() => {
     const children = new Map<string, string[]>();
     (state.categories ?? []).forEach((category) => {
@@ -1328,13 +1352,14 @@ function DeckPracticePanel() {
     });
   }, [state.decks, state.cards, state.cardDecks, state.categories]);
   const active = deckCards.find(({ deck }) => deck.id === activeDeckId);
-  if (active) return <Card className="gold-frame p-4"><div className="mb-3 flex items-center justify-between gap-3"><h3 className="font-bold">תרגול מבחן: {active.deck.name}</h3><Button variant="outline" size="sm" onClick={() => setActiveDeckId(null)}><X className="ml-1 h-4 w-4" />חזרה למבחנים</Button></div><StudySession deckId={active.deck.id} mode="practice" cardIds={active.cards.map((card) => card.id)} onExit={() => setActiveDeckId(null)} /></Card>;
+  if (active) return <Card className="gold-frame p-4"><div className="mb-3 flex items-center justify-between gap-3"><h3 className="font-bold">תרגול מבחן: {active.deck.name}</h3><Button variant="outline" size="sm" onClick={() => setActiveDeckId(null)}><X className="ml-1 h-4 w-4" />חזרה למבחנים</Button></div><StudySession deckId={active.deck.id} sourceExamName={active.deck.name} mode="practice" cardIds={active.cards.map((card) => card.id)} onExit={() => setActiveDeckId(null)} /></Card>;
   return <Card className="gold-frame p-4"><div className="mb-4"><h2 className="text-lg font-bold">תרגול מבחנים</h2><p className="text-sm text-muted-foreground">כל המבחנים שיצרת בטאב בניית מבחנים.</p></div>{deckCards.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{deckCards.map(({ deck, cards }) => <button key={deck.id} type="button" disabled={!cards.length} onClick={() => setActiveDeckId(deck.id)} className="rounded-2xl border-2 border-gold/35 bg-card p-4 text-right transition hover:border-gold hover:bg-gold/5 disabled:cursor-not-allowed disabled:opacity-55"><span className="mb-3 flex items-center justify-between"><BookOpen className="h-6 w-6 text-gold" /><span className="rounded-full bg-gradient-navy px-2 py-1 text-xs font-bold text-white">{cards.length} שאלות</span></span><strong className="block text-base">{deck.name}</strong><span className="mt-2 flex items-center gap-1 text-sm text-primary"><Play className="h-4 w-4 fill-current" />{cards.length ? "התחל תרגול" : "אין שאלות במבחן"}</span></button>)}</div> : <div className="rounded-2xl border-2 border-dashed border-gold/35 p-10 text-center text-muted-foreground">עדיין לא נוצרו מבחנים. ניתן ליצור מבחן בטאב בניית מבחנים.</div>}</Card>;
 }
 
 function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
   const [mode, setMode] = useState<LearnMode>("shas");
   const [practiceChoice, setPracticeChoice] = useState<{ section: PracticeSection } | null>(null);
+  const [requestedDeckId, setRequestedDeckId] = useState<string | null>(null);
   const practiceSection = practiceChoice?.section ?? null;
   const wasVisibleRef = useRef(false);
 
@@ -1344,6 +1369,28 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
     if (isVisible && !wasVisibleRef.current) setPracticeChoice(null);
     wasVisibleRef.current = isVisible;
   }, [isVisible]);
+
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem("practice-start-exam-v1");
+      if (pending) {
+        sessionStorage.removeItem("practice-start-exam-v1");
+        setRequestedDeckId(pending);
+        setPracticeChoice({ section: "decks" });
+      }
+    } catch { /* ignore */ }
+  }, [isVisible]);
+
+  useEffect(() => {
+    const openExam = (event: Event) => {
+      const id = (event as CustomEvent<{ deckId?: string }>).detail?.deckId;
+      if (!id) return;
+      setRequestedDeckId(id);
+      setPracticeChoice({ section: "decks" });
+    };
+    window.addEventListener("deepfocus:start-exam", openExam);
+    return () => window.removeEventListener("deepfocus:start-exam", openExam);
+  }, []);
 
   useEffect(() => {
     try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch { /* ignore */ }
@@ -1387,7 +1434,7 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
         <button type="button" onClick={() => setPracticeChoice((current) => current?.section === "decks" ? null : { section: "decks" })} aria-pressed={practiceSection === "decks"} className={cn("group flex min-h-28 items-center justify-center gap-4 rounded-2xl border-2 px-5 py-4 text-right transition-all hover:-translate-y-0.5 hover:border-gold hover:shadow-md", practiceSection === "decks" ? "border-gold bg-gradient-navy text-primary-foreground shadow-md" : "border-gold/35 bg-card text-foreground")}><span className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold/70", practiceSection === "decks" ? "bg-white/10 text-gold" : "bg-gold/10 text-gold")}><BookOpen className="h-7 w-7" /></span><span><strong className="block text-xl">תרגול מבחנים</strong><span className={cn("mt-1 block text-sm", practiceSection === "decks" ? "text-primary-foreground/75" : "text-muted-foreground")}>תרגול מתוך המבחנים שיצרת</span></span></button>
       </section>
 
-      {practiceSection === "decks" ? <DeckPracticePanel /> : practiceSection === "general" ? <>
+      {practiceSection === "decks" ? <DeckPracticePanel requestedDeckId={requestedDeckId} onRequestHandled={() => setRequestedDeckId(null)} /> : practiceSection === "general" ? <>
         {mode === "shas"    && <DafLearningTabInner key="unselected-picker-v1" isVisible={isVisible} />}
         {mode === "mishna"  && <MishnaLearningTab />}
         {mode === "chumash" && <ChumashLearningTab />}

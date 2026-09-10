@@ -16,6 +16,7 @@ import {
 import { useStudy } from "@/lib/study/store";
 import type { ReviewLog, Card as CardT, ShasReview, PlanReview } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
+import { PracticeProgress } from "./PracticeProgress";
 
 const DAY = 24 * 60 * 60 * 1000;
 const dateKey = (ms: number) => {
@@ -248,6 +249,7 @@ export const SummaryDashboard = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
+      <PracticeProgress />
       {/* ─── KPI strip ─────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard

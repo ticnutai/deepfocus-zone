@@ -8,6 +8,7 @@ import { CHUMASH_CHAPTERS, CHUMASH_EN, chumashSefariaUrl } from "@/lib/study/sef
 import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
+import { ProgressShortcut } from "./ProgressShortcut";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -239,6 +240,7 @@ export function ChumashLearningTab() {
   return (
     <div className="space-y-4" dir="rtl">
       <Card className="gold-frame p-3 space-y-3">
+        <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <Select value={sefer} onValueChange={(v) => { setSefer(v); setPerek(1); }}>
             <SelectTrigger><SelectValue placeholder="ספר" /></SelectTrigger>

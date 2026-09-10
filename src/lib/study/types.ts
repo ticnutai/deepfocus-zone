@@ -401,6 +401,40 @@ export interface StudyState {
   deckCategories?: Record<string, string[]>;
   quizPlans?: QuizPlan[];
   quizAttempts?: QuizAttempt[];
+  /** Canonical, append-only history for both general practice and built exams. */
+  practiceResults?: PracticeResult[];
+}
+
+export interface PracticeResultAnswer {
+  id: string;
+  cardId: string | null;
+  question: string;
+  correct: boolean;
+  quality: 0 | 1 | 2 | 3 | 4 | 5;
+  durationMs: number;
+  answeredAt: number;
+  categoryPath?: string[];
+  masechta?: string;
+  daf?: number;
+  amud?: 1 | 2;
+}
+
+export interface PracticeResult {
+  id: string;
+  kind: "general" | "exam";
+  sourceExamId: string | null;
+  /** Snapshot retained even if the exam is renamed or deleted. */
+  sourceExamName: string | null;
+  startedAt: number;
+  completedAt: number;
+  total: number;
+  correct: number;
+  score: number;
+  durationMs: number;
+  questionIds: string[];
+  answers: PracticeResultAnswer[];
+  completed: boolean;
+  updatedAt: number;
 }
 
 export type StudyMode = "practice" | "srs";

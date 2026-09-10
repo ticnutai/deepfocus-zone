@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,21 @@ export function QuizPlansCard() {
   const onNewPlan = () => { setEditingPlan(null); setSetupOpen(true); };
   const onEdit = (p: QuizPlan) => { setEditingPlan(p); setSetupOpen(true); };
   const onStart = (p: QuizPlan) => setRunnerPlan(p);
+
+  useEffect(() => {
+    const openRequested = (requestedId?: string) => {
+      let id = requestedId;
+      try { id ??= sessionStorage.getItem("practice-start-quiz-plan-v1") ?? undefined; } catch { /* ignore */ }
+      const selected = plans.find((item) => item.id === id);
+      if (!selected) return;
+      try { sessionStorage.removeItem("practice-start-quiz-plan-v1"); } catch { /* ignore */ }
+      setRunnerPlan(selected);
+    };
+    openRequested();
+    const onRequest = (event: Event) => openRequested((event as CustomEvent<{ planId?: string }>).detail?.planId);
+    window.addEventListener("deepfocus:start-quiz-plan", onRequest);
+    return () => window.removeEventListener("deepfocus:start-quiz-plan", onRequest);
+  }, [plans]);
 
   return (
     <Card className="p-4 border-gold/30">

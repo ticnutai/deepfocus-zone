@@ -76,7 +76,7 @@ import {
 import { useStudy } from "@/lib/study/store";
 import { isDue, buildStudyQueue } from "@/lib/study/srs";
 import { parseCloze, hasCloze, renderCloze } from "@/lib/study/cloze";
-import type { Card as StudyCard, StudyMode } from "@/lib/study/types";
+import type { Card as StudyCard, PracticeResultAnswer, StudyMode } from "@/lib/study/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { QuestionReportDialog } from "./QuestionReportDialog";
@@ -115,7 +115,6 @@ function readableTextColor(foreground: string | undefined, background: string | 
   const blackContrast = (bgL + 0.05) / 0.05;
   return whiteContrast >= blackContrast ? "#ffffff" : "#000000";
 }
-const QUIZ_HISTORY_KEY = "study-quiz-history-v1";
 const LAST_QUICK_DECK_KEY = "study-last-quick-deck-id-v1";
 const TOOLS_OPEN_KEY = "study-desktop-tools-open-v1";
 
@@ -304,39 +303,6 @@ type QuizHistoryEntry = {
   correct?: number;
 };
 
-function loadQuizHistory(): QuizHistoryEntry[] {
-  try {
-    const entries = JSON.parse(
-      localStorage.getItem(QUIZ_HISTORY_KEY) ?? "[]",
-    ) as QuizHistoryEntry[];
-    return entries.map((entry, index) => ({
-      ...entry,
-      id:
-        entry.id ??
-        `legacy-${entry.date}-${entry.total}-${entry.pct}-${index}`,
-    }));
-  } catch {
-    return [];
-  }
-}
-function saveQuizEntry(entry: QuizHistoryEntry) {
-  try {
-    const hist = loadQuizHistory();
-    hist.unshift(entry);
-    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(hist.slice(0, 60)));
-  } catch {
-    /* noop */
-  }
-}
-function deleteQuizEntry(id: string) {
-  try {
-    const hist = loadQuizHistory().filter((entry) => entry.id !== id);
-    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(hist));
-  } catch {
-    /* noop */
-  }
-}
-
 const HEB_LETTERS = ["א", "ב", "ג", "ד", "ה", "ו"];
 
 const MS = { min: 60_000, hour: 3_600_000, day: 86_400_000 };
@@ -436,6 +402,8 @@ interface Props {
   timeLimitSec?: number;
   /** When true, the card stretches to fill its container height (used in scaled preview). */
   fillHeight?: boolean;
+  sourceExamName?: string | null;
+  sourceContext?: { masechta?: string; daf?: number; amud?: 1 | 2 };
 }
 
 export function StudySession({
@@ -445,8 +413,10 @@ export function StudySession({
   onExit,
   timeLimitSec,
   fillHeight = false,
+  sourceExamName,
+  sourceContext,
 }: Props) {
-  const { state, reviewCard, setUiPref, addCardToDeck } = useStudy();
+  const { state, reviewCard, setUiPref, addCardToDeck, addPracticeResult, deletePracticeResult } = useStudy();
   const isMobile = useIsMobile();
 
   const comboPrefForQueue =
@@ -518,6 +488,8 @@ export function StudySession({
   }>({ correct: 0, total: 0, totalMs: 0, failed: [] });
   const [historyVersion, setHistoryVersion] = useState(0);
   const savedHistoryEntryRef = useRef<string | null>(null);
+  const resultIdRef = useRef(crypto.randomUUID());
+  const [attemptAnswers, setAttemptAnswers] = useState<PracticeResultAnswer[]>([]);
   void historyVersion;
 
   // Session-level timer (never resets per card)
@@ -928,6 +900,8 @@ export function StudySession({
     setComboMode(null);
     setInstantPendingSubmit(null);
     savedHistoryEntryRef.current = null;
+    resultIdRef.current = crypto.randomUUID();
+    setAttemptAnswers([]);
     sessionStart.current = Date.now();
     pausedAtRef.current = null;
     pausedTotalMsRef.current = 0;
@@ -1086,6 +1060,21 @@ export function StudySession({
           customDueAt,
         );
       }
+      const answerSnapshot: PracticeResultAnswer = {
+        id: `${resultIdRef.current}:${card.id}`,
+        cardId: card.id,
+        question: card.question,
+        correct,
+        quality,
+        durationMs,
+        answeredAt: Date.now(),
+        categoryPath: (card.tags ?? []).filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4)),
+        ...sourceContext,
+      };
+      setAttemptAnswers((answers) => [
+        ...answers.filter((answer) => answer.cardId !== card.id),
+        answerSnapshot,
+      ]);
       setResults((r) => ({
         correct:
           r.correct -
@@ -1119,6 +1108,7 @@ export function StudySession({
       selected,
       boolPick,
       comboMode,
+      sourceContext,
     ],
   );
 
@@ -1132,6 +1122,33 @@ export function StudySession({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, queue.length, viewMode]);
+
+  // Persist one complete, immutable attempt. The same record powers every
+  // progress view, so exam and general results can never be double-counted.
+  useEffect(() => {
+    if (idx < queue.length || results.total === 0 || savedHistoryEntryRef.current) return;
+    const completedAt = Date.now();
+    const id = resultIdRef.current;
+    savedHistoryEntryRef.current = id;
+    addPracticeResult({
+      id,
+      kind: deckId ? "exam" : "general",
+      sourceExamId: deckId,
+      sourceExamName: deckId
+        ? (sourceExamName ?? state.decks.find((deck) => deck.id === deckId)?.name ?? "מבחן שנמחק")
+        : null,
+      startedAt: sessionStart.current,
+      completedAt,
+      total: results.total,
+      correct: results.correct,
+      score: Math.round((results.correct / results.total) * 100),
+      durationMs: Math.max(results.totalMs, Math.round(elapsed * 1000)),
+      questionIds: attemptAnswers.map((answer) => answer.cardId).filter((id): id is string => Boolean(id)),
+      answers: attemptAnswers,
+      completed: true,
+      updatedAt: completedAt,
+    });
+  }, [addPracticeResult, attemptAnswers, deckId, elapsed, idx, queue.length, results, sourceExamName, state.decks]);
 
   // Instant-answer mode: auto-submit 1 second after reveal
   useEffect(() => {
@@ -1437,11 +1454,19 @@ export function StudySession({
       total: results.total,
       correct: results.correct,
     };
-    if (!savedHistoryEntryRef.current) {
-      savedHistoryEntryRef.current = entryId;
-      saveQuizEntry(todayEntry);
-    }
-    const history = loadQuizHistory();
+    const history: QuizHistoryEntry[] = [todayEntry, ...(state.practiceResults ?? [])
+      .filter((item) => item.id !== entryId && item.kind === (deckId ? "exam" : "general") && (!deckId || item.sourceExamId === deckId))
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .map((item) => ({
+        id: item.id,
+        date: new Date(item.completedAt).toISOString().slice(0, 10),
+        createdAt: new Date(item.completedAt).toISOString(),
+        pct: item.score,
+        totalMs: item.durationMs,
+        mode,
+        total: item.total,
+        correct: item.correct,
+      }))];
 
     // Compare with the immediately preceding attempt, including attempts today.
     const prev = history.find((h) => h.id !== entryId);
@@ -1742,7 +1767,7 @@ export function StudySession({
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                         title="מחק תוצאה מההיסטוריה"
                         onClick={() => {
-                          deleteQuizEntry(entry.id!);
+                          deletePracticeResult(entry.id!);
                           if (savedHistoryEntryRef.current === entry.id) {
                             savedHistoryEntryRef.current = "deleted";
                           }

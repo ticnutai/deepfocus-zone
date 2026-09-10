@@ -9,6 +9,7 @@ import { mishnaSefariaUrl, MISHNA_MASECHTA_EN } from "@/lib/study/sefariaExt";
 import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
+import { ProgressShortcut } from "./ProgressShortcut";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -277,6 +278,7 @@ export function MishnaLearningTab() {
   return (
     <div className="space-y-4" dir="rtl">
       <Card className="gold-frame p-3 space-y-3">
+        <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${masechta}, פרק ${toGematria(perek)}, משנה ${toGematria(mishna)}`} /></div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <Select value={sederName} onValueChange={(v) => { setSederName(v); }}>
             <SelectTrigger><SelectValue placeholder="סדר" /></SelectTrigger>

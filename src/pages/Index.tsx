@@ -446,7 +446,7 @@ const StaticLazyPanelPreview = ({ compact = false }: { compact?: boolean }) => (
 type TabDef = { v: string; l: string; I: typeof Gauge };
 const DEFAULT_TABS: TabDef[] = [
   { v: "overview",      l: "כללי",  I: Gauge },
-  { v: "summary",       l: "סיכום",         I: LineChart },
+  { v: "summary",       l: "התקדמות",       I: LineChart },
   { v: "study",         l: "חזרות",         I: GraduationCap },
   { v: "daf",           l: "תרגול",          I: BookOpen },
   { v: "categories",    l: "קטגוריות",      I: FolderTree },
@@ -1170,6 +1170,26 @@ const Index = () => {
     setHomeLandingTab(null);
     setActive(id);
   }, [active, activeTab, isAllowedByPermission, requireSettingsAuth]);
+
+  useEffect(() => {
+    const openHomeTab = (tab: "overview" | "summary" | "daf") => {
+      setActive("home");
+      setActiveTab(tab);
+      setVisitedTabs((current) => current.has(tab) ? current : new Set(current).add(tab));
+      try { localStorage.setItem("active-tab", tab); } catch { /* ignore */ }
+    };
+    const openProgress = () => openHomeTab("summary");
+    const startExam = () => openHomeTab("daf");
+    const startQuizPlan = () => openHomeTab("overview");
+    window.addEventListener("deepfocus:open-progress", openProgress);
+    window.addEventListener("deepfocus:start-exam", startExam);
+    window.addEventListener("deepfocus:start-quiz-plan", startQuizPlan);
+    return () => {
+      window.removeEventListener("deepfocus:open-progress", openProgress);
+      window.removeEventListener("deepfocus:start-exam", startExam);
+      window.removeEventListener("deepfocus:start-quiz-plan", startQuizPlan);
+    };
+  }, []);
 
   const sidebarActiveId = active === "home" && homeLandingTab === activeTab
     ? "home"

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { isRolePreview } from "@/lib/auth/rolePreview";
 import { usePermissions } from "@/hooks/usePermissions";
 import { createStudyActionGuard } from "@/lib/auth/studyActionGuard";
-import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
+import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, PracticeResult, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
 import { PLAN_REVIEW_INTERVALS_DAYS } from "./types";
 import { timeOp, perf } from "@/lib/debug/perf";
 import { perfMeter } from "@/lib/debug/perfMeter";
@@ -50,7 +50,7 @@ const emptyState = (): StudyState => ({
   cardDecks: [], shasReviews: [], reviewIntervals: [1, 3, 7, 14, 30],
   learningSessions: [], tabConfig: [], sidebarConfig: [], widgetLayout: undefined, uiPrefs: {}, generalPlans: [], planReviews: [],
   customCategoryTemplates: [],
-  quizPlans: [], quizAttempts: [],
+  quizPlans: [], quizAttempts: [], practiceResults: [],
 });
 
 let memState: StudyState = emptyState();
@@ -795,6 +795,7 @@ const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSyn
     customCategoryTemplates: mergeByKeyLww(local.customCategoryTemplates, cloud.customCategoryTemplates, (x) => x.id),
     quizPlans: mergeByKeyLww(local.quizPlans, cloud.quizPlans, (x) => x.id),
     quizAttempts: mergeByKeyLww(local.quizAttempts, cloud.quizAttempts, (x) => x.id),
+    practiceResults: mergeByKeyLww(local.practiceResults, cloud.practiceResults, (x) => x.id),
     deckCategories: {
       ...(cloud.deckCategories ?? {}),
       ...(local.deckCategories ?? {}),
@@ -1461,6 +1462,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     custom_category_templates: (state.customCategoryTemplates ?? []) as unknown as Json,
     quiz_plans: (state.quizPlans ?? []) as unknown as Json,
     quiz_attempts: (state.quizAttempts ?? []) as unknown as Json,
+    practice_results: (state.practiceResults ?? []) as unknown as Json,
   };
 
   await runAndThrow("user_settings.upsert", supabase.from("user_settings").upsert(settingsPayload, { onConflict: "user_id" }));
@@ -2385,6 +2387,11 @@ async function loadAll(userId: string): Promise<StudyState> {
     quizAttempts: (() => {
       const raw = (settingsR.data as Record<string, unknown> | null)?.quiz_attempts;
       if (Array.isArray(raw)) return raw as QuizAttempt[];
+      return [];
+    })(),
+    practiceResults: (() => {
+      const raw = (settingsR.data as Record<string, unknown> | null)?.practice_results;
+      if (Array.isArray(raw)) return raw as PracticeResult[];
       return [];
     })(),
     deckCategories: readDeckCategoriesCache(userId),
@@ -5406,6 +5413,24 @@ export function useStudy() {
     persistQuizAttempts((memState.quizAttempts ?? []).filter((a) => a.id !== id));
   }, [persistQuizAttempts]);
 
+  const persistPracticeResults = useCallback((list: PracticeResult[]) => {
+    const userId = requireUser();
+    setState((s) => ({ ...s, practiceResults: list }));
+    bg(supabase.from("user_settings").upsert(
+      { user_id: userId, practice_results: list as unknown as Json } as never,
+      { onConflict: "user_id" },
+    ), "user_settings.practice_results");
+  }, []);
+  const addPracticeResult = useCallback((result: PracticeResult) => {
+    const existing = memState.practiceResults ?? [];
+    if (existing.some((item) => item.id === result.id)) return result;
+    persistPracticeResults([...existing, result]);
+    return result;
+  }, [persistPracticeResults]);
+  const deletePracticeResult = useCallback((id: string) => {
+    persistPracticeResults((memState.practiceResults ?? []).filter((item) => item.id !== id));
+  }, [persistPracticeResults]);
+
   // === Delete all data for the current user ===
   const deleteAllUserData = useCallback(async () => {
     const userId = requireUser();
@@ -5431,6 +5456,7 @@ export function useStudy() {
         custom_category_templates: null,
         quiz_plans: null,
         quiz_attempts: null,
+        practice_results: [],
       }).eq("user_id", userId),
     ]);
   }, []);
@@ -5592,6 +5618,8 @@ export function useStudy() {
     addCustomTemplate: guard('cards','create',addCustomTemplate), updateCustomTemplate: guard('cards','edit',updateCustomTemplate), deleteCustomTemplate: guard('cards','delete',deleteCustomTemplate),
     addQuizPlan: guard("decks","create",addQuizPlan), updateQuizPlan: guard("decks","edit",updateQuizPlan), deleteQuizPlan: guard("decks","delete",deleteQuizPlan), setActiveQuizPlan: guard("decks","edit",setActiveQuizPlan),
     addQuizAttempt: guard("decks","view",addQuizAttempt), updateQuizAttempt: guard("decks","view",updateQuizAttempt), deleteQuizAttempt: guard("decks","view",deleteQuizAttempt),
+    // Saving one's own answer is part of practicing, not an analytics-admin mutation.
+    addPracticeResult: guard("cards", "view", addPracticeResult), deletePracticeResult: guard("cards", "view", deletePracticeResult),
     getHydrationSnapshot,
     getCloudSyncSnapshot,
     getRecordSyncStatus,

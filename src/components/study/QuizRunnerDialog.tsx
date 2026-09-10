@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, X, ChevronLeft, Trophy, RotateCcw } from "lucide-react";
 import { useStudy } from "@/lib/study/store";
 import { cn } from "@/lib/utils";
-import type { QuizPlan, Card, QuizPerSessionMode } from "@/lib/study/types";
+import type { QuizPlan, Card, PracticeResultAnswer, QuizPerSessionMode } from "@/lib/study/types";
 import { buildSession, filterCardsForPlan } from "@/lib/study/quiz";
 import { ShasReviewScheduleDialog, isShasDialogSkipped } from "./ShasReviewScheduleDialog";
 import { toast } from "@/hooks/use-toast";
@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
-  const { state, addQuizAttempt, updateQuizAttempt, updateQuizPlan, setReviewIntervals } = useStudy();
+  const { state, addQuizAttempt, updateQuizAttempt, updateQuizPlan, setReviewIntervals, addPracticeResult } = useStudy();
 
   const [mode, setMode] = useState<"setup" | "running" | "done">("setup");
   const [chosenMode, setChosenMode] = useState<QuizPerSessionMode>("fixed");
@@ -30,6 +30,7 @@ export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongIds, setWrongIds] = useState<string[]>([]);
   const [questionTimes, setQuestionTimes] = useState<number[]>([]);
+  const [answerSnapshots, setAnswerSnapshots] = useState<PracticeResultAnswer[]>([]);
   const questionStartedAtRef = useRef<number>(0);
   const [liveSeconds, setLiveSeconds] = useState(0);
 
@@ -45,6 +46,7 @@ export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
       setMode("setup");
       setSession([]); setCurrentIdx(0); setCorrectCount(0); setWrongIds([]); setAttemptId(null);
       setQuestionTimes([]); setLiveSeconds(0);
+      setAnswerSnapshots([]);
       setSelectedOption(null); setOpenAnswer(""); setRevealed(false); setRevealedJudgement(null);
       // ברירת מחדל לפי תוכנית
       const modes = plan.perSession.modes;
@@ -91,6 +93,7 @@ export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
     setCorrectCount(0);
     setWrongIds([]);
     setQuestionTimes([]);
+    setAnswerSnapshots([]);
     questionStartedAtRef.current = Date.now();
     setLiveSeconds(0);
     setMode("running");
@@ -143,6 +146,19 @@ export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
     if (!current || !plan) return;
     const elapsed = Date.now() - questionStartedAtRef.current;
     const newTimes = [...questionTimes, elapsed];
+    const answeredAt = Date.now();
+    const answerSnapshot: PracticeResultAnswer = {
+      id: `${attemptId ?? "quiz"}:${current.id}`,
+      cardId: current.id,
+      question: current.question,
+      correct: judgedCorrect,
+      quality: judgedCorrect ? 5 : 1,
+      durationMs: elapsed,
+      answeredAt,
+      categoryPath: (current.tags ?? []).filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4)),
+    };
+    const finalAnswers = [...answerSnapshots.filter((answer) => answer.cardId !== current.id), answerSnapshot];
+    setAnswerSnapshots(finalAnswers);
     setQuestionTimes(newTimes);
     if (judgedCorrect) setCorrectCount((c) => c + 1);
     else setWrongIds((arr) => [...arr, current.id]);
@@ -160,6 +176,22 @@ export function QuizRunnerDialog({ open, onOpenChange, plan }: Props) {
           wrongCardIds: finalWrong,
           score,
           questionTimes: newTimes,
+        });
+        addPracticeResult({
+          id: attemptId,
+          kind: "exam",
+          sourceExamId: plan.id,
+          sourceExamName: plan.name,
+          startedAt,
+          completedAt: answeredAt,
+          total,
+          correct: finalCorrect,
+          score,
+          durationMs: newTimes.reduce((sum, value) => sum + value, 0),
+          questionIds: session.map((card) => card.id),
+          answers: finalAnswers,
+          completed: true,
+          updatedAt: answeredAt,
         });
       }
       setMode("done");

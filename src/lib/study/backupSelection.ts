@@ -47,7 +47,7 @@ export interface SelectionTree {
 export interface ExtrasSelection {
   decks: boolean;
   goals: boolean;
-  plans: boolean;      // generalPlans, planReviews, quizPlans, quizAttempts
+  plans: boolean;      // generalPlans, planReviews, quiz plans and canonical practice results
   shasPlans: boolean;  // shasPlans, shasReviews, shasPlan
   settings: boolean;   // uiPrefs, tabConfig, sidebarConfig, widgetLayout, reviewIntervals
   categories: boolean;
@@ -137,7 +137,7 @@ export function makeDefaultExtras(state: StudyState): ExtrasSelection {
   return {
     decks: (state.decks?.length ?? 0) > 0,
     goals: (state.goals?.length ?? 0) > 0,
-    plans: (state.generalPlans?.length ?? 0) > 0 || (state.quizPlans?.length ?? 0) > 0,
+    plans: (state.generalPlans?.length ?? 0) > 0 || (state.quizPlans?.length ?? 0) > 0 || (state.practiceResults?.length ?? 0) > 0,
     shasPlans: !!(state.shasPlan || (state.shasPlans?.length ?? 0) > 0),
     settings: true,
     categories: (state.categories?.length ?? 0) > 0,
@@ -174,6 +174,7 @@ export function extractPartialState(
     partial.planReviews = state.planReviews ?? [];
     partial.quizPlans = state.quizPlans ?? [];
     partial.quizAttempts = state.quizAttempts ?? [];
+    partial.practiceResults = state.practiceResults ?? [];
   }
   if (extras.shasPlans) {
     partial.shasPlan = state.shasPlan;
@@ -243,6 +244,7 @@ export function mergePartialIntoState(current: StudyState, partial: Partial<Stud
   if (partial.planReviews !== undefined) result.planReviews = partial.planReviews;
   if (partial.quizPlans !== undefined) result.quizPlans = partial.quizPlans;
   if (partial.quizAttempts !== undefined) result.quizAttempts = partial.quizAttempts;
+  if (partial.practiceResults !== undefined) result.practiceResults = partial.practiceResults;
   if (partial.shasPlan !== undefined) result.shasPlan = partial.shasPlan;
   if (partial.shasPlans !== undefined) result.shasPlans = partial.shasPlans;
   if (partial.shasReviews !== undefined) result.shasReviews = partial.shasReviews;

@@ -1062,6 +1062,7 @@ export type Database = {
           notifications_enabled: boolean
           plan_review_intervals: Json
           quiz_attempts: Json
+          practice_results: Json
           quiz_plans: Json
           reminder_time: string
           review_intervals: Json
@@ -1081,6 +1082,7 @@ export type Database = {
           notifications_enabled?: boolean
           plan_review_intervals?: Json
           quiz_attempts?: Json
+          practice_results?: Json
           quiz_plans?: Json
           reminder_time?: string
           review_intervals?: Json
@@ -1100,6 +1102,7 @@ export type Database = {
           notifications_enabled?: boolean
           plan_review_intervals?: Json
           quiz_attempts?: Json
+          practice_results?: Json
           quiz_plans?: Json
           reminder_time?: string
           review_intervals?: Json

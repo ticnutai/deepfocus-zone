@@ -19,6 +19,8 @@ electron/build
 
 # Playwright MCP artifacts
 .playwright-mcp/
+test-results/
+playwright-report/
 
 # Local script output
 output/
