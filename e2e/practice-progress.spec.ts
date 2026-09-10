@@ -18,7 +18,9 @@ test("progress and direct-practice navigation stay connected", async ({ page }) 
     await appShell.waitFor({ state: "visible", timeout: 15_000 });
   }
 
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent("deepfocus:open-progress")));
+  const progressButton = page.locator("button:visible").filter({ hasText: /^התקדמות$/ }).first();
+  await expect(progressButton).toBeVisible();
+  await progressButton.click();
   await expect(page.getByRole("heading", { name: "התקדמות ותוצאות" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("tab", { name: "תרגול כללי" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "מבחנים" })).toBeVisible();

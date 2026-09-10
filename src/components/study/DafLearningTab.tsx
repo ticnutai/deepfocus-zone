@@ -21,6 +21,7 @@ import { CardDecksDialog } from "./CardDecksDialog";
 import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
 import { CardEditor } from "./CardEditor";
 import { FitToContainer } from "./FitToContainer";
+import { QuestionTypographyControl, useQuestionTypographyPreferences } from "./QuestionTypographyControl";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -64,6 +65,7 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
 
 export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const { state, setUiPref, updateCard } = useStudy();
+  const questionTypography = useQuestionTypographyPreferences();
   const navigate = useNavigate();
   const location = useLocation();
   const saved = useMemo(() => loadSaved(), []);
@@ -888,6 +890,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </>}
         </div>
         <div className="flex items-center gap-2">
+          <QuestionTypographyControl preferences={questionTypography} />
           <h3 className="text-sm font-semibold flex items-center gap-1">
             <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({amudCards.length})
           </h3>
@@ -931,12 +934,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               }}
               onDragEnd={() => setDragOverAmud(null)}
               className="group rounded-lg border border-gold/30 bg-card p-3 transition-colors hover:border-gold/60"
+              style={questionTypography.questionCardStyle}
             >
               <div className="flex items-start gap-2">
                 <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gold/70 opacity-60 group-hover:opacity-100 active:cursor-grabbing" aria-label="גרור לסיווג בעמוד א׳ או ב׳" />
                 <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-foreground">{c.question}</div>
+                  <div className="text-sm font-medium text-foreground" style={questionTypography.questionTextStyle}>{c.question}</div>
                   <div className="text-xs text-muted-foreground mt-1 capitalize">
                     {c.type === "flashcard" && "פתוחה"}
                     {c.type === "multiple" && "אמריקאית"}
@@ -963,12 +967,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               }}
               onDragEnd={() => setDragOverAmud(null)}
               className="group rounded-lg border border-border/70 bg-muted/20 p-3 transition-colors hover:border-gold/50"
+              style={questionTypography.questionCardStyle}
             >
               <div className="flex items-start gap-2">
                 <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gold/70 opacity-60 group-hover:opacity-100 active:cursor-grabbing" aria-label="גרור לסיווג בעמוד א׳ או ב׳" />
                 <span className="text-xs text-muted-foreground font-bold shrink-0 mt-0.5">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-foreground">{c.question}</div>
+                  <div className="text-sm font-medium text-foreground" style={questionTypography.questionTextStyle}>{c.question}</div>
                   <div className="text-xs text-muted-foreground mt-1 capitalize">
                     {c.type === "flashcard" && "פתוחה"}
                     {c.type === "multiple" && "אמריקאית"}

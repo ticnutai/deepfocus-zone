@@ -9,6 +9,7 @@ import { filterCardsByCategoryChain } from "@/lib/study/categoryCards";
 import { SefariaTextViewer } from "./SefariaTextViewer";
 import { StudySession } from "./StudySession";
 import { ProgressShortcut } from "./ProgressShortcut";
+import { QuestionTypographyControl, useQuestionTypographyPreferences } from "./QuestionTypographyControl";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -51,6 +52,7 @@ function toGematria(n: number): string {
 
 export function ChumashLearningTab() {
   const { state } = useStudy();
+  const questionTypography = useQuestionTypographyPreferences();
   const navigate = useNavigate();
   const location = useLocation();
   const saved = useMemo(() => loadSaved(), []);
@@ -159,6 +161,7 @@ export function ChumashLearningTab() {
           </h3>
           {cards.length > 0 && (
             <div className="flex items-center gap-1">
+              <QuestionTypographyControl preferences={questionTypography} />
               <Button
                 size="icon"
                 variant="outline"
@@ -182,11 +185,11 @@ export function ChumashLearningTab() {
             </div>
           ) : (
             cards.map((c, i) => (
-              <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors">
+              <div key={c.id} className="rounded-lg border border-gold/30 bg-card p-3 hover:border-gold/60 transition-colors" style={questionTypography.questionCardStyle}>
                 <div className="flex items-start gap-2">
                   <span className="text-xs text-gold font-bold shrink-0 mt-0.5">{i + 1}.</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground">{c.question}</div>
+                    <div className="text-sm font-medium text-foreground" style={questionTypography.questionTextStyle}>{c.question}</div>
                   </div>
                   <Button
                     size="icon"

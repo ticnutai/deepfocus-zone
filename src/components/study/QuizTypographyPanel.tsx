@@ -726,6 +726,7 @@ export function CombinedTypographyDialog({
         variant="outline"
         size="sm"
         title="עיצוב טיפוגרפיה"
+        aria-label="עיצוב טקסט שאלות ותשובות"
         className="h-7 w-7 p-0 border-gold/50 hover:bg-gold/10"
         onClick={() => setOpen(true)}
       >

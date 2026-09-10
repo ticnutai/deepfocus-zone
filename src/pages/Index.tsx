@@ -456,7 +456,6 @@ const DEFAULT_TABS: TabDef[] = [
   { v: "backup",        l: "גיבוי וייצוא",   I: Archive },
 ];
 
-const SIDEBAR_NATIVE_IDS = new Set(DEFAULT_SIDEBAR_ITEMS.map((item) => item.id));
 const HOME_TAB_IDS = new Set(DEFAULT_TABS.map((tab) => tab.v));
 
 // Maps a home top-bar tab id to its corresponding sidebar section id (for blocklist sync).
@@ -497,6 +496,7 @@ const SIDEBAR_CHOICES: NavItem[] = (() => {
 
 const PROFILE_B_ALLOWED_HOME_TAB_IDS = new Set<string>([
   "overview",
+  "summary",
   "daf",
   "categories",
   "decks",
@@ -505,6 +505,7 @@ const PROFILE_B_ALLOWED_HOME_TAB_IDS = new Set<string>([
 
 const PROFILE_B_ALLOWED_SIDEBAR_IDS = new Set<string>([
   "home",
+  "summary",
   "categories",
   "decks",
   "questions",
@@ -984,10 +985,11 @@ const Index = () => {
       used.add(c.id);
     }
 
-    // Items missing from the saved config (e.g. newly added pages) default to
-    // hidden so an app update never floods an existing user's sidebar.
+    // Most newly added pages stay hidden for existing custom layouts. Progress
+    // is a core learner destination, so it is deliberately discoverable for
+    // everyone instead of being stranded behind a removed desktop tab strip.
     for (const def of SIDEBAR_CHOICES) {
-      if (!used.has(def.id)) result.push({ ...def, visible: false });
+      if (!used.has(def.id)) result.push({ ...def, visible: def.id === "summary" });
     }
 
     return result;
@@ -995,7 +997,7 @@ const Index = () => {
 
   const visibleSidebarItems = useMemo(() => orderedSidebarItems.filter((item) => {
     if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
-    if (!item.visible) return false;
+    if (!item.visible && item.id !== "summary") return false;
     if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
     return isAllowedByPermission(item.id);
   }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
@@ -1155,7 +1157,7 @@ const Index = () => {
     // "בית" must return to the home overview. When the user is on a home-tab
     // (e.g. חזרות לימוד) `active` is already "home" with a sub-tab active, so
     // just setActive("home") would be a no-op — explicitly reset the tab too.
-    if (HOME_TAB_IDS.has(id) && !SIDEBAR_NATIVE_IDS.has(id)) {
+    if (HOME_TAB_IDS.has(id) && id !== "home") {
       setHomeLandingTab(null);
       setActive("home");
       setActiveTab(id);
@@ -1193,7 +1195,7 @@ const Index = () => {
 
   const sidebarActiveId = active === "home" && homeLandingTab === activeTab
     ? "home"
-    : active === "home" && HOME_TAB_IDS.has(activeTab) && !SIDEBAR_NATIVE_IDS.has(activeTab)
+    : active === "home" && HOME_TAB_IDS.has(activeTab) && activeTab !== "overview"
       ? activeTab
       : active;
 

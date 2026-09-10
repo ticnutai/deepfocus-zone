@@ -67,7 +67,7 @@ const NavList = ({
   onNavigate: (to: string) => void;
 }) => (
   <nav className="flex flex-col gap-1 p-3">
-    {items.filter((i) => i.visible).map((item) => {
+    {items.filter((i) => i.visible || i.id === "summary").map((item) => {
       const Icon = item.icon;
       const isActive = activeId === item.id && activePath === "/";
       return (
@@ -339,6 +339,13 @@ export function AppShellSidebar() {
       return;
     }
     if (id === "settings" && !(await requireSettingsAuth())) return;
+    if (id === "summary") {
+      try { localStorage.setItem("active-tab", "summary"); } catch { /* ignore */ }
+      navigate("/?section=home");
+      if (!pinned) setHovered(false);
+      setMobileOpen(false);
+      return;
+    }
     if (pathname !== "/") {
       navigate(`/?section=${id}`);
     } else {
