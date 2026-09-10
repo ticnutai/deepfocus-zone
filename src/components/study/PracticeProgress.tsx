@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { dafLabel } from "@/lib/study/shasGen";
 import { filterCardsForPlan } from "@/lib/study/quiz";
 import { calculatePracticeTrend } from "@/lib/study/practiceProgress";
+import { buildShasPracticeProgress } from "@/lib/study/shasPracticeProgress";
+import { ShasProgressTree } from "./ShasProgressViews";
 
 type PageFilter = { label?: string; masechta?: string; daf?: number; amud?: 1 | 2; cardIds?: string[] };
 
@@ -45,6 +47,16 @@ export function PracticeProgress({ initialTab = "overview" }: { initialTab?: "ov
     ...state.decks.map((deck) => deck.id),
     ...(state.quizPlans ?? []).map((plan) => plan.id),
   ]), [state.decks, state.quizPlans]);
+  const resultLocationLabels = useMemo(() => {
+    const labels = new Map<string, string[]>();
+    const tree = buildShasPracticeProgress(state.practiceResults ?? [], state.cards ?? [], state.categories ?? []);
+    for (const masechta of tree) for (const daf of masechta.dapim) for (const amud of daf.amudim) for (const attempt of amud.attempts) {
+      const current = labels.get(attempt.result.id) ?? [];
+      current.push(`מסכת ${masechta.masechta} דף ${dafLabel(daf.daf).replace(".", "")} עמוד ${amud.amud === 1 ? "א" : "ב"}`);
+      labels.set(attempt.result.id, current);
+    }
+    return labels;
+  }, [state.practiceResults, state.cards, state.categories]);
 
   const results = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("he");
@@ -55,13 +67,16 @@ export function PracticeProgress({ initialTab = "overview" }: { initialTab?: "ov
         (filterIds.size > 0 && answer.cardId && filterIds.has(answer.cardId)) ||
         (answer.masechta === pageFilter.masechta && answer.daf === pageFilter.daf && answer.amud === pageFilter.amud)
       ))
-      .filter((result) => !q || [result.sourceExamName, new Date(result.completedAt).toLocaleDateString("he-IL"), ...result.answers.map((answer) => answer.question)]
+      .filter((result) => !q || [result.sourceExamName, new Date(result.completedAt).toLocaleDateString("he-IL"), ...(resultLocationLabels.get(result.id) ?? []), ...result.answers.map((answer) => answer.question)]
         .filter(Boolean).some((value) => String(value).toLocaleLowerCase("he").includes(q)))
       .sort((a, b) => b.completedAt - a.completedAt);
-  }, [pageFilter, query, state.practiceResults]);
+  }, [pageFilter, query, resultLocationLabels, state.practiceResults]);
 
   const formal = results.filter((result) => result.kind === "exam" && result.sourceExamId && activeExamIds.has(result.sourceExamId));
   const general = results.filter((result) => result.kind === "general" || !result.sourceExamId || !activeExamIds.has(result.sourceExamId));
+  const shasTree = useMemo(() => buildShasPracticeProgress(results, state.cards ?? [], state.categories ?? []), [results, state.cards, state.categories]);
+  const mappedResultIds = useMemo(() => new Set(shasTree.flatMap((masechta) => masechta.dapim.flatMap((daf) => daf.amudim.flatMap((amud) => amud.attempts.map((attempt) => attempt.result.id))))), [shasTree]);
+  const nonShasResults = results.filter((result) => !mappedResultIds.has(result.id));
   const overallTrend = calculatePracticeTrend(results);
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.score, 0) / results.length) : 0;
 
@@ -102,12 +117,18 @@ export function PracticeProgress({ initialTab = "overview" }: { initialTab?: "ov
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid h-auto w-full grid-cols-3">
-          <TabsTrigger value="overview">סקירה כללית</TabsTrigger>
+          <TabsTrigger value="overview">לפי מסכת ודף</TabsTrigger>
           <TabsTrigger value="general">תרגול כללי</TabsTrigger>
           <TabsTrigger value="exams">מבחנים</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="space-y-2 pt-3">
-          {results.length ? results.slice(0, 20).map((result) => <AttemptRow key={result.id} result={result} orphaned={result.kind === "exam" && (!result.sourceExamId || !activeExamIds.has(result.sourceExamId))} />) : <Empty />}
+        <TabsContent value="overview" className="space-y-4 pt-3">
+          {shasTree.length ? <ShasProgressTree tree={shasTree} /> : <Empty text="עדיין אין תוצאות המשויכות למסכת, דף ועמוד. לאחר תרגול של עמוד הן יופיעו כאן." />}
+          {nonShasResults.length > 0 && (
+            <details className="rounded-2xl border border-gold/30 bg-muted/10 p-3">
+              <summary className="cursor-pointer font-semibold">תוצאות נוספות ללא שיוך לעמוד ({nonShasResults.length})</summary>
+              <div className="mt-3 space-y-2">{nonShasResults.slice(0, 20).map((result) => <AttemptRow key={result.id} result={result} orphaned={result.kind === "exam" && (!result.sourceExamId || !activeExamIds.has(result.sourceExamId))} />)}</div>
+            </details>
+          )}
         </TabsContent>
         <TabsContent value="general" className="space-y-2 pt-3">
           {general.length ? general.map((result) => <AttemptRow key={result.id} result={result} orphaned={result.kind === "exam"} />) : <Empty />}

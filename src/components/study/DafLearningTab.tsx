@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff } from "lucide-react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff, LineChart } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -22,6 +22,7 @@ import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
 import { CardEditor } from "./CardEditor";
 import { FitToContainer } from "./FitToContainer";
 import { QuestionTypographyControl, useQuestionTypographyPreferences } from "./QuestionTypographyControl";
+import { PageProgressDialog } from "./ShasProgressViews";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -109,6 +110,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
   const [dragOverAmud, setDragOverAmud] = useState<1 | 2 | null>(null);
   const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
+  const [pageProgressOpen, setPageProgressOpen] = useState(false);
   const isStandaloneSplitPage = location.pathname === "/split-view";
 
   const handleSplitPageToggle = () => {
@@ -433,23 +435,6 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const navigator = (
     <Card className="gold-frame p-3 space-y-3" dir="rtl">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gold/30 bg-muted/20 p-2">
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="h-9 w-9 border-gold/50"
-          disabled={!selectionConfirmed}
-          title="הצג תוצאות ומגמת שיפור לעמוד זה"
-          aria-label="תוצאות לעמוד זה"
-          onClick={() => {
-            try {
-              localStorage.setItem("practice-progress-filter-v1", JSON.stringify({ label: `${masechta}, ${dafLabel(daf)}, עמוד ${amud === 1 ? "א׳" : "ב׳"}`, masechta, daf, amud, cardIds }));
-            } catch { /* ignore */ }
-            window.dispatchEvent(new CustomEvent("deepfocus:open-progress"));
-          }}
-        >
-          <ListChecks className="h-4 w-4 text-gold" />
-        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="h-9 w-9 border-gold/50" title="בחר תצוגת ניווט" aria-label="בחר תצוגת ניווט"><ListTree className="h-4 w-4 text-gold" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52" dir="rtl"><DropdownMenuLabel>תצוגת ניווט</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setNavigationView("expanded")} className={cn(navigationView === "expanded" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "expanded" && "opacity-0")} />עץ פתוח</DropdownMenuItem><DropdownMenuItem onClick={() => { setNavigationView("drilldown"); setInlineStep("seder"); }} className={cn(navigationView === "drilldown" && "bg-gold/10")}><Check className={cn("ml-2 h-4 w-4", navigationView !== "drilldown" && "opacity-0")} />שלב אחר שלב</DropdownMenuItem></DropdownMenuContent>
@@ -890,9 +875,21 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </>}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 border-gold/50 font-semibold"
+            disabled={!selectionConfirmed}
+            title="הצג את כל המבחנים, החזרות והמגמה של עמוד זה"
+            aria-label="התקדמות לעמוד זה"
+            onClick={() => setPageProgressOpen(true)}
+          >
+            <LineChart className="h-4 w-4 text-gold" /> התקדמות
+          </Button>
           <QuestionTypographyControl preferences={questionTypography} />
           <h3 className="text-sm font-semibold flex items-center gap-1">
-            <ListChecks className="h-4 w-4 text-gold" /> שאלות לעמוד זה ({amudCards.length})
+            <ListChecks className="h-4 w-4 text-gold" /> שאלות זמינות לעמוד זה ({cards.length})
           </h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -952,8 +949,8 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             </div>
           ))}
           {dafOnlyCards.length > 0 && (
-            <div className="sticky top-0 z-10 mt-3 rounded-lg border border-gold/30 bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
-              שאלות שטרם סווגו לעמוד — {dafOnlyCards.length} שאלות
+            <div className="sticky top-0 z-10 mt-3 rounded-lg border border-gold/40 bg-muted px-3 py-2 text-xs font-semibold text-foreground">
+              שאלות ברמת הדף — זמינות לתרגול בעמוד א׳ ובעמוד ב׳ עד לסיווג ({dafOnlyCards.length})
             </div>
           )}
           {dafOnlyCards.map((c, i) => (
@@ -1082,6 +1079,14 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
         cards={cards}
         open={bulkDeckDialogOpen}
         onOpenChange={setBulkDeckDialogOpen}
+      />
+
+      <PageProgressDialog
+        open={pageProgressOpen}
+        onOpenChange={setPageProgressOpen}
+        masechta={masechta}
+        daf={daf}
+        amud={amud}
       />
 
       <Dialog open={addQuestionOpen} onOpenChange={setAddQuestionOpen}>

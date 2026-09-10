@@ -1069,7 +1069,9 @@ export function StudySession({
         durationMs,
         answeredAt: Date.now(),
         categoryPath: (card.tags ?? []).filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4)),
-        ...sourceContext,
+        masechta: sourceContext?.masechta ?? card.masechta ?? undefined,
+        daf: sourceContext?.daf ?? card.daf ?? undefined,
+        amud: sourceContext?.amud ?? card.amud ?? undefined,
       };
       setAttemptAnswers((answers) => [
         ...answers.filter((answer) => answer.cardId !== card.id),
@@ -2571,13 +2573,12 @@ export function StudySession({
       )}
 
       <div
+        data-testid="study-question-card"
         className={cn(
-          "relative flex items-center justify-center rounded-2xl border-2",
+          "relative mx-auto flex items-center justify-center border-2",
           isMobile
-            ? "p-3 pt-8 overflow-y-auto"
-            : fillHeight
-              ? "flex-1 min-h-[100px] p-6 pt-10"
-              : "min-h-[200px] p-6 pt-10",
+            ? "w-full rounded-2xl p-3 pt-8 overflow-y-auto"
+            : "w-[82%] md:w-[76%] lg:w-[72%] max-w-6xl min-h-[150px] rounded-[2.75rem] px-8 py-8 pt-10",
           questionAreaCls,
         )}
         style={questionAreaStyle}
