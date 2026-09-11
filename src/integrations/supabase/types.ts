@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_role_repair_backups: {
+        Row: {
+          created_at: string
+          id: string
+          snapshot: Json
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          snapshot: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          snapshot?: Json
+        }
+        Relationships: []
+      }
       achievements: {
         Row: {
           code: string
@@ -176,8 +194,8 @@ export type Database = {
           answer: string | null
           correct_boolean: boolean | null
           correct_indices: Json | null
-          created_by: string | null
           created_at: string
+          created_by: string | null
           daf: number | null
           deck_id: string | null
           deleted_at: string | null
@@ -205,8 +223,8 @@ export type Database = {
           answer?: string | null
           correct_boolean?: boolean | null
           correct_indices?: Json | null
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
           daf?: number | null
           deck_id?: string | null
           deleted_at?: string | null
@@ -234,8 +252,8 @@ export type Database = {
           answer?: string | null
           correct_boolean?: boolean | null
           correct_indices?: Json | null
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
           daf?: number | null
           deck_id?: string | null
           deleted_at?: string | null
@@ -266,43 +284,21 @@ export type Database = {
             referencedRelation: "decks"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cards_origin_card_id_fkey"
+            columns: ["origin_card_id"]
+            isOneToOne: false
+            referencedRelation: "cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cards_published_card_id_fkey"
+            columns: ["published_card_id"]
+            isOneToOne: false
+            referencedRelation: "cards"
+            referencedColumns: ["id"]
+          },
         ]
-      }
-      offline_question_devices: {
-        Row: { device_key: string; user_id: string; display_name: string; local_username: string | null; created_at: string; last_seen_at: string }
-        Insert: { device_key: string; user_id: string; display_name: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
-        Update: { device_key?: string; user_id?: string; display_name?: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
-        Relationships: []
-      }
-      role_content_access: {
-        Row: {
-          approved_only: boolean
-          include_own: boolean
-          include_site_library: boolean
-          role_id: string
-          source_user_ids: string[]
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          approved_only?: boolean
-          include_own?: boolean
-          include_site_library?: boolean
-          role_id: string
-          source_user_ids?: string[]
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          approved_only?: boolean
-          include_own?: boolean
-          include_site_library?: boolean
-          role_id?: string
-          source_user_ids?: string[]
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
       }
       categories: {
         Row: {
@@ -411,6 +407,47 @@ export type Database = {
         }
         Relationships: []
       }
+      desktop_install_events: {
+        Row: {
+          event_type: string
+          from_version: string | null
+          id: string
+          install_id: string
+          occurred_at: string
+          reported_at: string
+          to_version: string
+          user_id: string
+        }
+        Insert: {
+          event_type: string
+          from_version?: string | null
+          id?: string
+          install_id: string
+          occurred_at: string
+          reported_at?: string
+          to_version: string
+          user_id: string
+        }
+        Update: {
+          event_type?: string
+          from_version?: string | null
+          id?: string
+          install_id?: string
+          occurred_at?: string
+          reported_at?: string
+          to_version?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "desktop_install_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       goals: {
         Row: {
           active: boolean
@@ -506,6 +543,33 @@ export type Database = {
         }
         Relationships: []
       }
+      offline_question_devices: {
+        Row: {
+          created_at: string
+          device_key: string
+          display_name: string
+          last_seen_at: string
+          local_username: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_key: string
+          display_name: string
+          last_seen_at?: string
+          local_username?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_key?: string
+          display_name?: string
+          last_seen_at?: string
+          local_username?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -586,6 +650,44 @@ export type Database = {
             columns: ["deck_id"]
             isOneToOne: false
             referencedRelation: "decks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      role_content_access: {
+        Row: {
+          approved_only: boolean
+          include_own: boolean
+          include_site_library: boolean
+          role_id: string
+          source_user_ids: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          approved_only?: boolean
+          include_own?: boolean
+          include_site_library?: boolean
+          role_id: string
+          source_user_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          approved_only?: boolean
+          include_own?: boolean
+          include_site_library?: boolean
+          role_id?: string
+          source_user_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_content_access_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: true
+            referencedRelation: "app_roles"
             referencedColumns: ["id"]
           },
         ]
@@ -801,6 +903,8 @@ export type Database = {
           note: string
           original_card_id: string | null
           original_question: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           source_user_id: string
           status: string
           target_index: number | null
@@ -808,8 +912,6 @@ export type Database = {
           target_text: string | null
           updated_at: string
           user_id: string
-          reviewed_at: string | null
-          reviewed_by: string | null
         }
         Insert: {
           admin_response?: string | null
@@ -819,6 +921,8 @@ export type Database = {
           note: string
           original_card_id?: string | null
           original_question?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           source_user_id: string
           status?: string
           target_index?: number | null
@@ -826,8 +930,6 @@ export type Database = {
           target_text?: string | null
           updated_at?: string
           user_id: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
         }
         Update: {
           admin_response?: string | null
@@ -837,6 +939,8 @@ export type Database = {
           note?: string
           original_card_id?: string | null
           original_question?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           source_user_id?: string
           status?: string
           target_index?: number | null
@@ -844,8 +948,6 @@ export type Database = {
           target_text?: string | null
           updated_at?: string
           user_id?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
         }
         Relationships: []
       }
@@ -902,12 +1004,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      desktop_install_events: {
-        Row: { event_type: string; from_version: string | null; id: string; install_id: string; occurred_at: string; reported_at: string; to_version: string; user_id: string }
-        Insert: { event_type: string; from_version?: string | null; id?: string; install_id: string; occurred_at: string; reported_at?: string; to_version: string; user_id: string }
-        Update: { event_type?: string; from_version?: string | null; id?: string; install_id?: string; occurred_at?: string; reported_at?: string; to_version?: string; user_id?: string }
-        Relationships: [{ foreignKeyName: "desktop_install_events_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
       }
       user_activity_daily: {
         Row: {
@@ -1097,8 +1193,8 @@ export type Database = {
           general_plans: Json
           notifications_enabled: boolean
           plan_review_intervals: Json
-          quiz_attempts: Json
           practice_results: Json
+          quiz_attempts: Json
           quiz_plans: Json
           reminder_time: string
           review_intervals: Json
@@ -1117,8 +1213,8 @@ export type Database = {
           general_plans?: Json
           notifications_enabled?: boolean
           plan_review_intervals?: Json
-          quiz_attempts?: Json
           practice_results?: Json
+          quiz_attempts?: Json
           quiz_plans?: Json
           reminder_time?: string
           review_intervals?: Json
@@ -1137,8 +1233,8 @@ export type Database = {
           general_plans?: Json
           notifications_enabled?: boolean
           plan_review_intervals?: Json
-          quiz_attempts?: Json
           practice_results?: Json
+          quiz_attempts?: Json
           quiz_plans?: Json
           reminder_time?: string
           review_intervals?: Json
@@ -1157,31 +1253,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      prune_preupdate_backups: {
-        Args: { p_keep?: number }
-        Returns: number
-      }
-      admin_save_access_profile: {
-        Args: { p_scope: string; p_layout: Json; p_block: Json; p_role_ids: string[]; p_permissions?: Json | null; p_expected_permissions?: Json | null; p_expected_updated_at?: number | null };
-        Returns: undefined;
-      };
-      admin_delete_access_profile: { Args: { p_scope: string; p_profile_id: string }; Returns: undefined };
-      get_access_role_policy: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      get_effective_content_access: { Args: Record<PropertyKey, never>; Returns: Json }
-      get_content_overlay_snapshot: { Args: Record<PropertyKey, never>; Returns: Json }
-      get_content_category_children: {
-        Args: { p_parent_id?: string | null }
-        Returns: { id: string; name: string; parent_id: string | null; color: string | null; created_at: string; sort_order: number; has_children: boolean }[]
-      }
-      get_content_unreviewed_cards_page: { Args: { p_offset?: number; p_limit?: number }; Returns: Json }
-      get_content_card_categories: { Args: Record<PropertyKey, never>; Returns: Json }
-      get_admin_content_sources: {
-        Args: Record<PropertyKey, never>
-        Returns: { source_user_id: string; label: string; email: string | null; question_count: number }[]
-      }
       admin_create_user:
         | {
             Args: {
@@ -1204,13 +1275,29 @@ export type Database = {
             }
             Returns: string
           }
+      admin_delete_access_profile: {
+        Args: { p_profile_id: string; p_scope: string }
+        Returns: undefined
+      }
       admin_delete_user: { Args: { p_user_id: string }; Returns: undefined }
-      admin_set_password: {
-        Args: { p_password: string; p_user_id: string }
+      admin_save_access_profile: {
+        Args: {
+          p_block: Json
+          p_expected_permissions?: Json
+          p_expected_updated_at?: number
+          p_layout: Json
+          p_permissions?: Json
+          p_role_ids: string[]
+          p_scope: string
+        }
         Returns: undefined
       }
       admin_set_default_signup_role: {
-        Args: { p_role_id?: string | null }
+        Args: { p_role_id?: string }
+        Returns: undefined
+      }
+      admin_set_password: {
+        Args: { p_password: string; p_user_id: string }
         Returns: undefined
       }
       admin_set_profile_status: {
@@ -1226,16 +1313,57 @@ export type Database = {
         }
         Returns: undefined
       }
-      record_user_activity: {
-        Args: { p_active_seconds?: number; p_client_type?: string; p_event?: string }
-        Returns: undefined
-      }
-      record_desktop_install_event: {
-        Args: { p_event_type: string; p_from_version: string | null; p_install_id: string; p_occurred_at: string; p_to_version: string }
-        Returns: undefined
-      }
+      backfill_card_provenance: { Args: { p_limit?: number }; Returns: number }
       email_for_username: { Args: { p_username: string }; Returns: string }
       exec_sql: { Args: { query: string }; Returns: Json }
+      get_access_role_policy: { Args: never; Returns: Json }
+      get_admin_content_sources: {
+        Args: never
+        Returns: {
+          email: string
+          label: string
+          question_count: number
+          source_user_id: string
+        }[]
+      }
+      get_admin_user_questions: {
+        Args: never
+        Returns: {
+          amud: number | null
+          answer: string | null
+          correct_boolean: boolean | null
+          correct_indices: Json | null
+          created_at: string
+          created_by: string | null
+          daf: number | null
+          deck_id: string | null
+          deleted_at: string | null
+          explanation: string | null
+          id: string
+          masechta: string | null
+          moderated_at: string | null
+          moderated_by: string | null
+          moderation_note: string | null
+          moderation_status: string
+          options: Json | null
+          origin_card_id: string | null
+          published_card_id: string | null
+          question: string
+          sort_order: number
+          srs: Json
+          stats: Json
+          tags: Json
+          type: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "cards"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_bootstrap_snapshot: { Args: never; Returns: Json }
       get_card_forecast: {
         Args: { p_days?: number }
@@ -1275,6 +1403,24 @@ export type Database = {
           sort_order: number
         }[]
       }
+      get_content_card_categories: { Args: never; Returns: Json }
+      get_content_category_children: {
+        Args: { p_parent_id?: string }
+        Returns: {
+          color: string
+          created_at: string
+          has_children: boolean
+          id: string
+          name: string
+          parent_id: string
+          sort_order: number
+        }[]
+      }
+      get_content_overlay_snapshot: { Args: never; Returns: Json }
+      get_content_unreviewed_cards_page: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: Json
+      }
       get_deck_card_stats: {
         Args: never
         Returns: {
@@ -1284,6 +1430,7 @@ export type Database = {
         }[]
       }
       get_due_count_today: { Args: never; Returns: number }
+      get_effective_content_access: { Args: never; Returns: Json }
       get_guest_bootstrap_snapshot: { Args: never; Returns: Json }
       get_guest_bootstrap_snapshot_for: {
         Args: { p_source_user_id?: string }
@@ -1379,7 +1526,43 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      prune_preupdate_backups: { Args: { p_keep?: number }; Returns: number }
+      publish_user_question: { Args: { p_card_id: string }; Returns: string }
+      publish_user_questions: {
+        Args: { p_card_ids: string[] }
+        Returns: {
+          original_card_id: string
+          published_card_id: string
+        }[]
+      }
+      record_desktop_install_event: {
+        Args: {
+          p_event_type: string
+          p_from_version: string
+          p_install_id: string
+          p_occurred_at: string
+          p_to_version: string
+        }
+        Returns: undefined
+      }
+      record_user_activity: {
+        Args: {
+          p_active_seconds?: number
+          p_client_type?: string
+          p_event?: string
+        }
+        Returns: undefined
+      }
       reorder_user_categories: { Args: { p_ids: string[] }; Returns: undefined }
+      submit_offline_question: {
+        Args: {
+          p_card: Json
+          p_device_key: string
+          p_display_name: string
+          p_local_username: string
+        }
+        Returns: string
+      }
       suggest_usernames: {
         Args: { p_base: string; p_count?: number }
         Returns: string[]
@@ -1411,12 +1594,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1440,11 +1623,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1465,11 +1648,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1490,11 +1673,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1507,11 +1690,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

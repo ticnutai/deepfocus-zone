@@ -255,7 +255,7 @@ async function derivePasswordVerifier(password: string, salt: Uint8Array, iterat
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    { name: "PBKDF2", hash: "SHA-256", salt: salt as unknown as BufferSource, iterations },
     key,
     256,
   );

@@ -383,7 +383,7 @@ export function ShasDeckBuilder({
           <div className="grid grid-cols-2 gap-3">
             {[1, 2].map((side) => {
               const source = makeSource({ kind: "amud", masechta: selectedMasechta?.name ?? masechta, daf, amud: side as 1 | 2 });
-              const isCurrentLocation = daf === source.daf && amud === source.amud;
+              const isCurrentLocation = amud === (side as 1 | 2);
               return <div key={side} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setAmud(side as 1 | 2); chooseSource(source); }} className={cn(draggableClass, "flex-col justify-center text-center", overview ? "min-h-14" : "min-h-20", isCurrentLocation && "border-gold bg-gold/15", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span className={cn(overview ? "text-sm" : "text-base")}>עמוד {side === 1 ? "א׳" : "ב׳"}</span><span className={cn("flex items-center gap-1 text-xs font-normal text-muted-foreground", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "text-gold")}>{questionSource?.id === source.id ? <><Check className="h-4 w-4" />נבחר לסיווג</> : selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר עמוד</> : <><GripVertical className="h-4 w-4 text-gold" />גרור למבחן</>}</span></div>;
             })}
           </div>
