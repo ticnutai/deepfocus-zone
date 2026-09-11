@@ -282,9 +282,20 @@ export const BUILTIN_THEMES: ThemeDef[] = [
 export const THEMES = BUILTIN_THEMES;
 export type ThemeName = string;
 
+export interface ThemePreferencesSnapshot {
+  schemaVersion: 1;
+  themeId: string;
+  overrides: Record<string, ThemeTokens>;
+  customThemes: ThemeDef[];
+  updatedAt: number;
+}
+
+export const THEME_PREFERENCES_EVENT = "app-theme-preferences-changed";
+
 const LS_THEME = "app-theme";
 const LS_OVERRIDES = "app-theme-overrides"; // Record<id, ThemeTokens>
 const LS_CUSTOM = "app-theme-custom"; // ThemeDef[]
+const LS_UPDATED = "app-theme-updated-at";
 
 type Ctx = {
   theme: string;
@@ -308,6 +319,8 @@ type Ctx = {
   resetBuiltin: (id: string) => void;
   /** Delete a custom theme. Falls back to royal-navy if it was active. */
   deleteCustomTheme: (id: string) => void;
+  exportPreferences: () => ThemePreferencesSnapshot;
+  hydratePreferences: (snapshot: ThemePreferencesSnapshot) => void;
 };
 const ThemeContext = createContext<Ctx | null>(null);
 
@@ -345,6 +358,19 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [customThemes, setCustomThemes] = useState<ThemeDef[]>(() =>
     readJSON(LS_CUSTOM, []),
   );
+  const [updatedAt, setUpdatedAt] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const stored = Number(localStorage.getItem(LS_UPDATED) || 0);
+    // Migrate an existing pre-sync theme choice without treating a clean install as personalized.
+    return stored || (localStorage.getItem(LS_THEME) ? Date.now() : 0);
+  });
+
+  const touchPreferences = useCallback(() => {
+    const next = Date.now();
+    setUpdatedAt(next);
+    localStorage.setItem(LS_UPDATED, String(next));
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent(THEME_PREFERENCES_EVENT)), 0);
+  }, []);
 
   const allThemes = useMemo<ThemeDef[]>(() => {
     const builtinsMerged = BUILTIN_THEMES.map((t) => {
@@ -378,7 +404,11 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem(LS_THEME, theme);
   }, [theme, allThemes]);
 
-  const setTheme = useCallback((t: string) => setThemeState(t), []);
+  const setTheme = useCallback((t: string) => {
+    setThemeState(t);
+    localStorage.setItem(LS_THEME, t);
+    touchPreferences();
+  }, [touchPreferences]);
 
   const saveThemeTokens = useCallback(
     (
@@ -410,8 +440,9 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
           return next;
         });
       }
+      touchPreferences();
     },
-    [],
+    [touchPreferences],
   );
 
   const duplicateTheme = useCallback(
@@ -435,9 +466,10 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         writeJSON(LS_CUSTOM, next);
         return next;
       });
+      touchPreferences();
       return id;
     },
-    [allThemes],
+    [allThemes, touchPreferences],
   );
 
   const resetBuiltin = useCallback((id: string) => {
@@ -448,7 +480,8 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       writeJSON(LS_OVERRIDES, next);
       return next;
     });
-  }, []);
+    touchPreferences();
+  }, [touchPreferences]);
 
   const deleteCustomTheme = useCallback(
     (id: string) => {
@@ -458,9 +491,37 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         return next;
       });
       if (theme === id) setThemeState("royal-navy");
+      touchPreferences();
     },
-    [theme],
+    [theme, touchPreferences],
   );
+
+  const exportPreferences = useCallback((): ThemePreferencesSnapshot => ({
+    schemaVersion: 1,
+    themeId: theme,
+    overrides,
+    customThemes,
+    updatedAt,
+  }), [customThemes, overrides, theme, updatedAt]);
+
+  const hydratePreferences = useCallback((snapshot: ThemePreferencesSnapshot) => {
+    if (!snapshot || snapshot.schemaVersion !== 1) return;
+    const safeOverrides = snapshot.overrides && typeof snapshot.overrides === "object" ? snapshot.overrides : {};
+    const safeCustom = Array.isArray(snapshot.customThemes)
+      ? snapshot.customThemes.filter((item) => item && !item.builtin && typeof item.id === "string")
+      : [];
+    const validIds = new Set([...BUILTIN_THEMES.map((item) => item.id), ...safeCustom.map((item) => item.id)]);
+    const safeTheme = validIds.has(snapshot.themeId) ? snapshot.themeId : "royal-navy";
+    const safeUpdatedAt = Number(snapshot.updatedAt || 0);
+    setThemeState(safeTheme);
+    setOverrides(safeOverrides);
+    setCustomThemes(safeCustom);
+    setUpdatedAt(safeUpdatedAt);
+    localStorage.setItem(LS_THEME, safeTheme);
+    writeJSON(LS_OVERRIDES, safeOverrides);
+    writeJSON(LS_CUSTOM, safeCustom);
+    localStorage.setItem(LS_UPDATED, String(safeUpdatedAt));
+  }, []);
 
   const value = useMemo<Ctx>(
     () => ({
@@ -472,6 +533,8 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       duplicateTheme,
       resetBuiltin,
       deleteCustomTheme,
+      exportPreferences,
+      hydratePreferences,
     }),
     [
       theme,
@@ -482,6 +545,8 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       duplicateTheme,
       resetBuiltin,
       deleteCustomTheme,
+      exportPreferences,
+      hydratePreferences,
     ],
   );
 

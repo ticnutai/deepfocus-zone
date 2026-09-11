@@ -21,6 +21,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { ChangeNotesTab } from "./ChangeNotesTab";
 import { sourceFromTags } from "@/lib/app/clientSource";
+import { publicUserIdentity } from "@/lib/admin/userIdentity";
+import { SHAS_BAVLI } from "@/lib/study/shasData";
+import { dafLabel } from "@/lib/study/shasGen";
+import { formatShasLocation, isCompleteShasLocation, replaceCategoryTagsWithShasLocation } from "@/lib/study/shasClassification";
 
 type CardRow = Database["public"]["Tables"]["cards"]["Row"];
 type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "display_name" | "username" | "email">;
@@ -104,6 +108,9 @@ export function UserQuestionsTab() {
   const [editExplanation, setEditExplanation] = useState("");
   const [editOptions, setEditOptions] = useState("");
   const [editCorrect, setEditCorrect] = useState("");
+  const [editMasechta, setEditMasechta] = useState("");
+  const [editDaf, setEditDaf] = useState<number | null>(null);
+  const [editAmud, setEditAmud] = useState<1 | 2 | null>(null);
   const [deleting, setDeleting] = useState<CardRow | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<UserQuestionExportFormat | null>(null);
@@ -146,16 +153,16 @@ export function UserQuestionsTab() {
     for (const device of offlineDevices) if (!map.has(device.user_id)) map.set(device.user_id, device);
     return map;
   }, [offlineDevices]);
-  const userLabel = useCallback((id: string) => {
+  const userIdentity = useCallback((id: string) => {
     const profile = profileMap.get(id);
     const device = deviceMap.get(id);
-    return device?.local_username || profile?.username || profile?.display_name || device?.display_name || profile?.email || id.slice(0, 8);
+    return publicUserIdentity(profile, device);
   }, [deviceMap, profileMap]);
   const creatorId = useCallback((row: CardRow) => row.created_by ?? row.user_id, []);
   const userChoices = useMemo(() => {
     const ids = [...new Set(rows.map(creatorId))];
-    return ids.map((id) => ({ id, profile: profileMap.get(id), count: rows.filter((row) => creatorId(row) === id).length }));
-  }, [creatorId, profileMap, rows]);
+    return ids.map((id) => ({ id, count: rows.filter((row) => creatorId(row) === id).length }));
+  }, [creatorId, rows]);
 
   const filtered = useMemo(() => rows.filter((row) => {
     const status = (row.moderation_status || "private") as ModerationStatus;
@@ -194,6 +201,9 @@ export function UserQuestionsTab() {
     setEditExplanation(row.explanation ?? "");
     setEditOptions(stringArray(row.options).join("\n"));
     setEditCorrect(numberArray(row.correct_indices).map((index) => String(index + 1)).join(","));
+    setEditMasechta(row.masechta ?? "");
+    setEditDaf(row.daf ?? null);
+    setEditAmud(row.amud === 1 || row.amud === 2 ? row.amud : null);
   };
 
   const saveEdit = async () => {
@@ -201,6 +211,14 @@ export function UserQuestionsTab() {
     setBusyId(editing.id);
     const options = editOptions.split("\n").map((value) => value.trim()).filter(Boolean);
     const correctIndices = editCorrect.split(",").map((value) => Number(value.trim()) - 1).filter((value) => Number.isInteger(value) && value >= 0 && value < options.length);
+    const requestedLocation = { masechta: editMasechta || null, daf: editDaf, amud: editAmud };
+    if (editMasechta && !isCompleteShasLocation(requestedLocation)) {
+      setBusyId(null);
+      return toast.error("כדי לשייך לש״ס יש לבחור מסכת, דף ועמוד");
+    }
+    const tags = isCompleteShasLocation(requestedLocation)
+      ? replaceCategoryTagsWithShasLocation(stringArray(editing.tags), requestedLocation)
+      : stringArray(editing.tags);
     const { error } = await supabase.from("cards").update({
       question: editQuestion.trim(),
       answer: editing.type === "flashcard" || editing.type === "combo" ? editAnswer.trim() : editing.answer,
@@ -208,6 +226,10 @@ export function UserQuestionsTab() {
       explanation: editExplanation.trim() || null,
       options: options as Json,
       correct_indices: correctIndices as Json,
+      tags: tags as Json,
+      masechta: requestedLocation.masechta,
+      daf: requestedLocation.daf,
+      amud: requestedLocation.amud,
       moderation_status: "reviewed",
       moderated_at: new Date().toISOString(),
       moderated_by: meId,
@@ -359,7 +381,7 @@ export function UserQuestionsTab() {
           </div>
           <div className="min-w-0 xl:col-span-2">
             <Label className="mb-1 block text-xs text-muted-foreground">משתמש</Label>
-            <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, count }) => <SelectItem key={id} value={id}>{userLabel(id)} ({count})</SelectItem>)}</SelectContent></Select>
+            <Select value={userFilter} onValueChange={setUserFilter}><SelectTrigger className="w-full min-w-0"><SelectValue placeholder="כל המשתמשים" /></SelectTrigger><SelectContent><SelectItem value="all">כל המשתמשים</SelectItem>{userChoices.map(({ id, count }) => <SelectItem key={id} value={id}>{userIdentity(id).name} ({count})</SelectItem>)}</SelectContent></Select>
           </div>
           <div className="min-w-0 xl:col-span-2">
             <Label className="mb-1 block text-xs text-muted-foreground">סטטוס</Label>
@@ -404,7 +426,7 @@ export function UserQuestionsTab() {
       <div className="grid gap-3">
         {filtered.map((row) => {
           const sourceId = creatorId(row);
-          const profile = profileMap.get(sourceId);
+          const identity = userIdentity(sourceId);
           const status = (row.moderation_status || "private") as ModerationStatus;
           const options = stringArray(row.options);
           const correct = numberArray(row.correct_indices);
@@ -423,7 +445,10 @@ export function UserQuestionsTab() {
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2"><Badge>{TYPE_LABEL[row.type] || row.type}</Badge><Badge variant="outline">{STATUS_LABEL[status]}</Badge><Badge variant="secondary">{source === "desktop" ? "אפליקציה" : source === "web" ? "אתר" : "מקור ישן"}</Badge><span className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString("he-IL")}</span></div>
                 <p className="font-bold text-foreground whitespace-pre-wrap">{row.question}</p>
-                <p className="mt-1 text-xs text-muted-foreground">מוסיף השאלה: {userLabel(sourceId)} · {profile?.email || sourceId}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid="question-author-identity">
+                  <span>מוסיף השאלה: <strong className="text-foreground">{identity.name}</strong></span>
+                  {identity.email && <><span aria-hidden="true">·</span><span dir="ltr">{identity.email}</span></>}
+                </p>
               </div>
               <div className="flex flex-wrap gap-1">
                 <Button size="icon" variant="outline" title="עריכה" onClick={() => startEdit(row)}><Pencil className="h-4 w-4" /></Button>
@@ -440,8 +465,10 @@ export function UserQuestionsTab() {
               {row.explanation && <p className="mt-2"><b>הסבר:</b> {row.explanation}</p>}
             </div>
             <div className="flex flex-wrap items-center gap-1 text-sm">
-              <b>סיווג:</b>
-              {classification.length > 0
+              <b>הסיווג שנשלח:</b>
+              {formatShasLocation(row)
+                ? <Badge variant="outline" className="border-gold/70 bg-gold/5">{formatShasLocation(row)}</Badge>
+                : classification.length > 0
                 ? classification.map((name, index) => <span key={`${name}-${index}`} className="flex items-center gap-1"><Badge variant="outline">{name}</Badge>{index < classification.length - 1 && <span className="text-muted-foreground">←</span>}</span>)
                 : <Badge variant="outline">ללא סיווג</Badge>}
             </div>
@@ -451,8 +478,30 @@ export function UserQuestionsTab() {
       </div>
 
       <Dialog open={!!editing} onOpenChange={(value) => !value && setEditing(null)}>
-        <DialogContent className="max-w-2xl" dir="rtl"><DialogHeader><DialogTitle>עריכת שאלת משתמש</DialogTitle><DialogDescription>השינוי נשמר אצל המשתמש ומסומן כבדיקת מנהל.</DialogDescription></DialogHeader>
-          <div className="space-y-3"><div><Label>שאלה</Label><Textarea value={editQuestion} onChange={(event) => setEditQuestion(event.target.value)} rows={4} /></div>
+        <DialogContent className="max-w-2xl" dir="rtl"><DialogHeader><DialogTitle>עריכת שאלה וסיווג</DialogTitle><DialogDescription>אפשר לאשר את המיקום שהמשתמש שלח או לשנות אותו לפני ההעברה למאגר.</DialogDescription></DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-gold/50 bg-gold/5 p-3 space-y-2">
+              <Label className="font-bold">מיקום במערכת</Label>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Select value={editMasechta || "none"} onValueChange={(value) => {
+                  if (value === "none") { setEditMasechta(""); setEditDaf(null); setEditAmud(null); return; }
+                  setEditMasechta(value); setEditDaf(2); setEditAmud(1);
+                }}>
+                  <SelectTrigger data-testid="moderation-masechta"><SelectValue placeholder="בחר מסכת" /></SelectTrigger>
+                  <SelectContent><SelectItem value="none">ללא שיוך ש״ס</SelectItem>{SHAS_BAVLI.map((item) => <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>)}</SelectContent>
+                </Select>
+                <Select value={editDaf ? String(editDaf) : "none"} disabled={!editMasechta} onValueChange={(value) => setEditDaf(value === "none" ? null : Number(value))}>
+                  <SelectTrigger data-testid="moderation-daf"><SelectValue placeholder="בחר דף" /></SelectTrigger>
+                  <SelectContent>{editMasechta && Array.from({ length: (SHAS_BAVLI.find((item) => item.name === editMasechta)?.pages ?? 0) }, (_, index) => index + 2).map((page) => <SelectItem key={page} value={String(page)}>דף {dafLabel(page).replace(".", "")}</SelectItem>)}</SelectContent>
+                </Select>
+                <Select value={editAmud ? String(editAmud) : "none"} disabled={!editDaf} onValueChange={(value) => setEditAmud(value === "1" ? 1 : value === "2" ? 2 : null)}>
+                  <SelectTrigger data-testid="moderation-amud"><SelectValue placeholder="בחר עמוד" /></SelectTrigger>
+                  <SelectContent><SelectItem value="1">עמוד א׳</SelectItem><SelectItem value="2">עמוד ב׳</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">בעת אישור, השאלה תיכנס ישירות למיקום זה במאגר המרכזי.</p>
+            </div>
+            <div><Label>שאלה</Label><Textarea value={editQuestion} onChange={(event) => setEditQuestion(event.target.value)} rows={4} /></div>
             {(editing?.type === "flashcard" || editing?.type === "combo" || editing?.type === "boolean") && <div><Label>תשובה</Label><Textarea value={editAnswer} onChange={(event) => setEditAnswer(event.target.value)} rows={2} /></div>}
             {(editing?.type === "multiple" || editing?.type === "combo") && <><div><Label>אפשרויות — שורה לכל אפשרות</Label><Textarea value={editOptions} onChange={(event) => setEditOptions(event.target.value)} rows={5} /></div><div><Label>מספרי תשובות נכונות, לדוגמה 1,3</Label><Input value={editCorrect} onChange={(event) => setEditCorrect(event.target.value)} /></div></>}
             <div><Label>הסבר</Label><Textarea value={editExplanation} onChange={(event) => setEditExplanation(event.target.value)} rows={3} /></div>

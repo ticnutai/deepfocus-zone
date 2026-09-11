@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/theme/ThemeProvider";
+import { ThemeStudioProvider } from "@/theme/ThemeStudioProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 import { PermissionsProvider } from "@/hooks/usePermissions";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -59,6 +60,7 @@ const App = () => (
           <AuthProvider>
             <PermissionsProvider>
             <RestoreProvider>
+            <ThemeStudioProvider>
             <Suspense fallback={null}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
@@ -78,6 +80,7 @@ const App = () => (
             <GlobalRestoreHost />
             <OfflineBadge />
             <VersionBadge />
+            </ThemeStudioProvider>
             </RestoreProvider>
             </PermissionsProvider>
           </AuthProvider>

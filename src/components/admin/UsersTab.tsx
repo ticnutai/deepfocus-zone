@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { syntheticEmailForUsername } from "@/lib/auth/localAccount";
+import { publicUserIdentity } from "@/lib/admin/userIdentity";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,8 +39,6 @@ const STATUS_LABEL: Record<string, string> = { approved: "מאושר", pending: 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   approved: "default", pending: "secondary", blocked: "destructive",
 };
-const isTechnicalEmail = (email: string | null) => !email || email.endsWith("@users.local") || email === "guest@local";
-const friendlyName = (profile: Profile) => profile.display_name || profile.username || (!isTechnicalEmail(profile.email) ? profile.email : null) || "משתמש מקומי";
 const formatDuration = (seconds: number) => seconds < 60 ? `${seconds} שנ׳` : seconds < 3600 ? `${Math.round(seconds / 60)} דק׳` : `${Math.floor(seconds / 3600)} ש׳ ${Math.round((seconds % 3600) / 60)} דק׳`;
 
 export function UsersTab() {
@@ -422,6 +421,7 @@ export function UsersTab() {
             const userRolesList = rolesOf(p.id);
             const availableRoles = roles.filter((r) => !userRolesList.find((ur) => ur.id === r.id));
             const isMe = p.id === me?.id;
+            const identity = publicUserIdentity(p);
             return (
               <div key={p.id} className={`rounded-xl border-2 p-3 space-y-2 transition-colors ${selected.has(p.id) ? "border-gold bg-gold/5" : "border-gold/40 bg-card"}`}>
                 <div className="flex items-start gap-2 flex-wrap">
@@ -432,12 +432,10 @@ export function UsersTab() {
                       <Badge variant={STATUS_VARIANT[p.status] ?? "outline"} className="text-xs">
                         {STATUS_LABEL[p.status] ?? p.status}
                       </Badge>
-                      <span className="font-medium text-foreground">{friendlyName(p)}</span>
+                      <span className="font-medium text-foreground">{identity.name}</span>
                     </div>
                     <div className="flex flex-wrap items-center justify-start gap-2 text-xs text-muted-foreground">
-                      {p.username && <span>שם משתמש: <strong className="text-foreground">{p.username}</strong></span>}
-                      {p.email && !isTechnicalEmail(p.email) && <span dir="ltr">{p.email}</span>}
-                      {isTechnicalEmail(p.email) && <Badge variant="outline" className="text-[10px]">חשבון מקומי</Badge>}
+                      {identity.email && <span dir="ltr">{identity.email}</span>}
                     </div>
                     <div className="flex flex-wrap items-center justify-start gap-3 text-[11px] text-muted-foreground">
                       <span>כניסות: <strong className="text-foreground">{activityByUser[p.id]?.loginCount ?? 0}</strong></span>

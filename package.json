@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "qa:no-duplicates": "node scripts/audit-no-duplicate-systems.mjs",
     "perf:sidebar": "node scripts/benchmark-sidebar.mjs",
     "perf:sidebar:update": "node scripts/benchmark-sidebar.mjs --update-baseline",
     "electron:dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on http://localhost:5000 && cross-env ELECTRON_DEV=1 ELECTRON_DEV_URL=http://localhost:5000 electron .\"",

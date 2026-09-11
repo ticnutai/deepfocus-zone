@@ -176,6 +176,8 @@ if (isPublishOnly) {
 }
 
 console.log(`\n==> Installer version: ${currentVersion} -> ${installerVersion}`);
+await run("npm", ["run", "qa:no-duplicates"], "בדיקת כפילויות והתנגשויות");
+await run("node", ["scripts/sync-published-theme-default.mjs"], "סנכרון ברירת המחדל של ערכת הנושא למתקין");
 acquireBuildLock();
 versionToRestore = currentVersion;
 process.once("SIGINT", () => handleInterruptedBuild("Ctrl+C"));

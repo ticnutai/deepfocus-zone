@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { dafLabel } from "@/lib/study/shasGen";
+import { shasCategoryPath } from "@/lib/study/shasClassification";
 
 const RECENT_CATS_KEY = "card-editor:recent-cats";
 const MAX_RECENT = 6;
@@ -231,7 +232,12 @@ export function CardEditor({ deckId, onClose, editCard, prefillCategories, prefi
       return;
     }
     const plainTags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
-    const categoryTags = selectedCategoryNames.map((n) => `cat:${n}`);
+    const effectiveCategoryNames = selectedCategoryNames.length > 0
+      ? selectedCategoryNames
+      : prefillDaf
+        ? shasCategoryPath(prefillDaf)
+        : [];
+    const categoryTags = effectiveCategoryNames.map((n) => `cat:${n}`);
     const tags = [...plainTags, ...categoryTags];
     if (selectedCategoryNames.length) pushRecent(selectedCategoryNames);
 

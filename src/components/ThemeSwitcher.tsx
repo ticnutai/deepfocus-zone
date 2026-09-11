@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Palette, Check, Pencil, Copy, RotateCcw, Trash2, Save, X, PanelsTopLeft } from "lucide-react";
+import { Palette, Check, Pencil, Copy, RotateCcw, Trash2, Save, X, PanelsTopLeft, WandSparkles, CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ColorFavoritesRow } from "@/components/ui/color-favorites-row";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useTheme, THEME_TOKEN_KEYS, type ThemeTokens, type ThemeDef, BUILTIN_THEMES } from "@/theme/ThemeProvider";
 import { useColorFavorites } from "@/lib/study/colorFavorites";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useThemeStudio } from "@/theme/ThemeStudioProvider";
 
 const TOKEN_LABELS: Record<string, string> = {
   background: "רקע ראשי", foreground: "טקסט ראשי",
@@ -198,6 +200,7 @@ function PreviewChip({
 }
 
 function ThemeEditorDialog({ open, onOpenChange, themeId }: EditorProps) {
+  const { isAdmin, viewerIsAdmin } = usePermissions();
   const { allThemes, saveThemeTokens, duplicateTheme, setTheme } = useTheme();
   const { favorites, addFavorite, removeFavorite, moveFavorite } = useColorFavorites();
   const theme = allThemes.find((t) => t.id === themeId);
@@ -407,7 +410,7 @@ function ThemeEditorDialog({ open, onOpenChange, themeId }: EditorProps) {
     };
   }, [open, resizingSide, isMobileView]);
 
-  if (!theme) return null;
+  if (!theme || !isAdmin || !viewerIsAdmin) return null;
   if (!open) return null;
 
   const startResize = (side: "left" | "right", clientX: number) => {
@@ -873,7 +876,10 @@ interface ThemeSwitcherProps {
 }
 
 export const ThemeSwitcher = ({ activeThemeId, onThemeSelect }: ThemeSwitcherProps = {}) => {
-  const { theme, setTheme, allThemes, deleteCustomTheme } = useTheme();
+  const { theme, setTheme, allThemes, deleteCustomTheme, duplicateTheme, getEffectiveTokens } = useTheme();
+  const { isAdmin, viewerIsAdmin } = usePermissions();
+  const { start, publishDefault, publishing } = useThemeStudio();
+  const canAuthor = isAdmin && viewerIsAdmin;
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const resolvedActiveThemeId = activeThemeId ?? theme;
@@ -896,7 +902,7 @@ export const ThemeSwitcher = ({ activeThemeId, onThemeSelect }: ThemeSwitcherPro
         <PopoverContent align="end" className="w-80 border-2 border-gold rounded-2xl shadow-elegant">
           <div className="space-y-1">
             <p className="font-display text-base font-semibold text-foreground">ערכות נושא</p>
-            <p className="text-xs text-muted-foreground mb-3">בחר, ערוך, או שכפל</p>
+            <p className="text-xs text-muted-foreground mb-3">בחר ערכה אישית{canAuthor ? ", ערוך או פרסם ברירת מחדל" : ""}</p>
             <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
               {allThemes.map((t: ThemeDef) => {
                 const active = t.id === resolvedActiveThemeId;
@@ -917,7 +923,7 @@ export const ThemeSwitcher = ({ activeThemeId, onThemeSelect }: ThemeSwitcherPro
                       </div>
                       {active && <Check className="h-4 w-4 text-gold shrink-0" />}
                     </button>
-                    <div className="flex items-center gap-0.5">
+                    {canAuthor && <div className="flex items-center gap-0.5">
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); openEditor(t.id); }}
@@ -939,11 +945,25 @@ export const ThemeSwitcher = ({ activeThemeId, onThemeSelect }: ThemeSwitcherPro
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
             </div>
+            {canAuthor && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gold/30 pt-3">
+              <p className="col-span-2 text-[11px] leading-relaxed text-muted-foreground">שינויים נשמרים תחילה כטיוטה שלך. לחיצה על פרסום קובעת אותם כברירת המחדל למשתמשים חדשים ולמי שלא בחר ערכה אישית.</p>
+              <Button type="button" size="sm" variant="outline" className="gap-1 border-gold/50" onClick={() => {
+                const base = allThemes.find((item) => item.id === resolvedActiveThemeId) ?? allThemes[0];
+                if (!base) return;
+                const name = window.prompt("שם הערכה החדשה", `${base.label} — חדשה`);
+                if (!name?.trim()) return;
+                const id = duplicateTheme(base.id, name.trim(), getEffectiveTokens(base.id));
+                pickTheme(id);
+                openEditor(id);
+              }}><Copy className="h-3.5 w-3.5" />ערכה חדשה</Button>
+              <Button type="button" size="sm" variant="outline" className="gap-1 border-gold/50" onClick={start}><WandSparkles className="h-3.5 w-3.5" />עריכה חיה</Button>
+              <Button type="button" size="sm" className="col-span-2 gap-1" disabled={publishing} onClick={() => void publishDefault()}><CloudUpload className="h-3.5 w-3.5" />{publishing ? "מפרסם..." : "פרסם כברירת מחדל לכל המשתמשים"}</Button>
+            </div>}
           </div>
         </PopoverContent>
       </Popover>

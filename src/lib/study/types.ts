@@ -231,6 +231,34 @@ export type WidgetLayout = Record<string, WidgetConfig[]>;
 
 // === UI preferences (per-user toggles) ===
 export interface UiPrefs {
+  /** Personal app theme selection/catalog. Local-first and synced through the existing ui_prefs bucket. */
+  themePreferences?: {
+    schemaVersion: 1;
+    themeId: string;
+    overrides: Record<string, Record<string, string>>;
+    customThemes: Array<{
+      id: string;
+      label: string;
+      description: string;
+      swatch: string[];
+      builtin: false;
+      tokens: Record<string, string>;
+    }>;
+    updatedAt: number;
+  };
+  /** Personal live-design rules and editor geometry; independent from the color-theme catalog. */
+  themeDesign?: {
+    schemaVersion: 1;
+    rules: Array<{
+      id: string;
+      selector: string;
+      label: string;
+      scope: "element" | "component" | "global";
+      styles: Record<string, string>;
+    }>;
+    geometry: { x: number; y: number; width: number; height: number };
+    updatedAt: number;
+  };
   showCalendarSubjects?: boolean; // הצגת שמות הלימודים על תאי לוח השנה
   showStudiedBadge?: boolean;     // נקודת "למדתי היום" על לשונית הלימוד
   // Calendar legend toggles (default true = visible)
