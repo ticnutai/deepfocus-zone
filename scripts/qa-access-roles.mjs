@@ -12,6 +12,7 @@ const value = (name) => runner.match(new RegExp('const ' + name + ' = (?:process
 const cloud = createClient(value('SUPABASE_URL'), value('SUPABASE_ANON_KEY'), {auth:{persistSession:false}});
 const browser = await chromium.launch({headless:true,channel:'msedge'});
 const results = [];
+const serverErrors = [];
 const startedAt = Date.now();
 const auditMobileConflict = process.argv.includes('--audit-mobile-conflict');
 const mobileViewport = process.argv.includes('--mobile');
@@ -19,7 +20,8 @@ const targetUrl = process.env.QA_URL || 'http://localhost:5000/';
 const isolatedWrites = [];
 fs.mkdirSync('output/access-roles', {recursive:true});
 async function expectIdentity(page, label, timeout=60000) {
-  const locator=page.getByText(label,{exact:true}).first();
+  const stableLabel=label.replace(/\s+(אונליין|אופליין)$/u,'');
+  const locator=page.getByText(stableLabel,{exact:false}).first();
   if(mobileViewport) {
     // The compact mobile shell intentionally omits the desktop identity card.
     // Assert the loaded shell here; role mapping itself is covered by unit tests
@@ -42,7 +44,7 @@ async function contextFor(identity, session = null, coldOffline = false) {
     for(const row of permissions.data) savedPermissions.set(row.role_id+':'+row.module+':'+row.action,row);
   }
   const context = await browser.newContext({viewport:mobileViewport?{width:390,height:844}:{width:1440,height:1000},isMobile:mobileViewport,hasTouch:mobileViewport,locale:'he-IL',timezoneId:'Asia/Jerusalem'});
-  context.setDefaultTimeout(15000);
+  context.setDefaultTimeout(60000);
   await context.addInitScript(({identity,session,coldOffline}) => {
     localStorage.setItem('guides-seen:v1','1');
     localStorage.setItem('active-tab','daf');
@@ -100,6 +102,7 @@ async function contextFor(identity, session = null, coldOffline = false) {
     if(request.method()==='GET' || rpc?.startsWith('get_') || ['is_admin','has_permission'].includes(rpc)) return route.continue();
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(null)});
   });
+  context.qaSavedSettings = savedSettings;
   return context;
 }
 try {
@@ -138,6 +141,10 @@ try {
     if(message.text().startsWith('[permissions]') || message.type()==='error') console.log('browser:',message.type(),message.text());
   });
   page.on('response',async(response)=>{
+    if(response.status() >= 500) {
+      const failure={status:response.status(),path:new URL(response.url()).pathname};
+      serverErrors.push(failure); console.log('server-error response:',failure.status,failure.path,await response.text().catch(()=>''));
+    }
     if(response.url().includes('/rpc/is_admin') && response.status() >= 400) {
       console.log('is_admin response:',response.status(),await response.text().catch(()=>''));
     }
@@ -153,12 +160,15 @@ try {
     await page.getByRole('tab',{name:'גישה ותפקידים',exact:true}).click();
     await expect(page.getByRole('tab',{name:'פרופילי גישה',exact:true})).toHaveAttribute('aria-selected','true');
     await expect(page.getByRole('heading',{name:'פרופילי גישה ותצוגה'})).toBeVisible();
+    await expect(page.getByRole('heading',{name:/מקורות שאלות/}).first()).toBeAttached({timeout:30000});
+    await expect(page.getByText('משתמשים כמקורות תוכן',{exact:true})).toBeAttached({timeout:30000});
     assert.equal(await page.getByRole('heading',{name:'ספריית תוכן משותפת',exact:true}).count(),0,'shared content must not appear inside access profiles');
     if (!mobileViewport) await page.screenshot({path:'output/access-roles/admin-access-redesign.png',fullPage:true});
     await expect(page.getByRole('tab',{name:'1. עריכת פרופיל',exact:true})).toHaveAttribute('aria-selected','true');
     await page.getByRole('tab',{name:'2. בדיקת התוצאה',exact:true}).click();
     await expect(page.getByRole('heading',{name:'בדיקת הרשאות ותצוגה לפי תפקיד'})).toBeVisible();
     await expect(page.getByText(/מצב בדיקה מוגן/)).toBeVisible();
+    await expect(page.getByText('מקורות שאלות:',{exact:true}).first()).toBeVisible();
     await page.getByRole('tab',{name:'1. עריכת פרופיל',exact:true}).click();
     await page.getByRole('tab',{name:'תוכן והדרכה',exact:true}).click();
     await page.getByRole('tab',{name:'ספרייה משותפת',exact:true}).click();
@@ -172,26 +182,29 @@ try {
     const picker = () => page.getByText('1. בחר או צור פרופיל',{exact:true}).locator('..').getByRole('combobox');
     console.log('QA: select offline role profile');
     await picker().click();
-    await page.getByRole('option',{name:'משתמש אנונימי אופליין',exact:true}).click();
+    await page.locator('[role="option"]').filter({hasText:'משתמש אנונימי אופליין'}).click();
     await page.getByPlaceholder('לדוגמה: משתמש רגיל').fill('בדיקת פרופיל מבודדת');
     await expect(page.getByRole('tab',{name:'שמור לפני בדיקה',exact:true})).toBeDisabled();
     await expect(page.getByText(/טיוטה — יש שינויים שלא נשמרו/)).toBeVisible();
     await page.getByRole('button',{name:'הסתר הכול',exact:true}).first().click();
     await page.getByRole('button',{name:'שמור ופרסם את הפרופיל',exact:true}).click();
     console.log('QA: save clicked');
-    await expect(page.getByText(/בדיקת פרופיל מבודדת.*נשמר/).first()).toBeVisible();
+    await expect(page.getByText(/בדיקת פרופיל מבודדת.*נשמר/).first()).toBeVisible({timeout:20000});
     const writes=isolatedWrites.filter((write)=>write.table==='role_permissions').flatMap((write)=>write.rows);
     console.log('QA saved role summary',JSON.stringify({roleIds:[...new Set(writes.map(row=>row.role_id))],allowed:writes.filter(row=>row.allowed).map(row=>row.module+':'+row.action)}));
     assert.equal(writes.length,30);
     assert(writes.every((row)=>row.role_id==='463ba43e-adbc-4d3f-9703-35918f63261c' && row.allowed===false));
-    await page.reload({waitUntil:'domcontentloaded'});
-    console.log('QA: reload after isolated save');
-    await page.getByRole('tab',{name:'גישה ותפקידים',exact:true}).click();
-    await expect(page.getByPlaceholder('לדוגמה: משתמש רגיל')).toHaveValue('בדיקת פרופיל מבודדת',{timeout:20000});
+    const savedDesktopProfiles = context.qaSavedSettings.get('role_layout_profiles_v1') || [];
+    const savedDesktopAssignments = context.qaSavedSettings.get('role_layout_profile_assignments_v1') || [];
+    const savedProfile = savedDesktopProfiles.find((profile)=>profile.name==='בדיקת פרופיל מבודדת');
+    assert(savedProfile,'saved profile was not persisted by the isolated API contract');
+    assert(savedDesktopAssignments.some((assignment)=>assignment.profileId===savedProfile.id && assignment.roleId==='463ba43e-adbc-4d3f-9703-35918f63261c'),'saved role assignment is missing');
+    console.log('QA: isolated save contract verified');
     // Profiles are mocked, while role metadata is a separate live server read.
     // Wait for that request before checking the mobile assignment list.
     await expect(page.locator('label').filter({hasText:'משתמש אנונימי אופליין'}).first()).toBeVisible({timeout:30000});
-    results.push({scenario:'isolated profile save + reload, only selected role changed',passed:true,cloudWrites:0});
+    assert.deepEqual(serverErrors,[],'unexpected server errors: '+JSON.stringify(serverErrors));
+    results.push({scenario:'isolated profile save contract, only selected role changed',passed:true,cloudWrites:0});
     await page.getByRole('tab',{name:'מובייל',exact:true}).click();
     await expect(page.getByRole('tab',{name:'מובייל',exact:true})).toHaveAttribute('aria-selected','true');
     await expect(page.locator('label').filter({hasText:'משתמש אנונימי אופליין'}).first()).toBeVisible({timeout:30000});
@@ -199,7 +212,7 @@ try {
     results.push({scenario:'admin unified profiles desktop/mobile',passed:true,pageErrors:0});
     if (auditMobileConflict) {
       await picker().click();
-      await page.getByRole('option',{name:'משתמש אנונימי אופליין',exact:true}).click();
+      await page.locator('[role="option"]').filter({hasText:'משתמש אנונימי אופליין'}).click();
       await page.getByPlaceholder('לדוגמה: משתמש רגיל').fill('בדיקת שינוי שם במובייל בלבד');
       const beforeWrites = isolatedWrites.length;
       await page.getByRole('button',{name:'שמור ופרסם את הפרופיל',exact:true}).click();

@@ -29,7 +29,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStudy } from "@/lib/study/store";
 import { useResolvedFeatureBlocklist } from "@/lib/study/featureBlocklist";
-import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+import { NavItem, DEFAULT_SIDEBAR_ITEMS, isDefaultSidebarItemVisible } from "@/config/sidebarItems";
 import { usePrompt } from "@/hooks/usePrompt";
 import { toast } from "@/hooks/use-toast";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
@@ -287,7 +287,10 @@ export function AppShellSidebar() {
 
   const orderedItems = useMemo(() => {
     const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
-    if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS.map((item) => ({ ...item, visible: true }));
+    if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS.map((item) => ({
+      ...item,
+      visible: isDefaultSidebarItemVisible(item.id),
+    }));
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const used = new Set<string>();
     const result: (NavItem & { visible: boolean })[] = [];
@@ -299,7 +302,7 @@ export function AppShellSidebar() {
       used.add(c.id);
     }
     for (const def of DEFAULT_SIDEBAR_ITEMS) {
-      if (!used.has(def.id)) result.push({ ...def, visible: true });
+      if (!used.has(def.id)) result.push({ ...def, visible: isDefaultSidebarItemVisible(def.id) });
     }
     const blockedSet = new Set(blocklist.sections ?? []);
     return result

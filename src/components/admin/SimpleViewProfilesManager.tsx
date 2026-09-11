@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Circle, Copy, Eye, LayoutTemplate, Plus, Save, ShieldCheck, Trash2, Users } from "lucide-react";
+import { BookOpen, Check, Circle, Copy, Eye, LayoutTemplate, Plus, Save, ShieldCheck, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
@@ -30,6 +30,8 @@ import {
 import {
   loadRoleLayoutProfileAssignments,
   loadRoleLayoutProfiles,
+  DEFAULT_CONTENT_ACCESS,
+  type ContentAccessProfile,
   type LayoutScope,
   type RoleLayoutProfile,
   type RoleLayoutProfileAssignment,
@@ -43,6 +45,7 @@ interface UnifiedProfile {
   id: string;
   name: string;
   actionPermissions: ProfileActionPermissions;
+  contentAccess: ContentAccessProfile;
   hiddenSections: string[];
   hiddenWidgets: Record<string, string[]>;
   widgetLayout: WidgetLayout;
@@ -50,6 +53,21 @@ interface UnifiedProfile {
   categoryTemplate: CategoryTemplateItem[];
   compactInnerPages: boolean;
   updatedAt: number;
+}
+
+interface RoleContentAccessRow {
+  role_id: string;
+  include_own: boolean;
+  include_site_library: boolean;
+  approved_only: boolean;
+  source_user_ids: string[];
+}
+
+interface ContentSourceOption {
+  source_user_id: string;
+  label: string;
+  email: string | null;
+  question_count: number;
 }
 
 const ADMIN_ONLY_SECTION_IDS = new Set(["admin", "system-rubric", "db-inspector", "perf", "ai-generator", "question-lab"]);
@@ -138,6 +156,7 @@ function mergeProfiles(
   layoutAssignments: RoleLayoutProfileAssignment[],
   blockAssignments: RoleBlocklistAssignment[],
   permissionRows: Array<{ role_id: string; module: string; action: string; allowed: boolean }>,
+  contentRows: RoleContentAccessRow[],
 ): UnifiedProfile[] {
   const ids = new Set([...layoutProfiles.map((p) => p.id), ...blockProfiles.map((p) => p.id)]);
   return Array.from(ids).map((id) => {
@@ -148,12 +167,20 @@ function mergeProfiles(
     const storedPermissions = layout?.actionPermissions ?? {};
     const actionPermissions = assignedRoleId && assignedRoleId !== LOCAL_OFFLINE_ROLE_ID
       ? rolePermissionsToProfile(permissionRows, assignedRoleId) : storedPermissions;
+    const roleContent = assignedRoleId ? contentRows.find((row) => row.role_id === assignedRoleId) : undefined;
+    const storedContent = layout?.contentAccess ?? DEFAULT_CONTENT_ACCESS;
     const deniedPages = Object.entries(SECURITY_MODULE_SECTIONS)
       .flatMap(([module, sections]) => actionPermissions[module]?.view === false ? sections : []);
     return {
       id,
       name: layout?.name ?? block?.name ?? "ללא שם",
       actionPermissions,
+      contentAccess: roleContent ? {
+        includeOwn: roleContent.include_own,
+        includeSiteLibrary: roleContent.include_site_library,
+        approvedOnly: roleContent.approved_only,
+        sourceUserIds: roleContent.source_user_ids ?? [],
+      } : storedContent,
       hiddenSections: Array.from(new Set([...(block?.blocklist.sections ?? []), ...deniedPages])),
       hiddenWidgets: normalizeHiddenWidgets(block?.blocklist.widgets ?? {}),
       widgetLayout: layoutWithUnifiedVisibility(layout?.widgetLayout ?? {}),
@@ -192,6 +219,8 @@ export function SimpleViewProfilesManager({
   const [blockAssignments, setBlockAssignments] = useState<RoleBlocklistAssignment[]>([]);
   const [assignedRoleIds, setAssignedRoleIds] = useState<string[]>([]);
   const [permissionRows, setPermissionRows] = useState<Array<{role_id:string;module:string;action:string;allowed:boolean}>>([]);
+  const [contentSources, setContentSources] = useState<ContentSourceOption[]>([]);
+  const [sourceSearch, setSourceSearch] = useState("");
   const [permissionDirty, setPermissionDirty] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
   const [persistedVersions, setPersistedVersions] = useState<Record<string,number>>({});
@@ -207,23 +236,29 @@ export function SimpleViewProfilesManager({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [layoutRows, blockRows, layoutLinks, blockLinks, permissionResult] = await Promise.all([
+      const [layoutRows, blockRows, layoutLinks, blockLinks, permissionResult, contentResult, sourceResult] = await Promise.all([
         loadRoleLayoutProfiles({ force: true, scope }),
         loadFeatureBlocklistProfiles({ force: true, scope: scope as BlocklistScope }),
         loadRoleLayoutProfileAssignments({ force: true, scope }),
         loadRoleBlocklistAssignments({ force: true, scope: scope as BlocklistScope }),
         supabase.from("role_permissions").select("role_id,module,action,allowed"),
+        supabase.from("role_content_access").select("role_id,include_own,include_site_library,approved_only,source_user_ids"),
+        supabase.rpc("get_admin_content_sources"),
       ]);
       if (permissionResult.error) throw permissionResult.error;
+      if (contentResult.error) console.warn("[access-profiles] content rules unavailable:", contentResult.error);
+      if (sourceResult.error) console.warn("[access-profiles] content sources unavailable:", sourceResult.error);
       const merged = mergeProfiles(
         layoutRows,
         blockRows,
         layoutLinks,
         blockLinks,
         (permissionResult.data ?? []) as Array<{ role_id: string; module: string; action: string; allowed: boolean }>,
+        (contentResult.data ?? []) as RoleContentAccessRow[],
       );
       setProfiles(merged);
       setPermissionRows(permissionResult.data ?? []);
+      if (sourceResult.data) setContentSources(sourceResult.data as ContentSourceOption[]);
       setPersistedVersions(Object.fromEntries(merged.map(p => [p.id, p.updatedAt])));
       setPermissionDirty(false);
       setDraftDirty(false);
@@ -288,6 +323,7 @@ export function SimpleViewProfilesManager({
       id,
       name: `פרופיל חדש ${profiles.length + 1}`,
       actionPermissions: {},
+      contentAccess: { ...DEFAULT_CONTENT_ACCESS },
       hiddenSections: [],
       hiddenWidgets: {},
       widgetLayout: currentWidgetLayout,
@@ -314,6 +350,7 @@ export function SimpleViewProfilesManager({
       actionPermissions: Object.fromEntries(
         Object.entries(draft.actionPermissions).map(([module, actions]) => [module, { ...actions }]),
       ),
+      contentAccess: { ...draft.contentAccess, sourceUserIds: [...draft.contentAccess.sourceUserIds] },
       hiddenWidgets: Object.fromEntries(Object.entries(draft.hiddenWidgets).map(([key, value]) => [key, [...value]])),
       updatedAt: Date.now(),
     };
@@ -403,6 +440,19 @@ export function SimpleViewProfilesManager({
     setAssignedRoleIds((prev) => prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]);
   };
 
+  const updateContentAccess = (patch: Partial<ContentAccessProfile>) => {
+    if (!draft) return;
+    setDraft({ ...draft, contentAccess: { ...draft.contentAccess, ...patch } });
+    setDraftDirty(true);
+  };
+
+  const toggleContentSource = (sourceUserId: string) => {
+    if (!draft) return;
+    const selected = new Set(draft.contentAccess.sourceUserIds);
+    if (selected.has(sourceUserId)) selected.delete(sourceUserId); else selected.add(sourceUserId);
+    updateContentAccess({ sourceUserIds: [...selected] });
+  };
+
   const save = async () => {
     if (!draft?.name.trim()) return toast.error("נא להזין שם לפרופיל");
     setBusy(true);
@@ -425,6 +475,7 @@ export function SimpleViewProfilesManager({
       const { error } = await supabase.rpc("admin_save_access_profile", {
         p_scope: scope,
         p_layout: { id: normalized.id, name: normalized.name, actionPermissions: normalized.actionPermissions,
+          contentAccess: normalized.contentAccess,
           widgetLayout: normalized.widgetLayout, sidebarConfig: normalized.sidebarConfig,
           categoryTemplate: normalized.categoryTemplate, compactInnerPages: normalized.compactInnerPages, updatedAt: now } as unknown as Json,
         p_block: { id: normalized.id, name: normalized.name,
@@ -436,8 +487,8 @@ export function SimpleViewProfilesManager({
       });
       if (error) throw error;
       window.dispatchEvent(new Event(ACCESS_POLICY_EVENT));
-      await load();
       toast.success(`הפרופיל "${normalized.name}" נשמר; התצוגה וכל ההרשאות סונכרנו`);
+      await load();
     } catch (error) {
       toast.error("שמירת הפרופיל נכשלה: " + (error instanceof Error ? error.message : String(error)));
     } finally {
@@ -474,6 +525,13 @@ export function SimpleViewProfilesManager({
     ? Object.values(normalizeHiddenWidgets(draft.hiddenWidgets)).reduce((count, widgets) => count + widgets.length, 0)
     : 0;
   const visibleWidgetCount = totalWidgetCount - hiddenWidgetCount;
+  const selectedSourceQuestions = draft ? contentSources
+    .filter((source) => draft.contentAccess.sourceUserIds.includes(source.source_user_id))
+    .reduce((sum, source) => sum + Math.max(0, Number(source.question_count || 0)), 0) : 0;
+  const visibleContentSources = contentSources.filter((source) => {
+    const query = sourceSearch.trim().toLocaleLowerCase("he");
+    return !query || [source.label, source.email, source.source_user_id].some((value) => value?.toLocaleLowerCase("he").includes(query));
+  });
   const splitAssignmentCount = useMemo(() => {
     return availableRoles.filter((role) => {
       const layoutId = layoutAssignments.find((row) => row.roleId === role.id)?.profileId;
@@ -612,9 +670,64 @@ export function SimpleViewProfilesManager({
             </section>
 
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-gold" />
+                <div>
+                  <h3 className="font-bold">3. מקורות שאלות — איזה תוכן המשתמש יראה</h3>
+                  <p className="text-xs text-muted-foreground">הסינון נאכף בשרת ומסונכרן לאופליין. בחירה כאן אינה מעניקה הרשאות עריכה בתוכן של אחרים.</p>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 ${draft.contentAccess.includeOwn ? "border-gold/50 bg-gold/5" : "border-border bg-muted/20"}`}>
+                  <Checkbox checked={draft.contentAccess.includeOwn} onCheckedChange={(checked) => updateContentAccess({ includeOwn: checked === true })} />
+                  <span><strong className="block">השאלות האישיות</strong><span className="text-xs text-muted-foreground">שאלות שהמשתמש עצמו יצר.</span></span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 ${draft.contentAccess.includeSiteLibrary ? "border-gold/50 bg-gold/5" : "border-border bg-muted/20"}`}>
+                  <Checkbox checked={draft.contentAccess.includeSiteLibrary} onCheckedChange={(checked) => updateContentAccess({ includeSiteLibrary: checked === true })} />
+                  <span><strong className="block">הספרייה המרכזית</strong><span className="text-xs text-muted-foreground">כל השאלות במאגר האתר המאושר.</span></span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 ${draft.contentAccess.approvedOnly ? "border-emerald-400/60 bg-emerald-50 dark:bg-emerald-950/20" : "border-amber-400/60 bg-amber-50 dark:bg-amber-950/20"}`}>
+                  <Checkbox checked={draft.contentAccess.approvedOnly} onCheckedChange={(checked) => updateContentAccess({ approvedOnly: checked === true })} />
+                  <span><strong className="block">רק שאלות מאושרות ממקורות</strong><span className="text-xs text-muted-foreground">מומלץ: מונע חשיפת טיוטות פרטיות של מוסיפים.</span></span>
+                </label>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-gold/30 p-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-semibold">משתמשים כמקורות תוכן</h4>
+                    <p className="text-xs text-muted-foreground">בחר אחד או כמה מזהים. הייחוס נשמר גם כאשר שאלה מועברת לספרייה המרכזית.</p>
+                  </div>
+                  <Input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder="חפש שם, דוא״ל או מזהה…" className="max-w-sm" />
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto pl-1">
+                  {visibleContentSources.map((source) => {
+                    const checked = draft.contentAccess.sourceUserIds.includes(source.source_user_id);
+                    return (
+                      <label key={source.source_user_id} className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-2.5 ${checked ? "border-gold/60 bg-gold/5" : "border-border"}`}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Checkbox checked={checked} onCheckedChange={() => toggleContentSource(source.source_user_id)} />
+                          <UserRound className="h-4 w-4 shrink-0 text-gold" />
+                          <span className="min-w-0"><strong className="block truncate text-sm">{source.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{source.email || source.source_user_id}</span></span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs font-bold">{source.question_count < 0 ? "מקור זמין" : `${Number(source.question_count || 0).toLocaleString("he-IL")} שאלות`}</span>
+                      </label>
+                    );
+                  })}
+                  {!visibleContentSources.length && <div className="py-5 text-center text-sm text-muted-foreground">לא נמצאו מקורות מתאימים</div>}
+                </div>
+              </div>
+              <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-sm font-semibold">
+                נבחרו {draft.contentAccess.sourceUserIds.length.toLocaleString("he-IL")} מקורות{selectedSourceQuestions > 0 ? ` עם ${selectedSourceQuestions.toLocaleString("he-IL")} שאלות מזוהות` : ""}
+                {draft.contentAccess.includeSiteLibrary ? " · בנוסף לספרייה המרכזית" : ""}
+                {draft.contentAccess.includeOwn ? " · ובנוסף לשאלות האישיות" : ""}
+              </div>
+            </section>
+
+            <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                <h3 className="font-bold">3. תצוגה — רכיבים בתוך העמודים</h3>
+                <h3 className="font-bold">4. תצוגה — רכיבים בתוך העמודים</h3>
                 <p className="text-xs text-muted-foreground">בחר אילו כרטיסים ורכיבים יופיעו. הגדרה זו אינה מעניקה הרשאות חדשות.</p>
                 </div>
                 <div className="flex gap-2">
@@ -648,7 +761,7 @@ export function SimpleViewProfilesManager({
             </section>
 
             <section className="rounded-xl border-2 border-gold/30 bg-card p-4">
-              <h3 className="font-bold">4. פריסה — סדר, גדלים וניצול מקום</h3>
+              <h3 className="font-bold">5. פריסה — סדר, גדלים וניצול מקום</h3>
               <p className="mt-1 text-xs text-muted-foreground">הפריסה מעתיקה רק את סידור המסך הנוכחי. היא אינה מציגה רכיב חסום ואינה משנה הרשאות.</p>
               <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-muted/30 p-3 text-sm">
                 <span>{draft.sidebarConfig.length} פריטי ניווט מסודרים</span>
@@ -676,7 +789,7 @@ export function SimpleViewProfilesManager({
               <div className="mb-3 flex items-center gap-2">
                 <Users className="h-5 w-5 text-gold" />
                 <div>
-                  <h3 className="font-bold">5. למי לשייך את הפרופיל?</h3>
+                  <h3 className="font-bold">6. למי לשייך את הפרופיל?</h3>
                   <p className="text-xs text-muted-foreground">אפשר לשייך את אותה תבנית לכמה סוגי משתמשים.</p>
                 </div>
               </div>

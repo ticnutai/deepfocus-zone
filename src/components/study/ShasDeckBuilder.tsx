@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { BookOpen, BookText, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Layers3, LayoutPanelTop, List, ListTree, Plus, Save, Scroll, Trash2, X } from "lucide-react";
+import { BookOpen, BookText, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Layers3, LayoutPanelTop, List, ListTree, Pin, PinOff, Plus, Save, Scroll, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useStudy } from "@/lib/study/store";
+import type { UiPrefs } from "@/lib/study/types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { SHAS_BAVLI, SEDARIM } from "@/lib/study/shasData";
 import { dafLabel } from "@/lib/study/shasGen";
@@ -13,11 +15,13 @@ import { cardsForShasDeckSources, shasDeckSourceLabel, type ShasDeckSource } fro
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { CardEditor } from "./CardEditor";
+import { STUDY_UI_DEFAULTS } from "@/config/studyUiDefaults";
 
 const DRAG_TYPE = "application/x-shas-deck-source";
 type QuestionView = "all" | "masechta" | "daf" | "amud";
 type ContentArea = "shas" | "mishna" | "chumash" | "neviim";
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
+type DafLearningPin = NonNullable<UiPrefs["dafLearningPins"]>[number];
 
 const CONTENT_TABS = [
   { id: "shas", label: "ש״ס", icon: Layers3 },
@@ -61,6 +65,7 @@ export function ShasDeckBuilder({
   const [seder, setSeder] = useState("מועד");
   const [masechta, setMasechta] = useState("שבת");
   const [daf, setDaf] = useState(2);
+  const [amud, setAmud] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [sources, setSources] = useState<ShasDeckSource[]>([]);
   const [existingCardIds, setExistingCardIds] = useState<string[]>([]);
@@ -75,8 +80,12 @@ export function ShasDeckBuilder({
   const [genericCategoryPath, setGenericCategoryPath] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [navigationStep, setNavigationStep] = useState<1 | 2 | 3 | 4>(1);
+  const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
   const loadedDeckId = useRef<string | null>(null);
-  const navigationMode = state.uiPrefs?.deckBuilderNavigationMode ?? "expanded";
+  const navigationMode = state.uiPrefs?.deckBuilderNavigationMode ?? STUDY_UI_DEFAULTS.deckBuilderNavigationMode;
+  const pins: DafLearningPin[] = state.uiPrefs?.dafLearningPins ?? [];
+  const currentPinId = `${masechta}::${daf}::${amud}`;
+  const isCurrentPinned = pins.some((pin) => pin.id === currentPinId);
 
   const masechtot = useMemo(() => SHAS_BAVLI.filter((item) => item.seder === seder), [seder]);
   const displayedMasechtot = overview ? SHAS_BAVLI : masechtot;
@@ -209,6 +218,27 @@ export function ShasDeckBuilder({
     }
     setSelectedSources(selectedSources.length > 0 ? [] : allSelectableSources);
   };
+  const jumpToPin = (pin: DafLearningPin) => {
+    setContentArea("shas");
+    setSeder(pin.seder);
+    setMasechta(pin.masechta);
+    setDaf(pin.daf);
+    setAmud(pin.amud);
+    setNavigationStep(4);
+    setQuestionSource(purpose === "question" ? makeSource({
+      kind: "amud",
+      masechta: pin.masechta,
+      daf: pin.daf,
+      amud: pin.amud,
+    }) : null);
+    setPinsDialogOpen(false);
+  };
+  const toggleCurrentPin = () => {
+    const next = isCurrentPinned
+      ? pins.filter((pin) => pin.id !== currentPinId)
+      : [...pins, { id: currentPinId, seder, masechta, daf, amud, createdAt: Date.now() }];
+    setUiPref("dafLearningPins", next);
+  };
   const drop = (event: DragEvent) => {
     event.preventDefault();
     setDragOver(false);
@@ -312,16 +342,30 @@ export function ShasDeckBuilder({
           <span className={cn("flex shrink-0 items-center justify-center rounded-full border-2 border-gold bg-card", spacious ? "h-12 w-12" : overview ? "h-8 w-8" : "h-10 w-10")}><GripVertical className={cn("text-gold", spacious ? "h-6 w-6" : overview ? "h-4 w-4" : "h-5 w-5")} /></span>
         </div>
       </div>
+      {contentArea === "shas" && <div data-testid="builder-pinned-locations" className="flex flex-wrap items-center gap-2 border-b border-gold/30 bg-card px-3 py-2">
+        <Button type="button" size="icon" variant={isCurrentPinned ? "default" : "outline"} className={cn("h-9 w-9 shrink-0 border-gold/50", isCurrentPinned && "bg-gradient-navy text-white")} onClick={toggleCurrentPin} title={isCurrentPinned ? "הסר את המקום הנוכחי מההצמדות" : "הצמד את המסכת, הדף והעמוד הנוכחיים"} aria-label={isCurrentPinned ? "הסר הצמדה" : "הוסף הצמדה"}>
+          {isCurrentPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4 text-gold" />}
+        </Button>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          {[...pins].slice(-3).reverse().map((pin) => <button key={pin.id} type="button" onClick={() => jumpToPin(pin)} aria-label={`עבור להצמדה ${pin.masechta} דף ${dafLabel(pin.daf)} עמוד ${pin.amud === 1 ? "א" : "ב"}`} className={cn("h-8 shrink-0 rounded-lg border px-2.5 text-xs font-semibold transition", pin.id === currentPinId ? "border-navy bg-gradient-navy text-white" : "border-gold/40 bg-card hover:bg-gold/10")}>
+            {pin.masechta} · {dafLabel(pin.daf).replace(".", "")} · {pin.amud === 1 ? "ע״א" : "ע״ב"}
+          </button>)}
+        </div>
+        <Button type="button" variant="outline" className="h-9 shrink-0 gap-1.5 border-gold/50" onClick={() => setPinsDialogOpen(true)} title="הצג את כל ההצמדות">
+          <ListTree className="h-4 w-4 text-gold" /><span className="hidden sm:inline">כל ההצמדות</span>
+          {pins.length > 0 && <span className="rounded-full bg-gold/15 px-1.5 text-xs">{pins.length}</span>}
+        </Button>
+      </div>}
       {contentArea === "shas" ? <div className={cn("grid", !overview && "xl:grid-cols-[1.15fr_1.5fr_0.85fr]", overview ? "gap-2.5 p-2.5" : spacious ? "gap-5 p-5 md:p-7" : topBottom ? "gap-3 p-3" : "gap-3 p-4")}>
         {(navigationMode === "expanded" || navigationStep <= 2) && <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", navigationMode === "drilldown" && "col-span-full", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
           {stepTitle(1, navigationMode === "drilldown" && navigationStep === 1 ? "בחר סדר" : "בחר סדר ומסכת")}
-          {(navigationMode === "expanded" || navigationStep === 1) && <div className={cn("grid grid-cols-2 sm:grid-cols-3", overview ? "gap-1" : "gap-2")}>{SEDARIM.map((item) => <button key={item} onClick={() => { setSeder(item); setQuestionSource(null); const first = SHAS_BAVLI.find((m) => m.seder === item); if (first) { setMasechta(first.name); setDaf(2); } if (navigationMode === "drilldown") setNavigationStep(2); }} className={cn("rounded-xl border font-semibold transition", overview ? "min-h-8 px-2 py-1 text-xs" : "min-h-10 px-3 py-2 text-sm", seder === item ? "border-gold bg-gradient-navy text-white shadow-sm" : "border-gold/40 bg-card hover:bg-gold/10")}>{item}</button>)}</div>}
+          {(navigationMode === "expanded" || navigationStep === 1) && <div className={cn("grid grid-cols-2 sm:grid-cols-3", overview ? "gap-1" : "gap-2")}>{SEDARIM.map((item) => <button key={item} onClick={() => { setSeder(item); setAmud(1); setQuestionSource(null); const first = SHAS_BAVLI.find((m) => m.seder === item); if (first) { setMasechta(first.name); setDaf(2); } if (navigationMode === "drilldown") setNavigationStep(2); }} className={cn("rounded-xl border font-semibold transition", overview ? "min-h-8 px-2 py-1 text-xs" : "min-h-10 px-3 py-2 text-sm", seder === item ? "border-gold bg-gradient-navy text-white shadow-sm" : "border-gold/40 bg-card hover:bg-gold/10")}>{item}</button>)}</div>}
           {(navigationMode === "expanded" || navigationStep === 2) && <>
           {navigationMode === "drilldown" && <Button type="button" variant="ghost" size="sm" onClick={() => setNavigationStep(1)}><ChevronRight className="ml-1 h-4 w-4" />חזרה לסדרים</Button>}
           {navigationMode === "drilldown" && <h3 className="font-bold">בחר מסכת — סדר {seder}</h3>}
           <div className={cn("grid rounded-xl border border-gold/30 bg-background/60", overview ? "max-h-40 grid-cols-2 gap-1 overflow-y-auto p-1.5 xl:grid-cols-3" : "grid-cols-2 overflow-y-auto p-2", spacious ? "max-h-80 gap-2" : !overview && "max-h-52 gap-1")}>{(navigationMode === "drilldown" ? masechtot : displayedMasechtot).map((item) => {
             const source = makeSource({ kind: "masechta", masechta: item.name });
-            return <div key={item.name} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setSeder(item.seder); setMasechta(item.name); setDaf(2); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(3); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, masechta === item.name && "border-gold bg-gold/15", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span>{item.name}</span><span className={cn("flex items-center gap-1 text-xs text-muted-foreground", selectedSourceIds.has(source.id) && "text-gold")}>{selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר דף <ChevronLeft className="h-4 w-4" /></> : <>גרור <ChevronLeft className="h-4 w-4" /></>}</span></div>;
+            return <div key={item.name} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setSeder(item.seder); setMasechta(item.name); setDaf(2); setAmud(1); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(3); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, masechta === item.name && "border-gold bg-gold/15", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span>{item.name}</span><span className={cn("flex items-center gap-1 text-xs text-muted-foreground", selectedSourceIds.has(source.id) && "text-gold")}>{selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר דף <ChevronLeft className="h-4 w-4" /></> : <>גרור <ChevronLeft className="h-4 w-4" /></>}</span></div>;
           })}</div>
           </>}
         </div>}
@@ -330,7 +374,7 @@ export function ShasDeckBuilder({
           {stepTitle(2, `בחר דפים — ${selectedMasechta?.name ?? ""}`)}
           <div className={cn("grid rounded-xl border border-gold/30 bg-background/60", overview ? "max-h-48 grid-cols-3 gap-1 overflow-y-auto p-1.5 xl:grid-cols-5" : "grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4", spacious ? "max-h-96 p-3" : !overview && "max-h-72 p-2")}>{dafim.map((item) => {
             const source = makeSource({ kind: "daf", masechta: selectedMasechta!.name, daf: item });
-            return <button key={item} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setDaf(item); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(4); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, "justify-center", daf === item && "border-gold bg-gradient-navy text-white", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}>דף {dafLabel(item)}{selectedSourceIds.has(source.id) && <Check className="h-3.5 w-3.5" />}</button>;
+            return <button key={item} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setDaf(item); setAmud(1); setQuestionSource(null); if (navigationMode === "drilldown") setNavigationStep(4); if (purpose === "exam") chooseSource(source); }} className={cn(draggableClass, "justify-center", daf === item && "border-gold bg-gradient-navy text-white", selectedSourceIds.has(source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}>דף {dafLabel(item)}{selectedSourceIds.has(source.id) && <Check className="h-3.5 w-3.5" />}</button>;
           })}</div>
         </div>}
         {(navigationMode === "expanded" || navigationStep === 4) && <div className={cn("rounded-2xl border border-gold/35 bg-secondary/15", navigationMode === "drilldown" && "col-span-full", spacious ? "space-y-3 p-4" : overview ? "space-y-1.5 p-2" : "space-y-2 p-3")}>
@@ -339,7 +383,8 @@ export function ShasDeckBuilder({
           <div className="grid grid-cols-2 gap-3">
             {[1, 2].map((side) => {
               const source = makeSource({ kind: "amud", masechta: selectedMasechta?.name ?? masechta, daf, amud: side as 1 | 2 });
-              return <div key={side} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => chooseSource(source)} className={cn(draggableClass, "flex-col justify-center text-center", overview ? "min-h-14" : "min-h-20", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span className={cn(overview ? "text-sm" : "text-base")}>עמוד {side === 1 ? "א׳" : "ב׳"}</span><span className={cn("flex items-center gap-1 text-xs font-normal text-muted-foreground", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "text-gold")}>{questionSource?.id === source.id ? <><Check className="h-4 w-4" />נבחר לסיווג</> : selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר עמוד</> : <><GripVertical className="h-4 w-4 text-gold" />גרור למבחן</>}</span></div>;
+              const isCurrentLocation = daf === source.daf && amud === source.amud;
+              return <div key={side} draggable={purpose === "exam"} onDragStart={(e) => startDrag(e, source)} onClick={() => { setAmud(side as 1 | 2); chooseSource(source); }} className={cn(draggableClass, "flex-col justify-center text-center", overview ? "min-h-14" : "min-h-20", isCurrentLocation && "border-gold bg-gold/15", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "border-navy bg-gradient-navy text-white ring-2 ring-gold")}><span className={cn(overview ? "text-sm" : "text-base")}>עמוד {side === 1 ? "א׳" : "ב׳"}</span><span className={cn("flex items-center gap-1 text-xs font-normal text-muted-foreground", (selectedSourceIds.has(source.id) || questionSource?.id === source.id) && "text-gold")}>{questionSource?.id === source.id ? <><Check className="h-4 w-4" />נבחר לסיווג</> : selectedSourceIds.has(source.id) ? <><Check className="h-4 w-4" />נבחר</> : purpose === "question" ? <>בחר עמוד</> : <><GripVertical className="h-4 w-4 text-gold" />גרור למבחן</>}</span></div>;
             })}
           </div>
           <p className={cn("rounded-xl border border-gold/25 bg-card text-muted-foreground", overview ? "p-2 text-xs leading-5" : "p-4 text-sm leading-6")}>אפשר לגרור כמה פריטים, גם ממסכתות ומדפים שונים. שאלות כפולות ייכנסו פעם אחת בלבד.</p>
@@ -383,5 +428,16 @@ export function ShasDeckBuilder({
         </div>
       </details>}
     </Card>}
+    <Dialog open={pinsDialogOpen} onOpenChange={setPinsDialogOpen}>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Pin className="h-5 w-5 text-gold" />כל ההצמדות</DialogTitle></DialogHeader>
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+          {pins.length === 0 ? <div className="rounded-xl border-2 border-dashed border-gold/35 p-8 text-center text-muted-foreground">עדיין אין הצמדות. בחר מסכת, דף ועמוד ולחץ על סמל ההצמדה.</div> : [...pins].reverse().map((pin) => <div key={pin.id} className="flex items-center gap-2 rounded-xl border border-gold/35 bg-card p-2">
+            <button type="button" onClick={() => jumpToPin(pin)} className="min-w-0 flex-1 rounded-lg px-3 py-2 text-right hover:bg-gold/10"><strong className="block truncate">{pin.masechta} · דף {dafLabel(pin.daf).replace(".", "")} · {pin.amud === 1 ? "עמוד א׳" : "עמוד ב׳"}</strong><span className="text-xs text-muted-foreground">סדר {pin.seder} · מעבר ישיר למקום</span></button>
+            <Button type="button" size="icon" variant="ghost" className="h-9 w-9 text-destructive" onClick={() => setUiPref("dafLearningPins", pins.filter((item) => item.id !== pin.id))} aria-label={`הסר הצמדה של ${pin.masechta}`}><Trash2 className="h-4 w-4" /></Button>
+          </div>)}
+        </div>
+      </DialogContent>
+    </Dialog>
   </section>;
 }

@@ -259,6 +259,11 @@ export interface UiPrefs {
   deckBuilderLayout?: "classic" | "shas-tree" | "shas-spacious" | "shas-overview" | "shas-top-bottom";
   // Question/exam content picker: show the whole Shas path or advance one level at a time.
   deckBuilderNavigationMode?: "expanded" | "drilldown";
+  // Question builder: regular form or the shared content tree followed by a question form.
+  questionCreationLayout?: "classic" | "content-tree";
+  // Practice page: question/text arrangement and content-tree navigation.
+  dafLearningLayout?: "stacked" | "split" | "text-only" | "cards-only";
+  dafLearningNavigationView?: "expanded" | "drilldown";
   // StudyPlansCard: plans list view mode (synced local + cloud)
   studyPlansView?: "classic" | "grid2" | "grid3" | "table" | "compact";
   // CategoriesPage / PinnedCategoriesWidget: pinned category names (synced)

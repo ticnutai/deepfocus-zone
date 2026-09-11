@@ -39,7 +39,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
 import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBMode";
 import { DedicationBanner } from "@/components/DedicationBanner";
-import { NavItem, DEFAULT_SIDEBAR_ITEMS } from "@/config/sidebarItems";
+import { NavItem, DEFAULT_SIDEBAR_ITEMS, isDefaultSidebarItemVisible } from "@/config/sidebarItems";
 import { getLocalAccount } from "@/lib/auth/localAccount";
 import { GuidesDialog } from "@/components/onboarding/GuidesDialog";
 import { SortableConfigItem, type SortableConfigDef } from "@/components/study/SortableConfigItem";
@@ -971,7 +971,10 @@ const Index = () => {
 
   const orderedSidebarItems: (NavItem & { visible: boolean })[] = useMemo(() => {
     const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
-    if (cfg.length === 0) return SIDEBAR_CHOICES.map((item) => ({ ...item, visible: true }));
+    if (cfg.length === 0) return SIDEBAR_CHOICES.map((item) => ({
+      ...item,
+      visible: isDefaultSidebarItemVisible(item.id),
+    }));
 
     const sorted = [...cfg].sort((a, b) => a.order - b.order);
     const used = new Set<string>();

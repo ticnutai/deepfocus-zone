@@ -17,9 +17,9 @@ describe("split categories, exams and questions navigation", () => {
     ]);
     expect(ALL_SIDEBAR_ITEMS.some((item) => item.id === "cards")).toBe(false);
     expect(DEFAULT_SIDEBAR_ITEMS.filter((item) => splitIds.includes(item.id)).map((item) => item.label)).toEqual([
-      "קטגוריות",
-      "בניית מבחנים",
       "בניית שאלות",
+      "בניית מבחנים",
+      "קטגוריות",
     ]);
     expect(DEFAULT_SIDEBAR_ITEMS.some((item) => item.id === "cards")).toBe(false);
   });

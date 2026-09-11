@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, Monitor, RefreshCw, X, ExternalLink } from "lucide-react";
+import { Eye, Monitor, RefreshCw, X, ExternalLink, BookOpen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ALL_SIDEBAR_ITEMS } from "@/lib/study/sidebarItems";
 import { type LayoutScope } from "@/lib/study/layoutProfiles";
 
 interface AppRole { id: string; name: string }
+interface ContentRule { role_id: string; include_own: boolean; include_site_library: boolean; source_user_ids: string[] }
+interface ContentSource { source_user_id: string; label: string; question_count: number }
 const ROLE_LABEL: Record<string, string> = {
   admin: "מנהל",
   user: "משתמש רגיל",
@@ -32,6 +34,8 @@ export function LayoutPreviewTab({
   const [section, setSection] = useState<string>("home");
   const [scope, setScope] = useState<LayoutScope>("desktop");
   const [reloadToken, setReloadToken] = useState<number>(0);
+  const [contentRules, setContentRules] = useState<ContentRule[]>([]);
+  const [contentSources, setContentSources] = useState<ContentSource[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -42,6 +46,16 @@ export function LayoutPreviewTab({
       }
     })();
   }, [suppliedRoles]);
+
+  useEffect(() => {
+    void Promise.all([
+      supabase.from("role_content_access").select("role_id,include_own,include_site_library,source_user_ids"),
+      supabase.rpc("get_admin_content_sources"),
+    ]).then(([rules, sources]) => {
+      if (rules.data) setContentRules(rules.data as ContentRule[]);
+      if (sources.data) setContentSources(sources.data as ContentSource[]);
+    });
+  }, [reloadToken]);
 
   useEffect(() => {
     const valid = preferredRoleIds.filter((id) => roles.some((role) => role.id === id)).slice(0, 3);
@@ -80,7 +94,7 @@ export function LayoutPreviewTab({
           <div>
             <h3 className="font-display text-lg font-bold">בדיקת הרשאות ותצוגה לפי תפקיד</h3>
             <p className="text-xs text-muted-foreground">
-              {profileName ? `הפרופיל שנבדק: ${profileName}. ` : ""}בחר עד 3 תפקידים ואת הדף להצגה. כל חלון מחיל את ההרשאות, הנראות והפריסה השמורות של התפקיד.
+              {profileName ? `הפרופיל שנבדק: ${profileName}. ` : ""}בחר עד 3 תפקידים ואת הדף להצגה. כל חלון מחיל הרשאות, מקורות שאלות, נראות ופריסה של התפקיד.
             </p>
           </div>
         </div>
@@ -159,6 +173,8 @@ export function LayoutPreviewTab({
             const role = roles.find((r) => r.id === roleId);
             const url = buildUrl(roleId);
             const iframeUrl = buildUrl(roleId, true);
+            const rule = contentRules.find((item) => item.role_id === roleId);
+            const sourceLabels = (rule?.source_user_ids ?? []).map((id) => contentSources.find((item) => item.source_user_id === id)?.label ?? id);
             return (
               <Card key={roleId} className="gold-frame p-2 space-y-2 overflow-hidden">
                 <div className="flex items-center justify-between gap-2 px-1">
@@ -190,6 +206,13 @@ export function LayoutPreviewTab({
                       <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-gold/25 bg-muted/20 px-3 py-2 text-xs">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  <span className="font-semibold">מקורות שאלות:</span>
+                  <Badge variant="outline">אישי: {rule?.include_own === false ? "לא" : "כן"}</Badge>
+                  <Badge variant="outline">ספריית האתר: {rule?.include_site_library ? "כן" : "לא"}</Badge>
+                  <span className="text-muted-foreground">{sourceLabels.length ? sourceLabels.join("، ") : "ללא מוסיפים נבחרים"}</span>
                 </div>
                 <div className="relative w-full" style={{ height: "70vh", minHeight: 520 }}>
                   {scope === "mobile" ? (

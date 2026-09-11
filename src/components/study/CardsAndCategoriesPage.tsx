@@ -8,6 +8,7 @@ import { CategoriesPage } from "./CategoriesPage";
 import { QuestionCreationPage } from "./QuestionCreationPage";
 import { ShasDeckBuilder } from "./ShasDeckBuilder";
 import { useStudy } from "@/lib/study/store";
+import { STUDY_UI_DEFAULTS } from "@/config/studyUiDefaults";
 
 type SubTab = "categories" | "decks" | "questions";
 const STORAGE_KEY = "cards-categories:sub-tab";
@@ -55,7 +56,7 @@ function CardsAndCategoriesPage({
   const [page, setPage] = useState<SubTab>(() => readInitialPage(initialTab));
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const { state, setUiPref } = useStudy();
-  const deckLayout = state.uiPrefs?.deckBuilderLayout ?? "shas-overview";
+  const deckLayout = state.uiPrefs?.deckBuilderLayout ?? STUDY_UI_DEFAULTS.deckBuilderLayout;
   const meta = PAGE_META[page];
   const PageIcon = meta.icon;
 

@@ -120,8 +120,9 @@ export function RoleDefaultsTab() {
         </div>
       )}
 
-      <div className="grid gap-2 rounded-xl border border-gold/30 bg-card p-3 text-sm sm:grid-cols-3">
+      <div className="grid gap-2 rounded-xl border border-gold/30 bg-card p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div><strong>גישה</strong><span className="block text-xs text-muted-foreground">אילו עמודים ופעולות מותרים.</span></div>
+        <div><strong>מקורות שאלות</strong><span className="block text-xs text-muted-foreground">מאילו בעלי תוכן ניתן ללמוד.</span></div>
         <div><strong>תצוגה</strong><span className="block text-xs text-muted-foreground">אילו רכיבים יופיעו בתוך העמודים.</span></div>
         <div><strong>פריסה</strong><span className="block text-xs text-muted-foreground">הסדר, הגדלים וניצול שטח המסך.</span></div>
       </div>

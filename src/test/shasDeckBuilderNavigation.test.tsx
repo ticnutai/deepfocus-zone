@@ -6,7 +6,13 @@ const setUiPref = vi.fn();
 
 vi.mock("@/lib/study/store", () => ({
   useStudy: () => ({
-    state: { cards: [], categories: [], decks: [], cardDecks: [], uiPrefs: { deckBuilderNavigationMode: "drilldown" } },
+    state: {
+      cards: [], categories: [], decks: [], cardDecks: [],
+      uiPrefs: {
+        deckBuilderNavigationMode: "drilldown",
+        dafLearningPins: [{ id: "ברכות::3::2", seder: "זרעים", masechta: "ברכות", daf: 3, amud: 2, createdAt: 1 }],
+      },
+    },
     addDeck: vi.fn(),
     addCardsToDeck: vi.fn(),
     removeCardFromDeck: vi.fn(),
@@ -16,6 +22,10 @@ vi.mock("@/lib/study/store", () => ({
     updateDeckCategoryIds: vi.fn(),
     setUiPref,
   }),
+}));
+
+vi.mock("@/components/study/CardEditor", () => ({
+  CardEditor: ({ prefillDaf }: { prefillDaf?: { masechta: string; daf: number; amud: 1 | 2 } }) => <div data-testid="card-editor-location">{prefillDaf ? `${prefillDaf.masechta}:${prefillDaf.daf}:${prefillDaf.amud}` : "none"}</div>,
 }));
 
 describe("ShasDeckBuilder step-by-step navigation", () => {
@@ -31,5 +41,26 @@ describe("ShasDeckBuilder step-by-step navigation", () => {
     expect(screen.getByText(/^בחר עמוד — דף ב/)).toBeInTheDocument();
     expect(screen.getByText("עמוד א׳")).toBeInTheDocument();
     expect(screen.getByText("עמוד ב׳")).toBeInTheDocument();
+  });
+
+  it("opens a pinned location directly in question creation", () => {
+    render(<ShasDeckBuilder purpose="question" mode="top-bottom" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /עבור להצמדה ברכות/ }));
+
+    expect(screen.getByText(/בחר עמוד — דף ג/)).toBeInTheDocument();
+    expect(screen.getByTestId("card-editor-location")).toHaveTextContent("ברכות:3:2");
+    expect(screen.getByText(/הסיווג שנבחר: ברכות/)).toBeInTheDocument();
+  });
+
+  it("navigates an exam builder to a pin without adding it to the exam", () => {
+    render(<ShasDeckBuilder purpose="exam" mode="top-bottom" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /עבור להצמדה ברכות/ }));
+
+    expect(screen.getByText(/בחר עמוד — דף ג/)).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("שאלות ייכללו במבחן")).toBeInTheDocument();
+    expect(screen.getByText("גרור לכאן מסכת, דף או עמוד")).toBeInTheDocument();
   });
 });

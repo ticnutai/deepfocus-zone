@@ -10,6 +10,34 @@ export interface LayoutProfileCategory {
   color?: string | null;
 }
 
+export interface ContentAccessProfile {
+  includeOwn: boolean;
+  includeSiteLibrary: boolean;
+  approvedOnly: boolean;
+  sourceUserIds: string[];
+}
+
+export const DEFAULT_CONTENT_ACCESS: ContentAccessProfile = {
+  includeOwn: true,
+  includeSiteLibrary: false,
+  approvedOnly: true,
+  sourceUserIds: [],
+};
+
+export function normalizeContentAccessProfile(value: unknown): ContentAccessProfile {
+  const content = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Partial<ContentAccessProfile>
+    : DEFAULT_CONTENT_ACCESS;
+  return {
+    includeOwn: content.includeOwn !== false,
+    includeSiteLibrary: content.includeSiteLibrary === true,
+    approvedOnly: content.approvedOnly !== false,
+    sourceUserIds: Array.from(new Set(Array.isArray(content.sourceUserIds)
+      ? content.sourceUserIds.filter((id): id is string => typeof id === "string" && !!id)
+      : [])),
+  };
+}
+
 export interface RoleLayoutProfile {
   id: string;
   name: string;
@@ -18,6 +46,7 @@ export interface RoleLayoutProfile {
    * these switches describe what may be done after the page is visible.
    */
   actionPermissions?: Record<string, Record<string, boolean>>;
+  contentAccess?: ContentAccessProfile;
   widgetLayout: WidgetLayout;
   sidebarConfig: SidebarConfig[];
   categoryTemplate: LayoutProfileCategory[];
@@ -65,6 +94,7 @@ const normalizeProfile = (item: unknown): RoleLayoutProfile | null => {
     widgetLayout?: unknown;
     sidebarConfig?: unknown;
     categoryTemplate?: unknown;
+    contentAccess?: unknown;
   };
   return {
     id: typeof raw.id === "string" ? raw.id : uuid(),
@@ -72,6 +102,7 @@ const normalizeProfile = (item: unknown): RoleLayoutProfile | null => {
     actionPermissions: raw.actionPermissions && typeof raw.actionPermissions === "object" && !Array.isArray(raw.actionPermissions)
       ? (raw.actionPermissions as Record<string, Record<string, boolean>>)
       : {},
+    contentAccess: normalizeContentAccessProfile(raw.contentAccess),
     widgetLayout: (raw.widgetLayout && typeof raw.widgetLayout === "object" && !Array.isArray(raw.widgetLayout))
       ? (raw.widgetLayout as WidgetLayout)
       : {},

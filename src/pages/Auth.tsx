@@ -41,6 +41,8 @@ import {
   syntheticEmailForUsername,
   USERNAME_RE,
   type LocalAccount,
+  rememberOnlineAccountForOfflineLogin,
+  prepareRegisteredAccountReconnect,
 } from "@/lib/auth/localAccount";
 
 async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
@@ -124,7 +126,6 @@ export default function Auth() {
   const [localAccounts, setLocalAccounts] = useState<LocalAccount[]>(() => listLocalAccounts());
   const [activeUsername, setActiveUsername] = useState<string | null>(() => getActiveUsername());
   const [deleteTarget, setDeleteTarget] = useState<LocalAccount | null>(null);
-  const [switching, setSwitching] = useState(false);
 
   const refreshLocalAccounts = () => {
     setLocalAccounts(listLocalAccounts());
@@ -143,23 +144,11 @@ export default function Auth() {
   // Switch to a local account and enter its offline workspace in one tap. The
   // swap parks the current workspace and loads the target's into the shared
   // slot; entering guest mode then hydrates the study store from it.
-  const handleSwitchLocalAccount = async (uname: string) => {
-    if (switching) return;
+  const handleSwitchLocalAccount = (uname: string) => {
     const target = localAccounts.find((a) => a.username === uname);
-    setSwitching(true);
-    const ok = await switchLocalAccount(uname);
-    if (!ok) {
-      setSwitching(false);
-      toast.error("החלפת החשבון נכשלה.");
-      return;
-    }
-    setActiveUsername(uname);
-    // Make sure the bundled study library is present, then enter offline mode
-    // as this account so the store hydrates from the freshly-swapped workspace.
-    await ensureLocalOfflineProfile();
-    signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
-    toast.success(`נכנסת לחשבון "${target?.displayName || uname}".`);
-    navigate("/", { replace: true });
+    setEmail(target?.email || target?.username || uname);
+    setPassword("");
+    toast.info(`הזן את הסיסמה של "${target?.displayName || uname}" כדי להיכנס.`);
   };
 
   useEffect(() => { document.title = "התחברות | מעקב למידה"; }, []);
@@ -211,6 +200,7 @@ export default function Auth() {
       // offline profile BEFORE entering, otherwise the store hydrates with an
       // empty seed and the review system shows nothing.
       await ensureLocalOfflineProfile();
+      prepareRegisteredAccountReconnect(account, password);
       signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
       toast.success("התחברת לחשבון המקומי. הנתונים יסתנכרנו לשרת כשיהיה אינטרנט.");
       navigate("/", { replace: true });
@@ -234,8 +224,20 @@ export default function Auth() {
           loginEmail = (typeof resolved === "string" && resolved) ? resolved : syntheticEmailForUsername(loginEmail);
         }
         console.log("[auth-debug] signIn: signInWithPassword →", loginEmail);
-        const { error } = await withTimeout(supabase.auth.signInWithPassword({ email: loginEmail, password }));
+        const { data, error } = await withTimeout(supabase.auth.signInWithPassword({ email: loginEmail, password }));
         if (!error) {
+          const signedInUser = data.user ?? data.session?.user;
+          if (signedInUser) {
+            await rememberOnlineAccountForOfflineLogin({
+              userId: signedInUser.id,
+              email: signedInUser.email || loginEmail,
+              username: (signedInUser.user_metadata?.username as string | undefined)
+                || (!email.trim().includes("@") ? email.trim() : undefined),
+              displayName: (signedInUser.user_metadata?.display_name as string | undefined)
+                || (signedInUser.user_metadata?.full_name as string | undefined),
+              password,
+            });
+          }
           setBusy(false);
           persistRemember();
           try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
@@ -243,11 +245,11 @@ export default function Auth() {
           navigate("/", { replace: true });
           return;
         }
-        // Non-network error (wrong password, etc.) — but first, if we have a
-        // matching local account, prefer entering offline over failing.
+        // A rejected password/account is authoritative while the server is
+        // reachable. Offline fallback is allowed only for a real network
+        // failure, never to bypass a password change or blocked account.
         if (isNetworkError(error)) throw error;
         console.error("[auth-debug] signInWithPassword error", { name: error.name, status: (error as { status?: number }).status, message: error.message });
-        if (await enterOfflineFromSignIn()) { setBusy(false); return; }
         setBusy(false);
         return toast.error(error.message);
       } catch (err) {
@@ -315,6 +317,14 @@ export default function Auth() {
           setBusy(false);
           persistRemember();
           if (data.session) {
+            const signedInUser = data.user ?? data.session.user;
+            await rememberOnlineAccountForOfflineLogin({
+              userId: signedInUser.id,
+              email: signedInUser.email || signupEmail,
+              username: cleanUsername,
+              displayName: name || cleanUsername,
+              password,
+            });
             try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
             toast.success("נרשמת בהצלחה!");
             navigate("/", { replace: true });
@@ -460,7 +470,6 @@ export default function Auth() {
                   <button
                     type="button"
                     onClick={() => handleSwitchLocalAccount(acct.username)}
-                    disabled={switching}
                     className="flex flex-1 min-w-0 items-center gap-2 text-right disabled:opacity-60"
                     title={isActive ? "כניסה לחשבון הפעיל" : "עבור לחשבון זה והיכנס"}
                   >

@@ -151,14 +151,16 @@ export function UserQuestionsTab() {
     const device = deviceMap.get(id);
     return device?.local_username || profile?.username || profile?.display_name || device?.display_name || profile?.email || id.slice(0, 8);
   }, [deviceMap, profileMap]);
+  const creatorId = useCallback((row: CardRow) => row.created_by ?? row.user_id, []);
   const userChoices = useMemo(() => {
-    const ids = [...new Set(rows.map((row) => row.user_id))];
-    return ids.map((id) => ({ id, profile: profileMap.get(id), count: rows.filter((row) => row.user_id === id).length }));
-  }, [profileMap, rows]);
+    const ids = [...new Set(rows.map(creatorId))];
+    return ids.map((id) => ({ id, profile: profileMap.get(id), count: rows.filter((row) => creatorId(row) === id).length }));
+  }, [creatorId, profileMap, rows]);
 
   const filtered = useMemo(() => rows.filter((row) => {
     const status = (row.moderation_status || "private") as ModerationStatus;
-    if (userFilter !== "all" && row.user_id !== userFilter) return false;
+    const sourceId = creatorId(row);
+    if (userFilter !== "all" && sourceId !== userFilter) return false;
     if (statusFilter === "visible" && status === "hidden") return false;
     if (statusFilter !== "all" && statusFilter !== "visible" && status !== statusFilter) return false;
     if (typeFilter !== "all" && row.type !== typeFilter) return false;
@@ -166,11 +168,11 @@ export function UserQuestionsTab() {
     if (dateTo && row.created_at.slice(0, 10) > dateTo) return false;
     const q = search.trim().toLocaleLowerCase("he");
     if (!q) return true;
-    const profile = profileMap.get(row.user_id);
-    const device = deviceMap.get(row.user_id);
+    const profile = profileMap.get(sourceId);
+    const device = deviceMap.get(sourceId);
     return [row.question, row.answer, row.explanation, ...stringArray(row.options), ...stringArray(row.tags), profile?.username, profile?.display_name, profile?.email, device?.local_username, device?.display_name]
       .some((value) => value?.toLocaleLowerCase("he").includes(q));
-  }), [dateFrom, dateTo, deviceMap, profileMap, rows, search, statusFilter, typeFilter, userFilter]);
+  }), [creatorId, dateFrom, dateTo, deviceMap, profileMap, rows, search, statusFilter, typeFilter, userFilter]);
 
   const updateModeration = async (row: CardRow, status: ModerationStatus) => {
     setBusyId(row.id);
@@ -401,7 +403,8 @@ export function UserQuestionsTab() {
 
       <div className="grid gap-3">
         {filtered.map((row) => {
-          const profile = profileMap.get(row.user_id);
+          const sourceId = creatorId(row);
+          const profile = profileMap.get(sourceId);
           const status = (row.moderation_status || "private") as ModerationStatus;
           const options = stringArray(row.options);
           const correct = numberArray(row.correct_indices);
@@ -420,7 +423,7 @@ export function UserQuestionsTab() {
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2"><Badge>{TYPE_LABEL[row.type] || row.type}</Badge><Badge variant="outline">{STATUS_LABEL[status]}</Badge><Badge variant="secondary">{source === "desktop" ? "אפליקציה" : source === "web" ? "אתר" : "מקור ישן"}</Badge><span className="text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString("he-IL")}</span></div>
                 <p className="font-bold text-foreground whitespace-pre-wrap">{row.question}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{userLabel(row.user_id)} · {profile?.email || row.user_id}</p>
+                <p className="mt-1 text-xs text-muted-foreground">מוסיף השאלה: {userLabel(sourceId)} · {profile?.email || sourceId}</p>
               </div>
               <div className="flex flex-wrap gap-1">
                 <Button size="icon" variant="outline" title="עריכה" onClick={() => startEdit(row)}><Pencil className="h-4 w-4" /></Button>

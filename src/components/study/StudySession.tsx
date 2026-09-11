@@ -33,6 +33,7 @@ import {
   Play,
   Trash2,
   MessageSquareText,
+  GripVertical,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -404,6 +405,8 @@ interface Props {
   fillHeight?: boolean;
   sourceExamName?: string | null;
   sourceContext?: { masechta?: string; daf?: number; amud?: 1 | 2 };
+  /** Admin-only affordance supplied by the page that owns the classification targets. */
+  classificationDragEnabled?: boolean;
 }
 
 export function StudySession({
@@ -415,6 +418,7 @@ export function StudySession({
   fillHeight = false,
   sourceExamName,
   sourceContext,
+  classificationDragEnabled = false,
 }: Props) {
   const { state, reviewCard, setUiPref, addCardToDeck, addPracticeResult, deletePracticeResult } = useStudy();
   const isMobile = useIsMobile();
@@ -2574,8 +2578,15 @@ export function StudySession({
 
       <div
         data-testid="study-question-card"
+        draggable={classificationDragEnabled}
+        onDragStart={classificationDragEnabled ? (event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-study-card-id", card.id);
+          event.dataTransfer.setData("text/plain", card.id);
+        } : undefined}
         className={cn(
           "relative mx-auto flex items-center justify-center border-2",
+          classificationDragEnabled && "cursor-grab active:cursor-grabbing",
           isMobile
             ? "w-full rounded-2xl p-3 pt-8 overflow-y-auto"
             : "w-[82%] md:w-[76%] lg:w-[72%] max-w-6xl min-h-[150px] rounded-[2.75rem] px-8 py-8 pt-10",
@@ -2583,6 +2594,11 @@ export function StudySession({
         )}
         style={questionAreaStyle}
       >
+        {classificationDragEnabled && (
+          <span className="absolute bottom-3 right-4 flex items-center gap-1 rounded-full border border-gold/50 bg-background/90 px-2 py-1 text-[11px] font-semibold text-foreground shadow-sm" title="גרור את השאלה לעמוד א׳ או לעמוד ב׳">
+            <GripVertical className="h-3.5 w-3.5 text-gold" /> גרור לסיווג
+          </span>
+        )}
         {/* Top-right corner: card type badge */}
         <Badge
           variant="outline"

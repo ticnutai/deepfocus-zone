@@ -28,6 +28,8 @@ import { CardEditor } from "./CardEditor";
 import { consumePendingGuideRequest } from "@/lib/onboarding/guideTriggers";
 import { GuideMarker } from "./GuideMarker";
 import { ShasDeckBuilder } from "./ShasDeckBuilder";
+import { useStudy } from "@/lib/study/store";
+import { STUDY_UI_DEFAULTS } from "@/config/studyUiDefaults";
 
 const QUESTION_GUIDE_HIDDEN_KEY = "question-creation-guide-hidden-v1";
 const QUESTION_LAYOUT_KEY = "question-creation-layout-v1";
@@ -177,6 +179,7 @@ function renderHighlightedGuideText(text: string) {
 }
 
 export function QuestionCreationPage() {
+  const { state, setUiPref } = useStudy();
   const [editorKey, setEditorKey] = useState(0);
   const [guideOpen, setGuideOpen] = useState(false);
   const [dontShowGuideAgain, setDontShowGuideAgain] = useState(false);
@@ -187,9 +190,19 @@ export function QuestionCreationPage() {
   const [guideDemoCorrectIndex, setGuideDemoCorrectIndex] = useState<number | null>(null);
   const [guideDemoOptionsOpen, setGuideDemoOptionsOpen] = useState(false);
   const [guideDemoSaved, setGuideDemoSaved] = useState(false);
-  const [creationLayout, setCreationLayout] = useState<"classic" | "content-tree">(() => {
-    try { return localStorage.getItem(QUESTION_LAYOUT_KEY) === "content-tree" ? "content-tree" : "classic"; } catch { return "classic"; }
+  const [creationLayout, setCreationLayoutState] = useState<"classic" | "content-tree">(() => {
+    const synced = state.uiPrefs?.questionCreationLayout;
+    if (synced === "classic" || synced === "content-tree") return synced;
+    try {
+      const saved = localStorage.getItem(QUESTION_LAYOUT_KEY);
+      if (saved === "classic" || saved === "content-tree") return saved;
+    } catch { /* use product default */ }
+    return STUDY_UI_DEFAULTS.questionCreationLayout;
   });
+  const setCreationLayout = useCallback((value: "classic" | "content-tree") => {
+    setCreationLayoutState(value);
+    setUiPref("questionCreationLayout", value);
+  }, [setUiPref]);
   const resetEditor = useCallback(() => setEditorKey((key) => key + 1), []);
   const currentGuideStep = GUIDE_STEPS[guideStep];
   const GuideIcon = currentGuideStep.icon;
@@ -210,6 +223,11 @@ export function QuestionCreationPage() {
   useEffect(() => {
     try { localStorage.setItem(QUESTION_LAYOUT_KEY, creationLayout); } catch { /* ignore unavailable storage */ }
   }, [creationLayout]);
+
+  useEffect(() => {
+    const synced = state.uiPrefs?.questionCreationLayout;
+    if (synced === "classic" || synced === "content-tree") setCreationLayoutState(synced);
+  }, [state.uiPrefs?.questionCreationLayout]);
 
   const setGuideVisibility = (open: boolean) => {
     setGuideOpen(open);

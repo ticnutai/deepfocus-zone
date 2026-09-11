@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff, LineChart } from "lucide-react";
+import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff, LineChart, Pencil } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
 import { NeviimKetuvimLearningTab } from "./NeviimKetuvimLearningTab";
@@ -20,6 +20,7 @@ import { StudySession } from "./StudySession";
 import { CardDecksDialog } from "./CardDecksDialog";
 import { BulkCardDecksDialog } from "./BulkCardDecksDialog";
 import { CardEditor } from "./CardEditor";
+import { CardQuickEditor } from "./CardQuickEditor";
 import { FitToContainer } from "./FitToContainer";
 import { QuestionTypographyControl, useQuestionTypographyPreferences } from "./QuestionTypographyControl";
 import { PageProgressDialog } from "./ShasProgressViews";
@@ -27,6 +28,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Card as StudyCardType } from "@/lib/study/types";
+import { usePermissions } from "@/hooks/usePermissions";
+import { STUDY_UI_DEFAULTS } from "@/config/studyUiDefaults";
 
 type Layout = "stacked" | "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
@@ -66,6 +69,7 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
 
 export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const { state, setUiPref, updateCard } = useStudy();
+  const { isAdmin, can } = usePermissions();
   const questionTypography = useQuestionTypographyPreferences();
   const navigate = useNavigate();
   const location = useLocation();
@@ -75,9 +79,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [masechta, setMasechta] = useState<string>(saved.masechta ?? "שבת");
   const [daf, setDaf] = useState<number>(saved.daf ?? 2);
   const [amud, setAmud] = useState<1 | 2>(saved.amud ?? 1);
-  const [layout, setLayout] = useState<Layout>(() => {
-    return normalizeLayout(saved.layout);
+  const [layout, setLayoutState] = useState<Layout>(() => {
+    return normalizeLayout(state.uiPrefs?.dafLearningLayout ?? saved.layout ?? STUDY_UI_DEFAULTS.dafLearningLayout);
   });
+  const setLayout = useCallback((value: Layout) => {
+    setLayoutState(value);
+    setUiPref("dafLearningLayout", value);
+  }, [setUiPref]);
   const [splitSide, setSplitSide] = useState<SplitSide>(saved.splitSide ?? "gemara-right");
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -87,6 +95,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
   const [countsReady, setCountsReady] = useState(false);
   const [deckDialogCard, setDeckDialogCard] = useState<StudyCardType | null>(null);
+  const [editingPracticeCard, setEditingPracticeCard] = useState<StudyCardType | null>(null);
   const [bulkDeckDialogOpen, setBulkDeckDialogOpen] = useState(false);
   const [navDialogOpen, setNavDialogOpen] = useState(false);
   const [navStep, setNavStep] = useState<NavStep>("seder");
@@ -100,10 +109,19 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [expandedSeder, setExpandedSeder] = useState<string>("");
   const [expandedMasechta, setExpandedMasechta] = useState<string>("");
   const [expandedDaf, setExpandedDaf] = useState<number | null>(null);
-  const [navigationView, setNavigationView] = useState<ShasNavigationView>(() => {
-    try { return localStorage.getItem(NAV_VIEW_STORAGE_KEY) === "drilldown" ? "drilldown" : "expanded"; }
-    catch { return "expanded"; }
+  const [navigationView, setNavigationViewState] = useState<ShasNavigationView>(() => {
+    const synced = state.uiPrefs?.dafLearningNavigationView;
+    if (synced === "expanded" || synced === "drilldown") return synced;
+    try {
+      const stored = localStorage.getItem(NAV_VIEW_STORAGE_KEY);
+      if (stored === "expanded" || stored === "drilldown") return stored;
+    } catch { /* use product default */ }
+    return STUDY_UI_DEFAULTS.dafLearningNavigationView;
   });
+  const setNavigationView = useCallback((value: ShasNavigationView) => {
+    setNavigationViewState(value);
+    setUiPref("dafLearningNavigationView", value);
+  }, [setUiPref]);
   const [inlineStep, setInlineStep] = useState<NavStep>("seder");
   const showLegacyNavigator = false;
   const [addQuestionOpen, setAddQuestionOpen] = useState(false);
@@ -139,6 +157,16 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   useEffect(() => {
     try { localStorage.setItem(NAV_VIEW_STORAGE_KEY, navigationView); } catch { /* ignore */ }
   }, [navigationView]);
+
+  useEffect(() => {
+    const syncedLayout = state.uiPrefs?.dafLearningLayout;
+    if (syncedLayout) setLayoutState(normalizeLayout(syncedLayout));
+  }, [state.uiPrefs?.dafLearningLayout]);
+
+  useEffect(() => {
+    const syncedView = state.uiPrefs?.dafLearningNavigationView;
+    if (syncedView === "expanded" || syncedView === "drilldown") setNavigationViewState(syncedView);
+  }, [state.uiPrefs?.dafLearningNavigationView]);
 
   const setSplitRatio = (value: number) => {
     const next = Math.max(20, Math.min(80, Math.round(value)));
@@ -374,6 +402,43 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     });
   };
 
+  const classifyPracticeQuestion = (cardId: string, targetAmud: 1 | 2) => {
+    if (!isAdmin) return;
+    updateCard(cardId, { masechta, daf, amud: targetAmud });
+    setDragOverAmud(null);
+    toast({
+      title: `השאלה סווגה לעמוד ${targetAmud === 1 ? "א׳" : "ב׳"}`,
+      description: `${masechta}, דף ${dafLabel(daf).replace(".", "")}`,
+    });
+  };
+
+  const adminPracticeAmudTargets = isAdmin ? (
+    <div data-testid="admin-practice-amud-targets" className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-gold/40 bg-gold/5 px-3 py-2" dir="rtl">
+      <span className="text-xs font-semibold text-muted-foreground">סיווג השאלה הנוכחית · דף {dafLabel(daf).replace(".", "")}</span>
+      {([1, 2] as const).map((pageSide) => (
+        <Button
+          key={pageSide}
+          type="button"
+          size="sm"
+          variant="outline"
+          data-testid={`practice-amud-drop-${pageSide}`}
+          className={cn("h-8 min-w-24 border-gold/50 text-xs font-bold transition-all", dragOverAmud === pageSide && "scale-[1.03] border-gold bg-gold/20 ring-4 ring-gold/25")}
+          onDragEnter={(event) => { event.preventDefault(); setDragOverAmud(pageSide); }}
+          onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverAmud(null); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const cardId = event.dataTransfer.getData("application/x-study-card-id") || event.dataTransfer.getData("text/plain");
+            if (cardId) classifyPracticeQuestion(cardId, pageSide);
+            else setDragOverAmud(null);
+          }}
+        >
+          עמוד {pageSide === 1 ? "א׳" : "ב׳"}
+        </Button>
+      ))}
+    </div>
+  ) : null;
+
   const handleChooseSeder = (nextSeder: string) => {
     const nextMasechtos = SHAS_BAVLI.filter((m) => m.seder === nextSeder);
     const nextMasechta =
@@ -421,13 +486,17 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   // לימוד פעיל במצב מסך מלא בלבד — מציג רק את ה-StudySession
   if (studyOpen && practiceMode === "fullscreen" && cardIds.length > 0) {
     return (
-      <StudySession
-        deckId={null}
-        mode="practice"
-        cardIds={cardIds}
-        sourceContext={{ masechta, daf, amud }}
-        onExit={closePractice}
-      />
+      <div className="space-y-2" dir="rtl">
+        {adminPracticeAmudTargets}
+        <StudySession
+          deckId={null}
+          mode="practice"
+          cardIds={cardIds}
+          sourceContext={{ masechta, daf, amud }}
+          classificationDragEnabled={isAdmin}
+          onExit={closePractice}
+        />
+      </div>
     );
   }
 
@@ -831,6 +900,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </Button>
         </div>
       </div>
+      {adminPracticeAmudTargets}
       <div className="flex-1 min-h-0">
         <FitToContainer enabled={practiceScale !== 1} manualScale={practiceScale}>
           <StudySession
@@ -839,6 +909,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             mode="practice"
             cardIds={cardIds}
             sourceContext={{ masechta, daf, amud }}
+            classificationDragEnabled={isAdmin}
             onExit={closePractice}
             fillHeight={practiceScale !== 1}
           />
@@ -846,6 +917,29 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       </div>
     </Card>
   );
+
+  const canEditPracticeQuestions = can("cards", "edit");
+  const activeEditingPracticeCard = editingPracticeCard
+    ? state.cards.find((card) => card.id === editingPracticeCard.id) ?? editingPracticeCard
+    : null;
+
+  const questionEditButton = (card: StudyCardType) => canEditPracticeQuestions ? (
+    <Button
+      type="button"
+      size="icon"
+      variant="outline"
+      className="pointer-events-none h-8 w-8 shrink-0 border-gold/50 bg-background/95 opacity-0 shadow-sm transition-[opacity,background-color,border-color] hover:border-gold hover:bg-gold/10 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 max-sm:pointer-events-auto max-sm:opacity-100"
+      title="ערוך שאלה ותשובות"
+      aria-label={`ערוך שאלה: ${card.question}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        setEditingPracticeCard(card);
+      }}
+    >
+      <Pencil className="h-4 w-4 text-gold" />
+    </Button>
+  ) : null;
 
   const cardsPanel = (
     <Card className="gold-frame p-4 flex flex-col h-full" dir="rtl">
@@ -945,6 +1039,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     {c.type === "combo" && "משולבת"}
                   </div>
                 </div>
+                {questionEditButton(c)}
               </div>
             </div>
           ))}
@@ -978,6 +1073,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
                     {c.type === "combo" && "משולבת"}
                   </div>
                 </div>
+                {questionEditButton(c)}
               </div>
             </div>
           ))}
@@ -1099,6 +1195,34 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             prefillDaf={{ masechta, daf, amud }}
             onClose={() => setAddQuestionOpen(false)}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!activeEditingPracticeCard}
+        onOpenChange={(open) => {
+          if (!open) setEditingPracticeCard(null);
+        }}
+        modal={false}
+      >
+        <DialogContent
+          className="max-h-[92vh] max-w-4xl overflow-y-auto border-2 border-gold/45 shadow-2xl"
+          dir="rtl"
+          showOverlay={false}
+          data-testid="practice-question-editor"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-end gap-2 text-right">
+              <Pencil className="h-5 w-5 text-gold" /> עריכת שאלה ותשובות
+            </DialogTitle>
+          </DialogHeader>
+          {activeEditingPracticeCard && (
+            <CardQuickEditor
+              key={activeEditingPracticeCard.id}
+              card={activeEditingPracticeCard}
+              onClose={() => setEditingPracticeCard(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

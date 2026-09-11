@@ -11,7 +11,12 @@ import {
   LOCAL_OFFLINE_PROFILE_ID,
   sanitizeLocalOfflineProfile,
 } from "@/lib/auth/guestViewProfile";
-import { attemptDeferredRegistration, getPendingRegistration } from "@/lib/auth/localAccount";
+import {
+  attemptDeferredRegistration,
+  attemptRegisteredAccountReconnect,
+  getLocalAccount,
+  getPendingRegistration,
+} from "@/lib/auth/localAccount";
 import { startCloudActivityTracking } from "@/lib/auth/activityTracking";
 
 export const GUEST_ID = "guest";
@@ -165,13 +170,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // hijacks an already-authenticated session.
   useEffect(() => {
     if (!guestMode || session || localIdentity !== 'account') return;
-    if (!getPendingRegistration()) return;
-
     let cancelled = false;
     const run = async () => {
-      const result = await attemptDeferredRegistration();
+      const pending = getPendingRegistration();
+      const registered = getLocalAccount()?.status === "registered";
+      if (!pending && !registered) return;
+      const result = pending
+        ? await attemptDeferredRegistration()
+        : await attemptRegisteredAccountReconnect();
       if (cancelled) return;
-      if (result.status === "registered") {
+      if (result.status === "registered" || result.status === "reconnected") {
         const { data } = await supabase.auth.getSession();
         if (cancelled || !data.session) return;
         // Only this verified registration may hand local mode back to the cloud.
@@ -182,7 +190,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setGuestMode(false);
         setGuestProfile(null);
         supabase.auth.startAutoRefresh();
-        toast.success("החשבון שנוצר באופליין נרשם לשרת והנתונים מסתנכרנים.");
+        toast.success(result.status === "registered"
+          ? "החשבון שנוצר באופליין נרשם לשרת והנתונים מסתנכרנים."
+          : "החיבור חזר. החשבון זוהה והשינויים שנעשו באופליין מסתנכרנים לענן.");
       } else if (result.status === "failed" && result.message) {
         console.warn("[deferred-registration] failed:", result.message);
       }
@@ -190,9 +200,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void run();
     window.addEventListener("online", run);
+    const retryTimer = window.setInterval(run, 30_000);
     return () => {
       cancelled = true;
       window.removeEventListener("online", run);
+      window.clearInterval(retryTimer);
     };
   }, [guestMode, session, localIdentity]);
 

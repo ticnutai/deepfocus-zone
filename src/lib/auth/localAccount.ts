@@ -46,12 +46,19 @@ export interface LocalAccount {
   displayName: string;
   email: string; // "" when not provided — synthetic address is used server-side
   passwordObf: string; // present only while status === "pending"
-  passwordHash: string; // SHA-256, for offline sign-in verification
+  passwordHash: string; // PBKDF2 verifier (legacy rows may still contain SHA-256)
+  passwordSalt?: string;
+  passwordIterations?: number;
   status: "pending" | "registered";
   createdAt: number;
   registeredAt?: number;
   userId?: string;
 }
+
+const PASSWORD_ITERATIONS = 210_000;
+
+type ReconnectCredential = { username: string; password: string };
+let reconnectCredential: ReconnectCredential | null = null;
 
 /* ---------- storage ---------- */
 
@@ -135,15 +142,23 @@ async function parkActiveData() {
 }
 
 async function loadDataIntoGuestSlot(username: string) {
+  const account = readAccounts().find((item) => item.username === username);
   const parked = await loadStudyStateCache(dataKeyFor(username)).catch(() => null);
+  // A cloud account remembered on this device initially owns its cache under
+  // the real Supabase user id. Reuse that snapshot for the first offline login
+  // instead of opening an empty workspace.
+  const cloudSnapshot = !parked && account?.status === "registered" && account.userId
+    ? await loadStudyStateCache(account.userId).catch(() => null)
+    : null;
+  const localSnapshot = parked ?? cloudSnapshot;
   try { localStorage.setItem(BROWSER_CACHE_RESET_KEY, "1"); } catch { /* ignore */ }
   // Display settings are mirrored in their own record keyed to the shared guest
   // slot; drop it so the incoming account uses its OWN settings (carried inside
   // its parked state) instead of inheriting the previous account's.
   try { localStorage.removeItem(GUEST_SETTINGS_LS_KEY); } catch { /* ignore */ }
-  if (parked) {
-    await saveStudyStateCache(GUEST_ID, parked);
-    try { localStorage.setItem(GUEST_STATE_LS_KEY, JSON.stringify(parked)); } catch { /* ignore */ }
+  if (localSnapshot) {
+    await saveStudyStateCache(GUEST_ID, localSnapshot);
+    try { localStorage.setItem(GUEST_STATE_LS_KEY, JSON.stringify(localSnapshot)); } catch { /* ignore */ }
   } else {
     // Fresh account → empty workspace (the store re-seeds the offline library).
     await clearStudyStateCache(GUEST_ID).catch(() => {});
@@ -159,8 +174,12 @@ async function loadDataIntoGuestSlot(username: string) {
 export async function switchLocalAccount(username: string): Promise<boolean> {
   const list = readAccounts();
   if (!list.some((a) => a.username === username)) return false;
-  if (getActiveUsername() === username) return true;
-  await parkActiveData();
+  const explicitlyActive = localStorage.getItem(ACTIVE_KEY);
+  if (explicitlyActive === username) return true;
+  // getActiveUsername() falls back to the first row for display purposes, but
+  // until ACTIVE_KEY exists that account's workspace has not actually been
+  // loaded. Do not mistake the fallback for a completed switch.
+  if (explicitlyActive) await parkActiveData();
   await loadDataIntoGuestSlot(username);
   localStorage.setItem(ACTIVE_KEY, username);
   return true;
@@ -217,6 +236,57 @@ async function sha256(text: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+async function derivePasswordVerifier(password: string, salt: Uint8Array, iterations: number): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    key,
+    256,
+  );
+  return bytesToBase64(new Uint8Array(bits));
+}
+
+async function createPasswordVerifier(password: string): Promise<Pick<LocalAccount, "passwordHash" | "passwordSalt" | "passwordIterations">> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return {
+    passwordHash: await derivePasswordVerifier(password, salt, PASSWORD_ITERATIONS),
+    passwordSalt: bytesToBase64(salt),
+    passwordIterations: PASSWORD_ITERATIONS,
+  };
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return diff === 0;
+}
+
+async function passwordMatches(account: LocalAccount, password: string): Promise<boolean> {
+  if (account.passwordSalt && account.passwordIterations) {
+    const candidate = await derivePasswordVerifier(password, base64ToBytes(account.passwordSalt), account.passwordIterations);
+    return constantTimeEqual(candidate, account.passwordHash);
+  }
+  // Backward compatibility for accounts created before the salted verifier.
+  return constantTimeEqual(await sha256(password), account.passwordHash);
+}
+
 /* ---------- public API ---------- */
 
 // Usernames may contain any Unicode letter (Hebrew included), digits, dot and
@@ -269,12 +339,13 @@ export async function createLocalAccount(input: {
   // fresh, isolated workspace.
   await parkActiveData();
   await loadDataIntoGuestSlot(username); // no parked data yet → clears the slot
+  const verifier = await createPasswordVerifier(input.password);
   upsertAccount({
     username,
     displayName: (input.displayName ?? "").trim() || username,
     email: (input.email ?? "").trim(),
     passwordObf: obfuscate(input.password),
-    passwordHash: await sha256(input.password),
+    ...verifier,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -288,14 +359,122 @@ export async function createLocalAccount(input: {
  */
 export async function findLocalAccountByCredentials(usernameOrEmail: string, password: string): Promise<LocalAccount | null> {
   const id = usernameOrEmail.trim().toLowerCase();
-  const hash = await sha256(password);
   for (const account of readAccounts()) {
     const matchesId = id === account.username
       || (!!account.email && id === account.email.toLowerCase())
       || id === syntheticEmailForUsername(account.username);
-    if (matchesId && hash === account.passwordHash) return account;
+    if (matchesId && await passwordMatches(account, password)) return account;
   }
   return null;
+}
+
+/**
+ * Enables offline login for a cloud account only after that password has been
+ * accepted by Supabase on this device. No plaintext password or cloud token is
+ * persisted; the local record contains a salted PBKDF2 verifier only.
+ */
+export async function rememberOnlineAccountForOfflineLogin(input: {
+  userId: string;
+  email: string;
+  username?: string;
+  displayName?: string;
+  password: string;
+}): Promise<LocalAccount> {
+  const email = input.email.trim().toLowerCase();
+  const requested = (input.username ?? "").trim().toLowerCase();
+  const emailBase = email.split("@")[0] || `user.${input.userId.slice(0, 8)}`;
+  let username = USERNAME_RE.test(requested) ? requested : emailBase.replace(/[^a-z0-9_.]/gi, "").toLowerCase();
+  if (!USERNAME_RE.test(username)) username = `user.${input.userId.slice(0, 8)}`;
+
+  const accounts = readAccounts();
+  const sameUser = accounts.find((account) => account.userId === input.userId);
+  const offlineSnapshot = sameUser && localStorage.getItem(ACTIVE_KEY) === sameUser.username
+    ? await readGuestState()
+    : null;
+  const collision = accounts.find((account) => account.username === username && account.userId !== input.userId);
+  if (collision) username = `${username.slice(0, 40)}.${input.userId.slice(0, 8)}`;
+
+  const verifier = await createPasswordVerifier(input.password);
+  const account: LocalAccount = {
+    ...(sameUser ?? {}),
+    username: sameUser?.username ?? username,
+    displayName: input.displayName?.trim() || sameUser?.displayName || requested || email,
+    email,
+    passwordObf: "",
+    ...verifier,
+    status: "registered",
+    createdAt: sameUser?.createdAt ?? Date.now(),
+    registeredAt: Date.now(),
+    userId: input.userId,
+  };
+  upsertAccount(account);
+
+  if (offlineSnapshot) {
+    // Covers an app restart that happened while offline: the password is now
+    // verified by the server, so attach the preserved local workspace to the
+    // same user before cloud hydration starts.
+    await saveStudyStateCache(input.userId, offlineSnapshot);
+    await saveStudyStateCache(dataKeyFor(account.username), offlineSnapshot);
+    await enqueueFullSyncJob(input.userId, "registered-account-online-login-resume");
+  } else {
+    // Keep the most recent cloud cache available in the account's offline slot.
+    const cached = await loadStudyStateCache(input.userId).catch(() => null);
+    if (cached) await saveStudyStateCache(dataKeyFor(account.username), cached).catch(() => {});
+  }
+  return account;
+}
+
+/** Keep the just-entered password in memory only, long enough to reconnect. */
+export function prepareRegisteredAccountReconnect(account: LocalAccount, password: string): void {
+  reconnectCredential = account.status === "registered" ? { username: account.username, password } : null;
+}
+
+export type RegisteredReconnectResult = {
+  status: "reconnected" | "no-credential" | "offline" | "failed" | "in-flight";
+  message?: string;
+};
+
+let registeredReconnectInFlight = false;
+
+/**
+ * Re-authenticates a previously verified cloud account when connectivity
+ * returns, migrates its offline workspace to the same cloud user id, and
+ * queues a complete upload. Safe to retry on online events and timers.
+ */
+export async function attemptRegisteredAccountReconnect(): Promise<RegisteredReconnectResult> {
+  if (registeredReconnectInFlight) return { status: "in-flight" };
+  const account = getActiveLocalAccount();
+  const credential = reconnectCredential;
+  if (!account || account.status !== "registered" || !account.userId || !credential || credential.username !== account.username) {
+    return { status: "no-credential" };
+  }
+  if (typeof navigator !== "undefined" && !navigator.onLine) return { status: "offline" };
+
+  registeredReconnectInFlight = true;
+  try {
+    // Capture first: signing in emits an auth event immediately.
+    const offlineState = await readGuestState();
+    const loginEmail = account.email || syntheticEmailForUsername(account.username);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: credential.password });
+    if (error) return { status: "failed", message: error.message };
+    const userId = data.user?.id ?? data.session?.user.id ?? null;
+    if (!userId || userId !== account.userId) {
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      reconnectCredential = null;
+      return { status: "failed", message: "זהות החשבון שחזרה מהשרת אינה תואמת לחשבון המקומי." };
+    }
+    if (offlineState) {
+      await saveStudyStateCache(userId, offlineState);
+      await saveStudyStateCache(dataKeyFor(account.username), offlineState);
+      await enqueueFullSyncJob(userId, "registered-account-offline-reconnect");
+    }
+    reconnectCredential = null;
+    return { status: "reconnected" };
+  } catch (error) {
+    return { status: "failed", message: error instanceof Error ? error.message : String(error) };
+  } finally {
+    registeredReconnectInFlight = false;
+  }
 }
 
 export async function verifyLocalCredentials(usernameOrEmail: string, password: string): Promise<boolean> {
@@ -322,13 +501,15 @@ function markRegistered(userId: string | null) {
 /* ---------- deferred server registration ---------- */
 
 async function readGuestState(): Promise<StudyState | null> {
-  try {
-    const idb = await loadStudyStateCache(GUEST_ID);
-    if (idb) return idb;
-  } catch { /* fall back to localStorage */ }
+  // The store mirrors every edit to localStorage before its debounced IDB
+  // write, so this is the freshest source during a reconnect.
   try {
     const raw = localStorage.getItem(GUEST_STATE_LS_KEY);
     if (raw) return JSON.parse(raw) as StudyState;
+  } catch { /* ignore */ }
+  try {
+    const idb = await loadStudyStateCache(GUEST_ID);
+    if (idb) return idb;
   } catch { /* ignore */ }
   return null;
 }

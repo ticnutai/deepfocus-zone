@@ -97,8 +97,12 @@ async function main() {
     console.log(`\n🚀 Running migration: ${name}`);
     console.log(`   📏 SQL size: ${sql.length} chars`);
     console.log('──────────────────────────────────────────────────');
-    const ok = await runSql(token, sql, name);
-    if (!ok) process.exit(1);
+    const chunks = sql.split(/^-- migration-chunk\s*$/m).map((part) => part.trim()).filter(Boolean);
+    for (let index = 0; index < chunks.length; index++) {
+      if (chunks.length > 1) console.log(`   Chunk ${index + 1}/${chunks.length}`);
+      const ok = await runSql(token, chunks[index], `${name}:${index + 1}`);
+      if (!ok) process.exit(1);
+    }
   } else {
     console.error('❌ Unknown command:', command);
     process.exit(1);

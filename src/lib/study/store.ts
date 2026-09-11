@@ -30,10 +30,6 @@ import { loadBundledOfflineLibrary } from "./offlineLibrary";
 import { enqueueOfflineQuestion, reconcileOfflineQuestions } from "./offlineQuestionSync";
 import { withClientSource } from "@/lib/app/clientSource";
 
-/** Active guest profile's pinned source user id, or null to use the global guest_source. */
-const getActiveGuestSourceUserId = (): string | null => {
-  try { return getActiveGuestViewProfile()?.sourceUserId ?? null; } catch { return null; }
-};
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
@@ -84,14 +80,60 @@ let phase2TotalCount = 0; // total card count from bootstrap; Phase 2 skips if a
 const sourceOwnedDeckIds = new Set<string>();
 const sourceOwnedCategoryIds = new Set<string>();
 const sourceOwnedCardIds = new Set<string>();
+const sourceOwnerByCardId = new Map<string, string>();
 let sourceOverlayHydrateInFlight = false;
 let sourceOverlayHydratedFor: string | null = null;
-let sourceOverlaySourceUserId: string | null = null;
+let sourceOverlaySourceUserIds: string[] = [];
+let contentAccessIncludeOwn = true;
+let contentAccessIncludeSiteLibrary = false;
 const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
 const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
 const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
-export function getSourceUserId(): string | null { return sourceOverlaySourceUserId; }
+export function getSourceUserId(): string | null { return sourceOverlaySourceUserIds[0] ?? null; }
 export function isCardFromSource(id: string): boolean { return sourceOwnedCardIds.has(id); }
+
+const SOURCE_MANIFEST_KEY = (userId: string) => `content-source-manifest:v1:${userId}`;
+const CONTENT_ACCESS_CACHE_KEY = (userId: string) => `content-access-policy:v1:${userId}`;
+
+const persistSourceManifest = (userId: string) => {
+  try {
+    localStorage.setItem(SOURCE_MANIFEST_KEY(userId), JSON.stringify({
+      cards: Object.fromEntries(sourceOwnerByCardId),
+      decks: [...sourceOwnedDeckIds],
+      categories: [...sourceOwnedCategoryIds],
+      sourceUserIds: sourceOverlaySourceUserIds,
+    }));
+  } catch { /* cache is best-effort */ }
+};
+
+const restoreSourceManifest = (userId: string) => {
+  sourceOwnedCardIds.clear(); sourceOwnedDeckIds.clear(); sourceOwnedCategoryIds.clear(); sourceOwnerByCardId.clear();
+  sourceOverlaySourceUserIds = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SOURCE_MANIFEST_KEY(userId)) ?? "null") as {
+      cards?: Record<string, string>; decks?: string[]; categories?: string[]; sourceUserIds?: string[];
+    } | null;
+    Object.entries(parsed?.cards ?? {}).forEach(([id, owner]) => { sourceOwnedCardIds.add(id); sourceOwnerByCardId.set(id, owner); });
+    (parsed?.decks ?? []).forEach((id) => sourceOwnedDeckIds.add(id));
+    (parsed?.categories ?? []).forEach((id) => sourceOwnedCategoryIds.add(id));
+    sourceOverlaySourceUserIds = Array.isArray(parsed?.sourceUserIds) ? parsed!.sourceUserIds! : [];
+    const policy = JSON.parse(localStorage.getItem(CONTENT_ACCESS_CACHE_KEY(userId)) ?? "null") as { include_own?: boolean; include_site_library?: boolean } | null;
+    contentAccessIncludeOwn = policy?.include_own !== false;
+    contentAccessIncludeSiteLibrary = policy?.include_site_library ?? userId === GUEST_ID;
+  } catch { contentAccessIncludeOwn = true; contentAccessIncludeSiteLibrary = userId === GUEST_ID; }
+};
+
+const purgeTrackedSourceItems = () => {
+  if (!sourceOwnedCardIds.size && !sourceOwnedDeckIds.size && !sourceOwnedCategoryIds.size) return;
+  memState = {
+    ...memState,
+    cards: memState.cards.filter((item) => !sourceOwnedCardIds.has(item.id)),
+    decks: memState.decks.filter((item) => !sourceOwnedDeckIds.has(item.id)),
+    categories: memState.categories.filter((item) => !sourceOwnedCategoryIds.has(item.id)),
+    cardDecks: (memState.cardDecks ?? []).filter((item) => !sourceOwnedCardIds.has(item.cardId) && !sourceOwnedDeckIds.has(item.deckId)),
+  };
+  sourceOwnedCardIds.clear(); sourceOwnedDeckIds.clear(); sourceOwnedCategoryIds.clear(); sourceOwnerByCardId.clear();
+};
 
 
 const GUEST_ID = "guest";
@@ -197,7 +239,7 @@ async function applyBundledLibraryToAuthenticatedState(state: StudyState): Promi
   for (const category of seed.categories) sourceOwnedCategoryIds.add(category.id);
   for (const deck of seed.decks) sourceOwnedDeckIds.add(deck.id);
   for (const card of seed.cards) sourceOwnedCardIds.add(card.id);
-  sourceOverlaySourceUserId = library.sourceUserId;
+  sourceOverlaySourceUserIds = library.sourceUserId ? [library.sourceUserId] : [];
 
   const cardDeckMap = new Map<string, NonNullable<StudyState["cardDecks"]>[number]>();
   const linkKey = (link: { cardId: string; deckId: string }) => `${link.cardId}::${link.deckId}`;
@@ -949,11 +991,8 @@ const isAbortError = (error: unknown) => {
 
 const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSignal): Promise<CategoryChildRow[]> => {
   const isGuest = currentUserId === GUEST_ID;
-  const rpcName = isGuest ? "get_guest_category_children_for" : "get_category_children";
-  const guestSourceUid = isGuest ? getActiveGuestSourceUserId() : null;
-  const body = isGuest
-    ? JSON.stringify({ p_source_user_id: guestSourceUid, p_parent_id: parentId })
-    : JSON.stringify({ p_parent_id: parentId });
+  const rpcName = isGuest ? "get_content_category_children" : "get_category_children";
+  const body = JSON.stringify({ p_parent_id: parentId });
   const callRpc = async (name: string, accessToken: string | null) => fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
@@ -980,12 +1019,11 @@ const fetchCategoryChildrenRpc = async (parentId: string | null, signal: AbortSi
 
   const ownRows = ((await response.json()) ?? []) as CategoryChildRow[];
 
-  // For authenticated users, also pull source-overlay children (read-only).
-  // No-op server-side when admin disabled the overlay.
+  // Authenticated users receive their own children plus the policy-derived overlay.
   if (!isGuest && currentUserId) {
     try {
       const tok = await getCachedAccessToken();
-      const sourceResp = await callRpc("get_source_category_children", tok);
+      const sourceResp = await callRpc("get_content_category_children", tok);
       if (sourceResp.ok) {
         const sourceRows = ((await sourceResp.json()) ?? []) as CategoryChildRow[];
         // Track ownership and merge (own rows win on id collision).
@@ -1660,7 +1698,7 @@ async function runPhase2CardBackfill(userId: string) {
   if (phase2TotalCount > 0 && memState.cards.length >= phase2TotalCount) return;
   phase2BackfillInFlight = true;
   phase2BackfillUserId = userId;
-  const PAGE = 3000;
+  const PAGE = 1000;
   const CONCURRENCY = 2;
   let offset = 0;
   try {
@@ -1668,13 +1706,10 @@ async function runPhase2CardBackfill(userId: string) {
       // Fire CONCURRENCY pages in parallel.
       const batchOffsets = Array.from({ length: CONCURRENCY }, (_, i) => offset + i * PAGE);
       const isGuest = currentUserId === GUEST_ID;
-      const phase2RpcName = isGuest ? "get_guest_unreviewed_cards_page_for" : "get_unreviewed_cards_page";
-      const guestSourceUid = isGuest ? getActiveGuestSourceUserId() : null;
+      const phase2RpcName = isGuest ? "get_content_unreviewed_cards_page" : "get_unreviewed_cards_page";
       const batchResults = await Promise.all(
         batchOffsets.map((o) => {
-          const args = isGuest
-            ? { p_source_user_id: guestSourceUid, p_offset: o, p_limit: PAGE }
-            : { p_offset: o, p_limit: PAGE };
+          const args = { p_offset: o, p_limit: PAGE };
           return rpcClient.rpc(phase2RpcName, args) as Promise<{ data: unknown; error: unknown }>;
         })
       );
@@ -1692,7 +1727,15 @@ async function runPhase2CardBackfill(userId: string) {
         const rows = Array.isArray(result.data) ? result.data : [];
         if (rows.length > 0) batchHadRows = true;
         const mapped = (rows as unknown as Parameters<typeof cardFromRow>[0][])
-          .map(cardFromRow)
+          .map((row) => {
+            const card = cardFromRow(row);
+            if (isGuest) {
+              const owner = (row as { created_by?: string | null; user_id?: string | null }).created_by
+                ?? (row as { user_id?: string | null }).user_id ?? sourceOverlaySourceUserIds[0] ?? "";
+              sourceOwnedCardIds.add(card.id); if (owner) sourceOwnerByCardId.set(card.id, owner);
+            }
+            return card;
+          })
           .filter((c) => !existingIds.has(c.id));
         // Track newly added ids to prevent cross-page dupes within the same batch.
         mapped.forEach((c) => existingIds.add(c.id));
@@ -1722,6 +1765,7 @@ async function runPhase2CardBackfill(userId: string) {
       await saveStudyStateCache(userId, memState);
     }
     phase2BackfillNeeded = false;
+    if (userId === GUEST_ID) persistSourceManifest(GUEST_ID);
   } catch (e) {
     console.error("[phase2] card backfill failed:", e);
   } finally {
@@ -2416,13 +2460,12 @@ async function hydrateGuestFromCloud(): Promise<void> {
   guestCloudHydrateInFlight = true;
   try {
     const headers = { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY };
-    const guestSourceUid = getActiveGuestSourceUserId();
-    const rpcBody = JSON.stringify({ p_source_user_id: guestSourceUid });
+    const rpcBody = "{}";
     const [snapResp, ccResp] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_bootstrap_snapshot_for`, {
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_content_overlay_snapshot`, {
         method: "POST", headers, body: rpcBody,
       }),
-      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_guest_card_categories_for`, {
+      fetch(`${SUPABASE_URL}/rest/v1/rpc/get_content_card_categories`, {
         method: "POST", headers, body: rpcBody,
       }),
     ]);
@@ -2455,10 +2498,25 @@ async function hydrateGuestFromCloud(): Promise<void> {
       categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
       includeSubCategories: d.include_sub_categories !== false,
     }));
-    const cloudCards: Card[] = cardsRaw.map(cardFromRow);
+    purgeTrackedSourceItems();
+    const sourceIds = Array.isArray(payload.source_user_ids) ? payload.source_user_ids.filter((id): id is string => typeof id === "string") : [];
+    sourceOverlaySourceUserIds = sourceIds;
+    const access = payload.content_access && typeof payload.content_access === "object" ? payload.content_access as { include_own?: boolean } : null;
+    contentAccessIncludeOwn = access?.include_own !== false;
+    contentAccessIncludeSiteLibrary = (access as { include_site_library?: boolean } | null)?.include_site_library === true;
+    try { localStorage.setItem(CONTENT_ACCESS_CACHE_KEY(GUEST_ID), JSON.stringify(access ?? { include_own: true })); } catch { /* best effort */ }
+    const cloudCards: Card[] = cardsRaw.map((row) => {
+      const card = cardFromRow(row);
+      const owner = (row as { created_by?: string | null; user_id?: string | null }).created_by
+        ?? (row as { user_id?: string | null }).user_id ?? sourceIds[0] ?? "";
+      sourceOwnedCardIds.add(card.id); if (owner) sourceOwnerByCardId.set(card.id, owner);
+      return card;
+    });
     const cloudCardDecks = cardDecksRaw.map((cd) => ({
       cardId: cd.card_id, deckId: cd.deck_id, sortOrder: cd.sort_order ?? 0,
     }));
+    cloudCategories.forEach((item) => sourceOwnedCategoryIds.add(item.id));
+    cloudDecks.forEach((item) => sourceOwnedDeckIds.add(item.id));
 
     // card_categories → derive deckCategories-like mapping is not direct; the existing app
     // mostly relies on Card.tags / card_decks. We don't need card_categories for the read flow.
@@ -2503,6 +2561,7 @@ async function hydrateGuestFromCloud(): Promise<void> {
     }
 
     try { localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(memState)); } catch { /* storage full */ }
+    persistSourceManifest(GUEST_ID);
     notify();
   } finally {
     guestCloudHydrateInFlight = false;
@@ -2523,8 +2582,8 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
   sourceOverlayHydrateInFlight = true;
   try {
     const [snapR, ccR] = await Promise.all([
-      rpcClient.rpc("get_source_overlay_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
-      rpcClient.rpc("get_source_card_categories") as unknown as Promise<{ data: unknown; error: unknown }>,
+      rpcClient.rpc("get_content_overlay_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      rpcClient.rpc("get_content_card_categories") as unknown as Promise<{ data: unknown; error: unknown }>,
     ]);
     if (snapR.error) { console.warn("[source-overlay] snapshot error:", snapR.error); return; }
     const payload = snapR.data;
@@ -2554,7 +2613,20 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
       categoryIds: Array.isArray(d.category_ids) ? (d.category_ids as string[]) : [],
       includeSubCategories: d.include_sub_categories !== false,
     } as Deck));
-    const ownedCards = cardsRaw.map(cardFromRow);
+    purgeTrackedSourceItems();
+    const sourceIds = Array.isArray(payload.source_user_ids) ? payload.source_user_ids.filter((id): id is string => typeof id === "string") : [];
+    sourceOverlaySourceUserIds = sourceIds;
+    const access = payload.content_access && typeof payload.content_access === "object" ? payload.content_access as { include_own?: boolean } : null;
+    contentAccessIncludeOwn = access?.include_own !== false;
+    contentAccessIncludeSiteLibrary = (access as { include_site_library?: boolean } | null)?.include_site_library === true;
+    try { localStorage.setItem(CONTENT_ACCESS_CACHE_KEY(uid), JSON.stringify(access ?? { include_own: true })); } catch { /* best effort */ }
+    const ownedCards = cardsRaw.map((row) => {
+      const card = cardFromRow(row);
+      const owner = (row as { created_by?: string | null; user_id?: string | null }).created_by
+        ?? (row as { user_id?: string | null }).user_id ?? sourceIds[0] ?? "";
+      sourceOwnerByCardId.set(card.id, owner);
+      return card;
+    });
     const ownedCardDecks = cardDecksRaw.map((cd) => ({
       cardId: cd.card_id, deckId: cd.deck_id, sortOrder: cd.sort_order ?? 0,
     }));
@@ -2597,7 +2669,7 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
     }
 
     sourceOverlayHydratedFor = uid;
-    sourceOverlaySourceUserId = typeof payload.source_user_id === "string" ? payload.source_user_id : null;
+    persistSourceManifest(uid);
     void ccR; // card_categories not directly used yet
     await saveStudyStateCache(uid, memState);
     requestStoreNotify();
@@ -2607,17 +2679,23 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
 }
 
 async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<void> {
-  const PAGE = 3000;
+  const PAGE = 1000;
   let offset = 0;
   // currentLoaded counts how many source cards we already have in mem.
   let loaded = memState.cards.filter((c) => sourceOwnedCardIds.has(c.id)).length;
   while (loaded < totalCount && currentUserId === uid) {
-    const { data, error } = await (rpcClient.rpc("get_source_unreviewed_cards_page", { p_offset: offset, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>);
+    const { data, error } = await (rpcClient.rpc("get_content_unreviewed_cards_page", { p_offset: offset, p_limit: PAGE }) as Promise<{ data: unknown; error: unknown }>);
     if (error) { console.warn("[source-overlay] page error:", error); break; }
     const rows = Array.isArray(data) ? (data as Parameters<typeof cardFromRow>[0][]) : [];
     if (rows.length === 0) break;
     const existing = new Set(memState.cards.map((c) => c.id));
-    const fresh = rows.map(cardFromRow).filter((c) => !existing.has(c.id));
+    const fresh = rows.map((row) => {
+      const card = cardFromRow(row);
+      const owner = (row as { created_by?: string | null; user_id?: string | null }).created_by
+        ?? (row as { user_id?: string | null }).user_id ?? sourceOverlaySourceUserIds[0] ?? "";
+      if (owner) sourceOwnerByCardId.set(card.id, owner);
+      return card;
+    }).filter((c) => !existing.has(c.id));
     for (const c of fresh) sourceOwnedCardIds.add(c.id);
     if (fresh.length > 0) {
       memState = { ...memState, cards: [...memState.cards, ...fresh] };
@@ -2627,7 +2705,7 @@ async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<
     offset += PAGE;
     if (rows.length < PAGE) break;
   }
-  if (currentUserId === uid) await saveStudyStateCache(uid, memState);
+  if (currentUserId === uid) { persistSourceManifest(uid); await saveStudyStateCache(uid, memState); }
 }
 
 
@@ -2661,7 +2739,8 @@ export function useStudy() {
       sourceOwnedDeckIds.clear();
       sourceOwnedCategoryIds.clear();
       sourceOverlayHydratedFor = null;
-      sourceOverlaySourceUserId = null;
+      sourceOwnerByCardId.clear();
+      sourceOverlaySourceUserIds = [];
     }
     if (!uid) {
       memState = emptyState();
@@ -2671,6 +2750,7 @@ export function useStudy() {
       notify();
       return;
     }
+    restoreSourceManifest(uid);
     // Avoid duplicate parallel hydrations for the same user.
     // If already hydrated, or currently hydrating this user, skip.
     if (loadedFor === uid && (isHydrated || hydrationInFlightFor === uid)) return;
@@ -2752,7 +2832,7 @@ export function useStudy() {
           // an app that booted straight into guest mode without visiting the
           // login screen), apply the bundled library directly so the ~22k
           // questions are always present offline.
-          if (!hasMeaningfulStudyData(memState)) {
+          if (!hasMeaningfulStudyData(memState) && contentAccessIncludeSiteLibrary) {
             const seeded = await applyBundledLibraryToAuthenticatedState(memState);
             if (!cancelled && currentUserId === GUEST_ID && hasMeaningfulStudyData(seeded)) {
               memState = applyGuestDisplaySettings(applyBidirectionalDedupeGuards(seeded), guestSettings);
@@ -2854,7 +2934,7 @@ export function useStudy() {
         }
 
         if (isCurrentlyOffline) {
-          memState = await applyBundledLibraryToAuthenticatedState(memState);
+          if (contentAccessIncludeSiteLibrary) memState = await applyBundledLibraryToAuthenticatedState(memState);
           isHydrated = true;
           await saveStudyStateCache(uid, memState);
           notify();
@@ -3129,7 +3209,13 @@ export function useStudy() {
     bg(supabase.from("categories").update({ name: UNCATEGORIZED_NAME }).eq("id", old.id), "categories.migrate.rename");
   }, [memState.categories, user?.id]);
 
-  const state = memState;
+  const state = contentAccessIncludeOwn ? memState : {
+    ...memState,
+    cards: memState.cards.filter((item) => sourceOwnedCardIds.has(item.id)),
+    decks: memState.decks.filter((item) => sourceOwnedDeckIds.has(item.id)),
+    categories: memState.categories.filter((item) => sourceOwnedCategoryIds.has(item.id)),
+    cardDecks: (memState.cardDecks ?? []).filter((item) => sourceOwnedCardIds.has(item.cardId) && sourceOwnedDeckIds.has(item.deckId)),
+  };
   const getHydrationSnapshot = useCallback(() => ({
     isHydrated,
     // Cards are "fully loaded" when no Phase 2 backfill is pending/in-flight.
@@ -3662,12 +3748,14 @@ export function useStudy() {
       stats: { totalReviews: 0, correct: 0, incorrect: 0 },
     } as Card;
     sourceOwnedCardIds.delete(id);
+    const sourceUid = sourceOwnerByCardId.get(id) ?? getSourceUserId();
+    sourceOwnerByCardId.delete(id);
+    if (currentUserId) persistSourceManifest(currentUserId);
     setState((s) => ({
       ...s,
       cards: [...s.cards.filter((c) => c.id !== id), merged],
     }));
     bg(supabase.from("cards").insert(cardToRow(merged, userId)), "cards.fork");
-    const sourceUid = sourceOverlaySourceUserId;
     const noteText = opts?.note?.trim();
     if (noteText && sourceUid) {
       bg(

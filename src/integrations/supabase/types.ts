@@ -176,6 +176,7 @@ export type Database = {
           answer: string | null
           correct_boolean: boolean | null
           correct_indices: Json | null
+          created_by: string | null
           created_at: string
           daf: number | null
           deck_id: string | null
@@ -188,6 +189,7 @@ export type Database = {
           moderation_note: string | null
           moderation_status: string
           options: Json | null
+          origin_card_id: string | null
           published_card_id: string | null
           question: string
           sort_order: number
@@ -203,6 +205,7 @@ export type Database = {
           answer?: string | null
           correct_boolean?: boolean | null
           correct_indices?: Json | null
+          created_by?: string | null
           created_at?: string
           daf?: number | null
           deck_id?: string | null
@@ -215,6 +218,7 @@ export type Database = {
           moderation_note?: string | null
           moderation_status?: string
           options?: Json | null
+          origin_card_id?: string | null
           published_card_id?: string | null
           question: string
           sort_order?: number
@@ -230,6 +234,7 @@ export type Database = {
           answer?: string | null
           correct_boolean?: boolean | null
           correct_indices?: Json | null
+          created_by?: string | null
           created_at?: string
           daf?: number | null
           deck_id?: string | null
@@ -242,6 +247,7 @@ export type Database = {
           moderation_note?: string | null
           moderation_status?: string
           options?: Json | null
+          origin_card_id?: string | null
           published_card_id?: string | null
           question?: string
           sort_order?: number
@@ -266,6 +272,36 @@ export type Database = {
         Row: { device_key: string; user_id: string; display_name: string; local_username: string | null; created_at: string; last_seen_at: string }
         Insert: { device_key: string; user_id: string; display_name: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
         Update: { device_key?: string; user_id?: string; display_name?: string; local_username?: string | null; created_at?: string; last_seen_at?: string }
+        Relationships: []
+      }
+      role_content_access: {
+        Row: {
+          approved_only: boolean
+          include_own: boolean
+          include_site_library: boolean
+          role_id: string
+          source_user_ids: string[]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          approved_only?: boolean
+          include_own?: boolean
+          include_site_library?: boolean
+          role_id: string
+          source_user_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          approved_only?: boolean
+          include_own?: boolean
+          include_site_library?: boolean
+          role_id?: string
+          source_user_ids?: string[]
+          updated_at?: string
+          updated_by?: string | null
+        }
         Relationships: []
       }
       categories: {
@@ -1133,6 +1169,18 @@ export type Database = {
       get_access_role_policy: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      get_effective_content_access: { Args: Record<PropertyKey, never>; Returns: Json }
+      get_content_overlay_snapshot: { Args: Record<PropertyKey, never>; Returns: Json }
+      get_content_category_children: {
+        Args: { p_parent_id?: string | null }
+        Returns: { id: string; name: string; parent_id: string | null; color: string | null; created_at: string; sort_order: number; has_children: boolean }[]
+      }
+      get_content_unreviewed_cards_page: { Args: { p_offset?: number; p_limit?: number }; Returns: Json }
+      get_content_card_categories: { Args: Record<PropertyKey, never>; Returns: Json }
+      get_admin_content_sources: {
+        Args: Record<PropertyKey, never>
+        Returns: { source_user_id: string; label: string; email: string | null; question_count: number }[]
       }
       admin_create_user:
         | {
