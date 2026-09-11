@@ -285,6 +285,55 @@ export function AppShellSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const sidebarVisible = pinned || hovered;
 
+  // Mobile edge-swipe gesture: a right→left swipe starting at the right
+  // screen edge opens the sidebar sheet; a left→right swipe while open
+  // closes it. Only active below the lg breakpoint.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (window.innerWidth >= 1024) return;
+      const t = e.touches[0];
+      // Track swipes from the right edge, or anywhere when the sheet is open.
+      if (mobileOpen || t.clientX >= window.innerWidth - 28) {
+        tracking = true;
+        startX = t.clientX;
+        startY = t.clientY;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!tracking) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      // Horizontal intent only — let vertical scrolling pass through.
+      if (Math.abs(dy) > Math.abs(dx)) {
+        tracking = false;
+        return;
+      }
+      if (!mobileOpen && dx < -60) {
+        setMobileOpen(true);
+        tracking = false;
+      } else if (mobileOpen && dx > 60) {
+        setMobileOpen(false);
+        tracking = false;
+      }
+    };
+    const onTouchEnd = () => { tracking = false; };
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd);
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [mobileOpen]);
+
   const orderedItems = useMemo(() => {
     const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
     if (cfg.length === 0) return DEFAULT_SIDEBAR_ITEMS.map((item) => ({
