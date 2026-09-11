@@ -489,6 +489,16 @@ export function AppShellSidebar() {
         </div>
       </aside>
 
+      {/* Mobile edge strip: claims the right edge so the browser's own
+          back/side gesture doesn't swallow the swipe. */}
+      {!mobileOpen && (
+        <div
+          aria-hidden
+          className="lg:hidden fixed right-0 top-0 h-full w-6 z-[45]"
+          style={{ touchAction: "none" }}
+        />
+      )}
+
       {/* Mobile trigger + sheet */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen} modal={false}>
         <SheetTrigger asChild>
