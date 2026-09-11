@@ -218,7 +218,7 @@ describe("Daf learning amud navigation", () => {
   });
 
   it("does not expose practice question editing without cards edit permission", async () => {
-    mockPermissions.can.mockImplementation((module: string, action: string) => !(module === "cards" && action === "edit"));
+    mockPermissions.can.mockImplementation(((module: string, action: string) => !(module === "cards" && action === "edit")) as never);
     mockState.cards = [{
       id: "read-only-question", deckId: null, type: "flashcard", question: "שאלה לקריאה בלבד", answer: "תשובה",
       tags: [], masechta: "עירובין", daf: 13, amud: 1, createdAt: 1,

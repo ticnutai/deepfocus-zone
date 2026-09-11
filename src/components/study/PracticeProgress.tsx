@@ -115,7 +115,7 @@ export function PracticeProgress({ initialTab = "overview" }: { initialTab?: "ov
         <Card className="p-4"><span className="text-xs text-muted-foreground">מגמה כללית</span><strong className={cn("mt-1 flex items-center gap-2 text-xl", overallTrend.delta != null && overallTrend.delta >= 5 ? "text-emerald-600" : overallTrend.delta != null && overallTrend.delta <= -5 ? "text-destructive" : "")}>{overallTrend.delta != null && overallTrend.delta >= 5 ? <TrendingUp /> : overallTrend.delta != null && overallTrend.delta <= -5 ? <TrendingDown /> : <Activity />} {overallTrend.label}{overallTrend.delta != null ? ` (${overallTrend.delta > 0 ? "+" : ""}${Math.round(overallTrend.delta)} נק׳)` : ""}</strong></Card>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
         <TabsList className="grid h-auto w-full grid-cols-3">
           <TabsTrigger value="overview">לפי מסכת ודף</TabsTrigger>
           <TabsTrigger value="general">תרגול כללי</TabsTrigger>
