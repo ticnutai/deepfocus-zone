@@ -3253,7 +3253,9 @@ export function useStudy() {
     // Strict lazy-load mode: never prefetch additional branches.
     const prefetch = false;
     const reason = options?.reason ?? "user";
-    const userId = requireUser();
+    // Boot-time / signed-out calls must not crash the app; nothing to load yet.
+    const userId = currentUserId;
+    if (!userId) return 0;
     ensureCategoryLocalState(userId);
     const key = parentCacheKey(parentId);
 
@@ -4919,7 +4921,8 @@ export function useStudy() {
 
   const setTabConfig = useCallback((tabs: TabConfig[]) => {
     if (isRolePreview()) return;
-    const userId = requireUser();
+    const userId = currentUserId;
+    if (!userId) return;
     setState((s) => ({ ...s, tabConfig: tabs }));
     const sidebar = memState.sidebarConfig ?? [];
     bg(supabase.from("user_settings").upsert(
@@ -4930,7 +4933,8 @@ export function useStudy() {
 
   const setSidebarConfig = useCallback((sidebar: SidebarConfig[]) => {
     if (isRolePreview()) return;
-    const userId = requireUser();
+    const userId = currentUserId;
+    if (!userId) return;
     setState((s) => ({ ...s, sidebarConfig: sidebar }));
     const home = memState.tabConfig ?? [];
     bg(supabase.from("user_settings").upsert(
@@ -4941,7 +4945,8 @@ export function useStudy() {
 
   const setWidgetLayout = useCallback((layout: WidgetLayout) => {
     if (isRolePreview()) return;
-    const userId = requireUser();
+    const userId = currentUserId;
+    if (!userId) return;
     const now = Date.now();
     setState((s) => ({ ...s, widgetLayout: layout }));
     // 1. Sync writes: localStorage (instant) + IDB (immediate, survives localStorage clear)
@@ -5004,7 +5009,8 @@ export function useStudy() {
 
   const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {
     if (isRolePreview()) return;
-    const userId = requireUser();
+    const userId = currentUserId;
+    if (!userId) return;
     const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };
     setState((s) => ({ ...s, uiPrefs: next }));
     writeUiPrefsCache(userId, next);
