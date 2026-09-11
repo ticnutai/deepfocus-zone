@@ -165,6 +165,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const currentIdentity = isGuest ? "guest" : user?.id || "signed-out";
+  const hasStudyIdentity = isGuest || Boolean(user?.id);
   const canAuthor = isAdmin && viewerIsAdmin;
 
   const commitDesign = useCallback((rules: DesignRule[], nextGeometry = geometry) => {
@@ -194,7 +195,10 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     const hydrationKey = `${currentIdentity}:${personalTheme?.updatedAt || 0}:${personalDesign?.updatedAt || 0}:${published?.publishedAt || 0}`;
     if (hydratedSnapshot.current === hydrationKey) return;
     if (personalTheme?.schemaVersion === 1) hydratePreferences(personalTheme);
-    else if (localTheme.updatedAt > 0) setUiPref("themePreferences", localTheme as never);
+    // The theme provider also wraps the signed-out route. Persisting into the
+    // study store before AuthProvider has resolved a real/local identity used
+    // to throw "נדרשת התחברות" and unmount the entire Electron renderer.
+    else if (localTheme.updatedAt > 0 && hasStudyIdentity) setUiPref("themePreferences", localTheme as never);
     else if (published?.themePreferences?.schemaVersion === 1) hydratePreferences(published.themePreferences);
     if (canAuthor && personalDesign?.schemaVersion === 1) {
       setDesign(personalDesign); setGeometry(personalDesign.geometry); persistDesign(personalDesign, false);
@@ -202,18 +206,18 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
       setDesign(published.design); setGeometry(published.design.geometry); persistDesign(published.design, false);
     }
     hydratedSnapshot.current = hydrationKey;
-  }, [canAuthor, currentIdentity, exportPreferences, hydratePreferences, published, setUiPref, state.uiPrefs?.themeDesign, state.uiPrefs?.themePreferences]);
+  }, [canAuthor, currentIdentity, exportPreferences, hasStudyIdentity, hydratePreferences, published, setUiPref, state.uiPrefs?.themeDesign, state.uiPrefs?.themePreferences]);
 
   useEffect(() => {
-    const saveTheme = () => setUiPref("themePreferences", exportPreferences() as never);
-    const saveDesign = () => setUiPref("themeDesign", readDesign() as never);
+    const saveTheme = () => { if (hasStudyIdentity) setUiPref("themePreferences", exportPreferences() as never); };
+    const saveDesign = () => { if (hasStudyIdentity) setUiPref("themeDesign", readDesign() as never); };
     window.addEventListener(THEME_PREFERENCES_EVENT, saveTheme);
     window.addEventListener("app-theme-design-changed", saveDesign);
     return () => {
       window.removeEventListener(THEME_PREFERENCES_EVENT, saveTheme);
       window.removeEventListener("app-theme-design-changed", saveDesign);
     };
-  }, [exportPreferences, setUiPref]);
+  }, [exportPreferences, hasStudyIdentity, setUiPref]);
 
   useEffect(() => {
     if (!canAuthor && enabled) { setEnabled(false); setSelected(null); }

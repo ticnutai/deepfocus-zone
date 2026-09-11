@@ -5009,6 +5009,10 @@ export function useStudy() {
 
   const setUiPref = useCallback(<K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => {
     if (isRolePreview()) return;
+    // UI providers are mounted on the authentication screen too. During a
+    // cold Electron start a saved visual preference can fire before the auth
+    // session has resolved; preferences already remain safe in their own
+    // local storage, so there is nothing to sync to the study store yet.
     const userId = currentUserId;
     if (!userId) return;
     const next: UiPrefs = { ...(memState.uiPrefs ?? {}), [key]: value, updatedAt: Date.now() };

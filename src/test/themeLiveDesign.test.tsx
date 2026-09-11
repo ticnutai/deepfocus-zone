@@ -4,7 +4,8 @@ import { ThemeProvider } from "@/theme/ThemeProvider";
 import { ThemeStudioProvider, useThemeStudio } from "@/theme/ThemeStudioProvider";
 
 const setUiPref = vi.fn();
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "admin-1" }, isGuest: false }) }));
+const authState: { user: { id: string } | null; isGuest: boolean } = { user: { id: "admin-1" }, isGuest: false };
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => authState }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ isAdmin: true, viewerIsAdmin: true }) }));
 vi.mock("@/lib/study/store", () => ({ useStudy: () => ({ state: { uiPrefs: {} }, setUiPref }) }));
 vi.mock("@/integrations/supabase/client", () => ({
@@ -24,8 +25,18 @@ function Harness({ onActivate }: { onActivate?: () => void }) {
 describe("live design mode", () => {
   beforeEach(() => {
     localStorage.clear(); setUiPref.mockClear();
+    authState.user = { id: "admin-1" }; authState.isGuest = false;
     class ResizeObserverMock { observe() {} disconnect() {} }
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  });
+
+  it("does not persist a saved theme into the study store while signed out", async () => {
+    authState.user = null;
+    localStorage.setItem("app-theme", "royal-navy");
+    localStorage.setItem("app-theme-updated-at", String(Date.now()));
+    render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
+    await waitFor(() => expect(screen.getByText("התחל עיצוב")).toBeInTheDocument());
+    expect(setUiPref).not.toHaveBeenCalled();
   });
 
   it("captures a real element, saves a scoped rule, and supports undo", async () => {
