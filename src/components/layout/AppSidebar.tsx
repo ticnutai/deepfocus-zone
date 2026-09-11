@@ -288,17 +288,27 @@ export function AppShellSidebar() {
   // Mobile edge-swipe gesture: a right→left swipe starting at the right
   // screen edge opens the sidebar sheet; a left→right swipe while open
   // closes it. Only active below the lg breakpoint.
+  // Samsung Internet / Chrome Android reserve the very screen edge for the
+  // system back gesture, so an edge-only listener never fires. We therefore
+  // capture from a wider strip, listen on a dedicated overlay strip too, and
+  // use non-passive touchmove so we can preventDefault once the horizontal
+  // intent is clear and the browser doesn't steal the swipe.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const EDGE = 48;
+    const THRESHOLD = 40;
     let startX = 0;
     let startY = 0;
     let tracking = false;
+    let decided = false;
 
     const onTouchStart = (e: TouchEvent) => {
+      tracking = false;
+      decided = false;
       if (window.innerWidth >= 1024) return;
       const t = e.touches[0];
-      // Track swipes from the right edge, or anywhere when the sheet is open.
-      if (mobileOpen || t.clientX >= window.innerWidth - 28) {
+      if (!t) return;
+      if (mobileOpen || t.clientX >= window.innerWidth - EDGE) {
         tracking = true;
         startX = t.clientX;
         startY = t.clientY;
@@ -307,30 +317,35 @@ export function AppShellSidebar() {
     const onTouchMove = (e: TouchEvent) => {
       if (!tracking) return;
       const t = e.touches[0];
+      if (!t) return;
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
-      // Horizontal intent only — let vertical scrolling pass through.
-      if (Math.abs(dy) > Math.abs(dx)) {
-        tracking = false;
-        return;
+      if (!decided) {
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+        if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+        decided = true;
       }
-      if (!mobileOpen && dx < -60) {
+      if (e.cancelable) e.preventDefault();
+      if (!mobileOpen && dx < -THRESHOLD) {
         setMobileOpen(true);
         tracking = false;
-      } else if (mobileOpen && dx > 60) {
+      } else if (mobileOpen && dx > THRESHOLD) {
         setMobileOpen(false);
         tracking = false;
       }
     };
-    const onTouchEnd = () => { tracking = false; };
+    const onTouchEnd = () => { tracking = false; decided = false; };
 
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: true });
-    window.addEventListener("touchend", onTouchEnd);
+    const opts: AddEventListenerOptions = { passive: false, capture: true };
+    window.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
+    window.addEventListener("touchmove", onTouchMove, opts);
+    window.addEventListener("touchend", onTouchEnd, { capture: true });
+    window.addEventListener("touchcancel", onTouchEnd, { capture: true });
     return () => {
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchstart", onTouchStart, { capture: true } as EventListenerOptions);
+      window.removeEventListener("touchmove", onTouchMove, opts as EventListenerOptions);
+      window.removeEventListener("touchend", onTouchEnd, { capture: true } as EventListenerOptions);
+      window.removeEventListener("touchcancel", onTouchEnd, { capture: true } as EventListenerOptions);
     };
   }, [mobileOpen]);
 
@@ -473,6 +488,16 @@ export function AppShellSidebar() {
           />
         </div>
       </aside>
+
+      {/* Mobile edge strip: claims the right edge so the browser's own
+          back/side gesture doesn't swallow the swipe. */}
+      {!mobileOpen && (
+        <div
+          aria-hidden
+          className="lg:hidden fixed right-0 top-0 h-full w-6 z-[45]"
+          style={{ touchAction: "none" }}
+        />
+      )}
 
       {/* Mobile trigger + sheet */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen} modal={false}>
