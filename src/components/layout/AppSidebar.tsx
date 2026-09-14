@@ -34,6 +34,7 @@ import { usePrompt } from "@/hooks/usePrompt";
 import { toast } from "@/hooks/use-toast";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
+import { useEdgeSwipeSidebar } from "@/hooks/useEdgeSwipeSidebar";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },
@@ -285,69 +286,8 @@ export function AppShellSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const sidebarVisible = pinned || hovered;
 
-  // Mobile edge-swipe gesture: a right→left swipe starting at the right
-  // screen edge opens the sidebar sheet; a left→right swipe while open
-  // closes it. Only active below the lg breakpoint.
-  // Samsung Internet / Chrome Android reserve the very screen edge for the
-  // system back gesture, so an edge-only listener never fires. We therefore
-  // capture from a wider strip, listen on a dedicated overlay strip too, and
-  // use non-passive touchmove so we can preventDefault once the horizontal
-  // intent is clear and the browser doesn't steal the swipe.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const EDGE = 48;
-    const THRESHOLD = 40;
-    let startX = 0;
-    let startY = 0;
-    let tracking = false;
-    let decided = false;
-
-    const onTouchStart = (e: TouchEvent) => {
-      tracking = false;
-      decided = false;
-      if (window.innerWidth >= 1024) return;
-      const t = e.touches[0];
-      if (!t) return;
-      if (mobileOpen || t.clientX >= window.innerWidth - EDGE) {
-        tracking = true;
-        startX = t.clientX;
-        startY = t.clientY;
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (!tracking) return;
-      const t = e.touches[0];
-      if (!t) return;
-      const dx = t.clientX - startX;
-      const dy = t.clientY - startY;
-      if (!decided) {
-        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-        if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
-        decided = true;
-      }
-      if (e.cancelable) e.preventDefault();
-      if (!mobileOpen && dx < -THRESHOLD) {
-        setMobileOpen(true);
-        tracking = false;
-      } else if (mobileOpen && dx > THRESHOLD) {
-        setMobileOpen(false);
-        tracking = false;
-      }
-    };
-    const onTouchEnd = () => { tracking = false; decided = false; };
-
-    const opts: AddEventListenerOptions = { passive: false, capture: true };
-    window.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
-    window.addEventListener("touchmove", onTouchMove, opts);
-    window.addEventListener("touchend", onTouchEnd, { capture: true });
-    window.addEventListener("touchcancel", onTouchEnd, { capture: true });
-    return () => {
-      window.removeEventListener("touchstart", onTouchStart, { capture: true } as EventListenerOptions);
-      window.removeEventListener("touchmove", onTouchMove, opts as EventListenerOptions);
-      window.removeEventListener("touchend", onTouchEnd, { capture: true } as EventListenerOptions);
-      window.removeEventListener("touchcancel", onTouchEnd, { capture: true } as EventListenerOptions);
-    };
-  }, [mobileOpen]);
+  // Mobile edge-swipe gesture — shared implementation (single source of truth).
+  useEdgeSwipeSidebar(mobileOpen, setMobileOpen);
 
   const orderedItems = useMemo(() => {
     const cfg = normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []);
