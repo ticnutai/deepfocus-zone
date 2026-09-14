@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ACCESS_POLICY_EVENT, cachedAccessPolicy } from "@/lib/auth/accessRolePolicy";
 import bundledAccess from "@/lib/auth/bundledAccessDefaults.json";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
-import { normalizeSplitWorkspaceSections } from "@/lib/study/sidebarItems";
+import { ALL_SIDEBAR_ITEMS, normalizeSplitWorkspaceSections } from "@/lib/study/sidebarItems";
 
 export type BlocklistScope = "desktop" | "mobile";
 
@@ -297,15 +297,20 @@ export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureB
 }
 
 export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: BlocklistScope }): FeatureBlocklist {
-  const scope = opts?.scope ?? "desktop";
-  const [resolved, setResolved] = useState<FeatureBlocklist>(() => EMPTY);
+  // Visibility is a role policy, not a viewport preference. Keep the desktop
+  // policy canonical on every device; mobile layout sizes remain independent.
+  const scope: BlocklistScope = "desktop";
+  const identity = JSON.stringify(Array.from(new Set(roleIds.filter(Boolean))).sort());
+  const pending: FeatureBlocklist = { sections: ALL_SIDEBAR_ITEMS.map(item => item.id), widgets: {} };
+  const [resolved, setResolved] = useState<{ identity: string; value: FeatureBlocklist } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const refresh = () => { void resolveRoleFeatureBlocklist(roleIds, { scope, force: navigator.onLine }).then((next) => {
-      if (!cancelled) setResolved(next);
+      if (!cancelled && roleIds.length) setResolved({ identity, value: next });
     }).catch(() => {
-      if (!cancelled) setResolved(EMPTY);
+      // Never reveal everything on a failed fetch. Keep the last policy for
+      // this identity, or the closed initial state if none has been resolved.
     }); };
     refresh();
     window.addEventListener(ACCESS_POLICY_EVENT, refresh);
@@ -315,7 +320,7 @@ export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: 
       window.removeEventListener(ACCESS_POLICY_EVENT, refresh);
       window.removeEventListener('online', refresh);
     };
-  }, [scope, JSON.stringify(Array.from(new Set(roleIds.filter(Boolean))).sort())]);
+  }, [scope, identity]);
 
-  return resolved;
+  return resolved?.identity === identity ? resolved.value : pending;
 }

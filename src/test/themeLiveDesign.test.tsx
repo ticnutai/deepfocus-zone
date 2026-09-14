@@ -29,6 +29,21 @@ function ThemeControls() {
 }
 
 describe("live design mode", () => {
+  it("keeps preview while paused and offers unobscured selection markers", () => {
+    render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
+    fireEvent.click(screen.getByText("התחל עיצוב"));
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    expect(screen.getByTestId("design-highlight")).toHaveStyle({ background: "transparent" });
+    fireEvent.change(screen.getByRole("textbox", { name: "צבע טקסט" }), { target: { value: "#123456" } });
+    const preview = document.getElementById("design-mode-live-preview")!.textContent;
+    fireEvent.click(screen.getByTitle("השהה/המשך"));
+    expect(document.getElementById("design-mode-live-preview")!.textContent).toBe(preview);
+    expect(screen.getByTestId("live-design-drag-handle")).toBeInTheDocument();
+    expect(screen.queryByTestId("design-highlight")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("השהה/המשך"));
+    fireEvent.change(screen.getByLabelText("סימון האלמנט"), { target: { value: "none" } });
+    expect(screen.queryByTestId("design-highlight")).not.toBeInTheDocument();
+  });
   it("hydrates gradient examples from downloaded preferences in a clean local context", async () => {
     cloudPrefs = { themeDesign: { schemaVersion: 1, rules: [], geometry: { x: 24, y: 84, width: 560, height: 720 }, updatedAt: 123, gradientPresets: [{ id: "cloud-example", name: "מהענן", value: "linear-gradient(125deg, #dcefe5, #ecd393)" }] } };
     render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);

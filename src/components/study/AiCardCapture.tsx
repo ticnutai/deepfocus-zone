@@ -27,10 +27,10 @@ type FabPos = { x: number; y: number };
 const STYLE_KEY_V2 = "ai_capture_icon_style_v2";
 const POS_KEY_V2 = "ai_capture_icon_pos_v2";
 const DRAG_ENABLED_KEY = "ai_capture_drag_enabled";
-const FAB_PADDING = 12;
+const FAB_PADDING = 28; // Leave the small version footer visible below the capture button.
 const DRAG_THRESHOLD = 4;
 
-const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 56, shape: "circle", icon: "sparkles" };
+const DEFAULT_STYLE: IconStyle = { color: "#0a1f44", bg: "#d4af37", size: 36, shape: "circle", icon: "sparkles" };
 
 const ICON_MAP: Record<IconName, LucideIcon> = {
   sparkles: Sparkles, bot: Bot, brain: Brain, wand: Wand2, star: Star,
@@ -584,6 +584,12 @@ export function AiCardCapture() {
             : { left: FAB_PADDING, bottom: FAB_PADDING }),
           width: style.size,
           height: style.size,
+          minWidth: style.size,
+          minHeight: style.size,
+          maxWidth: style.size,
+          maxHeight: style.size,
+          padding: 0,
+          flexShrink: 0,
           aspectRatio: "1 / 1",
           background: style.bg,
           color: style.color,

@@ -68,17 +68,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const guestModeRef = useRef(guestMode);
   const mountedRef = useRef(true);
+  const identityRevision = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
 
     let subscription: { unsubscribe: () => void } | null = null;
+    let cancelled = false;
+    const bootRevision = identityRevision.current;
 
     // Wait for stored session FIRST, then subscribe to changes.
     // Memoized initial read avoids StrictMode double-mount lock contention.
     getInitialSession().then((initialSession) => {
-      if (!mountedRef.current) return;
-      if (guestModeRef.current) {
+      if (cancelled) return;
+      if (guestModeRef.current || identityRevision.current !== bootRevision) {
         setSession(null);
       } else {
         setSession(initialSession);
@@ -88,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Only subscribe after getSession resolves to prevent lock contention.
       const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-        if (!mountedRef.current) return;
+        if (cancelled) return;
         // A cached cloud session must never replace an explicitly selected
         // local/offline account in the same Electron installation.
         if (guestModeRef.current) return;
@@ -101,11 +104,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mountedRef.current = false;
+      cancelled = true;
       subscription?.unsubscribe();
     };
   }, []);
 
   const signOut = useCallback(async () => {
+    identityRevision.current += 1;
+    initialSessionPromise = Promise.resolve(null);
+    setSession(null);
+    clearPersistedSupabaseSession();
     // The settings-area PIN unlock (sidebar/tabs/widget-layout config) is
     // cached per browser tab for the rest of its life — without clearing it
     // here, unlocking it once as one account (e.g. admin) leaves it unlocked
@@ -121,10 +129,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setGuestMode(false);
       return;
     }
-    await supabase.auth.signOut();
+    // Local logout must succeed even without connectivity. Do not revoke other devices.
+    await supabase.auth.signOut({ scope: "local" }).catch(() => {});
   }, [guestMode]);
 
   const signInAsGuest = useCallback((profileId?: string | null, identity: 'anonymous' | 'account' = 'anonymous') => {
+    identityRevision.current += 1;
     localStorage.setItem(LOCAL_IDENTITY_KEY, identity);
     setLocalIdentity(identity);
     try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
@@ -171,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!guestMode || session || localIdentity !== 'account') return;
     let cancelled = false;
+    const reconnectRevision = identityRevision.current;
     const run = async () => {
       const pending = getPendingRegistration();
       const registered = getLocalAccount()?.status === "registered";
@@ -178,10 +189,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = pending
         ? await attemptDeferredRegistration()
         : await attemptRegisteredAccountReconnect();
-      if (cancelled) return;
+      if (cancelled || reconnectRevision !== identityRevision.current) return;
       if (result.status === "registered" || result.status === "reconnected") {
         const { data } = await supabase.auth.getSession();
-        if (cancelled || !data.session) return;
+        if (cancelled || reconnectRevision !== identityRevision.current || !data.session) return;
         // Only this verified registration may hand local mode back to the cloud.
         guestModeRef.current = false;
         localStorage.removeItem(GUEST_KEY);

@@ -49,7 +49,7 @@ const DEFAULT_SOURCE: Source = IS_ELECTRON ? "text" : "pdf";
 export function GemaraViewer({ masechta, daf, amud, className, isActive = true, onPrev, onNext, canPrev, canNext, onTogglePin, isPinned }: Props) {
   const { state, setUiPref } = useStudy();
   const [source, setSource] = useState<Source>(DEFAULT_SOURCE);
-  const [pdfExists, setPdfExists] = useState<boolean | null>(null);
+  const [pdfCheck, setPdfCheck] = useState<{ url: string; exists: boolean } | null>(null);
   const [text, setText] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,15 +79,20 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
     () => supabase.storage.from("gemara-pages").getPublicUrl(pdfPath).data.publicUrl,
     [pdfPath],
   );
+  // Never reuse a successful check from the previous daf during navigation.
+  const pdfExists = pdfCheck?.url === pdfUrl ? pdfCheck.exists : null;
 
   // בדוק קיום PDF
   useEffect(() => {
     if (!isActive) return;
     let cancel = false;
-    setPdfExists(null);
+    setPdfCheck(null);
     fetch(pdfUrl, { method: "HEAD" })
-      .then((r) => { if (!cancel) setPdfExists(r.ok); })
-      .catch(() => { if (!cancel) setPdfExists(false); });
+      .then((r) => {
+        const isPdf = r.ok && r.headers.get("content-type")?.split(";")[0].trim().toLowerCase() === "application/pdf";
+        if (!cancel) setPdfCheck({ url: pdfUrl, exists: Boolean(isPdf) });
+      })
+      .catch(() => { if (!cancel) setPdfCheck({ url: pdfUrl, exists: false }); });
     return () => { cancel = true; };
   }, [pdfUrl, isActive]);
 
@@ -119,7 +124,7 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
           || (typeof navigator !== "undefined" && !navigator.onLine);
         setError(isNetwork
           ? "טקסט הדף זמין רק עם חיבור לאינטרנט. במצב אופליין ניתן להמשיך לתרגל מהשאלות והחזרות המובנות."
-          : e.message);
+          : "לא ניתן לטעון את טקסט הדף כרגע. נסה שוב מאוחר יותר.");
       })
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
@@ -224,7 +229,12 @@ export function GemaraViewer({ masechta, daf, amud, className, isActive = true, 
       <div className="flex-1 min-h-0 overflow-hidden">
         {!isActive ? null : (
           <>
-        {source === "pdf" && pdfExists !== false && (
+        {source === "pdf" && pdfExists === null && (
+          <div role="status" className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin mr-2" /> טוען דף…
+          </div>
+        )}
+        {source === "pdf" && pdfExists === true && (
           <iframe
             src={pdfUrl}
             className="w-full h-full border-0"

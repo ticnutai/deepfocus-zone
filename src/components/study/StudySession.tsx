@@ -78,6 +78,7 @@ import { useStudy } from "@/lib/study/store";
 import { isDue, buildStudyQueue } from "@/lib/study/srs";
 import { parseCloze, hasCloze, renderCloze } from "@/lib/study/cloze";
 import type { Card as StudyCard, PracticeResultAnswer, StudyMode } from "@/lib/study/types";
+import { resolveQuestionMode, matchesQuestionMode } from '@/lib/study/questionModePreference';
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { QuestionReportDialog } from "./QuestionReportDialog";
@@ -423,12 +424,8 @@ export function StudySession({
   const { state, reviewCard, setUiPref, addCardToDeck, addPracticeResult, deletePracticeResult } = useStudy();
   const isMobile = useIsMobile();
 
-  const comboPrefForQueue =
-    (state.uiPrefs?.studyComboPref as ComboPref | undefined) ??
-    ((typeof window !== "undefined"
-      ? localStorage.getItem(COMBO_PREF_KEY)
-      : null) as ComboPref | null) ??
-    "both";
+  const comboPrefForQueue = resolveQuestionMode(state.uiPrefs?.studyComboPref,
+    typeof window !== 'undefined' ? localStorage.getItem(COMBO_PREF_KEY) : null);
   const baseQueue = useMemo(() => {
     // When cardIds is explicitly provided, use them directly (supports card_decks-linked cards).
     // When deckId is null (category-owned cards), use all cards.
@@ -443,16 +440,12 @@ export function StudySession({
     }
     // Respect the combo-mode preference at the queue level so that
     // "רק בחירה מרובה" actually hides pure flashcards (and vice versa).
-    // In "practice" mode (תרגול חופשי) we show ALL card types regardless of preference.
-    if (mode !== "practice") {
+    // Apply the user's choice in free practice too, not just scheduled reviews.
+    {
       if (comboPrefForQueue === "multi") {
         cards = cards.filter(
           (c) =>
-            c.type === "multiple" ||
-            c.type === "boolean" ||
-            (c.type === "combo" &&
-              Array.isArray(c.options) &&
-              c.options.length > 0),
+            matchesQuestionMode(c, "multi"),
         );
       } else if (comboPrefForQueue === "flash") {
         cards = cards.filter(
@@ -577,17 +570,11 @@ export function StudySession({
     })();
   void _optLayoutRaw; // kept for potential migration reads
 
-  const comboPref: ComboPref =
-    (state.uiPrefs?.studyComboPref as ComboPref | undefined) ??
-    (() => {
-      if (typeof window === "undefined") return "both";
-      const v = localStorage.getItem(COMBO_PREF_KEY);
-      return (
-        v === "flash" || v === "multi" || v === "both" ? v : "both"
-      ) as ComboPref;
-    })();
+  const comboPref: ComboPref = comboPrefForQueue;
   const setComboPref = useCallback(
     (v: ComboPref) => {
+      setIdx(0);
+      setRetryCardIds(null);
       try {
         localStorage.setItem(COMBO_PREF_KEY, v);
       } catch {
@@ -1284,8 +1271,11 @@ export function StudySession({
         <p className="text-muted-foreground">
           {mode === "srs"
             ? "כל הכבוד! חזרת על כל הכרטיסים שצריך היום."
-            : "אין שאלות במערכת זו. הוסף שאלות כדי להתחיל."}
+            : "אין שאלות שמתאימות לסוג שבחרת. אפשר לבחור את כל הסוגים."}
         </p>
+        {comboPref !== "both" && (
+          <Button variant="outline" onClick={() => setComboPref("both")}>הצג את כל סוגי השאלות</Button>
+        )}
         <Button
           onClick={onExit}
           className="bg-gradient-navy text-primary-foreground rounded-xl"
@@ -1881,6 +1871,7 @@ export function StudySession({
 
   return (
     <Card
+      data-study-session="true"
       className={cn(
         "animate-fade-in",
         isMobile
@@ -1893,7 +1884,7 @@ export function StudySession({
     >
       {/* ── Mobile compact toolbar ── */}
       {isMobile && (
-        <div className="shrink-0 flex items-center justify-between gap-1 pt-1">
+        <div data-testid="mobile-study-toolbar" aria-label="כלי תרגול — גלילה אופקית" className="shrink-0 flex flex-nowrap items-center gap-2 pt-1 pb-2 w-full min-w-0 overflow-x-auto touch-pan-x [&>*]:shrink-0 [&_button]:shrink-0 [&_button]:whitespace-nowrap">
           <Button
             variant="ghost"
             size="sm"
@@ -2694,7 +2685,7 @@ export function StudySession({
       </div>
 
       <div
-        className={cn(isMobile || fillHeight ? "flex-1 min-h-0" : "shrink-0")}
+        className={cn(isMobile || fillHeight ? "flex-1 min-h-0 overflow-y-auto" : "shrink-0")}
       >
         {/* Flashcard */}
         {card.type === "flashcard" && (
@@ -2809,7 +2800,7 @@ export function StudySession({
                 (isMobile || fillHeight) && isGrid
                   ? "flex-1 min-h-0 auto-rows-fr"
                   : isMobile || fillHeight
-                    ? "flex-1 min-h-0 flex flex-col"
+                    ? "flex-1 min-h-0 flex flex-col [&>div]:flex-1 [&>div]:min-h-[64px]"
                     : "";
               return (
                 <div
@@ -3496,7 +3487,7 @@ export function StudySession({
                     isMobile && isGrid
                       ? "flex-1 min-h-0 auto-rows-fr"
                       : isMobile
-                        ? "flex-1 min-h-0 flex flex-col"
+                        ? "flex-1 min-h-0 flex flex-col [&>div]:flex-1 [&>div]:min-h-[64px]"
                         : "";
                   return (
                     <div

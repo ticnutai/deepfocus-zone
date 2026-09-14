@@ -582,5 +582,20 @@
     button, [role="button"], a {
       min-height: 40px;
     }
+    /* A touch target must grow equally on both axes. Never stretch pills
+       containing text or whole cards into circles. */
+    button.rounded-full:has(> svg:only-child) {
+      min-width: 40px;
+      flex-shrink: 0;
+      aspect-ratio: 1;
+      padding: 0;
+    }
   }
 }
+/* Reserve a small footer for build identification, including the final scroll position.
+   Native Android without viewport-fit=cover is inset by Capacitor SystemBars;
+   do not add guessed status/navigation-bar heights on top of those native insets. */
+#root { min-height: 100dvh; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+/* Practice can be opened without changing the home URL. Keep its canvas clean. */
+#root:has([data-study-session="true"]) .app-version-badge { display: none; }
+.app-version-badge { max-width: calc(100vw - 8px); white-space: nowrap; }

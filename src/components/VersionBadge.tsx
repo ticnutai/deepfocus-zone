@@ -1,7 +1,8 @@
 /**
- * Tiny always-visible version + update-date label, fixed at the very top of
+ * Tiny version + update-date label, fixed at the bottom left of
  * the window. Values are injected at build time (see vite.config.ts `define`).
  */
+import { useLocation } from 'react-router-dom';
 const VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 const BUILD_ISO = typeof __BUILD_DATE__ !== "undefined" ? __BUILD_DATE__ : "";
 
@@ -18,11 +19,16 @@ function formatBuildDate(iso: string): string {
 }
 
 export function VersionBadge() {
+  const location = useLocation();
+  const section = new URLSearchParams(location.search).get('section');
+  if (location.pathname !== '/' || (section && section !== 'home')) return null;
   const date = formatBuildDate(BUILD_ISO);
   return (
     <div
       dir="ltr"
-      className="pointer-events-none fixed top-0 left-1/2 z-[2000] -translate-x-1/2 select-none rounded-b-md bg-foreground/5 px-2 py-[1px] text-[9px] leading-tight tracking-wide text-muted-foreground/70"
+      data-testid="app-version"
+      className="app-version-badge pointer-events-none fixed z-[2000] select-none rounded bg-background/90 px-1.5 py-0.5 text-[9px] leading-tight text-muted-foreground"
+      style={{ left: "max(4px, env(safe-area-inset-left, 0px))", bottom: "max(2px, env(safe-area-inset-bottom, 0px))" }}
       aria-hidden="true"
     >
       v{VERSION}{date ? ` · ${date}` : ""}

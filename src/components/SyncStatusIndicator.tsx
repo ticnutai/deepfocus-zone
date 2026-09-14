@@ -176,7 +176,7 @@ export function SyncStatusIndicator() {
           onClick={handleRefresh}
           dir="rtl"
           className={cn(
-            "fixed bottom-3 left-3 z-[60] flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm backdrop-blur transition hover:shadow-md hover:scale-[1.03]",
+            "fixed bottom-7 left-3 z-[60] flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm backdrop-blur transition hover:shadow-md hover:scale-[1.03]",
             palette.cls,
           )}
           aria-label="מצב סנכרון IDB עם הענן"

@@ -445,7 +445,7 @@ export default function Auth() {
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />
-          כניסה למצב אופליין
+          כניסה כאורח — ללא חשבון
         </Button>
         <p className="text-xs text-muted-foreground text-center">
           {offlineLibraryCount && offlineLibraryCount > 0

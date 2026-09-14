@@ -212,6 +212,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const [publishing, setPublishing] = useState(false);
   const [selected, setSelected] = useState<HTMLElement | null>(null);
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
+  const [highlightMode, setHighlightMode] = useState("corners");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const initialStyles = useRef<Record<string, string>>({});
   const changedStyles = useMemo(() => Object.fromEntries(Object.entries(draft).filter(([key, value]) => value.trim() !== "" && value !== initialStyles.current[key])), [draft]);
@@ -299,7 +300,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const tag = ensureStyleTag("design-mode-live-preview");
-    if (!selected || !enabled || paused) { tag.textContent = ""; return; }
+    if (!selected || !enabled) { tag.textContent = ""; return; }
     const selector = scope === "element" ? exactSelector(selected) : scope === "component" ? componentSelector(selected) : globalSelector(selected);
     tag.textContent = cssText([{ id: "preview", selector, label: "preview", scope, ...(themeScope === "current" ? { themeId: selectedTheme } : {}), styles: changedStyles }]);
   }, [changedStyles, enabled, paused, scope, selected, selectedTheme, themeScope]);
@@ -308,7 +309,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     if (!enabled) return;
     const ignored = (target: EventTarget | null) => target instanceof Element && !!target.closest("[data-design-mode-ui]");
     const onMove = (event: PointerEvent) => {
-      if (paused || ignored(event.target)) return;
+      if (paused || selected || ignored(event.target)) return;
       const target = event.target instanceof SVGElement ? event.target.closest("button, a") || event.target.ownerSVGElement?.parentElement : event.target;
       if (!(target instanceof HTMLElement)) return;
       setHoverRect(target.getBoundingClientRect());
@@ -329,7 +330,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
       const next: Record<string, string> = {};
       for (const [property] of FIELDS) next[property] = computed.getPropertyValue(property).trim();
       initialStyles.current = next;
-      setSelected(target); setDraft(next); setScope("element");
+      setSelected(target); setHoverRect(target.getBoundingClientRect()); setDraft(next); setScope("element");
     };
     const onClick = (event: MouseEvent) => {
       if (!paused && !replaying.current && !ignored(event.target)) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -379,13 +380,14 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     const observer = new ResizeObserver(() => {
       const rect = node.getBoundingClientRect();
       const next = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      if (Math.abs(next.width - geometry.width) < 1 && Math.abs(next.height - geometry.height) < 1) return;
       setGeometry(next);
       const saved = { ...design, geometry: next };
       setDesign(saved); persistDesign(saved, false);
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [design, selected]);
+  }, [design, selected, geometry]);
 
   const saveRule = useCallback(() => {
     if (!selected) return;
@@ -451,7 +453,10 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   }, [canAuthor, design, exportPreferences, user?.id]);
 
   const onDragStart = (event: ReactPointerEvent) => {
-    drag.current = { dx: event.clientX - geometry.x, dy: event.clientY - geometry.y };
+    if (event.button !== 0 || (event.target as Element).closest("button, input, select")) return;
+    event.preventDefault();
+    const rect = panelRef.current!.getBoundingClientRect();
+    drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
   const onDragMove = (event: ReactPointerEvent) => {
@@ -459,11 +464,12 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     const next = {
       ...geometry,
       x: Math.max(0, Math.min(window.innerWidth - geometry.width, event.clientX - drag.current.dx)),
-      y: Math.max(0, Math.min(window.innerHeight - 80, event.clientY - drag.current.dy)),
+      y: Math.max(0, Math.min(window.innerHeight - Math.min(geometry.height, window.innerHeight) - 12, event.clientY - drag.current.dy)),
     };
     setGeometry(next);
   };
   const onDragEnd = () => {
+    if (!drag.current) return;
     drag.current = null;
     const next = { ...design, geometry, updatedAt: Date.now() };
     setDesign(next); persistDesign(next);
@@ -485,7 +491,9 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
         </Button>, document.body,
       )}
       {enabled && typeof document !== "undefined" && createPortal(<>
-        {hoverRect && !paused && <div data-design-mode-ui className="pointer-events-none fixed z-[2147483000] border-2 border-dashed border-sky-400 bg-sky-400/10" style={{ left: hoverRect.left, top: hoverRect.top, width: hoverRect.width, height: hoverRect.height }}><span className="absolute bottom-full right-0 rounded-t bg-sky-600 px-2 py-0.5 text-[10px] text-white">{selected ? selected.tagName.toLowerCase() : "לחץ לעריכה"}</span></div>}
+        {hoverRect && !paused && highlightMode !== "none" && <div data-design-mode-ui data-testid="design-highlight" className="pointer-events-none fixed z-[2147483000]" style={{ left: hoverRect.left, top: hoverRect.top, width: hoverRect.width, height: hoverRect.height, background: "transparent", outline: highlightMode === "outline" ? "2px dashed #0284c7" : undefined, outlineOffset: 2 }}>
+          {highlightMode === "corners" && [0, 1, 2, 3].map((corner) => <span key={corner} style={{ position: "absolute", width: 12, height: 12, top: corner < 2 ? -2 : undefined, bottom: corner >= 2 ? -2 : undefined, left: corner % 2 === 0 ? -2 : undefined, right: corner % 2 === 1 ? -2 : undefined, borderTop: corner < 2 ? "2px solid #0284c7" : undefined, borderBottom: corner >= 2 ? "2px solid #0284c7" : undefined, borderLeft: corner % 2 === 0 ? "2px solid #0284c7" : undefined, borderRight: corner % 2 === 1 ? "2px solid #0284c7" : undefined }} />)}
+        </div>}
         <div data-design-mode-ui dir="rtl" className="pointer-events-auto fixed bottom-4 left-1/2 z-[2147483001] flex -translate-x-1/2 items-center gap-1 rounded-2xl border-2 border-gold bg-card p-2 shadow-2xl">
           <Button size="sm" onClick={() => setPaused((value) => !value)}>{paused ? <Play className="ml-1 h-4 w-4" /> : <Pause className="ml-1 h-4 w-4" />}{paused ? "המשך עריכה" : "השהה"}</Button>
           <Button size="icon" variant="outline" disabled={!history.length} onClick={undo} title="בטל"><Undo2 className="h-4 w-4" /></Button>
@@ -495,17 +503,19 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
         </div>
         {selected && <div
           ref={panelRef}
+          data-testid="live-design-panel"
           data-design-mode-ui
           dir="rtl"
           className="pointer-events-auto fixed z-[2147483002] flex min-h-[420px] min-w-[420px] resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
           style={{ left: geometry.x, top: geometry.y, width: geometry.width, height: Math.min(geometry.height, window.innerHeight - geometry.y - 12) } as CSSProperties}
         >
           <div className="flex min-h-0 w-full flex-col">
-            <div className="flex cursor-move items-center justify-between border-b border-gold/40 bg-secondary/60 px-3 py-2" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd}>
+            <div data-testid="live-design-drag-handle" style={{ touchAction: "none", userSelect: "none" }} className="flex shrink-0 cursor-move items-center justify-between border-b border-gold/40 bg-secondary/60 px-3 py-2" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onLostPointerCapture={onDragEnd}>
               <div><div className="font-bold">עריכה חיה</div><div className="text-[11px] text-muted-foreground">בחר ערכים ושמור לפי היקף</div></div>
               <div className="flex gap-1"><Button size="icon" variant="ghost" onClick={() => setPaused((value) => !value)} title="השהה/המשך">{paused ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}</Button><Button size="icon" variant="ghost" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button></div>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+              <label className="flex items-center gap-2 text-xs">סימון האלמנט<select aria-label="סימון האלמנט" value={highlightMode} onChange={(event) => setHighlightMode(event.target.value)} className="rounded border bg-background p-2"><option value="corners">פינות בלבד — ללא כיסוי צבע</option><option value="outline">מסגרת חיצונית</option><option value="none">ללא סימון</option></select></label>
               <div className="space-y-2 rounded-xl border border-gold/30 p-2">
                 <div className="text-sm font-bold">על אילו ערכות נושא להחיל? · {allThemes.find((item) => item.id === selectedTheme)?.label || selectedTheme}</div>
                 <div className="grid grid-cols-2 gap-2">

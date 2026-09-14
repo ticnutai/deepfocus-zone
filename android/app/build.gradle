@@ -18,6 +18,14 @@ android {
         }
     }
     buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            def devNumber = providers.gradleProperty('devInstallNumber').getOrElse('1')
+            if (!(devNumber ==~ /[1-9][0-9]*/)) throw new GradleException('Invalid devInstallNumber')
+            versionNameSuffix "-dev.${devNumber}"
+            resValue "string", "app_name", "למען ${devNumber}"
+            resValue "string", "title_activity_main", "למען ${devNumber}"
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

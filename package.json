@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "2.7.24",
+  "version": "2.7.25",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -22,6 +22,7 @@
     "electron:publish": "node scripts/build-electron-installer.mjs --publish-only",
     "electron:version:next": "node scripts/build-electron-installer.mjs --dry-run",
     "android:build": "npm run build && npx cap sync android",
+    "android:install:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-android-dev.ps1",
     "android:bundle:release": "npm run android:build && cd android && gradlew.bat bundleRelease",
     "android:publish:internal": "npm run android:build && cd android && gradlew.bat publishReleaseBundle --track=internal",
     "android:publish:internal-sharing": "npm run android:build && cd android && gradlew.bat uploadReleasePrivateBundle",
