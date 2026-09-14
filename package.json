@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "2.7.25",
+  "version": "2.7.26",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:offline-sync": "vitest run src/test/offlineRegisteredAccount.test.ts src/test/authGuestTransition.test.tsx src/test/offlinePermissionsSecurity.test.ts src/test/guestResume.test.ts --reporter=default --reporter=json --outputFile=.codex-runtime/offline-sync-results.json",
     "qa:no-duplicates": "node scripts/audit-no-duplicate-systems.mjs",
     "perf:sidebar": "node scripts/benchmark-sidebar.mjs",
     "perf:sidebar:update": "node scripts/benchmark-sidebar.mjs --update-baseline",

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
+import { rememberGuestResumePath } from "@/lib/auth/guestResume";
 import { toast } from "sonner";
 import { clearPersistedSupabaseSession, supabase } from "@/integrations/supabase/client";
 import {
@@ -121,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // local/offline one.
     try { sessionStorage.removeItem("settings-unlocked"); } catch { /* ignore */ }
     if (guestMode) {
+      if (localStorage.getItem(LOCAL_IDENTITY_KEY) === 'anonymous') rememberGuestResumePath();
       localStorage.removeItem(GUEST_KEY);
       localStorage.removeItem(LOCAL_IDENTITY_KEY);
       setLocalIdentity('anonymous');
@@ -187,8 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const registered = getLocalAccount()?.status === "registered";
       if (!pending && !registered) return;
       const result = pending
-        ? await attemptDeferredRegistration()
-        : await attemptRegisteredAccountReconnect();
+        ? await attemptDeferredRegistration(() => !cancelled && reconnectRevision === identityRevision.current)
+        : await attemptRegisteredAccountReconnect(() => !cancelled && reconnectRevision === identityRevision.current);
       if (cancelled || reconnectRevision !== identityRevision.current) return;
       if (result.status === "registered" || result.status === "reconnected") {
         const { data } = await supabase.auth.getSession();

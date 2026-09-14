@@ -242,17 +242,6 @@ function sendUpdateStatus(status) {
   }
 }
 
-// Mandatory update: once a download finishes, the app installs it
-// automatically — the user is notified but cannot skip or cancel it. The
-// renderer runs a pre-update backup of everything the user added (cards,
-// decks, categories, ...) and then triggers the install itself via the
-// "updater:install" IPC handler below. This timer is only a SAFETY NET in
-// case the renderer never responds (e.g. it failed to mount) — it guarantees
-// the mandatory update still happens even then, just with a generous grace
-// period so a normal backup+cloud-sync has time to finish first.
-const MANDATORY_INSTALL_DELAY_MS = 120000;
-let mandatoryInstallTimer = null;
-
 function configureAutoUpdater() {
   // Silent background download: as soon as a newer version is found, it
   // starts downloading on its own — no user action, and nothing in the
@@ -268,16 +257,9 @@ function configureAutoUpdater() {
     percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
   }));
   autoUpdater.on("update-downloaded", (info) => {
-    sendUpdateStatus({ type: "downloaded", version: info.version, installInMs: MANDATORY_INSTALL_DELAY_MS });
-    // Scheduled here (main process), not in the renderer, so the install
-    // still happens even if the window is unfocused/minimized/not mounted.
-    if (mandatoryInstallTimer) clearTimeout(mandatoryInstallTimer);
-    mandatoryInstallTimer = setTimeout(() => {
-      // NSIS is an assisted installer (oneClick=false), so silent+force args
-      // are required — otherwise the updater leaves an invisible/waiting
-      // setup wizard in unattended or VM environments.
-      autoUpdater.quitAndInstall(true, true);
-    }, MANDATORY_INSTALL_DELAY_MS);
+    // Download in the background; never close an active study session on a timer.
+    // Installation happens on explicit request or the user's normal app quit.
+    sendUpdateStatus({ type: "downloaded", version: info.version });
   });
   autoUpdater.on("error", (error) => sendUpdateStatus({
     type: "error",
@@ -311,12 +293,6 @@ function configureAutoUpdater() {
     }
   });
   ipcMain.handle("updater:install", () => {
-    // Renderer is installing now (e.g. right after its pre-update backup
-    // finished) — the main-process safety-net timer is no longer needed.
-    if (mandatoryInstallTimer) {
-      clearTimeout(mandatoryInstallTimer);
-      mandatoryInstallTimer = null;
-    }
     // NSIS is configured as an assisted installer (oneClick=false). Updates
     // must therefore be launched silently, otherwise the updater closes the
     // app and leaves an invisible/waiting setup wizard in unattended or VM

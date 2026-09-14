@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { getGuestResumePath } from "@/lib/auth/guestResume";
 import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
 import { DesktopAppDownloadButton } from "@/components/DesktopAppDownloadButton";
 import {
@@ -36,7 +37,7 @@ import {
   findLocalAccountByCredentials,
   deleteLocalAccount,
   switchLocalAccount,
-  listLocalAccounts,
+  listLoginLocalAccounts,
   getActiveUsername,
   syntheticEmailForUsername,
   USERNAME_RE,
@@ -123,12 +124,13 @@ export default function Auth() {
   const [offlineLibraryCount, setOfflineLibraryCount] = useState<number | null>(null);
   // Local (offline) accounts saved on this machine. Several can coexist, each
   // with its own isolated offline workspace; one is "active" at a time.
-  const [localAccounts, setLocalAccounts] = useState<LocalAccount[]>(() => listLocalAccounts());
+  const [localAccounts, setLocalAccounts] = useState<LocalAccount[]>(() => listLoginLocalAccounts());
+  const guestResumePath = getGuestResumePath();
   const [activeUsername, setActiveUsername] = useState<string | null>(() => getActiveUsername());
   const [deleteTarget, setDeleteTarget] = useState<LocalAccount | null>(null);
 
   const refreshLocalAccounts = () => {
-    setLocalAccounts(listLocalAccounts());
+    setLocalAccounts(listLoginLocalAccounts());
     setActiveUsername(getActiveUsername());
   };
 
@@ -282,7 +284,7 @@ export default function Auth() {
       // race where the store hydrates before the heavy seed finishes loading).
       await ensureLocalOfflineProfile();
       signInAsGuest(LOCAL_OFFLINE_PROFILE_ID, "account");
-      toast.success("נרשמת מקומית! החשבון יירשם לשרת אוטומטית ברגע שיהיה חיבור לאינטרנט.");
+      toast.success("נרשמת מקומית! ננסה להשלים הרשמה כשהחיבור יחזור. אם תסגור את האפליקציה קודם, התחבר שוב עם הסיסמה; הנתונים יישמרו.");
       navigate("/", { replace: true });
     } else {
       toast.error(result.error ?? "יצירת החשבון נכשלה.");
@@ -440,12 +442,12 @@ export default function Auth() {
             // mirror an administrator and must not grant admin rights offline.
             await ensureLocalOfflineProfile();
             signInAsGuest(LOCAL_OFFLINE_PROFILE_ID);
-            navigate("/", { replace: true });
+            navigate(guestResumePath ?? "/", { replace: true });
           }}
           className="w-full border-2 border-dashed border-gold/50 rounded-full gap-2 text-muted-foreground hover:text-foreground hover:border-gold"
         >
           <UserX className="h-4 w-4" />
-          כניסה כאורח — ללא חשבון
+          {guestResumePath ? "המשך כאורח שמור — ללא סיסמה" : "כניסה כאורח — ללא חשבון"}
         </Button>
         <p className="text-xs text-muted-foreground text-center">
           {offlineLibraryCount && offlineLibraryCount > 0
@@ -456,7 +458,7 @@ export default function Auth() {
         {localAccounts.length > 0 && (
           <div className="rounded-xl border-2 border-gold/30 bg-card/60 p-3 space-y-2">
             <div className="text-[11px] font-medium text-muted-foreground text-right px-1">
-              חשבונות מקומיים במחשב זה
+              חשבונות שמורים במחשב זה — כניסה באמצעות סיסמה
             </div>
             {localAccounts.map((acct) => {
               const isActive = acct.username === activeUsername;
@@ -479,10 +481,10 @@ export default function Auth() {
                     <div className="min-w-0 flex-1 text-right">
                       <div className="text-sm font-medium text-foreground break-all">
                         {acct.displayName || acct.username}
-                        {isActive && <span className="mr-1 text-[10px] text-gold">· פעיל</span>}
+                        {isActive && <span className="mr-1 text-[10px] text-gold">· סביבת הנתונים האחרונה</span>}
                       </div>
                       <div className="text-[11px] text-muted-foreground">
-                        {acct.status === "registered" ? "מסונכרן לשרת" : "ממתין לסנכרון"}
+                        {acct.status === "registered" ? "חשבון רשום — נדרשת סיסמת החשבון" : "ממתין להרשמה בענן — התחבר עם הסיסמה להשלמת ההרשמה"}
                       </div>
                     </div>
                   </button>

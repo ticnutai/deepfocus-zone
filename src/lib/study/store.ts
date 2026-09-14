@@ -554,6 +554,15 @@ const markCloudSyncJobs = (count: number) => {
   requestStoreNotify();
 };
 
+const reportSyncQueueFailure = (error: unknown) => {
+  console.error("[sync-queue] durable retry could not be saved", error);
+  toast({
+    title: "לא ניתן לשמור משימת סנכרון",
+    description: "הסנכרון לא הושלם. אין לסגור את התוכנה לפני גיבוי הנתונים וניסיון נוסף.",
+    variant: "destructive",
+  });
+};
+
 const clearLegacyBrowserCachesForUser = async (userId: string) => {
   try {
     localStorage.removeItem(WIDGET_LAYOUT_CACHE_KEY(userId));
@@ -587,7 +596,7 @@ const scheduleStateCachePersist = () => {
         const jobs = await listSyncJobs(snapshotUser);
         markCloudSyncJobs(jobs.length);
       }
-    });
+    }).catch(reportSyncQueueFailure);
   }, 2000);
 };
 
@@ -1195,7 +1204,7 @@ const bg = (p: PromiseLike<{ error: unknown }>, label = "sync") => {
           .then(async () => {
             const jobs = await listSyncJobs(currentUserId);
             markCloudSyncJobs(jobs.length);
-          });
+          }).catch(reportSyncQueueFailure);
       }
       toast({
         title: "שגיאה בשמירה לשרת",
@@ -1648,7 +1657,7 @@ const runPendingCloudSync = async (userId: string) => {
       }
     }
     // Only re-query remaining jobs if we actually processed some (avoids redundant IDB read).
-    if (processedCount > 0) {
+    if (jobs.length > 0) {
       const remaining = await listSyncJobs(userId);
       perf.log("store:runPendingCloudSync.jobs_remaining", `${remaining.length} jobs`, "store", traceId);
       markCloudSyncJobs(remaining.length);
@@ -4974,7 +4983,7 @@ export function useStudy() {
             void enqueueFullSyncJob(userId, `widget_layout: ${error.message ?? "unknown"}`).then(async () => {
               const jobs = await listSyncJobs(userId);
               markCloudSyncJobs(jobs.length);
-            });
+            }).catch(reportSyncQueueFailure);
             toast({ title: "שגיאה בשמירה לשרת", description: "הפריסה נשמרה מקומית ותסונכרן בהמשך", variant: "destructive" });
           }
         } catch (err) {
@@ -4986,7 +4995,7 @@ export function useStudy() {
           void enqueueFullSyncJob(userId, `widget_layout: ${String(err)}`).then(async () => {
             const jobs = await listSyncJobs(userId);
             markCloudSyncJobs(jobs.length);
-          });
+          }).catch(reportSyncQueueFailure);
         }
       };
       void trySaveToCloud(1);

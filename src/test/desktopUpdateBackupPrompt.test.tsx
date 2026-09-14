@@ -10,11 +10,40 @@ vi.mock("@/hooks/usePreUpdateBackup", () => ({
 import { DesktopUpdateButton } from "@/components/DesktopUpdateButton";
 
 describe("desktop update backup prompt", () => {
+  it("keeps the page interactive and stays minimized across download ticks", async () => {
+    let pushStatus: (status: { type: "downloading"; percent: number }) => void = () => {};
+    const outsideClick = vi.fn();
+    window.desktop = {
+      isElectron: true, platform: "win32", versions: {},
+      updates: {
+        getVersion: vi.fn().mockResolvedValue("2.7.25"),
+        check: vi.fn().mockResolvedValue(undefined),
+        download: vi.fn().mockResolvedValue(undefined),
+        install: vi.fn().mockResolvedValue(undefined),
+        onStatus: vi.fn((callback) => { pushStatus = callback; return () => {}; }),
+      },
+    };
+    render(<><button onClick={outsideClick}>המשך לימוד</button><DesktopUpdateButton /></>);
+    screen.getByRole("button", { name: "המשך לימוד" }).focus();
+    act(() => pushStatus({ type: "downloading", percent: 10 }));
+    expect(await screen.findByRole("dialog")).not.toHaveAttribute("aria-modal", "true");
+    expect(document.body.style.pointerEvents).not.toBe("none");
+    expect(screen.getByRole("button", { name: "המשך לימוד" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "המשך לימוד" }));
+    expect(outsideClick).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "מזער והמשך לעבוד" }));
+    act(() => pushStatus({ type: "downloading", percent: 25 }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "קיים עדכון חדש" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     mocks.backupResult.mockResolvedValue({ ok: true, method: "cloud" });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     delete window.desktop;
   });
@@ -46,7 +75,11 @@ describe("desktop update backup prompt", () => {
     expect(screen.getByRole("button", { name: /התקן עכשיו/ })).toBeDisabled();
     expect(install).not.toHaveBeenCalled();
 
+    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "לא עכשיו" }));
+    act(() => vi.advanceTimersByTime(120_000));
+    expect(install).not.toHaveBeenCalled();
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: /התקן עכשיו/ })).not.toBeDisabled());
   });
 

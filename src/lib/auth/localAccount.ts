@@ -2,15 +2,14 @@
  * localAccount — offline-first registration.
  *
  * Lets a user REGISTER while offline: the account (username, display name,
- * optional email, password) is stored locally and the app enters local mode
+ * optional email, password verifier) is stored locally and the app enters local mode
  * immediately. When connectivity returns, `attemptDeferredRegistration()`
  * signs the account up on the server automatically (synthetic
- * `<username>@users.local` email when none was given — email verification is
- * not required by the server), migrates the offline study data into the new
- * account, wipes the locally-kept password, and signs the user in.
+ * `<username>@users.local` email when none was given), subject to the server's
+ * confirmation policy, and migrates data only after authenticated sign-in.
  *
- * The plaintext password must be kept (obfuscated) until server registration
- * succeeds — the server cannot accept a hash. It is deleted immediately after.
+ * The password is held only in memory for reconnect. After restarting the app,
+ * the user must enter it again; durable storage contains only a salted verifier.
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
@@ -79,7 +78,12 @@ function readAccounts(): LocalAccount[] {
     const raw = localStorage.getItem(ACCOUNTS_KEY);
     if (!raw) return [];
     const list = JSON.parse(raw) as LocalAccount[];
-    return Array.isArray(list) ? list.filter((a) => a && typeof a.username === "string") : [];
+    const valid = Array.isArray(list) ? list.filter((a) => a && typeof a.username === "string") : [];
+    if (valid.some((a) => a.passwordObf)) {
+      valid.forEach((a) => { a.passwordObf = ""; });
+      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(valid));
+    }
+    return valid;
   } catch {
     return [];
   }
@@ -91,6 +95,11 @@ function writeAccounts(list: LocalAccount[]) {
 
 export function listLocalAccounts(): LocalAccount[] {
   return readAccounts();
+}
+
+// Hide unusable legacy shortcuts, but retain their records and study data.
+export function listLoginLocalAccounts(): LocalAccount[] {
+  return readAccounts().filter((account) => Boolean(account.passwordHash?.trim()));
 }
 
 export function getActiveUsername(): string | null {
@@ -212,25 +221,6 @@ export async function deleteLocalAccount(username?: string): Promise<void> {
 
 /* ---------- password helpers ---------- */
 
-const OBF_KEY = "lemaan-local";
-
-function obfuscate(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  const key = new TextEncoder().encode(OBF_KEY);
-  const mixed = bytes.map((b, i) => b ^ key[i % key.length]);
-  let bin = "";
-  mixed.forEach((b) => { bin += String.fromCharCode(b); });
-  return btoa(bin);
-}
-
-function deobfuscate(obf: string): string {
-  const bin = atob(obf);
-  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-  const key = new TextEncoder().encode(OBF_KEY);
-  const orig = bytes.map((b, i) => b ^ key[i % key.length]);
-  return new TextDecoder().decode(orig);
-}
-
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -344,12 +334,13 @@ export async function createLocalAccount(input: {
     username,
     displayName: (input.displayName ?? "").trim() || username,
     email: (input.email ?? "").trim(),
-    passwordObf: obfuscate(input.password),
+    passwordObf: "",
     ...verifier,
     status: "pending",
     createdAt: Date.now(),
   });
   localStorage.setItem(ACTIVE_KEY, username);
+  reconnectCredential = { username, password: input.password };
   return { ok: true };
 }
 
@@ -363,7 +354,10 @@ export async function findLocalAccountByCredentials(usernameOrEmail: string, pas
     const matchesId = id === account.username
       || (!!account.email && id === account.email.toLowerCase())
       || id === syntheticEmailForUsername(account.username);
-    if (matchesId && await passwordMatches(account, password)) return account;
+    if (matchesId && await passwordMatches(account, password)) {
+      reconnectCredential = { username: account.username, password };
+      return account;
+    }
   }
   return null;
 }
@@ -426,7 +420,7 @@ export async function rememberOnlineAccountForOfflineLogin(input: {
 
 /** Keep the just-entered password in memory only, long enough to reconnect. */
 export function prepareRegisteredAccountReconnect(account: LocalAccount, password: string): void {
-  reconnectCredential = account.status === "registered" ? { username: account.username, password } : null;
+  reconnectCredential = { username: account.username, password };
 }
 
 export type RegisteredReconnectResult = {
@@ -441,7 +435,7 @@ let registeredReconnectInFlight = false;
  * returns, migrates its offline workspace to the same cloud user id, and
  * queues a complete upload. Safe to retry on online events and timers.
  */
-export async function attemptRegisteredAccountReconnect(): Promise<RegisteredReconnectResult> {
+export async function attemptRegisteredAccountReconnect(isCurrent: () => boolean = () => true): Promise<RegisteredReconnectResult> {
   if (registeredReconnectInFlight) return { status: "in-flight" };
   const account = getActiveLocalAccount();
   const credential = reconnectCredential;
@@ -449,13 +443,19 @@ export async function attemptRegisteredAccountReconnect(): Promise<RegisteredRec
     return { status: "no-credential" };
   }
   if (typeof navigator !== "undefined" && !navigator.onLine) return { status: "offline" };
+  const stillCurrent = () => isCurrent() && getActiveUsername() === account.username
+    && getActiveLocalAccount()?.createdAt === account.createdAt
+    && reconnectCredential === credential;
+  const cancelled = { status: "failed" as const, message: "החשבון הפעיל השתנה. החיבור הקודם בוטל." };
 
   registeredReconnectInFlight = true;
   try {
     // Capture first: signing in emits an auth event immediately.
     const offlineState = await readGuestState();
+    if (!stillCurrent()) return cancelled;
     const loginEmail = account.email || syntheticEmailForUsername(account.username);
     const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: credential.password });
+    if (!stillCurrent()) return cancelled;
     if (error) return { status: "failed", message: error.message };
     const userId = data.user?.id ?? data.session?.user.id ?? null;
     if (!userId || userId !== account.userId) {
@@ -464,10 +464,13 @@ export async function attemptRegisteredAccountReconnect(): Promise<RegisteredRec
       return { status: "failed", message: "זהות החשבון שחזרה מהשרת אינה תואמת לחשבון המקומי." };
     }
     if (offlineState) {
-      await saveStudyStateCache(userId, offlineState);
-      await saveStudyStateCache(dataKeyFor(account.username), offlineState);
+      await saveStudyStateCache(userId, offlineState, true);
+      if (!stillCurrent()) return cancelled;
+      await saveStudyStateCache(dataKeyFor(account.username), offlineState, true);
+      if (!stillCurrent()) return cancelled;
       await enqueueFullSyncJob(userId, "registered-account-offline-reconnect");
     }
+    if (!stillCurrent()) return cancelled;
     reconnectCredential = null;
     return { status: "reconnected" };
   } catch (error) {
@@ -483,18 +486,18 @@ export async function verifyLocalCredentials(usernameOrEmail: string, password: 
 
 export function getPendingRegistration(): LocalAccount | null {
   const account = getActiveLocalAccount();
-  return account?.status === "pending" && account.passwordObf ? account : null;
+  return account?.status === "pending" ? account : null;
 }
 
-function markRegistered(userId: string | null) {
-  const account = getActiveLocalAccount();
+function markRegistered(username: string, userId: string) {
+  const account = readAccounts().find((item) => item.username === username);
   if (!account) return;
   upsertAccount({
     ...account,
     passwordObf: "", // never keep the password after server registration
     status: "registered",
     registeredAt: Date.now(),
-    userId: userId ?? account.userId,
+    userId,
   });
 }
 
@@ -537,16 +540,21 @@ export interface DeferredRegistrationResult {
  */
 const DBG = "[offline-reg]";
 
-export async function attemptDeferredRegistration(): Promise<DeferredRegistrationResult> {
+export async function attemptDeferredRegistration(isCurrent: () => boolean = () => true): Promise<DeferredRegistrationResult> {
   if (attemptInFlight) { console.log(DBG, "skip: already in-flight"); return { status: "in-flight" }; }
   const pending = getPendingRegistration();
   if (!pending) { console.log(DBG, "skip: no pending account"); return { status: "no-pending" }; }
   if (typeof navigator !== "undefined" && !navigator.onLine) { console.log(DBG, "skip: navigator offline"); return { status: "offline" }; }
+  const credential = reconnectCredential;
+  if (!credential || credential.username !== pending.username) return { status: "failed", message: "להשלמת ההרשמה בענן יש להתחבר שוב עם הסיסמה. הנתונים המקומיים נשמרו." };
+  const stillCurrent = () => isCurrent() && getActiveUsername() === pending.username
+    && getActiveLocalAccount()?.createdAt === pending.createdAt;
 
   attemptInFlight = true;
   try {
     const email = pending.email || syntheticEmailForUsername(pending.username);
-    const password = deobfuscate(pending.passwordObf);
+    const password = credential.password;
+    const offlineSnapshot = await readGuestState();
     const url = import.meta.env.VITE_SUPABASE_URL;
     const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     console.log(DBG, "start", {
@@ -588,19 +596,37 @@ export async function attemptDeferredRegistration(): Promise<DeferredRegistratio
       userId = data.user?.id ?? null;
     }
 
-    if (userId) { console.log(DBG, "migrating guest data → user", userId); await migrateGuestDataToUser(userId); }
+    if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה. ההרשמה המקומית נשמרה לניסיון הבא." };
+    // A signUp response may contain an unconfirmed or masked identity. Verify
+    // credentials on the isolated client before writing any user-owned data.
+    const verified = await isolated.auth.signInWithPassword({ email, password });
+    if (verified.error || !verified.data?.user?.id) return { status: "failed", message: verified.error?.message ?? "יש לאמת את החשבון לפני הסנכרון." };
+    userId = verified.data.user.id;
+    if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה." };
+    if (offlineSnapshot) {
+      await saveStudyStateCache(userId, offlineSnapshot, true);
+      await enqueueFullSyncJob(userId, "offline-registration-migration");
+    }
+    if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה." };
 
     // Hand the session to the main client — hydration will pick up the seeded
     // snapshot and the queued full-sync job pushes it to the cloud.
     console.log(DBG, "signing main client in …");
-    const { error: mainSignInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: mainSignInData, error: mainSignInError } = await supabase.auth.signInWithPassword({ email, password });
     if (mainSignInError) {
       console.error(DBG, "main client sign-in failed", mainSignInError);
       // Keep the retry secret and pending state. Previously this path was
       // incorrectly marked registered and the queued data became stranded.
       return { status: "failed", message: mainSignInError.message };
     }
-    markRegistered(userId);
+    if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה." };
+    const finalUserId = mainSignInData?.user?.id ?? mainSignInData?.session?.user?.id;
+    if (finalUserId !== userId) {
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      return { status: "failed", message: "זהות ההתחברות אינה תואמת לחשבון שאומת. הנתונים המקומיים נשמרו." };
+    }
+    markRegistered(pending.username, userId);
+    reconnectCredential = null;
     console.log(DBG, "registered ✓");
     return { status: "registered" };
   } catch (err) {

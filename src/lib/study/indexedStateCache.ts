@@ -343,7 +343,7 @@ export async function readStudyStateCacheSavedAt(userId: string): Promise<number
   }
 }
 
-export async function saveStudyStateCache(userId: string, state: StudyState): Promise<void> {
+export async function saveStudyStateCache(userId: string, state: StudyState, strict = false): Promise<void> {
   await timeIdb("saveState", async () => {
     try {
       const db = await openDb();
@@ -360,8 +360,8 @@ export async function saveStudyStateCache(userId: string, state: StudyState): Pr
           reject(tx.error);
         };
       });
-    } catch {
-      // ignore cache write errors
+    } catch (error) {
+      if (strict) throw error;
     }
   });
 }
@@ -485,8 +485,8 @@ export async function enqueueFullSyncJob(userId: string, lastError?: string): Pr
         reject(tx.error);
       };
     });
-  } catch {
-    // ignore queue write errors
+  } catch (error) {
+    throw error; // Caller must not report success when durable queuing failed.
   }
 }
 

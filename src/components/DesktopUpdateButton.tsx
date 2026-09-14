@@ -8,7 +8,6 @@ import { usePreUpdateBackup, type PreUpdateBackupResult } from "@/hooks/usePreUp
 
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const BACKUP_TIMEOUT_MS = 25000;
-const INSTALL_COUNTDOWN_S = 6;
 
 type UpdateStatus =
   | { type: "idle" }
@@ -32,7 +31,7 @@ export function DesktopUpdateButton() {
   const [status, setStatus] = useState<UpdateStatus>({ type: "idle" });
   const [currentVersion, setCurrentVersion] = useState("");
   const [open, setOpen] = useState(false);
-  const [installCountdown, setInstallCountdown] = useState(0);
+  const previousStatus = useRef<UpdateStatus["type"]>("idle");
   const [backupPhase, setBackupPhase] = useState<BackupPhase>("idle");
   const [backupMethod, setBackupMethod] = useState<BackupMethod>(null);
   const [localCopyChoice, setLocalCopyChoice] = useState<LocalCopyChoice>(null);
@@ -67,32 +66,6 @@ export function DesktopUpdateButton() {
     return () => { cancelled = true; };
   }, [downloadedVersion]);
 
-  // Mandatory update, step 2: once the backup attempt is settled (done OR
-  // failed — it must not block the update forever), install automatically
-  // after a short, visible countdown. The renderer drives this; the main
-  // process (electron/main.cjs) keeps a much longer fallback timer in case
-  // this component never runs at all.
-  useEffect(() => {
-    if (
-      status.type !== "downloaded"
-      || backupPhase === "idle"
-      || backupPhase === "running"
-      || localCopyChoice === "pending"
-      || localCopyChoice === "downloading"
-    ) return;
-    setInstallCountdown(INSTALL_COUNTDOWN_S);
-    const intervalId = window.setInterval(() => {
-      setInstallCountdown((s) => Math.max(0, s - 1));
-    }, 1000);
-    const timeoutId = window.setTimeout(() => {
-      void updates?.install();
-    }, INSTALL_COUNTDOWN_S * 1000);
-    return () => {
-      window.clearInterval(intervalId);
-      window.clearTimeout(timeoutId);
-    };
-  }, [status, backupPhase, localCopyChoice, updates]);
-
   const downloadLocalCopy = async () => {
     setLocalCopyChoice("downloading");
     const result = await runPreUpdateBackup({ localCopyOnly: true });
@@ -106,7 +79,9 @@ export function DesktopUpdateButton() {
     const unsubscribe = updates.onStatus((next) => {
       if (!active) return;
       setStatus(next);
-      if (next.type === "available" || next.type === "downloading" || next.type === "downloaded") setOpen(true);
+      // Announce a new phase, not every progress tick after the user minimizes.
+      if (next.type !== previousStatus.current && (next.type === "available" || next.type === "downloading" || next.type === "downloaded")) setOpen(true);
+      previousStatus.current = next.type;
     });
     const check = () => {
       if (!navigator.onLine) return;
@@ -165,26 +140,19 @@ export function DesktopUpdateButton() {
         {hasUpdate && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-200 ring-2 ring-red-700" />}
       </button>
 
-      {/* Mandatory update: once a download starts, the dialog can't be
-          dismissed — the update proceeds and installs regardless either way,
-          this just keeps the user informed instead of letting them forget
-          about it mid-way. */}
+      {/* Nonmodal status panel: downloading continues when minimized. */}
       <Dialog
+        modal={false}
         open={open}
-        onOpenChange={(next) => {
-          if (!next && (status.type === "downloading" || status.type === "downloaded")) return;
-          setOpen(next);
-        }}
+        onOpenChange={setOpen}
       >
         <DialogContent
           dir="rtl"
-          className="max-w-md text-right"
-          onPointerDownOutside={(e) => {
-            if (status.type === "downloading" || status.type === "downloaded") e.preventDefault();
-          }}
-          onEscapeKeyDown={(e) => {
-            if (status.type === "downloading" || status.type === "downloaded") e.preventDefault();
-          }}
+          showOverlay={false}
+          className="bottom-4 left-4 top-auto w-[calc(100vw-2rem)] max-w-sm max-h-[60dvh] translate-x-0 translate-y-0 gap-3 rounded-xl p-4 text-right text-sm data-[state=open]:animate-none data-[state=closed]:animate-none"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
         >
           <DialogHeader className="text-right">
             <DialogTitle>עדכוני תוכנה</DialogTitle>
@@ -208,7 +176,7 @@ export function DesktopUpdateButton() {
               <div className="space-y-2">
                 <p className="font-semibold flex items-center gap-2"><Download className="h-4 w-4" /> מוריד עדכון ברקע — {status.percent}%</p>
                 <Progress value={status.percent} />
-                <p className="text-xs text-muted-foreground">העדכון חובה ומתבצע אוטומטית. אפשר להמשיך לעבוד בינתיים.</p>
+                <p className="text-xs text-muted-foreground">אפשר להמשיך לעבוד. התוכנה לא תיסגר ללא בחירתך.</p>
               </div>
             )}
             {status.type === "downloaded" && (
@@ -264,7 +232,7 @@ export function DesktopUpdateButton() {
                   && localCopyChoice !== "pending"
                   && localCopyChoice !== "downloading" && (
                   <p className="text-sm text-muted-foreground">
-                    המערכת תיסגר ותתקין את העדכון אוטומטית בעוד {installCountdown} {installCountdown === 1 ? "שנייה" : "שניות"}, ותיפתח מחדש.
+                    העדכון מוכן. אפשר להתקין עכשיו או להמשיך לעבוד ולהתקין בעת סגירת התוכנה.
                   </p>
                 )}
               </div>
@@ -287,9 +255,7 @@ export function DesktopUpdateButton() {
                 <RefreshCw className="h-4 w-4" /> בדוק שוב
               </Button>
             )}
-            {status.type !== "downloading" && status.type !== "downloaded" && (
-              <Button variant="ghost" onClick={() => setOpen(false)}>סגור</Button>
-            )}
+            <Button variant="ghost" onClick={() => setOpen(false)}>מזער והמשך לעבוד</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
