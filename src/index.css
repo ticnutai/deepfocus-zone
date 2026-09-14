@@ -134,6 +134,58 @@
     --sidebar-ring: 42 70% 55%;
   }
 
+  /* ============ THEME: Mobile Focus ============ */
+  /* Desktop-ready version of the cream, mint, gold and navy mobile palette */
+  [data-theme="mobile-focus"] {
+    --background: 42 45% 98%;
+    --foreground: 220 58% 17%;
+    --card: 40 50% 99%;
+    --card-foreground: 220 58% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 58% 17%;
+    --primary: 220 62% 17%;
+    --primary-foreground: 42 60% 97%;
+    --secondary: 43 72% 94%;
+    --secondary-foreground: 220 58% 17%;
+    --muted: 150 32% 94%;
+    --muted-foreground: 220 16% 42%;
+    --accent: 158 66% 43%;
+    --accent-foreground: 220 60% 14%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 42 66% 70%;
+    --input: 42 50% 80%;
+    --ring: 158 65% 42%;
+    --gold: 42 78% 50%;
+    --gold-soft: 42 68% 70%;
+    --navy: 220 62% 17%;
+    --navy-soft: 220 42% 30%;
+    --focus-streak-from: 38 92% 50%;
+    --focus-streak-to: 42 78% 50%;
+    --focus-streak-icon: 38 82% 45%;
+    --focus-streak-icon-border: 42 78% 56%;
+    --focus-due-from: 42 78% 50%;
+    --focus-due-to: 47 90% 62%;
+    --focus-due-icon: 42 80% 46%;
+    --focus-due-icon-border: 42 76% 58%;
+    --focus-learned-from: 158 72% 42%;
+    --focus-learned-to: 148 58% 70%;
+    --focus-learned-icon: 158 72% 36%;
+    --focus-learned-icon-border: 158 62% 48%;
+    --gradient-gold: linear-gradient(135deg, hsl(42 84% 56%), hsl(38 72% 47%));
+    --gradient-navy: linear-gradient(135deg, hsl(220 62% 17%), hsl(220 44% 27%));
+    --shadow-elegant: 0 5px 22px -6px hsl(220 62% 17% / 0.16);
+    --shadow-gold: 0 4px 18px -5px hsl(42 78% 50% / 0.38);
+    --sidebar-background: 40 50% 99%;
+    --sidebar-foreground: 220 58% 17%;
+    --sidebar-primary: 220 62% 17%;
+    --sidebar-primary-foreground: 42 60% 97%;
+    --sidebar-accent: 150 32% 94%;
+    --sidebar-accent-foreground: 220 58% 17%;
+    --sidebar-border: 42 66% 70%;
+    --sidebar-ring: 158 65% 42%;
+  }
+
   /* ============ THEME: Emerald Ivory ============ */
   /* Cream bg, emerald + gold */
   [data-theme="emerald-ivory"] {
@@ -348,6 +400,121 @@
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  .shas-progress-card__fill {
+    border-radius: inherit;
+    transition: width 560ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .shas-progress-card__fill--surface {
+    background: linear-gradient(270deg, hsl(var(--gold) / 0.3), hsl(var(--gold-soft) / 0.16));
+  }
+
+  .shas-theme-shell .shas-progress-card.shas-progress-card--navy-gold {
+    background: hsl(var(--navy)) !important;
+    color: hsl(var(--primary-foreground));
+  }
+
+  .shas-progress-card--navy-gold .text-muted-foreground,
+  .shas-progress-card--navy-gold .text-gold {
+    color: hsl(var(--primary-foreground) / 0.82);
+  }
+
+  .shas-progress-card--navy-gold [class*="border-gold"] {
+    background-color: hsl(var(--navy) / 0.88);
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .shas-progress-card--navy-gold .relative {
+    text-shadow: 0 1px 2px hsl(var(--navy) / 0.9);
+  }
+
+  .shas-progress-card--navy-gold .gold-icon-circle,
+  .shas-progress-card--navy-gold [class*="bg-secondary"] {
+    background: hsl(var(--navy) / 0.88);
+    color: hsl(var(--primary-foreground));
+  }
+
+  .shas-progress-card__fill--navy-gold {
+    background: linear-gradient(270deg, hsl(var(--gold)), hsl(var(--gold) / 0.86));
+    box-shadow: -10px 0 24px hsl(var(--gold) / 0.2);
+  }
+
+  .shas-progress-card__fill--aurora {
+    background:
+      radial-gradient(circle at 85% 35%, hsl(var(--accent) / 0.38), transparent 48%),
+      linear-gradient(270deg, hsl(var(--accent) / 0.3), hsl(var(--gold) / 0.25));
+    box-shadow: -12px 0 28px hsl(var(--accent) / 0.14);
+  }
+
+  .shas-progress-card__fill--mosaic {
+    background:
+      linear-gradient(hsl(var(--card) / 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--card) / 0.4) 1px, transparent 1px),
+      linear-gradient(270deg, hsl(var(--gold) / 0.55), hsl(var(--accent) / 0.24));
+    background-size: 18px 18px, 18px 18px, 100% 100%;
+  }
+
+  .shas-progress-ring {
+    --shas-progress: 0deg;
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    place-items: center;
+    padding: 4px;
+    border-radius: 9999px;
+    background: conic-gradient(from 0deg, hsl(var(--gold)) var(--shas-progress), hsl(var(--muted)) 0);
+    box-shadow: 0 0 0 1px hsl(var(--gold) / 0.35), 0 5px 14px hsl(var(--navy) / 0.1);
+  }
+
+  .shas-progress-ring > span {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 9999px;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    text-shadow: none;
+  }
+
+  .shas-progress-card__fill--heat {
+    background:
+      radial-gradient(circle at 82% 50%, hsl(var(--gold)) 0 12%, transparent 35%),
+      radial-gradient(circle at 45% 20%, hsl(var(--accent)) 0, transparent 48%),
+      linear-gradient(270deg, hsl(var(--gold) / 0.58), hsl(var(--accent) / 0.4));
+    mix-blend-mode: multiply;
+  }
+
+  .shas-progress-card__fill--milestones {
+    background:
+      repeating-linear-gradient(90deg, transparent 0 calc(25% - 2px), hsl(var(--card) / 0.88) calc(25% - 2px) 25%),
+      linear-gradient(270deg, hsl(var(--gold) / 0.68), hsl(var(--accent) / 0.34));
+    box-shadow: inset -3px 0 hsl(var(--gold));
+  }
+
+  .shas-progress-card__fill--book {
+    background:
+      linear-gradient(90deg, transparent calc(50% - 1px), hsl(var(--navy) / 0.2) 50%, transparent calc(50% + 1px)),
+      repeating-linear-gradient(0deg, hsl(var(--card) / 0.12) 0 2px, transparent 2px 8px),
+      linear-gradient(270deg, hsl(var(--gold) / 0.42), hsl(var(--gold-soft) / 0.2));
+    box-shadow: inset 8px 0 18px hsl(var(--navy) / 0.08), inset -8px 0 18px hsl(var(--gold) / 0.12);
+  }
+
+  .shas-progress-card--book::after {
+    position: absolute;
+    inset-block: 12%;
+    left: 50%;
+    z-index: 1;
+    width: 1px;
+    content: "";
+    background: linear-gradient(transparent, hsl(var(--gold) / 0.48), transparent);
+    pointer-events: none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .shas-theme-shell,
     .shas-theme-shell .gold-frame,
@@ -355,6 +522,10 @@
     .shas-theme-shell button,
     .shas-theme-shell [role="progressbar"],
     .shas-theme-shell .inline-flex {
+      transition: none;
+    }
+
+    .shas-progress-card__fill {
       transition: none;
     }
   }

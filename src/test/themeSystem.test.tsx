@@ -29,4 +29,16 @@ describe("canonical theme switcher", () => {
     expect(screen.getByText(/פרסם כברירת מחדל/)).toBeInTheDocument();
     expect(screen.getAllByTitle("ערוך ערכה").length).toBeGreaterThan(0);
   });
+
+  it("offers the mobile palette in the regular theme picker and persists it", () => {
+    const first = render(<ThemeProvider><ThemeSwitcher /></ThemeProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "בחר ערכת נושא" }));
+    fireEvent.click(screen.getByRole("button", { name: /פוקוס מובייל/ }));
+    expect(document.documentElement).toHaveAttribute("data-theme", "mobile-focus");
+    expect(localStorage.getItem("app-theme")).toBe("mobile-focus");
+
+    first.unmount();
+    render(<ThemeProvider><div>נטען מחדש</div></ThemeProvider>);
+    expect(document.documentElement).toHaveAttribute("data-theme", "mobile-focus");
+  });
 });

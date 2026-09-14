@@ -27,6 +27,8 @@ export interface DesignRule {
   selector: string;
   label: string;
   scope: DesignScope;
+  /** Missing means all themes, preserving existing saved designs. */
+  themeId?: string;
   styles: Record<string, string>;
 }
 export interface DesignGeometry { x: number; y: number; width: number; height: number }
@@ -45,13 +47,55 @@ interface PublishedThemeSystem {
 
 const PUBLISHED_KEY = "published_theme_system_v1";
 const DESIGN_STORAGE_KEY = "app-theme-design-v1";
+const DESIGN_QUARANTINE_STORAGE_KEY = "app-theme-design-quarantine-v1";
 const DEFAULT_GEOMETRY: DesignGeometry = { x: 24, y: 84, width: 560, height: 720 };
 const EMPTY_DESIGN: ThemeDesignSnapshot = { schemaVersion: 1, rules: [], geometry: DEFAULT_GEOMETRY, updatedAt: 0 };
+
+const GENERIC_UTILITY_CLASSES = new Set([
+  "relative", "absolute", "fixed", "sticky", "static",
+  "block", "inline", "inline-block", "inline-flex", "inline-grid", "flex", "grid", "hidden",
+  "container", "isolate", "contents", "flow-root",
+]);
+
+function isLayoutUtilityClass(name: string): boolean {
+  if (!name || name.includes(":") || name.includes("[") || name.includes("/")) return true;
+  if (GENERIC_UTILITY_CLASSES.has(name)) return true;
+  return /^(?:-?(?:inset|top|right|bottom|left|z|order|col|row|float|clear|object|overflow|overscroll|position)-|(?:p|m)[trblxy]?-|(?:h|w|min-h|min-w|max-h|max-w)-|(?:text|bg|border|rounded|shadow|opacity|gap|space|items|justify|content|self|place|basis|grow|shrink|transition|duration|ease|delay|animate|cursor|select|pointer-events|transform|translate|rotate|scale)-)/u.test(name);
+}
+
+function isSafeDesignRule(rule: DesignRule): boolean {
+  if (!rule || typeof rule.selector !== "string" || !rule.selector.trim()) return false;
+  const selector = rule.selector.trim();
+  if (selector === "*" || selector === "html" || selector === "body" || selector === ":root") return false;
+  if (rule.scope !== "component") return true;
+  const classes = Array.from(selector.matchAll(/\.([a-zA-Z0-9_-]+)/gu), (match) => match[1]);
+  return classes.length === 0 || classes.some((name) => !isLayoutUtilityClass(name));
+}
+
+export function sanitizeThemeDesign(snapshot: ThemeDesignSnapshot): ThemeDesignSnapshot {
+  const rules = snapshot.rules.filter(isSafeDesignRule);
+  if (rules.length === snapshot.rules.length) return snapshot;
+  return { ...snapshot, rules, updatedAt: Date.now() };
+}
+
+function quarantineRules(rules: DesignRule[]) {
+  if (!rules.length) return;
+  try {
+    localStorage.setItem(DESIGN_QUARANTINE_STORAGE_KEY, JSON.stringify({ quarantinedAt: Date.now(), rules }));
+  } catch { /* best-effort recovery copy */ }
+}
 
 function readDesign(): ThemeDesignSnapshot {
   try {
     const parsed = JSON.parse(localStorage.getItem(DESIGN_STORAGE_KEY) || "null") as ThemeDesignSnapshot | null;
-    if (parsed?.schemaVersion === 1 && Array.isArray(parsed.rules)) return parsed;
+    if (parsed?.schemaVersion === 1 && Array.isArray(parsed.rules)) {
+      const safe = sanitizeThemeDesign(parsed);
+      if (safe !== parsed) {
+        quarantineRules(parsed.rules.filter((rule) => !isSafeDesignRule(rule)));
+        localStorage.setItem(DESIGN_STORAGE_KEY, JSON.stringify(safe));
+      }
+      return safe;
+    }
   } catch { /* local fallback */ }
   return EMPTY_DESIGN;
 }
@@ -61,8 +105,10 @@ function persistDesign(value: ThemeDesignSnapshot, notify = true) {
   if (notify) window.dispatchEvent(new CustomEvent("app-theme-design-changed"));
 }
 
-function cssText(rules: DesignRule[]) {
-  return rules.map((rule) => `${rule.selector}{${Object.entries(rule.styles)
+function cssText(rules: DesignRule[], theme?: string) {
+  return rules.filter(isSafeDesignRule).filter((rule) => !rule.themeId || rule.themeId === theme)
+    .sort((a, b) => Number(Boolean(a.themeId)) - Number(Boolean(b.themeId)))
+    .map((rule) => `${rule.selector}{${Object.entries(rule.styles)
     .filter(([, value]) => value !== "")
     .map(([key, value]) => `${key}:${value} !important`)
     .join(";")}}`).join("\n");
@@ -100,10 +146,9 @@ function exactSelector(element: HTMLElement): string {
 }
 
 function componentSelector(element: HTMLElement): string {
-  const stable = Array.from(element.classList).find((name) =>
-    !name.includes(":") && !name.includes("[") && !/^(p|m|h|w|min|max|text|bg|border|flex|grid|gap|rounded|shadow|overflow|items|justify)-/.test(name),
-  );
-  return stable ? `.${safeCssIdent(stable)}` : exactSelector(element);
+  const stable = Array.from(element.classList).filter((name) => !isLayoutUtilityClass(name)).slice(0, 2);
+  if (!stable.length) return exactSelector(element);
+  return `${element.tagName.toLowerCase()}${stable.map((name) => `.${safeCssIdent(name)}`).join("")}`;
 }
 
 function globalSelector(element: HTMLElement): string {
@@ -147,7 +192,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const { user, isGuest } = useAuth();
   const { isAdmin, viewerIsAdmin } = usePermissions();
   const { state, setUiPref } = useStudy();
-  const { exportPreferences, hydratePreferences } = useTheme();
+  const { theme, allThemes, exportPreferences, hydratePreferences } = useTheme();
   const [design, setDesign] = useState<ThemeDesignSnapshot>(readDesign);
   const [published, setPublished] = useState<PublishedThemeSystem | null>(BUNDLED_THEME_DEFAULTS);
   const [enabled, setEnabled] = useState(false);
@@ -157,6 +202,9 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [scope, setScope] = useState<DesignScope>("element");
+  const [themeScope, setThemeScope] = useState<"current" | "all">("current");
+  // Discard a draft when its originating theme changes.
+  useEffect(() => { setSelected(null); setDraft({}); setHoverRect(null); }, [theme]);
   const [history, setHistory] = useState<DesignRule[][]>([]);
   const [future, setFuture] = useState<DesignRule[][]>([]);
   const [geometry, setGeometry] = useState<DesignGeometry>(design.geometry || DEFAULT_GEOMETRY);
@@ -169,14 +217,14 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const canAuthor = isAdmin && viewerIsAdmin;
 
   const commitDesign = useCallback((rules: DesignRule[], nextGeometry = geometry) => {
-    const next: ThemeDesignSnapshot = { schemaVersion: 1, rules, geometry: nextGeometry, updatedAt: Date.now() };
+    const next = sanitizeThemeDesign({ schemaVersion: 1, rules, geometry: nextGeometry, updatedAt: Date.now() });
     setDesign(next);
     persistDesign(next);
   }, [geometry]);
 
   useEffect(() => {
-    ensureStyleTag("design-mode-overrides").textContent = cssText(design.rules);
-  }, [design.rules]);
+    ensureStyleTag("design-mode-overrides").textContent = cssText(design.rules, theme);
+  }, [design.rules, theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,9 +249,12 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     else if (localTheme.updatedAt > 0 && hasStudyIdentity) setUiPref("themePreferences", localTheme as never);
     else if (published?.themePreferences?.schemaVersion === 1) hydratePreferences(published.themePreferences);
     if (canAuthor && personalDesign?.schemaVersion === 1) {
-      setDesign(personalDesign); setGeometry(personalDesign.geometry); persistDesign(personalDesign, false);
+      const safeDesign = sanitizeThemeDesign(personalDesign);
+      setDesign(safeDesign); setGeometry(safeDesign.geometry); persistDesign(safeDesign, false);
+      if (safeDesign !== personalDesign) setUiPref("themeDesign", safeDesign as never);
     } else if (published?.design?.schemaVersion === 1) {
-      setDesign(published.design); setGeometry(published.design.geometry); persistDesign(published.design, false);
+      const safeDesign = sanitizeThemeDesign(published.design);
+      setDesign(safeDesign); setGeometry(safeDesign.geometry); persistDesign(safeDesign, false);
     }
     hydratedSnapshot.current = hydrationKey;
   }, [canAuthor, currentIdentity, exportPreferences, hasStudyIdentity, hydratePreferences, published, setUiPref, state.uiPrefs?.themeDesign, state.uiPrefs?.themePreferences]);
@@ -297,17 +348,18 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     if (!selected) return;
     const selector = scope === "element" ? exactSelector(selected) : scope === "component" ? componentSelector(selected) : globalSelector(selected);
     const nextRule: DesignRule = {
-      id: `${scope}:${selector}`,
+      id: `${themeScope === "current" ? `theme:${theme}:` : ""}${scope}:${selector}`,
+      ...(themeScope === "current" ? { themeId: theme } : {}),
       selector,
       scope,
-      label: `${selected.tagName.toLowerCase()} · ${scope === "element" ? "אלמנט" : scope === "component" ? "רכיב" : "כללי"}`,
+      label: `${themeScope === "current" ? allThemes.find((item) => item.id === theme)?.label || theme : "כל ערכות הנושא"} · ${selected.tagName.toLowerCase()} · ${scope === "element" ? "אלמנט" : scope === "component" ? "רכיב" : "סוג רכיב"}`,
       styles: Object.fromEntries(Object.entries(draft).filter(([, value]) => value.trim() !== "")),
     };
     setHistory((items) => [...items.slice(-49), design.rules]); setFuture([]);
     commitDesign([...design.rules.filter((rule) => rule.id !== nextRule.id), nextRule]);
     setSelected(null);
     toast.success("העיצוב נשמר");
-  }, [commitDesign, design.rules, draft, scope, selected]);
+  }, [allThemes, commitDesign, design.rules, draft, scope, selected, theme, themeScope]);
 
   const undo = useCallback(() => {
     const previous = history.at(-1); if (!previous) return;
@@ -404,8 +456,16 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
               <div className="flex gap-1"><Button size="icon" variant="ghost" onClick={() => setPaused((value) => !value)} title="השהה/המשך">{paused ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}</Button><Button size="icon" variant="ghost" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button></div>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+              <div className="space-y-2 rounded-xl border border-gold/30 p-2">
+                <div className="text-sm font-bold">על אילו ערכות נושא להחיל? · {allThemes.find((item) => item.id === theme)?.label || theme}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" aria-pressed={themeScope === "current"} variant={themeScope === "current" ? "default" : "outline"} onClick={() => setThemeScope("current")}>רק ערכת הנושא הנוכחית</Button>
+                  <Button size="sm" aria-pressed={themeScope === "all"} variant={themeScope === "all" ? "default" : "outline"} onClick={() => setThemeScope("all")}>כל ערכות הנושא</Button>
+                </div>
+                <p className="text-xs text-muted-foreground">שינוי ייחודי לערכה מקבל עדיפות על שינוי משותף. שינויים ישנים נשארים משותפים לכל הערכות.</p>
+              </div>
               <div className="grid grid-cols-3 gap-1">
-                {(["element", "component", "global"] as DesignScope[]).map((item) => <Button key={item} size="sm" variant={scope === item ? "default" : "outline"} onClick={() => setScope(item)}>{item === "element" ? "אלמנט זה" : item === "component" ? "כל רכיב דומה" : "כללי במערכת"}</Button>)}
+                {(["element", "component", "global"] as DesignScope[]).map((item) => <Button key={item} size="sm" variant={scope === item ? "default" : "outline"} onClick={() => setScope(item)}>{item === "element" ? "אלמנט זה" : item === "component" ? "כל רכיב דומה" : "כל הרכיבים מסוג זה"}</Button>)}
               </div>
               {!!design.rules.length && <div className="rounded-xl border border-gold/30 bg-card p-2"><div className="mb-1 text-xs font-bold">שינויים שמורים ({design.rules.length})</div><div className="max-h-28 space-y-1 overflow-y-auto">{design.rules.map((rule) => <div key={rule.id} className="flex items-center justify-between gap-2 rounded border border-gold/20 px-2 py-1 text-[11px]"><span className="min-w-0 truncate" dir="ltr">{rule.label} · {rule.selector}</span><Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeRule(rule.id)} title="מחק שינוי"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></div>}
               <div className="grid grid-cols-2 gap-2">

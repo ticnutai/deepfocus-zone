@@ -51,9 +51,20 @@ type HierarchyLayout = "cards" | "table" | "compact" | "kanban";
 type FlatLayout = "grid" | "table" | "compact";
 type MasechtaDetailLayout = "grid" | "compact" | "table" | "focus";
 type FlatSort = "name-asc" | "name-desc" | "progress-desc" | "progress-asc" | "remaining-desc" | "remaining-asc";
+type ProgressFillStyle =
+  | "bar"
+  | "surface"
+  | "navy-gold"
+  | "aurora"
+  | "mosaic"
+  | "ring"
+  | "heat"
+  | "milestones"
+  | "book";
 type ShasBoardThemeMode = "global" | "separate";
 type ShasBoardView = "hierarchy" | "flat" | "planner" | "calendar";
 interface ShasBoardViewPrefs {
+  defaultsVersion?: number;
   activeTab?: ShasBoardView;
   hierarchyLayout?: HierarchyLayout;
   flatLayout?: FlatLayout;
@@ -61,11 +72,69 @@ interface ShasBoardViewPrefs {
   plannerLayout?: ShasPlannerViewMode;
   calendarLayout?: ShasCalendarViewMode;
   flatSort?: FlatSort;
+  progressFillStyle?: ProgressFillStyle;
   boardThemeMode?: ShasBoardThemeMode;
   boardThemeId?: string;
   boardTheme?: string;
   boardLocalThemeIds?: string[];
   selectMode?: boolean;
+}
+
+const SHAS_BOARD_DEFAULTS_VERSION = 1;
+
+export function resolveInitialShasBoardView(viewPrefs: ShasBoardViewPrefs): ShasBoardView {
+  // Version 1 changes the product default from hierarchy to the all-masechtot view.
+  // Existing installations are migrated once, then every explicit user choice is preserved.
+  if ((viewPrefs.defaultsVersion ?? 0) < SHAS_BOARD_DEFAULTS_VERSION) return "flat";
+  return viewPrefs.activeTab ?? "flat";
+}
+
+function ProgressRing({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  return (
+    <span
+      aria-label={`טבעת התקדמות ${pct}%`}
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={pct}
+      className="shas-progress-ring"
+      role="progressbar"
+      style={{ "--shas-progress": `${pct * 3.6}deg` } as React.CSSProperties}
+    >
+      <span>{pct}%</span>
+    </span>
+  );
+}
+
+function ProgressCardFill({ value, style, repetitions = 0 }: { value: number; style: ProgressFillStyle; repetitions?: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  if (style === "bar") return <Progress value={pct} className="h-1.5 mt-2" />;
+  if (style === "ring") return null;
+
+  const heatOpacity = Math.min(0.78, 0.08 + (Math.log2(repetitions + 1) / 6) * 0.7);
+  const isHeat = style === "heat";
+
+  return (
+    <span
+      aria-label={`מילוי התקדמות ${pct}%`}
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={pct}
+      className={cn(
+        "shas-progress-card__fill absolute inset-y-0 right-0 pointer-events-none",
+        style === "surface" && "shas-progress-card__fill--surface",
+        style === "navy-gold" && "shas-progress-card__fill--navy-gold",
+        style === "aurora" && "shas-progress-card__fill--aurora",
+        style === "mosaic" && "shas-progress-card__fill--mosaic",
+        style === "heat" && "shas-progress-card__fill--heat",
+        style === "milestones" && "shas-progress-card__fill--milestones",
+        style === "book" && "shas-progress-card__fill--book",
+      )}
+      data-repetitions={repetitions}
+      role="progressbar"
+      style={{ width: isHeat ? "100%" : `${pct}%`, opacity: isHeat ? heatOpacity : undefined }}
+    />
+  );
 }
 
 const HEB = [
@@ -152,13 +221,14 @@ export function ShasBoard() {
   );
   const viewPrefs = (state.uiPrefs.shasBoardViewPrefs ?? {}) as ShasBoardViewPrefs;
 
-  const [view, setView] = useState<ShasBoardView>(viewPrefs.activeTab ?? "hierarchy");
+  const [view, setView] = useState<ShasBoardView>(() => resolveInitialShasBoardView(viewPrefs));
   const [hierarchyLayout, setHierarchyLayout] = useState<HierarchyLayout>(viewPrefs.hierarchyLayout ?? "cards");
   const [flatLayout, setFlatLayout] = useState<FlatLayout>(viewPrefs.flatLayout ?? "grid");
   const [masechtaDetailLayout, setMasechtaDetailLayout] = useState<MasechtaDetailLayout>(viewPrefs.masechtaDetailLayout ?? "grid");
   const [plannerLayout, setPlannerLayout] = useState<ShasPlannerViewMode>(viewPrefs.plannerLayout ?? "rich");
   const [calendarLayout, setCalendarLayout] = useState<ShasCalendarViewMode>(viewPrefs.calendarLayout ?? "month");
   const [flatSort, setFlatSort] = useState<FlatSort>(viewPrefs.flatSort ?? "progress-desc");
+  const [progressFillStyle, setProgressFillStyle] = useState<ProgressFillStyle>(viewPrefs.progressFillStyle ?? "surface");
   const [boardThemeMode, setBoardThemeMode] = useState<ShasBoardThemeMode>(viewPrefs.boardThemeMode ?? "separate");
   const [boardThemeId, setBoardThemeId] = useState<string>(viewPrefs.boardThemeId ?? viewPrefs.boardTheme ?? appTheme ?? "royal-navy");
   const [boardLocalThemeIds, setBoardLocalThemeIds] = useState<string[]>(viewPrefs.boardLocalThemeIds ?? []);
@@ -176,6 +246,7 @@ export function ShasBoard() {
 
   useEffect(() => {
     const nextPrefs = {
+      defaultsVersion: SHAS_BOARD_DEFAULTS_VERSION,
       activeTab: view,
       hierarchyLayout,
       flatLayout,
@@ -183,6 +254,7 @@ export function ShasBoard() {
       plannerLayout,
       calendarLayout,
       flatSort,
+      progressFillStyle,
       boardThemeMode,
       boardThemeId,
       boardLocalThemeIds,
@@ -192,7 +264,7 @@ export function ShasBoard() {
     if (JSON.stringify(currentPrefs) !== JSON.stringify(nextPrefs)) {
       setUiPref("shasBoardViewPrefs", nextPrefs);
     }
-  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, boardThemeMode, boardThemeId, boardLocalThemeIds, selectMode, setUiPref, state.uiPrefs]);
+  }, [view, hierarchyLayout, flatLayout, masechtaDetailLayout, plannerLayout, calendarLayout, flatSort, progressFillStyle, boardThemeMode, boardThemeId, boardLocalThemeIds, selectMode, setUiPref, state.uiPrefs]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -950,7 +1022,7 @@ export function ShasBoard() {
                           : <Flag className="h-4 w-4" />}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52 text-right">
+            <DropdownMenuContent align="start" className="max-h-[70vh] w-60 overflow-y-auto text-right">
               {view === "hierarchy" && (
                 <>
                   <DropdownMenuLabel className="text-right">תצוגת סדרים</DropdownMenuLabel>
@@ -1013,6 +1085,49 @@ export function ShasBoard() {
                 </>
               )}
 
+              {(view === "hierarchy" || view === "flat") && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-right">מילוי התקדמות</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("surface")} className="gap-2 flex-row-reverse justify-end text-right">
+                    מילוי הכרטיס מימין {progressFillStyle === "surface" ? "✓" : ""}
+                    <Layers className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("navy-gold")} className="gap-2 flex-row-reverse justify-end text-right">
+                    נייבי שהופך לזהב {progressFillStyle === "navy-gold" ? "✓" : ""}
+                    <Sparkles className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("aurora")} className="gap-2 flex-row-reverse justify-end text-right">
+                    זוהר מנטה וזהב {progressFillStyle === "aurora" ? "✓" : ""}
+                    <Palette className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("bar")} className="gap-2 flex-row-reverse justify-end text-right">
+                    פס התקדמות קלאסי {progressFillStyle === "bar" ? "✓" : ""}
+                    <Rows3 className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("mosaic")} className="gap-2 flex-row-reverse justify-end text-right">
+                    פסיפס דפים {progressFillStyle === "mosaic" ? "✓" : ""}
+                    <LayoutGrid className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("ring")} className="gap-2 flex-row-reverse justify-end text-right">
+                    טבעת התקדמות {progressFillStyle === "ring" ? "✓" : ""}
+                    <Circle className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("heat")} className="gap-2 flex-row-reverse justify-end text-right">
+                    מפת חום לפי חזרות {progressFillStyle === "heat" ? "✓" : ""}
+                    <Palette className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("milestones")} className="gap-2 flex-row-reverse justify-end text-right">
+                    אבני דרך {progressFillStyle === "milestones" ? "✓" : ""}
+                    <Flag className="h-4 w-4" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setProgressFillStyle("book")} className="gap-2 flex-row-reverse justify-end text-right">
+                    ספר נפתח {progressFillStyle === "book" ? "✓" : ""}
+                    <BookOpen className="h-4 w-4" />
+                  </DropdownMenuItem>
+                </>
+              )}
+
               {view === "planner" && (
                 <>
                   <DropdownMenuLabel className="text-right">תצוגת תכנון</DropdownMenuLabel>
@@ -1059,19 +1174,28 @@ export function ShasBoard() {
             <>
               {sederRows.map(({ sederName, s, pct, masechtotCount }) => (
                 <Card key={sederName} onClick={() => setSelectedSeder(sederName)}
-                  className="gold-frame p-4 cursor-pointer hover:shadow-elegant transition-all">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                  data-progress-style={progressFillStyle}
+                  className={cn(
+                    "shas-progress-card gold-frame relative overflow-hidden p-4 cursor-pointer hover:shadow-elegant transition-all",
+                    progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                    progressFillStyle === "book" && "shas-progress-card--book",
+                  )}>
+                  <div className="relative z-10 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="gold-icon-circle"><Layers className="h-4 w-4" /></span>
                       <h3 className="font-display text-xl font-bold">סדר {sederName}</h3>
                       <Badge variant="secondary">{masechtotCount} מסכתות</Badge>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="border-gold/60">{s.learned}/{s.total} ({pct}%)</Badge>
+                      {progressFillStyle === "ring" ? (
+                        <><span className="text-xs text-muted-foreground">{s.learned}/{s.total}</span><ProgressRing value={pct} /></>
+                      ) : (
+                        <Badge variant="outline" className="border-gold/60">{s.learned}/{s.total} ({pct}%)</Badge>
+                      )}
                       {s.reps > 0 && <Badge variant="secondary" className="text-[10px]">חזרות: {s.reps}</Badge>}
                     </div>
                   </div>
-                  <Progress value={pct} className="h-1.5 mt-2" />
+                  <ProgressCardFill value={pct} style={progressFillStyle} repetitions={s.reps} />
                 </Card>
               ))}
             </>
@@ -1083,16 +1207,23 @@ export function ShasBoard() {
                 <Card
                   key={sederName}
                   onClick={() => setSelectedSeder(sederName)}
-                  className="gold-frame p-3 cursor-pointer hover:shadow-elegant transition-all"
+                  data-progress-style={progressFillStyle}
+                  className={cn(
+                    "shas-progress-card gold-frame relative overflow-hidden p-3 cursor-pointer hover:shadow-elegant transition-all",
+                    progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                    progressFillStyle === "book" && "shas-progress-card--book",
+                  )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-display text-lg font-bold">סדר {sederName}</h3>
-                    <Badge variant="outline" className="border-gold/60">{pct}%</Badge>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-display text-lg font-bold">סדר {sederName}</h3>
+                      {progressFillStyle === "ring" ? <ProgressRing value={pct} /> : <Badge variant="outline" className="border-gold/60">{pct}%</Badge>}
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {masechtotCount} מסכתות · {s.learned}/{s.total}
+                    </div>
                   </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">
-                    {masechtotCount} מסכתות · {s.learned}/{s.total}
-                  </div>
-                  <Progress value={pct} className="h-1 mt-2" />
+                  <ProgressCardFill value={pct} style={progressFillStyle} repetitions={s.reps} />
                 </Card>
               ))}
             </div>
@@ -1182,18 +1313,25 @@ export function ShasBoard() {
                 const p = Math.round((t.learned / t.total) * 100);
                 return (
                   <Card key={m.name} onClick={() => setSelectedMasechta(m.name)}
-                    className="gold-frame p-3 cursor-pointer hover:shadow-elegant transition-all">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-display font-semibold">{m.name}</h4>
-                        <div className="text-[11px] text-muted-foreground">{m.seder} · {m.pages} דפים</div>
+                    data-progress-style={progressFillStyle}
+                    className={cn(
+                      "shas-progress-card gold-frame relative overflow-hidden p-3 cursor-pointer hover:shadow-elegant transition-all",
+                      progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                      progressFillStyle === "book" && "shas-progress-card--book",
+                    )}>
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-display font-semibold">{m.name}</h4>
+                          <div className="text-[11px] text-muted-foreground">{m.seder} · {m.pages} דפים</div>
+                        </div>
+                        {progressFillStyle === "ring" ? <ProgressRing value={p} /> : <Badge variant="outline" className="border-gold/60">{p}%</Badge>}
                       </div>
-                      <Badge variant="outline" className="border-gold/60">{p}%</Badge>
+                      <div className="text-[11px] text-muted-foreground mt-1">
+                        {t.learned}/{t.total}{t.reps > 0 ? ` · חזרות ${t.reps}` : ""}
+                      </div>
                     </div>
-                    <Progress value={p} className="h-1 mt-2" />
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      {t.learned}/{t.total}{t.reps > 0 ? ` · חזרות ${t.reps}` : ""}
-                    </div>
+                    <ProgressCardFill value={p} style={progressFillStyle} repetitions={t.reps} />
                   </Card>
                 );
               })}
@@ -1210,13 +1348,21 @@ export function ShasBoard() {
                     key={m.name}
                     type="button"
                     onClick={() => setSelectedMasechta(m.name)}
-                    className="w-full text-right rounded-md border border-gold/30 p-2 hover:border-gold/70 hover:bg-secondary/60 transition-colors"
+                    data-progress-style={progressFillStyle}
+                    className={cn(
+                      "shas-progress-card relative overflow-hidden w-full text-right rounded-md border border-gold/30 p-2 hover:border-gold/70 hover:bg-secondary/60 transition-colors",
+                      progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                      progressFillStyle === "book" && "shas-progress-card--book",
+                    )}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">{m.name}</span>
-                      <span className="text-xs text-gold">{p}%</span>
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">{m.name}</span>
+                        {progressFillStyle === "ring" ? <ProgressRing value={p} /> : <span className="text-xs text-gold">{p}%</span>}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">{m.seder} · {t.learned}/{t.total}</div>
                     </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{m.seder} · {t.learned}/{t.total}</div>
+                    <ProgressCardFill value={p} style={progressFillStyle} repetitions={t.reps} />
                   </button>
                 );
               })}
