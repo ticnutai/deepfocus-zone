@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { ContentVisibilityControls } from '@/components/study/ContentVisibilityControls';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-4" dir="rtl">
+      <ContentVisibilityControls />
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="font-display text-2xl font-bold text-foreground">הגדרות</h2>

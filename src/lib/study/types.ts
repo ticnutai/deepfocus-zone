@@ -9,6 +9,8 @@ export interface BaseCard {
   tags: string[];
   createdAt: number;
   updatedAt?: number;
+  /** Server publication marker; private cloud backup does not set this flag. */
+  published?: boolean;
   /** ש"ס: שיוך מובנה לעמוד גמרא (אופציונלי) */
   masechta?: string | null;
   daf?: number | null;       // 2..N

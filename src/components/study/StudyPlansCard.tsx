@@ -2650,7 +2650,7 @@ export function StudyPlansCard({
         <div className="text-center text-sm text-muted-foreground py-8 border-2 border-dashed border-gold/30 rounded-xl space-y-1">
           <BookOpen className="h-8 w-8 mx-auto text-gold/40 mb-2" />
           <p>{showOnlyContextDeckReview ? "אין תוכניות חזרה לערכה זו" : "אין תוכניות לימוד פעילות"}</p>
-          <p className="text-[11px]">{showOnlyContextDeckReview ? "הוסף תוכנית חזרות לערכה הנוכחית" : "הוסף תוכנית לחומש, רמב&quot;ם, שו&quot;ע ועוד"}</p>
+          <p className="text-[11px]">{showOnlyContextDeckReview ? "הוסף תוכנית חזרות לערכה הנוכחית" : "הוסף תוכנית לחומש, רמב״ם, שו״ע ועוד"}</p>
         </div>
       )}
 

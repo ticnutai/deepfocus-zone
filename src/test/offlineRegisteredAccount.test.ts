@@ -150,6 +150,7 @@ describe("registered cloud account offline login", () => {
     const result = await attemptDeferredRegistration();
     expect(result.status).toBe('failed');
     expect(listLocalAccounts()[0].status).toBe('pending');
+    expect(localStorage.getItem('study-browser-reset-v3')).toBe('1');
   });
 
   it('does not queue offline data after logout invalidates a reconnect', async () => {

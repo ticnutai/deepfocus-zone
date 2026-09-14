@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { ChangeNotesTab } from "./ChangeNotesTab";
 import { sourceFromTags } from "@/lib/app/clientSource";
 import { publicUserIdentity } from "@/lib/admin/userIdentity";
+import { ContentVisibilityControls } from '@/components/study/ContentVisibilityControls';
 import { SHAS_BAVLI } from "@/lib/study/shasData";
 import { dafLabel } from "@/lib/study/shasGen";
 import { formatShasLocation, isCompleteShasLocation, replaceCategoryTagsWithShasLocation } from "@/lib/study/shasClassification";
@@ -434,6 +435,7 @@ export function UserQuestionsTab() {
           const classification = tags.filter((tag) => tag.startsWith("cat:")).map((tag) => tag.slice(4));
           const source = sourceFromTags(tags);
           return <Card key={row.id} className="gold-frame p-4 space-y-3">
+            <ContentVisibilityControls cardId={row.published_card_id || row.id} />
             <div className="flex flex-wrap items-start justify-between gap-3">
               <Checkbox
                 className="mt-1"

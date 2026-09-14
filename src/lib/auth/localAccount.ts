@@ -13,6 +13,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { registerUsernameAccount } from './usernameRegistration';
 import {
   enqueueFullSyncJob,
   loadStudyStateCache,
@@ -52,6 +53,7 @@ export interface LocalAccount {
   createdAt: number;
   registeredAt?: number;
   userId?: string;
+  recoveryHash?: string;
 }
 
 const PASSWORD_ITERATIONS = 210_000;
@@ -313,6 +315,7 @@ export async function createLocalAccount(input: {
   displayName?: string;
   email?: string;
   password: string;
+  recoveryHash?: string;
 }): Promise<CreateLocalAccountResult> {
   const username = input.username.trim().toLowerCase();
   if (!USERNAME_RE.test(username)) {
@@ -335,6 +338,7 @@ export async function createLocalAccount(input: {
     displayName: (input.displayName ?? "").trim() || username,
     email: (input.email ?? "").trim(),
     passwordObf: "",
+    recoveryHash: input.recoveryHash,
     ...verifier,
     status: "pending",
     createdAt: Date.now(),
@@ -489,11 +493,12 @@ export function getPendingRegistration(): LocalAccount | null {
   return account?.status === "pending" ? account : null;
 }
 
-function markRegistered(username: string, userId: string) {
+function markRegistered(username: string, userId: string, email?: string) {
   const account = readAccounts().find((item) => item.username === username);
   if (!account) return;
   upsertAccount({
     ...account,
+    email: email || account.email,
     passwordObf: "", // never keep the password after server registration
     status: "registered",
     registeredAt: Date.now(),
@@ -552,7 +557,7 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
 
   attemptInFlight = true;
   try {
-    const email = pending.email || syntheticEmailForUsername(pending.username);
+    let email = pending.email || syntheticEmailForUsername(pending.username);
     const password = credential.password;
     const offlineSnapshot = await readGuestState();
     const url = import.meta.env.VITE_SUPABASE_URL;
@@ -573,7 +578,9 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
 
     let userId: string | null = null;
     console.log(DBG, "calling isolated.auth.signUp …");
-    const { data, error } = await isolated.auth.signUp({
+    const { data, error } = !pending.email && pending.recoveryHash
+      ? await registerUsernameAccount(isolated, pending.username, password, pending.displayName, pending.recoveryHash)
+      : await isolated.auth.signUp({
       email,
       password,
       options: { data: { display_name: pending.displayName, username: pending.username } },
@@ -582,6 +589,11 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
     if (error) {
       // A previous attempt may have succeeded without being recorded locally.
       if (/already registered|already exists/i.test(error.message)) {
+        if (!pending.email && pending.recoveryHash) {
+          const resolved = await isolated.rpc('email_for_username', { p_username: pending.username });
+          if (resolved.error || !resolved.data) return { status: 'failed', message: 'לא ניתן לאתר את החשבון.' };
+          email = resolved.data;
+        }
         console.log(DBG, "already registered → trying sign-in");
         const { data: signInData, error: signInError } =
           await isolated.auth.signInWithPassword({ email, password });
@@ -594,6 +606,7 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
       }
     } else {
       userId = data.user?.id ?? null;
+      email = data.user?.email || email;
     }
 
     if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה. ההרשמה המקומית נשמרה לניסיון הבא." };
@@ -604,6 +617,8 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
     userId = verified.data.user.id;
     if (!stillCurrent()) return { status: "failed", message: "החשבון הפעיל השתנה." };
     if (offlineSnapshot) {
+      // The normal first-login cache reset must not erase this migrated snapshot.
+      try { localStorage.setItem(BROWSER_CACHE_RESET_KEY, "1"); } catch { /* storage unavailable */ }
       await saveStudyStateCache(userId, offlineSnapshot, true);
       await enqueueFullSyncJob(userId, "offline-registration-migration");
     }
@@ -625,7 +640,9 @@ export async function attemptDeferredRegistration(isCurrent: () => boolean = () 
       await supabase.auth.signOut({ scope: "local" }).catch(() => {});
       return { status: "failed", message: "זהות ההתחברות אינה תואמת לחשבון שאומת. הנתונים המקומיים נשמרו." };
     }
-    markRegistered(pending.username, userId);
+    markRegistered(pending.username, userId, email);
+    const { migratePersonalVisibility } = await import('../study/contentVisibility');
+    migratePersonalVisibility(pending.username, userId);
     reconnectCredential = null;
     console.log(DBG, "registered ✓");
     return { status: "registered" };

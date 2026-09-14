@@ -31,6 +31,7 @@ import { enqueueOfflineQuestion, reconcileOfflineQuestions } from "./offlineQues
 import { withClientSource } from "@/lib/app/clientSource";
 
 import { useAuth } from "@/hooks/useAuth";
+import { hiddenCardIds, syncContentVisibility, VISIBILITY_EVENT, visibilityOwner } from './contentVisibility';
 import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
 import {
@@ -802,7 +803,7 @@ const mergeStudyStateLww = (local: StudyState, cloud: StudyState, isFullCloudSyn
 
   const tombstones = lastCloudCategoryTombstones;
   const cloudCategoryIds = new Set((cloud.categories ?? []).map((c) => c.id));
-  const mergedCategories = isFullCloudSync
+  const mergedCategories = isFullCloudSync && cloudSyncPendingJobs === 0
     ? (cloud.categories ?? [])
     : [
         ...(cloud.categories ?? []),
@@ -1360,6 +1361,7 @@ const addDaysIso = (base: Date, days: number) => {
 
 // ---- Mappers ----
 interface CardRow {
+  moderation_status?: string | null; published_card_id?: string | null;
   id: string; deck_id: string; type: string; question: string;
   tags: unknown; created_at: string; srs: unknown; stats: unknown;
   updated_at?: string | null;
@@ -1375,6 +1377,7 @@ const cardFromRow = (r: CardRow): Card => {
     : { totalReviews: 0, correct: 0, incorrect: 0 };
   const base = {
     id: r.id, deckId: r.deck_id ?? null, type: r.type, question: r.question,
+    published: r.moderation_status === 'published' || Boolean(r.published_card_id),
     tags: (r.tags as string[] | null) ?? [], createdAt: new Date(r.created_at).getTime(),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
     srs: (r.srs as SrsData | null) ?? defaultSrs(),
@@ -1537,7 +1540,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
     sort_order: c.sortOrder ?? 0,
   }));
 
-  const cardsRows = (state.cards ?? []).filter((c) => !isSourceOwnedCard(c.id)).map((c) => cardToRow(c, userId));
+  const cardsRows = (state.cards ?? []).filter((c) => !isSourceOwnedCard(c.id) && !c.published).map((c) => cardToRow(c, userId));
 
 
   const goalsRows = (state.goals ?? []).map((g) => ({
@@ -1620,6 +1623,9 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
   // categories: use soft-delete so tombstones are preserved for multi-device sync.
   await syncRowsById(userId, "categories", categoriesRows, false, true);
   await syncRowsById(userId, "cards", cardsRows as unknown as Array<Record<string, unknown>>);
+  for (const card of state.cards.filter((c) => c.published && !isSourceOwnedCard(c.id))) {
+    await runAndThrow('published-card.progress', supabase.from('cards').update({ srs: card.srs, stats: card.stats }).eq('id', card.id));
+  }
   await syncRowsById(userId, "goals", goalsRows);
   await syncRowsById(userId, "learning_sessions", sessionsRows);
   await syncRowsById(userId, "review_logs", logsRows, true); // appendOnly: never delete old logs not in local 2000-entry window
@@ -1631,6 +1637,7 @@ const flushLocalStateToCloud = async (userId: string, state: StudyState) => {
 
 const runPendingCloudSync = async (userId: string) => {
   if (cloudSyncInFlight) return;
+  if (currentUserId !== userId || !isHydrated || !navigator.onLine) return;
   if (!isSyncEnabled() || !canPushToCloud()) return; // skip while push is disabled
   const traceId = perf.createTraceId("sync");
   const restoreTrace = perf.pushTrace(traceId);
@@ -1642,6 +1649,7 @@ const runPendingCloudSync = async (userId: string) => {
     markCloudSyncJobs(jobs.length);
     let processedCount = 0;
     for (const job of jobs) {
+      if (currentUserId !== userId) break;
       try {
         if (job.kind === "full-sync") {
           const stopJob = perf.startTimer(`store:syncJob:${job.kind}`, "store", traceId);
@@ -2720,8 +2728,10 @@ async function runSourceOverlayPhase2(uid: string, totalCount: number): Promise<
 
 export function useStudy() {
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const permissionRef = useRef(can);
+  const adminRef = useRef(isAdmin);
+  adminRef.current = isAdmin;
   permissionRef.current = can;
   const guardRef = useRef<ReturnType<typeof createStudyActionGuard>>();
   if (!guardRef.current) guardRef.current = createStudyActionGuard(() => permissionRef.current, () => {
@@ -2729,6 +2739,16 @@ export function useStudy() {
   });
   const guard = guardRef.current;
   const [, force] = useState(0);
+  const visibilityUser = visibilityOwner(user?.id);
+  useEffect(() => {
+    const refresh = () => { void syncContentVisibility(visibilityUser).catch((error) => console.warn('[content-visibility]', error.message)); };
+    const changed = () => force((n) => n + 1);
+    window.addEventListener(VISIBILITY_EVENT, changed);
+    window.addEventListener('online', refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    refresh();
+    return () => { window.removeEventListener(VISIBILITY_EVENT, changed); window.removeEventListener('online', refresh); window.clearInterval(timer); };
+  }, [visibilityUser]);
 
 
   useEffect(() => {
@@ -3187,7 +3207,15 @@ export function useStudy() {
         .catch((error) => console.warn("[source-overlay] reconnect refresh failed", error));
     };
     window.addEventListener("online", onOnline);
+    // Registration can complete AFTER the online event. Also retry durable jobs
+    // after a failed request without requiring another network transition or click.
+    const retry = window.setInterval(() => {
+      if (uid !== GUEST_ID && currentUserId === uid && isHydrated && navigator.onLine) {
+        void runPendingCloudSync(uid);
+      }
+    }, 15_000);
     return () => {
+      window.clearInterval(retry);
       window.removeEventListener("online", onOnline);
     };
   }, [user?.id]);
@@ -3700,6 +3728,10 @@ export function useStudy() {
   }, [ensureUncategorized]);
 
   const updateCard = useCallback((id: string, patch: Partial<Card>) => {
+    if (!adminRef.current && (memState.cards.find((c) => c.id === id)?.published || isSourceOwnedCard(id))) {
+      toast({ title: 'תוכן משותף ניתן לעריכה רק בידי מנהל', description: 'אפשר להסתיר אותו מהתצוגה האישית.' });
+      return false;
+    }
     const userId = requireUser();
     let updated: Card | undefined;
     setState((s) => ({
@@ -3711,6 +3743,7 @@ export function useStudy() {
       }),
     }));
     if (updated) bg(supabase.from("cards").update(cardToRow(updated, userId)).eq("id", id));
+    return true;
   }, []);
 
   const duplicateCard = useCallback((id: string, targetDeckId?: string) => {
@@ -3724,7 +3757,7 @@ export function useStudy() {
       const duplicateExists = s.cards.some((c) => c.id !== id && normalizeQuestionKey(c.question) === questionKey);
       if (duplicateExists) return s;
       copy = {
-        ...orig, id: uid(), deckId: targetDeckId ?? orig.deckId,
+        ...orig, id: uid(), published: false, deckId: targetDeckId ?? orig.deckId,
         createdAt: Date.now(), srs: defaultSrs(),
         stats: { totalReviews: 0, correct: 0, incorrect: 0 },
       } as Card;
@@ -3754,6 +3787,7 @@ export function useStudy() {
       ...orig,
       ...(opts?.patch ?? {}),
       id: newId,
+      published: false,
       createdAt: Date.now(),
       srs: defaultSrs(),
       stats: { totalReviews: 0, correct: 0, incorrect: 0 },
@@ -3786,6 +3820,10 @@ export function useStudy() {
 
 
   const deleteCard = useCallback((id: string) => {
+    if (!adminRef.current && (memState.cards.find((c) => c.id === id)?.published || isSourceOwnedCard(id))) {
+      toast({ title: 'לא ניתן למחוק תוכן משותף', description: 'אפשר להסתיר את השאלה רק אצלך.' });
+      return;
+    }
     const userId = currentUserId;
     if (isProfileBMode() && userId && !canProfileBDeleteCard(userId, id)) {
       toast({
@@ -5663,8 +5701,9 @@ export function useStudy() {
     };
   }, []);
 
+  const hiddenCards = hiddenCardIds(visibilityUser, isAdmin);
   return {
-    state,
+    state: hiddenCards.size ? { ...state, cards: state.cards.filter((card) => !hiddenCards.has(card.id)) } : state,
     addDeck: guard('decks','create',addDeck), deleteDeck: guard('decks','delete',deleteDeck),
     addCard: guard('cards','create',addCard), bulkAddCards: guard('cards','create',bulkAddCards),
     bulkAddDecks: guard('decks','create',bulkAddDecks), updateCard: guard('cards','edit',updateCard),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { createRecoveryCode, recoveryHash, registerUsernameAccount, validAccountPassword } from '@/lib/auth/usernameRegistration';
 import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +122,11 @@ export default function Auth() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [savedRecovery, setSavedRecovery] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState('');
+  const [replacementCode, setReplacementCode] = useState('');
   const [offlineLibraryCount, setOfflineLibraryCount] = useState<number | null>(null);
   // Local (offline) accounts saved on this machine. Several can coexist, each
   // with its own isolated offline workspace; one is "active" at a time.
@@ -277,7 +283,8 @@ export default function Auth() {
   // on the server automatically once connectivity returns (see
   // attemptDeferredRegistration in useAuth).
   const registerOffline = async (): Promise<void> => {
-    const result = await createLocalAccount({ username, displayName: name, email, password });
+    const result = await createLocalAccount({ username, displayName: name, email, password,
+      recoveryHash: !email.trim() && recoveryCode ? await recoveryHash(recoveryCode) : undefined });
     if (result.ok) {
       // Load the bundled 22k-question library into the offline profile BEFORE
       // entering, so the review system is populated on first load (avoids the
@@ -301,6 +308,11 @@ export default function Auth() {
       toast.error("יש להזין סיסמה.");
       return;
     }
+    if (!email.trim()) {
+      if (!validAccountPassword(password)) return toast.error('יש לבחור סיסמה עם לפחות 8 תווים, אותיות ומספרים.');
+      if (!recoveryCode) { setRecoveryCode(createRecoveryCode()); return; }
+      if (!savedRecovery) return toast.error('שמור את קוד השחזור ואשר ששמרת אותו.');
+    }
     setBusy(true);
 
     const clearlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
@@ -308,7 +320,9 @@ export default function Auth() {
       try {
         const signupEmail = email.trim() || syntheticEmailForUsername(cleanUsername);
         console.log("[auth-debug] signUp: online attempt →", { signupEmail, isElectron: IS_ELECTRON, supaHost: (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).host; } catch { return "INVALID"; } })() });
-        const { data, error } = await withTimeout(supabase.auth.signUp({
+        const { data, error } = await withTimeout(!email.trim()
+          ? registerUsernameAccount(supabase, cleanUsername, password, name || cleanUsername, await recoveryHash(recoveryCode))
+          : supabase.auth.signUp({
           email: signupEmail, password,
           options: {
             emailRedirectTo: `${REDIRECT_ORIGIN}/`,
@@ -402,6 +416,27 @@ export default function Auth() {
               </div>
             </div>
             <Button onClick={signIn} disabled={busy} className="w-full bg-gradient-navy text-primary-foreground">התחבר</Button>
+            <Button variant="link" onClick={() => setRecovering(!recovering)}>שחזור חשבון ללא מייל</Button>
+            {recovering && <div className="space-y-3 rounded-lg border p-3">
+              <p className="text-sm">הזן למעלה את שם המשתמש וסיסמה חדשה, וכאן את קוד השחזור ששמרת. נדרש אינטרנט.</p>
+              <Input aria-label="קוד שחזור" dir="ltr" value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} />
+              <Button disabled={busy || !navigator.onLine} onClick={async () => {
+                if (!validAccountPassword(password)) return toast.error('הסיסמה החדשה צריכה לפחות 8 תווים, אותיות ומספרים.');
+                setBusy(true);
+                try {
+                  const next = createRecoveryCode();
+                  const { data, error } = await supabase.rpc('recover_username_account' as never, {
+                    p_username: email.trim(), p_code: recoveryInput, p_password: password, p_next_hash: await recoveryHash(next),
+                  } as never);
+                  if (error || data !== true) { toast.error('השחזור נכשל. בדוק את שם המשתמש והקוד.'); return; }
+                  setReplacementCode(next);
+                  setRecoveryInput('');
+                  toast.success('הסיסמה עודכנה. שמור את קוד השחזור החדש לפני ההתחברות.');
+                } catch { toast.error('לא ניתן להתחבר לשרת כרגע.'); }
+                finally { setBusy(false); }
+              }}>עדכן סיסמה וקוד שחזור</Button>
+              {replacementCode && <p dir="ltr" className="break-all select-all font-mono" role="status">{replacementCode}</p>}
+            </div>}
           </TabsContent>
 
           <TabsContent value="signup" className="space-y-3 mt-4">
@@ -414,6 +449,12 @@ export default function Auth() {
               <Label htmlFor="remember2" className="text-sm cursor-pointer">זכור אותי</Label>
             </div>
             <Button onClick={signUp} disabled={busy} className="w-full bg-gradient-navy text-primary-foreground">הירשם</Button>
+            {!email.trim() && recoveryCode && <div className="space-y-2 rounded-lg border p-3">
+              <p>שמור את הקוד במקום בטוח. הוא מאפשר לאפס את הסיסמה ללא מייל ולא יוצג שוב.</p>
+              <p dir="ltr" className="break-all select-all font-mono">{recoveryCode}</p>
+              <label className="flex items-center gap-2"><Checkbox checked={savedRecovery} onCheckedChange={(v) => setSavedRecovery(v === true)} />שמרתי את קוד השחזור</label>
+              <p className="text-sm">לאחר השמירה לחץ שוב על ״הירשם״.</p>
+            </div>}
           </TabsContent>
         </Tabs>
 

@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useStudy } from "@/lib/study/store";
 import type { Card as StudyCardType } from "@/lib/study/types";
 import { toast } from "@/hooks/use-toast";
+import { ContentVisibilityControls } from './ContentVisibilityControls';
 
 interface Props {
   card: StudyCardType;
@@ -109,7 +110,7 @@ export function CardQuickEditor({ card, onClose }: Props) {
     const prevHistory = Array.isArray(card.editHistory) ? card.editHistory : [];
     const newHistory = [{ at: Date.now(), snapshot: prevSnap }, ...prevHistory].slice(0, 20);
     (patch as { editHistory?: StudyCardType["editHistory"] }).editHistory = newHistory;
-    updateCard(cardId, patch);
+    if (updateCard(cardId, patch) === false) return;
     initialRef.current = nextDraft;
     setSavedAt(Date.now());
   };
@@ -193,6 +194,7 @@ export function CardQuickEditor({ card, onClose }: Props) {
 
   return (
     <div className="flex flex-col gap-4 p-1" dir="rtl">
+      <ContentVisibilityControls cardId={card.id} />
       <div className="space-y-2">
         <Label htmlFor="qe-q" className="text-xs">שאלה</Label>
         <Textarea
