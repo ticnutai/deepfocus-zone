@@ -10,6 +10,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -42,7 +43,7 @@ import { ThemeEditorDialog } from "@/components/ThemeSwitcher";
 import { useTheme, THEME_TOKEN_KEYS } from "@/theme/ThemeProvider";
 import { ShasExportDialog } from "./ShasExportDialog";
 
-// ===== Types & helpers =====
+// ===== Board display types & helpers =====
 type AmudKey = "a" | "b";
 type DafEntry = { a?: number; b?: number };           // value = repetition count
 type MasechtaProgress = Record<number, DafEntry>;      // daf (2..pages+1) -> entry
@@ -55,6 +56,7 @@ type ProgressFillStyle =
   | "bar"
   | "surface"
   | "navy-gold"
+  | "navy-lines"
   | "aurora"
   | "mosaic"
   | "ring"
@@ -124,6 +126,7 @@ function ProgressCardFill({ value, style, repetitions = 0 }: { value: number; st
         "shas-progress-card__fill absolute inset-y-0 right-0 pointer-events-none",
         style === "surface" && "shas-progress-card__fill--surface",
         style === "navy-gold" && "shas-progress-card__fill--navy-gold",
+        style === "navy-lines" && "shas-progress-card__fill--navy-lines",
         style === "aurora" && "shas-progress-card__fill--aurora",
         style === "mosaic" && "shas-progress-card__fill--mosaic",
         style === "heat" && "shas-progress-card__fill--heat",
@@ -752,7 +755,7 @@ export function ShasBoard() {
     );
 
     return (
-      <div className="space-y-4 shas-theme-shell" dir="rtl" style={boardThemeStyle}>
+      <div className="space-y-4 shas-theme-shell" data-design-theme={effectiveBoardThemeId} dir="rtl" style={boardThemeStyle}>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => setSelectedMasechta(null)} className="gap-1">
             <ChevronLeft className="h-4 w-4" /> חזרה
@@ -900,7 +903,7 @@ export function ShasBoard() {
     const pct = Math.round((seder.learned / seder.total) * 100);
 
     return (
-      <div className="space-y-4 shas-theme-shell" dir="rtl" style={boardThemeStyle}>
+      <div className="space-y-4 shas-theme-shell" data-design-theme={effectiveBoardThemeId} dir="rtl" style={boardThemeStyle}>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => setSelectedSeder(null)} className="gap-1">
             <ChevronLeft className="h-4 w-4" /> חזרה
@@ -940,7 +943,7 @@ export function ShasBoard() {
 
   // ===== VIEW: Root (hierarchy / flat) =====
   return (
-    <div className="space-y-4 shas-theme-shell" dir="rtl" style={boardThemeStyle}>
+    <div className="space-y-4 shas-theme-shell" data-design-theme={effectiveBoardThemeId} dir="rtl" style={boardThemeStyle}>
       {/* Summary header */}
       <Card className="gold-frame p-5 space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -985,8 +988,8 @@ export function ShasBoard() {
             <TabsTrigger value="calendar">לוח שנה</TabsTrigger>
           </TabsList>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+<Dialog modal={false}>
+            <DialogTrigger asChild>
               <Button
                 type="button"
                 size="icon"
@@ -1021,152 +1024,158 @@ export function ShasBoard() {
                           ? <Rows3 className="h-4 w-4" />
                           : <Flag className="h-4 w-4" />}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-[70vh] w-60 overflow-y-auto text-right">
+            </DialogTrigger>
+            <DialogContent dir="rtl" showOverlay={false} onInteractOutside={(event) => event.preventDefault()} className="w-[calc(100vw-2rem)] max-w-3xl max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden p-4 sm:p-6">
+              <DialogHeader className="shrink-0"><DialogTitle>אפשרויות תצוגת לוח ש״ס</DialogTitle><DialogDescription>בחר פריסה, מיון וסגנון מילוי. הבחירות נשמרות אוטומטית.</DialogDescription></DialogHeader>
+              <div className="min-h-0 overflow-y-auto overscroll-contain space-y-4 pr-1">
               {view === "hierarchy" && (
-                <>
-                  <DropdownMenuLabel className="text-right">תצוגת סדרים</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setHierarchyLayout("cards")} className="gap-2 flex-row-reverse justify-end text-right">
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="text-right font-bold sm:col-span-2">תצוגת סדרים</div>
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <button type="button" onClick={() => setHierarchyLayout("cards")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     כרטיסים {hierarchyLayout === "cards" ? "✓" : ""}
                     <LayoutGrid className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setHierarchyLayout("table")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setHierarchyLayout("table")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     טבלה {hierarchyLayout === "table" ? "✓" : ""}
                     <Table2 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setHierarchyLayout("compact")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setHierarchyLayout("compact")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     קומפקטי {hierarchyLayout === "compact" ? "✓" : ""}
                     <Rows3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setHierarchyLayout("kanban")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setHierarchyLayout("kanban")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     קאנבן {hierarchyLayout === "kanban" ? "✓" : ""}
                     <Columns3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                </>
+                  </button>
+                </section>
               )}
 
               {view === "flat" && (
-                <>
-                  <DropdownMenuLabel className="text-right">תצוגת מסכתות</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setFlatLayout("grid")} className="gap-2 flex-row-reverse justify-end text-right">
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="text-right font-bold sm:col-span-2">תצוגת מסכתות</div>
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <button type="button" onClick={() => setFlatLayout("grid")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     רשת {flatLayout === "grid" ? "✓" : ""}
                     <LayoutGrid className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatLayout("table")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatLayout("table")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     טבלה {flatLayout === "table" ? "✓" : ""}
                     <Table2 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatLayout("compact")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatLayout("compact")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     קומפקטי {flatLayout === "compact" ? "✓" : ""}
                     <Rows3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-right">מיון</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setFlatSort("progress-desc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <div className="text-right font-bold sm:col-span-2">מיון</div>
+                  <button type="button" onClick={() => setFlatSort("progress-desc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     התקדמות: גבוה לנמוך {flatSort === "progress-desc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("progress-asc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatSort("progress-asc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     התקדמות: נמוך לגבוה {flatSort === "progress-asc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("remaining-desc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatSort("remaining-desc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     נשאר: גבוה לנמוך {flatSort === "remaining-desc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("remaining-asc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatSort("remaining-asc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     נשאר: נמוך לגבוה {flatSort === "remaining-asc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("name-asc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatSort("name-asc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     שם: א-ת {flatSort === "name-asc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFlatSort("name-desc")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setFlatSort("name-desc")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     שם: ת-א {flatSort === "name-desc" ? "✓" : ""}
-                  </DropdownMenuItem>
-                </>
+                  </button>
+                </section>
               )}
 
               {(view === "hierarchy" || view === "flat") && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-right">מילוי התקדמות</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("surface")} className="gap-2 flex-row-reverse justify-end text-right">
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <div className="text-right font-bold sm:col-span-2">מילוי התקדמות</div>
+                  <button type="button" onClick={() => setProgressFillStyle("navy-lines")} aria-pressed={progressFillStyle === "navy-lines"} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary">
+                    <span aria-hidden="true" className="h-7 w-12 shrink-0 rounded bg-[#0d1b38] border border-[#d8ab35] overflow-hidden"><span className="block h-full w-2/3 ml-auto shas-progress-card__fill--navy-lines" /></span>
+                    נייבי ופסי זהב דקים {progressFillStyle === "navy-lines" ? "✓" : ""}
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("surface")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     מילוי הכרטיס מימין {progressFillStyle === "surface" ? "✓" : ""}
                     <Layers className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("navy-gold")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("navy-gold")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     נייבי שהופך לזהב {progressFillStyle === "navy-gold" ? "✓" : ""}
                     <Sparkles className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("aurora")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("aurora")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     זוהר מנטה וזהב {progressFillStyle === "aurora" ? "✓" : ""}
                     <Palette className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("bar")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("bar")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     פס התקדמות קלאסי {progressFillStyle === "bar" ? "✓" : ""}
                     <Rows3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("mosaic")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("mosaic")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     פסיפס דפים {progressFillStyle === "mosaic" ? "✓" : ""}
                     <LayoutGrid className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("ring")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("ring")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     טבעת התקדמות {progressFillStyle === "ring" ? "✓" : ""}
                     <Circle className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("heat")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("heat")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     מפת חום לפי חזרות {progressFillStyle === "heat" ? "✓" : ""}
                     <Palette className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("milestones")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("milestones")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     אבני דרך {progressFillStyle === "milestones" ? "✓" : ""}
                     <Flag className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setProgressFillStyle("book")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setProgressFillStyle("book")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     ספר נפתח {progressFillStyle === "book" ? "✓" : ""}
                     <BookOpen className="h-4 w-4" />
-                  </DropdownMenuItem>
-                </>
+                  </button>
+                </section>
               )}
 
               {view === "planner" && (
-                <>
-                  <DropdownMenuLabel className="text-right">תצוגת תכנון</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setPlannerLayout("rich")} className="gap-2 flex-row-reverse justify-end text-right">
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="text-right font-bold sm:col-span-2">תצוגת תכנון</div>
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <button type="button" onClick={() => setPlannerLayout("rich")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     עשיר {plannerLayout === "rich" ? "✓" : ""}
                     <LayoutGrid className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setPlannerLayout("compact")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setPlannerLayout("compact")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     קומפקטי {plannerLayout === "compact" ? "✓" : ""}
                     <Rows3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setPlannerLayout("focus")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setPlannerLayout("focus")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     פוקוס {plannerLayout === "focus" ? "✓" : ""}
                     <ListIcon className="h-4 w-4" />
-                  </DropdownMenuItem>
-                </>
+                  </button>
+                </section>
               )}
 
               {view === "calendar" && (
-                <>
-                  <DropdownMenuLabel className="text-right">תצוגת לוח שנה</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setCalendarLayout("month")} className="gap-2 flex-row-reverse justify-end text-right">
+                <section className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="text-right font-bold sm:col-span-2">תצוגת לוח שנה</div>
+                  <hr className="sm:col-span-2 border-gold/20" />
+                  <button type="button" onClick={() => setCalendarLayout("month")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     חודשי {calendarLayout === "month" ? "✓" : ""}
                     <LayoutGrid className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCalendarLayout("timeline")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setCalendarLayout("timeline")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     ציר זמן {calendarLayout === "timeline" ? "✓" : ""}
                     <Rows3 className="h-4 w-4" />
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCalendarLayout("milestones")} className="gap-2 flex-row-reverse justify-end text-right">
+                  </button>
+                  <button type="button" onClick={() => setCalendarLayout("milestones")} className="flex min-h-11 items-center gap-2 rounded-lg border border-gold/30 px-3 py-2 text-right hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                     אבני דרך {calendarLayout === "milestones" ? "✓" : ""}
                     <Flag className="h-4 w-4" />
-                  </DropdownMenuItem>
-                </>
+                  </button>
+                </section>
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div></DialogContent>
+          </Dialog>
         </div>
 
         <TabsContent value="hierarchy" className="space-y-3">
@@ -1177,7 +1186,7 @@ export function ShasBoard() {
                   data-progress-style={progressFillStyle}
                   className={cn(
                     "shas-progress-card gold-frame relative overflow-hidden p-4 cursor-pointer hover:shadow-elegant transition-all",
-                    progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                    (progressFillStyle === "navy-gold" || progressFillStyle === "navy-lines") && "shas-progress-card--navy-gold",
                     progressFillStyle === "book" && "shas-progress-card--book",
                   )}>
                   <div className="relative z-10 flex items-center justify-between gap-2 flex-wrap">
@@ -1210,7 +1219,7 @@ export function ShasBoard() {
                   data-progress-style={progressFillStyle}
                   className={cn(
                     "shas-progress-card gold-frame relative overflow-hidden p-3 cursor-pointer hover:shadow-elegant transition-all",
-                    progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                    (progressFillStyle === "navy-gold" || progressFillStyle === "navy-lines") && "shas-progress-card--navy-gold",
                     progressFillStyle === "book" && "shas-progress-card--book",
                   )}
                 >
@@ -1316,7 +1325,7 @@ export function ShasBoard() {
                     data-progress-style={progressFillStyle}
                     className={cn(
                       "shas-progress-card gold-frame relative overflow-hidden p-3 cursor-pointer hover:shadow-elegant transition-all",
-                      progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                      (progressFillStyle === "navy-gold" || progressFillStyle === "navy-lines") && "shas-progress-card--navy-gold",
                       progressFillStyle === "book" && "shas-progress-card--book",
                     )}>
                     <div className="relative z-10">
@@ -1351,7 +1360,7 @@ export function ShasBoard() {
                     data-progress-style={progressFillStyle}
                     className={cn(
                       "shas-progress-card relative overflow-hidden w-full text-right rounded-md border border-gold/30 p-2 hover:border-gold/70 hover:bg-secondary/60 transition-colors",
-                      progressFillStyle === "navy-gold" && "shas-progress-card--navy-gold",
+                      (progressFillStyle === "navy-gold" || progressFillStyle === "navy-lines") && "shas-progress-card--navy-gold",
                       progressFillStyle === "book" && "shas-progress-card--book",
                     )}
                   >

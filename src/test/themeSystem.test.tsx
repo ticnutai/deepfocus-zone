@@ -30,15 +30,18 @@ describe("canonical theme switcher", () => {
     expect(screen.getAllByTitle("ערוך ערכה").length).toBeGreaterThan(0);
   });
 
-  it("offers the mobile palette in the regular theme picker and persists it", () => {
+  it.each([
+    ["פוקוס מובייל", "mobile-focus"],
+    ["מנטה וזהב — גרדיאנטים", "mint-gold-gradients"],
+  ])("offers %s in the regular theme picker and persists it", (label, id) => {
     const first = render(<ThemeProvider><ThemeSwitcher /></ThemeProvider>);
     fireEvent.click(screen.getByRole("button", { name: "בחר ערכת נושא" }));
-    fireEvent.click(screen.getByRole("button", { name: /פוקוס מובייל/ }));
-    expect(document.documentElement).toHaveAttribute("data-theme", "mobile-focus");
-    expect(localStorage.getItem("app-theme")).toBe("mobile-focus");
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(label) }));
+    expect(document.documentElement).toHaveAttribute("data-theme", id);
+    expect(localStorage.getItem("app-theme")).toBe(id);
 
     first.unmount();
     render(<ThemeProvider><div>נטען מחדש</div></ThemeProvider>);
-    expect(document.documentElement).toHaveAttribute("data-theme", "mobile-focus");
+    expect(document.documentElement).toHaveAttribute("data-theme", id);
   });
 });

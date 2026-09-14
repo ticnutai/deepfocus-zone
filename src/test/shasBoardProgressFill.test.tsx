@@ -70,6 +70,7 @@ describe("Shas board progress-filled cards", () => {
   });
 
   it.each([
+    ["navy-lines", "shas-progress-card__fill--navy-lines"],
     ["mosaic", "shas-progress-card__fill--mosaic"],
     ["heat", "shas-progress-card__fill--heat"],
     ["milestones", "shas-progress-card__fill--milestones"],

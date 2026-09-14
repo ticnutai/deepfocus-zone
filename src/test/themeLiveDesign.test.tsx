@@ -4,10 +4,11 @@ import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { ThemeStudioProvider, useThemeStudio } from "@/theme/ThemeStudioProvider";
 
 const setUiPref = vi.fn();
+let cloudPrefs: Record<string, unknown> = {};
 const authState: { user: { id: string } | null; isGuest: boolean } = { user: { id: "admin-1" }, isGuest: false };
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => authState }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ isAdmin: true, viewerIsAdmin: true }) }));
-vi.mock("@/lib/study/store", () => ({ useStudy: () => ({ state: { uiPrefs: {} }, setUiPref }) }));
+vi.mock("@/lib/study/store", () => ({ useStudy: () => ({ state: { uiPrefs: cloudPrefs }, setUiPref }) }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: () => ({
@@ -28,7 +29,35 @@ function ThemeControls() {
 }
 
 describe("live design mode", () => {
+  it("hydrates gradient examples from downloaded preferences in a clean local context", async () => {
+    cloudPrefs = { themeDesign: { schemaVersion: 1, rules: [], geometry: { x: 24, y: 84, width: 560, height: 720 }, updatedAt: 123, gradientPresets: [{ id: "cloud-example", name: "מהענן", value: "linear-gradient(125deg, #dcefe5, #ecd393)" }] } };
+    render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
+    fireEvent.click(screen.getByText("התחל עיצוב"));
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    expect(await screen.findByLabelText("החל דוגמה מהענן")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("app-theme-design-v1") || "{}").gradientPresets[0].id).toBe("cloud-example");
+  });
+  it("saves reusable gradients through the existing cloud preference adapter and retains them when saving rules", async () => {
+    render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
+    fireEvent.click(screen.getByText("התחל עיצוב"));
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    fireEvent.click(screen.getByText("מנטה ושמנת"));
+    fireEvent.change(screen.getByLabelText("שם דוגמת גרדיאנט"), { target: { value: "הדוגמה שלי" } });
+    fireEvent.click(screen.getByText("שמור כדוגמה"));
+    const read = () => JSON.parse(localStorage.getItem("app-theme-design-v1") || "{}");
+    expect(read().gradientPresets).toHaveLength(1);
+    expect(read().rules).toHaveLength(0);
+    expect(setUiPref).toHaveBeenCalledWith("themeDesign", expect.objectContaining({ gradientPresets: expect.arrayContaining([expect.objectContaining({ name: "הדוגמה שלי" })]) }));
+    fireEvent.click(screen.getByText("שמור עיצוב"));
+    expect(read().gradientPresets).toHaveLength(1);
+    expect(read().rules).toHaveLength(1);
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    fireEvent.click(screen.getByLabelText("מחק דוגמה הדוגמה שלי"));
+    expect(read().gradientPresets).toHaveLength(0);
+    expect(read().rules).toHaveLength(1);
+  });
   beforeEach(() => {
+    cloudPrefs = {};
     localStorage.clear(); setUiPref.mockClear();
     authState.user = { id: "admin-1" }; authState.isGuest = false;
     class ResizeObserverMock { observe() {} disconnect() {} }
@@ -50,6 +79,7 @@ describe("live design mode", () => {
     fireEvent.pointerDown(screen.getByTestId("real-target"));
     expect(await screen.findByText("עריכה חיה")).toBeInTheDocument();
     fireEvent.click(screen.getByText("כל רכיב דומה"));
+    fireEvent.change(screen.getByRole("textbox", { name: "צבע טקסט" }), { target: { value: "#123456" } });
     fireEvent.click(screen.getByText("שמור עיצוב"));
     await waitFor(() => expect(document.getElementById("design-mode-overrides")?.textContent).toContain("button.sample-component"));
     expect(JSON.parse(localStorage.getItem("app-theme-design-v1") || "{}").rules).toHaveLength(1);
@@ -76,16 +106,19 @@ describe("live design mode", () => {
     fireEvent.pointerDown(screen.getByTestId("real-target"));
     fireEvent.click(screen.getByText("כל רכיב דומה"));
     if (all) fireEvent.click(screen.getByText("כל ערכות הנושא"));
+    fireEvent.change(screen.getByRole("textbox", { name: "צבע טקסט" }), { target: { value: "#123456" } });
     fireEvent.click(screen.getByText("שמור עיצוב"));
     const css = () => document.getElementById("design-mode-overrides")?.textContent || "";
     await waitFor(() => expect(css()).toContain("button.sample-component"));
     const stored = JSON.parse(localStorage.getItem("app-theme-design-v1") || "{}");
     expect(stored.rules[0].themeId).toBe(all ? undefined : "royal-navy");
+    expect(stored.rules[0].styles).toEqual({ color: "#123456" });
     fireEvent.click(screen.getByText("חלופה"));
-    await waitFor(() => expect(css().includes("button.sample-component")).toBe(all));
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-design-theme", "mobile-focus"));
+    if (!all) expect(css()).toContain('[data-design-theme="royal-navy"]');
     first.unmount();
     render(app());
-    await waitFor(() => expect(css().includes("button.sample-component")).toBe(all));
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-design-theme", "mobile-focus"));
     fireEvent.click(screen.getByText("מקור"));
     await waitFor(() => expect(css()).toContain("button.sample-component"));
   });
@@ -96,13 +129,14 @@ describe("live design mode", () => {
     fireEvent.pointerDown(screen.getByTestId("utility-target"));
     expect(await screen.findByText("עריכה חיה")).toBeInTheDocument();
     fireEvent.click(screen.getByText("כל רכיב דומה"));
+    fireEvent.change(screen.getByRole("textbox", { name: "צבע טקסט" }), { target: { value: "#123456" } });
     fireEvent.click(screen.getByText("שמור עיצוב"));
 
     await waitFor(() => {
       const saved = JSON.parse(localStorage.getItem("app-theme-design-v1") || "{}");
       expect(saved.rules).toHaveLength(1);
       expect(saved.rules[0].selector).not.toContain(".relative");
-      expect(saved.rules[0].selector).toMatch(/^body >/);
+      expect(saved.rules[0].selector).toBe('[data-testid="utility-target"]');
     });
   });
 

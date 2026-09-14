@@ -330,6 +330,22 @@ export const BUILTIN_THEMES: ThemeDef[] = [
   },
 ];
 
+// Reuse the established cream/mint palette; this preset adds soft surfaces.
+BUILTIN_THEMES.push({
+  ...BUILTIN_THEMES.find((item) => item.id === "mobile-focus")!,
+  id: "mint-gold-gradients",
+  label: "מנטה וזהב — גרדיאנטים",
+  description: "מעברים רכים של שמנת, מנטה וזהב · למחשב ולמובייל",
+  swatch: ["#fbf4df", "#dcefe5", "#ecd393", "#142542"],
+  tokens: {
+    ...BUILTIN_THEMES.find((item) => item.id === "mobile-focus")!.tokens,
+    background: "42 40% 98%",
+    card: "44 65% 97%",
+    border: "43 64% 73%",
+    "focus-learned-to": "43 72% 72%",
+  },
+});
+
 /** Backwards-compatible alias for older imports. */
 export const THEMES = BUILTIN_THEMES;
 export type ThemeName = string;

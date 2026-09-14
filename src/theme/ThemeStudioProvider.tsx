@@ -20,6 +20,7 @@ import {
   THEME_PREFERENCES_EVENT, useTheme, type ThemePreferencesSnapshot,
 } from "./ThemeProvider";
 import { BUNDLED_THEME_DEFAULTS } from "./publishedThemeDefaults.generated";
+import { LiveGradientEditor, type GradientPreset } from "./LiveGradientEditor";
 
 export type DesignScope = "element" | "component" | "global";
 export interface DesignRule {
@@ -35,6 +36,7 @@ export interface DesignGeometry { x: number; y: number; width: number; height: n
 export interface ThemeDesignSnapshot {
   schemaVersion: 1;
   rules: DesignRule[];
+  gradientPresets?: GradientPreset[];
   geometry: DesignGeometry;
   updatedAt: number;
 }
@@ -106,12 +108,17 @@ function persistDesign(value: ThemeDesignSnapshot, notify = true) {
 }
 
 function cssText(rules: DesignRule[], theme?: string) {
-  return rules.filter(isSafeDesignRule).filter((rule) => !rule.themeId || rule.themeId === theme)
+  return rules.filter(isSafeDesignRule)
     .sort((a, b) => Number(Boolean(a.themeId)) - Number(Boolean(b.themeId)))
-    .map((rule) => `${rule.selector}{${Object.entries(rule.styles)
+    .map((rule) => {
+      const root = `[data-design-theme="${(rule.themeId || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
+      const other = `[data-design-theme]:not(${root})`;
+      const withinTheme = rule.themeId ? `:where(${root}, ${root} *):not(:where(${root} ${other}, ${root} ${other} *))` : "";
+      return `:is(${rule.selector})${withinTheme}:not(#design-mode-never-target):not(:where([data-design-mode-ui], [data-design-mode-ui] *)){${Object.entries(rule.styles)
     .filter(([, value]) => value !== "")
     .map(([key, value]) => `${key}:${value} !important`)
-    .join(";")}}`).join("\n");
+    .join(";")}}`;
+    }).join("\n");
 }
 
 function ensureStyleTag(id: string) {
@@ -131,9 +138,11 @@ function safeCssIdent(value: string) {
 
 function exactSelector(element: HTMLElement): string {
   if (element.id) return `#${safeCssIdent(element.id)}`;
+  const testId = element.getAttribute("data-testid");
+  if (testId) return `[data-testid="${testId.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
   const parts: string[] = [];
   let node: HTMLElement | null = element;
-  while (node && node !== document.body && parts.length < 6) {
+  while (node && node !== document.body) {
     let part = node.tagName.toLowerCase();
     const siblings = node.parentElement
       ? Array.from(node.parentElement.children).filter((item) => item.tagName === node!.tagName)
@@ -156,11 +165,14 @@ function globalSelector(element: HTMLElement): string {
   if (role) return `[role="${role.replace(/"/g, "\\\"")}"]`;
   const tag = element.tagName.toLowerCase();
   if (/^(button|input|textarea|select|a|h1|h2|h3|h4|h5|h6|p|article|section|aside|nav)$/.test(tag)) return tag;
-  return "[data-theme-surface]";
+  // Generic containers may have no semantic kind; use their stable component
+  // identity instead of a marker that might not exist anywhere in the page.
+  return componentSelector(element);
 }
 
 const FIELDS = [
   ["color", "צבע טקסט", "color"], ["background-color", "צבע רקע", "color"],
+  ["background-image", "גרדיאנט", "text"],
   ["border-color", "צבע מסגרת", "color"], ["font-family", "גופן", "text"],
   ["font-size", "גודל טקסט", "text"], ["font-weight", "עובי טקסט", "text"],
   ["line-height", "גובה שורה", "text"], ["letter-spacing", "ריווח אותיות", "text"],
@@ -201,7 +213,10 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const [selected, setSelected] = useState<HTMLElement | null>(null);
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const initialStyles = useRef<Record<string, string>>({});
+  const changedStyles = useMemo(() => Object.fromEntries(Object.entries(draft).filter(([key, value]) => value.trim() !== "" && value !== initialStyles.current[key])), [draft]);
   const [scope, setScope] = useState<DesignScope>("element");
+  const [selectedTheme, setSelectedTheme] = useState(theme);
   const [themeScope, setThemeScope] = useState<"current" | "all">("current");
   // Discard a draft when its originating theme changes.
   useEffect(() => { setSelected(null); setDraft({}); setHoverRect(null); }, [theme]);
@@ -217,12 +232,20 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const canAuthor = isAdmin && viewerIsAdmin;
 
   const commitDesign = useCallback((rules: DesignRule[], nextGeometry = geometry) => {
-    const next = sanitizeThemeDesign({ schemaVersion: 1, rules, geometry: nextGeometry, updatedAt: Date.now() });
+    const next = sanitizeThemeDesign({ ...design, schemaVersion: 1, rules, geometry: nextGeometry, updatedAt: Date.now() });
     setDesign(next);
     persistDesign(next);
-  }, [geometry]);
+  }, [geometry, design]);
+
+  const saveGradientPresets = (gradientPresets: GradientPreset[]) => {
+    if (!canAuthor) return;
+    const next = { ...design, gradientPresets, updatedAt: Date.now() };
+    setDesign(next);
+    persistDesign(next);
+  };
 
   useEffect(() => {
+    document.documentElement.setAttribute("data-design-theme", theme);
     ensureStyleTag("design-mode-overrides").textContent = cssText(design.rules, theme);
   }, [design.rules, theme]);
 
@@ -278,20 +301,22 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     const tag = ensureStyleTag("design-mode-live-preview");
     if (!selected || !enabled || paused) { tag.textContent = ""; return; }
     const selector = scope === "element" ? exactSelector(selected) : scope === "component" ? componentSelector(selected) : globalSelector(selected);
-    tag.textContent = cssText([{ id: "preview", selector, label: "preview", scope, styles: draft }]);
-  }, [draft, enabled, paused, scope, selected]);
+    tag.textContent = cssText([{ id: "preview", selector, label: "preview", scope, ...(themeScope === "current" ? { themeId: selectedTheme } : {}), styles: changedStyles }]);
+  }, [changedStyles, enabled, paused, scope, selected, selectedTheme, themeScope]);
 
   useEffect(() => {
     if (!enabled) return;
     const ignored = (target: EventTarget | null) => target instanceof Element && !!target.closest("[data-design-mode-ui]");
     const onMove = (event: PointerEvent) => {
       if (paused || ignored(event.target)) return;
-      const target = event.target as HTMLElement;
+      const target = event.target instanceof SVGElement ? event.target.closest("button, a") || event.target.ownerSVGElement?.parentElement : event.target;
+      if (!(target instanceof HTMLElement)) return;
       setHoverRect(target.getBoundingClientRect());
     };
     const onDown = (event: PointerEvent) => {
       if (paused || ignored(event.target) || replaying.current) return;
-      const target = event.target as HTMLElement;
+      const target = event.target instanceof SVGElement ? event.target.closest("button, a") || event.target.ownerSVGElement?.parentElement : event.target;
+      if (!(target instanceof HTMLElement)) return;
       event.preventDefault(); event.stopImmediatePropagation();
       if (event.altKey) {
         replaying.current = true;
@@ -300,8 +325,10 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
         return;
       }
       const computed = getComputedStyle(target);
+      setSelectedTheme(target.closest("[data-design-theme]")?.getAttribute("data-design-theme") || theme);
       const next: Record<string, string> = {};
       for (const [property] of FIELDS) next[property] = computed.getPropertyValue(property).trim();
+      initialStyles.current = next;
       setSelected(target); setDraft(next); setScope("element");
     };
     const onClick = (event: MouseEvent) => {
@@ -309,19 +336,35 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopImmediatePropagation();
       if (selected) setSelected(null); else setEnabled(false);
+    };
+    // Radix dialogs can trap focus in their content. The editor is a separate
+    // portal, so let its inputs receive focus without dismissing that dialog.
+    const onEditorFocus = (event: FocusEvent) => { if (ignored(event.target) || ignored(event.relatedTarget)) event.stopImmediatePropagation(); };
+    const onLayerOutside = (event: Event) => {
+      const original = (event as CustomEvent<{ originalEvent?: Event }>).detail?.originalEvent;
+      if (original && ignored(original.target)) event.preventDefault();
     };
     document.addEventListener("pointermove", onMove, true);
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("click", onClick, true);
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("focusin", onEditorFocus, true);
+    document.addEventListener("focusout", onEditorFocus, true);
+    document.addEventListener("dismissableLayer.pointerDownOutside", onLayerOutside, true);
+    document.addEventListener("dismissableLayer.focusOutside", onLayerOutside, true);
     return () => {
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("click", onClick, true);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("focusin", onEditorFocus, true);
+      document.removeEventListener("focusout", onEditorFocus, true);
+      document.removeEventListener("dismissableLayer.pointerDownOutside", onLayerOutside, true);
+      document.removeEventListener("dismissableLayer.focusOutside", onLayerOutside, true);
     };
-  }, [enabled, paused, selected]);
+  }, [enabled, paused, selected, theme]);
 
   useEffect(() => {
     if (!selected) return;
@@ -346,20 +389,22 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
 
   const saveRule = useCallback(() => {
     if (!selected) return;
+    if (!Object.keys(changedStyles).length) { toast.info("לא בוצעו שינויים לשמירה"); return; }
     const selector = scope === "element" ? exactSelector(selected) : scope === "component" ? componentSelector(selected) : globalSelector(selected);
+    const id = `${themeScope === "current" ? `theme:${selectedTheme}:` : ""}${scope}:${selector}`;
     const nextRule: DesignRule = {
-      id: `${themeScope === "current" ? `theme:${theme}:` : ""}${scope}:${selector}`,
-      ...(themeScope === "current" ? { themeId: theme } : {}),
+      id,
+      ...(themeScope === "current" ? { themeId: selectedTheme } : {}),
       selector,
       scope,
-      label: `${themeScope === "current" ? allThemes.find((item) => item.id === theme)?.label || theme : "כל ערכות הנושא"} · ${selected.tagName.toLowerCase()} · ${scope === "element" ? "אלמנט" : scope === "component" ? "רכיב" : "סוג רכיב"}`,
-      styles: Object.fromEntries(Object.entries(draft).filter(([, value]) => value.trim() !== "")),
+      label: `${themeScope === "current" ? allThemes.find((item) => item.id === selectedTheme)?.label || selectedTheme : "כל ערכות הנושא"} · ${selected.tagName.toLowerCase()} · ${scope === "element" ? "אלמנט" : scope === "component" ? "רכיב" : "סוג רכיב"}`,
+      styles: { ...design.rules.find((rule) => rule.id === id)?.styles, ...changedStyles },
     };
     setHistory((items) => [...items.slice(-49), design.rules]); setFuture([]);
     commitDesign([...design.rules.filter((rule) => rule.id !== nextRule.id), nextRule]);
     setSelected(null);
     toast.success("העיצוב נשמר");
-  }, [allThemes, commitDesign, design.rules, draft, scope, selected, theme, themeScope]);
+  }, [allThemes, changedStyles, commitDesign, design.rules, scope, selected, selectedTheme, themeScope]);
 
   const undo = useCallback(() => {
     const previous = history.at(-1); if (!previous) return;
@@ -434,9 +479,14 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   return (
     <StudioContext.Provider value={contextValue}>
       {children}
+      {canAuthor && !enabled && typeof document !== "undefined" && createPortal(
+        <Button data-design-mode-ui type="button" className="pointer-events-auto fixed bottom-20 left-4 z-[2147483001] gap-2 rounded-full border border-gold shadow-lg" onClick={() => { setEnabled(true); setPaused(false); }} title="פתח עריכה חיה של העמוד">
+          <MousePointer2 className="h-4 w-4" />עריכה חיה
+        </Button>, document.body,
+      )}
       {enabled && typeof document !== "undefined" && createPortal(<>
         {hoverRect && !paused && <div data-design-mode-ui className="pointer-events-none fixed z-[2147483000] border-2 border-dashed border-sky-400 bg-sky-400/10" style={{ left: hoverRect.left, top: hoverRect.top, width: hoverRect.width, height: hoverRect.height }}><span className="absolute bottom-full right-0 rounded-t bg-sky-600 px-2 py-0.5 text-[10px] text-white">{selected ? selected.tagName.toLowerCase() : "לחץ לעריכה"}</span></div>}
-        <div data-design-mode-ui dir="rtl" className="fixed bottom-4 left-1/2 z-[2147483001] flex -translate-x-1/2 items-center gap-1 rounded-2xl border-2 border-gold bg-card p-2 shadow-2xl">
+        <div data-design-mode-ui dir="rtl" className="pointer-events-auto fixed bottom-4 left-1/2 z-[2147483001] flex -translate-x-1/2 items-center gap-1 rounded-2xl border-2 border-gold bg-card p-2 shadow-2xl">
           <Button size="sm" onClick={() => setPaused((value) => !value)}>{paused ? <Play className="ml-1 h-4 w-4" /> : <Pause className="ml-1 h-4 w-4" />}{paused ? "המשך עריכה" : "השהה"}</Button>
           <Button size="icon" variant="outline" disabled={!history.length} onClick={undo} title="בטל"><Undo2 className="h-4 w-4" /></Button>
           <Button size="icon" variant="outline" disabled={!future.length} onClick={redo} title="בצע שוב"><Redo2 className="h-4 w-4" /></Button>
@@ -447,7 +497,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
           ref={panelRef}
           data-design-mode-ui
           dir="rtl"
-          className="fixed z-[2147483002] flex min-h-[420px] min-w-[420px] resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
+          className="pointer-events-auto fixed z-[2147483002] flex min-h-[420px] min-w-[420px] resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
           style={{ left: geometry.x, top: geometry.y, width: geometry.width, height: Math.min(geometry.height, window.innerHeight - geometry.y - 12) } as CSSProperties}
         >
           <div className="flex min-h-0 w-full flex-col">
@@ -457,7 +507,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
               <div className="space-y-2 rounded-xl border border-gold/30 p-2">
-                <div className="text-sm font-bold">על אילו ערכות נושא להחיל? · {allThemes.find((item) => item.id === theme)?.label || theme}</div>
+                <div className="text-sm font-bold">על אילו ערכות נושא להחיל? · {allThemes.find((item) => item.id === selectedTheme)?.label || selectedTheme}</div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button size="sm" aria-pressed={themeScope === "current"} variant={themeScope === "current" ? "default" : "outline"} onClick={() => setThemeScope("current")}>רק ערכת הנושא הנוכחית</Button>
                   <Button size="sm" aria-pressed={themeScope === "all"} variant={themeScope === "all" ? "default" : "outline"} onClick={() => setThemeScope("all")}>כל ערכות הנושא</Button>
@@ -469,11 +519,12 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
               </div>
               {!!design.rules.length && <div className="rounded-xl border border-gold/30 bg-card p-2"><div className="mb-1 text-xs font-bold">שינויים שמורים ({design.rules.length})</div><div className="max-h-28 space-y-1 overflow-y-auto">{design.rules.map((rule) => <div key={rule.id} className="flex items-center justify-between gap-2 rounded border border-gold/20 px-2 py-1 text-[11px]"><span className="min-w-0 truncate" dir="ltr">{rule.label} · {rule.selector}</span><Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeRule(rule.id)} title="מחק שינוי"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></div>}
               <div className="grid grid-cols-2 gap-2">
-                {FIELDS.map(([property, label, type]) => <div key={property} className="space-y-1">
+                <div className="col-span-2"><LiveGradientEditor key={exactSelector(selected)} value={draft["background-image"] || "none"} presets={design.gradientPresets} onPresetsChange={saveGradientPresets} onChange={(value) => setDraft((current) => ({ ...current, "background-image": value }))} /></div>
+                {FIELDS.filter(([property]) => property !== "background-image").map(([property, label, type]) => <div key={property} className="space-y-1">
                   <Label className="text-xs">{label}</Label>
                   <div className="flex gap-1">
                     {type === "color" && <><input type="color" className="h-9 w-10 rounded border" value={draft[property]?.startsWith("#") ? draft[property] : "#000000"} onChange={(event) => setDraft((value) => ({ ...value, [property]: event.target.value }))} /><Button type="button" size="icon" variant="outline" className="h-9 w-9" onClick={() => void pickScreenColor(property)} title="דגום צבע מהמסך"><MousePointer2 className="h-3.5 w-3.5" /></Button></>}
-                    <Input dir="ltr" value={draft[property] || ""} onChange={(event) => setDraft((value) => ({ ...value, [property]: event.target.value }))} className="h-9 flex-1 text-xs" />
+                    <Input aria-label={label} dir="ltr" value={draft[property] || ""} onChange={(event) => setDraft((value) => ({ ...value, [property]: event.target.value }))} className="h-9 flex-1 text-xs" />
                   </div>
                 </div>)}
               </div>
