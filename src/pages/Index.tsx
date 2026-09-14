@@ -674,22 +674,8 @@ const Index = () => {
   const userFooterDesktopRef = useRef<HTMLDivElement | null>(null);
   const userFooterMobileRef = useRef<HTMLDivElement | null>(null);
 
-  // Swipe-from-right gesture to open mobile sidebar (RTL app = sidebar is on right)
-  const touchStartX = useRef<number>(0);
-  const touchStartY = useRef<number>(0);
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  }, []);
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-    // Swipe left-to-right (positive dx) from right edge → open; swipe right-to-left → close
-    if (dy < 60) {
-      if (dx > 60 && touchStartX.current > window.innerWidth * 0.6) setMobileSidebarOpen(true);
-      if (dx < -60) setMobileSidebarOpen(false);
-    }
-  }, []);
+  // Mobile sidebar edge-swipe — shared implementation (single source of truth).
+  useEdgeSwipeSidebar(mobileSidebarOpen, setMobileSidebarOpen);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
