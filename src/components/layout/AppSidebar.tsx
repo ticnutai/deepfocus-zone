@@ -34,6 +34,7 @@ import { usePrompt } from "@/hooks/usePrompt";
 import { toast } from "@/hooks/use-toast";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
+import { useEdgeSwipeSidebar } from "@/hooks/useEdgeSwipeSidebar";
 
 const ROUTE_ITEMS: NavItem[] = [
   { id: "sync-diagnostics", label: "אבחון סנכרון", icon: RefreshCw, to: "/sync-diagnostics" },
