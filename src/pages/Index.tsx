@@ -47,6 +47,7 @@ import { hasSeenGuides, markGuidesSeen } from "@/lib/onboarding/guideTopics";
 import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
 import { getHomeLocation } from "@/lib/study/homeNavigation";
+import { useEdgeSwipeSidebar } from "@/hooks/useEdgeSwipeSidebar";
 
 // Lazy-loaded components — downloaded only when first rendered
 const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
@@ -1419,7 +1420,7 @@ const Index = () => {
   const sidebarVisible = pinned || sidebarHovered;
 
   return (
-    <div className="min-h-screen bg-background" dir="rtl" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className="min-h-screen bg-background" dir="rtl">
       <PreviewRoleApplier />
       <AutoInitShasTemplate />
       {/* Edge trigger zone — only when not pinned */}
