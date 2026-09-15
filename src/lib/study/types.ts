@@ -235,6 +235,7 @@ export type WidgetLayout = Record<string, WidgetConfig[]>;
 
 // === UI preferences (per-user toggles) ===
 export interface UiPrefs {
+  homeTitle?: { style: "gold" | "two-tone" | "badge" | "classic"; font: "heebo" | "assistant" | "serif"; size: number };
   /** Personal app theme selection/catalog. Local-first and synced through the existing ui_prefs bucket. */
   themePreferences?: {
     schemaVersion: 1;

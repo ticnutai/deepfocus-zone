@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -21,6 +20,7 @@ import {
 } from "./ThemeProvider";
 import { BUNDLED_THEME_DEFAULTS } from "./publishedThemeDefaults.generated";
 import { LiveGradientEditor, type GradientPreset } from "./LiveGradientEditor";
+import { LiveStyleControl } from "./LiveStyleControl";
 
 export type DesignScope = "element" | "component" | "global";
 export interface DesignRule {
@@ -180,6 +180,9 @@ const FIELDS = [
   ["padding", "ריפוד פנימי", "text"], ["margin", "מרווח חיצוני", "text"],
   ["border-width", "עובי מסגרת", "text"], ["border-radius", "עיגול פינות", "text"],
   ["max-width", "רוחב מרבי", "text"], ["opacity", "שקיפות", "text"],
+  ["width", "רוחב", "text"], ["height", "גובה", "text"],
+  ["min-width", "רוחב מזערי", "text"], ["min-height", "גובה מזערי", "text"],
+  ["max-height", "גובה מרבי", "text"], ["gap", "מרווח בין פריטים", "text"],
   ["box-shadow", "צל", "text"],
 ] as const;
 
@@ -506,8 +509,8 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
           data-testid="live-design-panel"
           data-design-mode-ui
           dir="rtl"
-          className="pointer-events-auto fixed z-[2147483002] flex min-h-[420px] min-w-[420px] resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
-          style={{ left: geometry.x, top: geometry.y, width: geometry.width, height: Math.min(geometry.height, window.innerHeight - geometry.y - 12) } as CSSProperties}
+          className="pointer-events-auto fixed z-[2147483002] flex resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
+          style={{ left: Math.max(8, Math.min(geometry.x, window.innerWidth - Math.min(geometry.width, window.innerWidth - 16) - 8)), top: Math.max(8, Math.min(geometry.y, window.innerHeight - 300)), width: Math.min(geometry.width, window.innerWidth - 16), minWidth: Math.min(480, window.innerWidth - 16), minHeight: Math.min(300, window.innerHeight - 16), height: Math.min(geometry.height, window.innerHeight - Math.max(8, Math.min(geometry.y, window.innerHeight - 300)) - 8) } as CSSProperties}
         >
           <div className="flex min-h-0 w-full flex-col">
             <div data-testid="live-design-drag-handle" style={{ touchAction: "none", userSelect: "none" }} className="flex shrink-0 cursor-move items-center justify-between border-b border-gold/40 bg-secondary/60 px-3 py-2" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onLostPointerCapture={onDragEnd}>
@@ -530,11 +533,12 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
               {!!design.rules.length && <div className="rounded-xl border border-gold/30 bg-card p-2"><div className="mb-1 text-xs font-bold">שינויים שמורים ({design.rules.length})</div><div className="max-h-28 space-y-1 overflow-y-auto">{design.rules.map((rule) => <div key={rule.id} className="flex items-center justify-between gap-2 rounded border border-gold/20 px-2 py-1 text-[11px]"><span className="min-w-0 truncate" dir="ltr">{rule.label} · {rule.selector}</span><Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeRule(rule.id)} title="מחק שינוי"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></div>}
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2"><LiveGradientEditor key={exactSelector(selected)} value={draft["background-image"] || "none"} presets={design.gradientPresets} onPresetsChange={saveGradientPresets} onChange={(value) => setDraft((current) => ({ ...current, "background-image": value }))} /></div>
-                {FIELDS.filter(([property]) => property !== "background-image").map(([property, label, type]) => <div key={property} className="space-y-1">
+                <p className="col-span-2 text-xs text-muted-foreground">שינוי מיידי בכל טאב: ‎+/−‎ או חיצי ↑↓ בשדה. אפשר להקליד ערך ויחידה ידנית. גופנים שאינם מותקנים ישתמשו בגופן חלופי.</p>
+                {FIELDS.filter(([property]) => property !== "background-image").map(([property, label, type]) => <div key={property} className="min-w-0 space-y-1 rounded-xl border border-gold/20 p-2">
                   <Label className="text-xs">{label}</Label>
-                  <div className="flex gap-1">
+                  <div className={type === "color" ? "flex min-w-0 gap-1" : "min-w-0"}>
                     {type === "color" && <><input type="color" className="h-9 w-10 rounded border" value={draft[property]?.startsWith("#") ? draft[property] : "#000000"} onChange={(event) => setDraft((value) => ({ ...value, [property]: event.target.value }))} /><Button type="button" size="icon" variant="outline" className="h-9 w-9" onClick={() => void pickScreenColor(property)} title="דגום צבע מהמסך"><MousePointer2 className="h-3.5 w-3.5" /></Button></>}
-                    <Input aria-label={label} dir="ltr" value={draft[property] || ""} onChange={(event) => setDraft((value) => ({ ...value, [property]: event.target.value }))} className="h-9 flex-1 text-xs" />
+                    <LiveStyleControl property={property} label={label} value={draft[property] || ""} onChange={(next) => setDraft((value) => ({ ...value, [property]: next }))} />
                   </div>
                 </div>)}
               </div>

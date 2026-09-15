@@ -3,7 +3,7 @@
   "productName": "למען",
   "directories": {
     "output": "release",
-    "buildResources": "electron/build"
+    "buildResources": "electron/assets"
   },
   "files": [
     "dist/**/*",
@@ -18,7 +18,7 @@
   ],
   "afterPack": "scripts/after-pack-electron.cjs",
   "win": {
-    "icon": "electron/build/icon.ico",
+    "icon": "electron/assets/icon.ico",
     "target": [
       { "target": "nsis", "arch": ["x64"] }
     ],

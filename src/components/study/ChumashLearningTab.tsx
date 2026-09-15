@@ -1,4 +1,5 @@
 import { TORAH_VERSES } from "@/lib/study/torahVerses";
+import { useScrollToSelectedQuestions } from "@/hooks/useScrollToSelectedQuestions";
 import { PanelsTopLeft } from "lucide-react";
 import { LearningStepNavigator } from "./LearningStepNavigator";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -66,6 +67,7 @@ export function ChumashLearningTab() {
   const [verse, setVerse] = useState(saved.verse ?? 0);
   const [studyOpen, setStudyOpen] = useState(false);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const selectedQuestionsRef = useScrollToSelectedQuestions(selectionConfirmed, `${sefer}:${perek}:${verse}`);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "stacked");
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
   const [splitReversed, setSplitReversed] = useState<boolean>(!!saved.splitReversed);
@@ -250,8 +252,8 @@ export function ChumashLearningTab() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <Card className="gold-frame p-3 space-y-3">
-        <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
+      <Card className="gold-frame relative p-3 space-y-3">
+        <div className="absolute right-3 top-3 z-10"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <LearningStepNavigator confirmed={selectionConfirmed} onConfirmedChange={setSelectionConfirmed} steps={[
             { title: "בחר ספר", backLabel: "ספרים", options: SFARIM.map(s => ({ value: s, label: s })), onSelect: v => { setSefer(v); setPerek(1); } },
@@ -260,7 +262,7 @@ export function ChumashLearningTab() {
           ]} />
 
           <Select value={layoutMode} onValueChange={(v) => setLayoutMode(v as LayoutMode)}>
-            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="mx-auto h-11 w-16 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
+            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="absolute left-3 top-3 z-10 h-11 w-12 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
               <PanelsTopLeft className="h-5 w-5 shrink-0" aria-hidden="true" />
             </SelectTrigger>
             <SelectContent>
@@ -287,7 +289,7 @@ export function ChumashLearningTab() {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className={selectionConfirmed ? "flex items-center justify-between gap-2" : "hidden"}>
           <Button onClick={() => { setPerek(Math.max(1, perek - 1)); setVerse(0); }} disabled={perek === 1} variant="outline" size="sm" className="gap-1">
             <ChevronRight className="h-4 w-4" /> הקודם
           </Button>
@@ -300,7 +302,7 @@ export function ChumashLearningTab() {
         </div>
       </Card>
 
-      <div hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
+      <div ref={selectedQuestionsRef} hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
         {layoutMode === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from "react";
+import { HomeTitle } from "@/components/layout/HomeTitle";
 import {
   Home, Gauge, Sun, Calendar, CheckSquare, Target, BookOpen, Timer,
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
@@ -1546,11 +1547,14 @@ const Index = () => {
         >
           {/* Topbar */}
           <header className="[--topbar-h:56px] sm:[--topbar-h:60px] flex items-center justify-end gap-2 border-b-2 border-gold/40 bg-background px-2 h-[56px] sm:px-4 sm:gap-3 sm:h-[60px] lg:px-8 overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)", height: "calc(var(--topbar-h) + env(safe-area-inset-top))" }}>
+            {isMobile && active === "home" && activeTab === "overview" && <div className="w-10 shrink-0" aria-hidden />}
             <div className="flex-1 min-w-0 px-1 sm:px-4">
-              <DedicationBanner />
+              {isMobile && active === "home" && activeTab === "overview" ? (
+                <HomeTitle preferences={state.uiPrefs?.homeTitle} />
+              ) : <DedicationBanner />}
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden sm:block"><Logo size="sm" /></div>
+              <div className={isMobile ? "hidden" : "hidden sm:block"}><Logo size="sm" /></div>
               <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen} modal={false}>
                 {/* Hamburger + adjacent floating config icons (absolute so they NEVER widen the page) */}
                 <div
@@ -1684,7 +1688,7 @@ const Index = () => {
             ) : (
             <>
             {activeTab === "overview" && <div className="text-center space-y-2 animate-fade-in">
-              <p className="font-display text-3xl sm:text-5xl lg:text-7xl font-bold text-gold leading-tight">למען תהיה תורת ה' בפיך</p>
+              {!isMobile && <p className="font-display text-5xl lg:text-7xl font-bold text-gold leading-tight">למען תהיה תורת ה' בפיך</p>}
               <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-semibold text-foreground">מערכת לימוד וחזרות</h1>
               <p className="text-muted-foreground text-sm sm:text-base">עקוב אחר ההתקדמות שלך וקבל תובנות מתקדמות</p>
             </div>}

@@ -1,4 +1,5 @@
 import { PanelsTopLeft } from "lucide-react";
+import { useScrollToSelectedQuestions } from "@/hooks/useScrollToSelectedQuestions";
 import { LearningStepNavigator } from "./LearningStepNavigator";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft, Maximize2, Minimize2, PanelRightOpen, Layers, X } from "lucide-react";
@@ -77,6 +78,7 @@ export function NeviimKetuvimLearningTab() {
   const [verse, setVerse] = useState(saved.verse ?? 0);
   const [studyOpen, setStudyOpen] = useState(false);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const selectedQuestionsRef = useScrollToSelectedQuestions(selectionConfirmed, `${mode}:${sefer}:${perek}:${verse}`);
   const layoutMode = (state.uiPrefs?.neviimLayoutMode ?? "stacked") as LayoutMode;
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -288,8 +290,8 @@ export function NeviimKetuvimLearningTab() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <Card className="gold-frame p-3 space-y-3">
-        <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
+      <Card className="gold-frame relative p-3 space-y-3">
+        <div className="absolute right-3 top-3 z-10"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <LearningStepNavigator confirmed={selectionConfirmed} onConfirmedChange={setSelectionConfirmed} steps={[
             { title: "בחר חלק", backLabel: "חלקים", options: [{ value: "neviim", label: "נביאים" }, { value: "ketuvim", label: "כתובים" }], onSelect: v => { setMode(v as NachMode); setPerek(1); } },
@@ -299,7 +301,7 @@ export function NeviimKetuvimLearningTab() {
           ]} />
 
           <Select value={layoutMode} onValueChange={setLayoutMode}>
-            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="mx-auto h-11 w-16 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
+            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="absolute left-3 top-3 z-10 h-11 w-12 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
               <PanelsTopLeft className="h-5 w-5 shrink-0" aria-hidden="true" />
             </SelectTrigger>
             <SelectContent>
@@ -328,7 +330,7 @@ export function NeviimKetuvimLearningTab() {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className={selectionConfirmed ? "flex items-center justify-between gap-2" : "hidden"}>
           <Button onClick={() => { setPerek(Math.max(1, perek - 1)); setVerse(0); }} disabled={perek === 1} variant="outline" size="sm" className="gap-1">
             <ChevronRight className="h-4 w-4" /> הקודם
           </Button>
@@ -341,7 +343,7 @@ export function NeviimKetuvimLearningTab() {
         </div>
       </Card>
 
-      <div hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
+      <div ref={selectedQuestionsRef} hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
         {(layoutMode === "split" || layoutMode === "text-focus") && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">

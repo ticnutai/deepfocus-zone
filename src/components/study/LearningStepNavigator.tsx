@@ -19,10 +19,11 @@ export function LearningStepNavigator({ steps, confirmed, onConfirmedChange }: {
   const [index, setIndex] = useState(0);
   const [path, setPath] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const stable = useStableMobileNavigation(true, confirmed);
+  // Restore scroll positions without retaining the height of a longer previous step.
+  const stable = useStableMobileNavigation(true, true);
   const step = steps[index];
-  return <div {...stable} className="col-span-full w-full min-w-0 space-y-5 py-3" dir="rtl" aria-label="בחירה שלב אחר שלב">
-    <div className="flex flex-col items-center justify-center gap-2 text-center">
+  return <div {...stable} className="col-span-full w-full min-w-0 space-y-3" dir="rtl" aria-label="בחירה שלב אחר שלב">
+    <div className="flex min-h-11 flex-col items-center justify-center gap-1 px-14 text-center">
       {index > 0 && <span className="text-sm text-muted-foreground">{path.slice(0, index).join(" · ")}</span>}
       <strong className="text-xl font-bold text-navy">{step.title}</strong>
       {index > 0 && <Button variant="ghost" size="sm" onClick={() => {
@@ -32,7 +33,7 @@ export function LearningStepNavigator({ steps, confirmed, onConfirmedChange }: {
     <div className="mx-auto flex w-full max-w-4xl flex-wrap justify-center gap-3">
       {step.options.map(option => <button key={option.value} type="button"
         aria-pressed={confirmed && selected === option.value}
-        className={`flex w-[calc(50%-0.375rem)] sm:w-40 min-h-28 min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 ${confirmed && selected === option.value ? "border-gold bg-gradient-navy text-primary-foreground shadow-sm" : "border-gold/40 bg-card hover:border-gold hover:bg-gold/5"}`}
+        className={`flex w-[calc(50%-0.375rem)] sm:w-40 min-h-20 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-2 text-center shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 ${confirmed && selected === option.value ? "border-gold bg-gradient-navy text-primary-foreground shadow-sm" : "border-gold/40 bg-card hover:border-gold hover:bg-gold/5"}`}
         onClick={() => {
           step.onSelect(option.value);
           setPath([...path.slice(0, index), option.label]);

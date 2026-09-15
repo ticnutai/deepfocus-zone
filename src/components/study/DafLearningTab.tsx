@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, memo } from "react";
+import { useScrollToSelectedQuestions } from "@/hooks/useScrollToSelectedQuestions";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTouchHold } from "@/hooks/useTouchHold";
 import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff, LineChart, Pencil } from "lucide-react";
@@ -134,6 +135,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const showLegacyNavigator = false;
   const [addQuestionOpen, setAddQuestionOpen] = useState(false);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const selectedQuestionsRef = useScrollToSelectedQuestions(selectionConfirmed, `${seder}:${masechta}:${daf}:${amud}`);
   const stableNavigator = useStableMobileNavigation(navigationView === "drilldown", selectionConfirmed);
   const [dragOverAmud, setDragOverAmud] = useState<1 | 2 | null>(null);
   const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
@@ -1102,7 +1104,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   return (
     <div className="space-y-4" dir="rtl">
       {navigator}
-      {selectionConfirmed && <div style={{ height: "calc(100vh - 180px)", minHeight: 940 }}>
+      {selectionConfirmed && <div ref={selectedQuestionsRef} style={{ height: "calc(100vh - 180px)", minHeight: 940 }}>
         {layout === "stacked" && (
           <div className="grid h-full min-h-0 grid-rows-[minmax(540px,3fr)_minmax(360px,2fr)] gap-4">
             <div className="min-h-0">{cardsContent}</div>
@@ -1567,7 +1569,7 @@ function DafLearningTab({ isVisible = true, requestedCardId, onCardExit }: { isV
     { id: "shas",           label: "ש\"ס",            icon: Layers },
     { id: "mishna",         label: "משנה",            icon: BookText },
     { id: "chumash",        label: "חומש",            icon: Scroll },
-    { id: "neviim-ketuvim", label: "נביאים וכתובים", icon: BookOpen },
+    { id: "neviim-ketuvim", label: "תנ״ך", icon: BookOpen },
   ];
 
   return (

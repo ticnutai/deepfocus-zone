@@ -14,6 +14,7 @@ import { DataManagementSettings } from "./DataManagementSettings";
 import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
 import { MobileLayoutSettings } from "./MobileLayoutSettings";
+import { HomeTitleSettings } from "./HomeTitleSettings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
 
@@ -87,6 +88,7 @@ export function SettingsPanel() {
           <CacheSettings />
         </TabsContent>
         <TabsContent value="mobile-layout" className="mt-4">
+          <HomeTitleSettings />
           <MobileLayoutSettings />
         </TabsContent>
         <TabsContent value="api-keys" className="mt-4">

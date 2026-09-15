@@ -27,6 +27,7 @@ try {
       const button = page.getByRole('button', { name, exact: true });
       assert.equal(await button.getAttribute('aria-pressed'), 'false');
       await button.click();
+      assert.equal(await page.getByLabel('בחירה שלב אחר שלב').evaluate(el => el.style.minHeight), '', 'previous step must not reserve empty space');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }
     assert.equal(await page.getByRole('button', { name: 'משנה 0', exact: true }).getAttribute('aria-pressed'), 'true');

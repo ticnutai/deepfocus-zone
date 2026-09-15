@@ -27,7 +27,7 @@ const CONTENT_TABS = [
   { id: "shas", label: "ש״ס", icon: Layers3 },
   { id: "mishna", label: "משנה", icon: BookText },
   { id: "chumash", label: "חומש", icon: Scroll },
-  { id: "neviim", label: "נביאים וכתובים", icon: BookOpen },
+  { id: "neviim", label: "תנ״ך", icon: BookOpen },
 ] as const;
 
 const sourceId = (source: WithoutId<ShasDeckSource>) => source.kind === "category"

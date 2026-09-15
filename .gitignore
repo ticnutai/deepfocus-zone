@@ -46,3 +46,6 @@ performance/reports/
 secrets/
 *service-account*.json
 *androidpublisher*.json
+password/
+*.jks
+*.keystore
