@@ -320,7 +320,7 @@ export default function Auth() {
       try {
         const signupEmail = email.trim() || syntheticEmailForUsername(cleanUsername);
         console.log("[auth-debug] signUp: online attempt →", { signupEmail, isElectron: IS_ELECTRON, supaHost: (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).host; } catch { return "INVALID"; } })() });
-        const { data, error } = await withTimeout(!email.trim()
+        const signupPromise = (!email.trim()
           ? registerUsernameAccount(supabase, cleanUsername, password, name || cleanUsername, await recoveryHash(recoveryCode))
           : supabase.auth.signUp({
           email: signupEmail, password,
@@ -328,7 +328,8 @@ export default function Auth() {
             emailRedirectTo: `${REDIRECT_ORIGIN}/`,
             data: { display_name: name || cleanUsername, username: cleanUsername },
           },
-        }));
+        })) as unknown as Promise<AuthResponse>;
+        const { data, error } = await withTimeout(signupPromise);
         if (!error) {
           setBusy(false);
           persistRemember();
