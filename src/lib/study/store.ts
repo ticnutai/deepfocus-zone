@@ -92,6 +92,7 @@ const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
 const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
 export function getSourceUserId(): string | null { return sourceOverlaySourceUserIds[0] ?? null; }
 export function isCardFromSource(id: string): boolean { return sourceOwnedCardIds.has(id); }
+export function cardSourceOwner(id: string): string | undefined { return sourceOwnerByCardId.get(id); }
 
 const SOURCE_MANIFEST_KEY = (userId: string) => `content-source-manifest:v1:${userId}`;
 const CONTENT_ACCESS_CACHE_KEY = (userId: string) => `content-access-policy:v1:${userId}`;
@@ -1361,6 +1362,7 @@ const addDaysIso = (base: Date, days: number) => {
 
 // ---- Mappers ----
 interface CardRow {
+  created_by?: string | null; user_id?: string | null;
   moderation_status?: string | null; published_card_id?: string | null;
   id: string; deck_id: string; type: string; question: string;
   tags: unknown; created_at: string; srs: unknown; stats: unknown;
@@ -1378,6 +1380,7 @@ const cardFromRow = (r: CardRow): Card => {
   const base = {
     id: r.id, deckId: r.deck_id ?? null, type: r.type, question: r.question,
     published: r.moderation_status === 'published' || Boolean(r.published_card_id),
+    creatorId: r.created_by ?? r.user_id ?? undefined,
     tags: (r.tags as string[] | null) ?? [], createdAt: new Date(r.created_at).getTime(),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : new Date(r.created_at).getTime(),
     srs: (r.srs as SrsData | null) ?? defaultSrs(),
@@ -3603,7 +3606,7 @@ export function useStudy() {
       tags.push(UNCATEGORIZED_TAG);
     }
     const full = {
-      ...card, tags, id: uid(), createdAt: Date.now(),
+      ...card, tags, id: uid(), creatorId: userId === GUEST_ID ? undefined : userId, createdAt: Date.now(),
       srs: defaultSrs(), stats: { totalReviews: 0, correct: 0, incorrect: 0 },
     } as Card;
     const profileBActive = isProfileBMode();
@@ -3757,7 +3760,7 @@ export function useStudy() {
       const duplicateExists = s.cards.some((c) => c.id !== id && normalizeQuestionKey(c.question) === questionKey);
       if (duplicateExists) return s;
       copy = {
-        ...orig, id: uid(), published: false, deckId: targetDeckId ?? orig.deckId,
+        ...orig, id: uid(), creatorId: userId === GUEST_ID ? undefined : userId, published: false, deckId: targetDeckId ?? orig.deckId,
         createdAt: Date.now(), srs: defaultSrs(),
         stats: { totalReviews: 0, correct: 0, incorrect: 0 },
       } as Card;
@@ -3787,6 +3790,7 @@ export function useStudy() {
       ...orig,
       ...(opts?.patch ?? {}),
       id: newId,
+      creatorId: userId === GUEST_ID ? undefined : userId,
       published: false,
       createdAt: Date.now(),
       srs: defaultSrs(),

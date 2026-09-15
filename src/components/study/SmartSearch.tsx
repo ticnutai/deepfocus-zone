@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
-import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter, MoreHorizontal } from "lucide-react";
+import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter, MoreHorizontal, Trash2 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { usePermissions } from "@/hooks/usePermissions";
+import { supabase } from "@/integrations/supabase/client";
+import { publicUserIdentity } from "@/lib/admin/userIdentity";
+import { questionSources } from "@/lib/study/questionSources";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +19,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { useStudy } from "@/lib/study/store";
+import { useStudy, cardSourceOwner } from "@/lib/study/store";
 import { isDue } from "@/lib/study/srs";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -32,6 +37,8 @@ type Hit = {
   badge?: string;
   cardType?: "flashcard" | "multiple" | "boolean" | "combo";
   due?: boolean;
+  sources?: string[];
+  creatorId?: string;
 };
 
 interface Props {
@@ -57,7 +64,21 @@ const KIND_META: Record<Kind, { label: string; icon: typeof BookOpen; color: str
 };
 
 export function SmartSearch({ variant = "page", onPick }: Props) {
-  const { state } = useStudy();
+  const { state, deleteCard } = useStudy();
+  const { isAdmin } = usePermissions();
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [creatorFilter, setCreatorFilter] = useState('all');
+  const [creators, setCreators] = useState<Array<{id:string;label:string}>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAdmin) { setCreators([]); setCreatorFilter('all'); return; }
+    void supabase.rpc('get_admin_content_sources').then(({data}) => {
+      if (!cancelled) setCreators((data ?? []).map(row => ({id:row.source_user_id,label:publicUserIdentity({display_name:row.label,email:row.email}).name})));
+    });
+    return () => { cancelled = true; };
+  }, [isAdmin]);
+  const [pendingDelete, setPendingDelete] = useState<Hit | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [recents, setRecents] = useState<string[]>(() => {
@@ -74,6 +95,11 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const deckById = useMemo(() => new Map(state.decks.map((d) => [d.id, d])), [state.decks]);
+  const sources = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const card of state.cards) for (const source of questionSources(card.tags)) options.set(source.id, source.label);
+    return [...options].sort((a,b) => a[1].localeCompare(b[1], 'he'));
+  }, [state.cards]);
 
   const searchModel = useMemo(() => {
     const items: Hit[] = [];
@@ -108,7 +134,9 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
         id: hitId,
         kind: "card",
         title: c.question,
-        subtitle: [deck?.name, answerText, (c as { explanation?: string }).explanation, c.tags?.join(" ")].filter(Boolean).join(" · "),
+        subtitle: [deck?.name, answerText, (c as { explanation?: string }).explanation, questionSources(c.tags).map(s => s.label).join(', '), c.tags?.filter(t => !t.startsWith('source:')).map(t => t.replace(/^cat:/, '')).join(' ')].filter(Boolean).join(" · "),
+        sources: questionSources(c.tags).map(s => s.id),
+        creatorId: c.creatorId ?? cardSourceOwner(c.id),
         badge: deck?.name,
         cardType: c.type,
         due,
@@ -155,11 +183,13 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   const results = useMemo(() => {
     let base: Hit[];
     if (!query.trim()) {
-      base = items.slice(0, 80);
+      base = items;
     } else {
       base = (fuse?.search(query) ?? []).map((r) => r.item);
     }
     base = base.filter((h) => kindFilter.has(h.kind));
+    if (sourceFilter !== 'all') base = base.filter(h => h.kind === 'card' && h.sources?.includes(sourceFilter));
+    if (creatorFilter !== 'all') base = base.filter(h => h.kind === 'card' && h.creatorId === creatorFilter);
     if (statusFilter === "due") base = base.filter((h) => h.kind !== "card" || h.due);
     if (statusFilter === "new") base = base.filter((h) => {
       if (h.kind !== "card") return true;
@@ -172,8 +202,11 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
       return (meta?.incorrect ?? 0) > (meta?.correct ?? 0);
     });
     base = base.filter((h) => h.kind !== "card" || (h.cardType && typeFilter.has(h.cardType)));
-    return base.slice(0, 200);
-  }, [query, fuse, kindFilter, typeFilter, statusFilter, items, searchModel.cardMetaByHitId]);
+    return base;
+  }, [query, fuse, kindFilter, typeFilter, statusFilter, sourceFilter, creatorFilter, items, searchModel.cardMetaByHitId]);
+
+  const virtualizer = useVirtualizer({ count: results.length, getScrollElement: () => scrollRef.current, estimateSize: () => 110, overscan: 6, getItemKey: index => results[index].id });
+  useEffect(() => { virtualizer.scrollToOffset(0); }, [query, sourceFilter, creatorFilter, kindFilter, typeFilter, statusFilter]);
 
   const counts = useMemo(() => {
     const c: Record<Kind, number> = { card: 0, category: 0, deck: 0, tag: 0 };
@@ -195,13 +228,15 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   };
 
   const resultsList = (
-    <div className="space-y-1.5 max-w-full overflow-x-hidden">
+    <div className="relative max-w-full" style={{height: results.length ? virtualizer.getTotalSize() : 80}}>
       {results.length === 0 && (
         <p className="text-center text-sm text-muted-foreground py-8">אין תוצאות</p>
       )}
-      {results.map((hit) => {
+      {virtualizer.getVirtualItems().map((row) => {
+        const hit = results[row.index];
         const M = KIND_META[hit.kind];
         return (
+          <div key={hit.id} data-index={row.index} ref={virtualizer.measureElement} data-search-result={hit.id} className="absolute top-0 left-0 w-full flex items-center gap-1 pb-1.5" style={{transform: `translateY(${row.start}px)`}}>
           <button
             key={hit.id}
             type="button"
@@ -238,6 +273,8 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
               </div>
             )}
           </button>
+          {isAdmin && hit.kind === 'card' && <Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive" aria-label={`מחק שאלה: ${hit.title}`} onClick={() => setPendingDelete(hit)}><Trash2 className="h-4 w-4" /></Button>}
+          </div>
         );
       })}
     </div>
@@ -246,6 +283,18 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   return (
     <Card className={cn("gold-frame p-4 space-y-3 max-w-full overflow-x-hidden", variant === "modal" && "shadow-2xl")} dir="rtl">
       <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-sm flex items-center gap-2">מקור השאלות
+          <select aria-label="מקור השאלות" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="h-10 max-w-full rounded-lg border border-gold/50 bg-background px-2">
+            <option value="all">כל המקורות</option>
+            {sources.map(([id,label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
+        {isAdmin && <label className="text-sm flex items-center gap-2">נוסף על ידי
+          <select aria-label="נוסף על ידי" value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)} className="h-10 max-w-full rounded-lg border border-gold/50 bg-background px-2">
+            <option value="all">כל המשתמשים</option>
+            {creators.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -362,15 +411,15 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
       )}
 
       {/* Results */}
-      {isMobile ? (
-        <div className="h-[60vh] overflow-y-auto overflow-x-hidden pr-0.5">
+        <div ref={scrollRef} data-testid="search-scroll" className="h-[60vh] overflow-y-auto overflow-x-hidden pr-0.5">
           {resultsList}
         </div>
-      ) : (
-        <ScrollArea className={cn(variant === "modal" ? "h-[60vh]" : "h-[60vh]")}>
-          {resultsList}
-        </ScrollArea>
-      )}
+      <AlertDialog open={!!pendingDelete} onOpenChange={open => { if (!open) setPendingDelete(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader><AlertDialogTitle>למחוק את השאלה?</AlertDialogTitle><AlertDialogDescription>פעולת מנהל: {pendingDelete?.title}. המחיקה תועבר לענן באמצעות תור הסנכרון הקיים; זו אינה הסתרה אישית.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>ביטול</AlertDialogCancel><AlertDialogAction onClick={() => { if (isAdmin && pendingDelete) deleteCard(pendingDelete.id.slice(5)); setPendingDelete(null); }}>מחק שאלה</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
