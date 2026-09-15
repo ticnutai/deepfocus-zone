@@ -13,9 +13,9 @@ describe('username recovery credentials', () => {
     expect(await recoveryHash(code.toUpperCase().replace(/-/g, ' '))).toBe(hash);
     expect(hash).not.toContain(code);
   });
-  it('requires letters, numbers and a bcrypt-safe length', () => {
-    expect(validAccountPassword('lettersOnly')).toBe(false);
-    expect(validAccountPassword('123456789')).toBe(false);
+  it('requires a minimal length and a bcrypt-safe maximum', () => {
+    expect(validAccountPassword('abc')).toBe(false);
+    expect(validAccountPassword('1234')).toBe(true);
     expect(validAccountPassword('Torah12345')).toBe(true);
     expect(validAccountPassword('א'.repeat(40) + '1')).toBe(false);
   });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import type { AuthResponse } from "@supabase/supabase-js";
 import { createRecoveryCode, recoveryHash, registerUsernameAccount, validAccountPassword } from '@/lib/auth/usernameRegistration';
 import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
@@ -309,7 +310,7 @@ export default function Auth() {
       return;
     }
     if (!email.trim()) {
-      if (!validAccountPassword(password)) return toast.error('יש לבחור סיסמה עם לפחות 8 תווים, אותיות ומספרים.');
+      if (!validAccountPassword(password)) return toast.error('יש לבחור סיסמה עם לפחות 4 תווים.');
       if (!recoveryCode) { setRecoveryCode(createRecoveryCode()); return; }
       if (!savedRecovery) return toast.error('שמור את קוד השחזור ואשר ששמרת אותו.');
     }
@@ -320,7 +321,7 @@ export default function Auth() {
       try {
         const signupEmail = email.trim() || syntheticEmailForUsername(cleanUsername);
         console.log("[auth-debug] signUp: online attempt →", { signupEmail, isElectron: IS_ELECTRON, supaHost: (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).host; } catch { return "INVALID"; } })() });
-        const { data, error } = await withTimeout(!email.trim()
+        const signupPromise = (!email.trim()
           ? registerUsernameAccount(supabase, cleanUsername, password, name || cleanUsername, await recoveryHash(recoveryCode))
           : supabase.auth.signUp({
           email: signupEmail, password,
@@ -328,7 +329,8 @@ export default function Auth() {
             emailRedirectTo: `${REDIRECT_ORIGIN}/`,
             data: { display_name: name || cleanUsername, username: cleanUsername },
           },
-        }));
+        })) as unknown as Promise<AuthResponse>;
+        const { data, error } = await withTimeout(signupPromise);
         if (!error) {
           setBusy(false);
           persistRemember();
@@ -421,7 +423,7 @@ export default function Auth() {
               <p className="text-sm">הזן למעלה את שם המשתמש וסיסמה חדשה, וכאן את קוד השחזור ששמרת. נדרש אינטרנט.</p>
               <Input aria-label="קוד שחזור" dir="ltr" value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} />
               <Button disabled={busy || !navigator.onLine} onClick={async () => {
-                if (!validAccountPassword(password)) return toast.error('הסיסמה החדשה צריכה לפחות 8 תווים, אותיות ומספרים.');
+                if (!validAccountPassword(password)) return toast.error('הסיסמה החדשה צריכה לפחות 4 תווים.');
                 setBusy(true);
                 try {
                   const next = createRecoveryCode();

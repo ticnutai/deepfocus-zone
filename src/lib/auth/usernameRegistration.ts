@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const validAccountPassword = (value: string) => value.length >= 8 && new TextEncoder().encode(value).length <= 72 && /[\p{L}]/u.test(value) && /[0-9]/.test(value);
+export const validAccountPassword = (value: string) => value.length >= 4 && new TextEncoder().encode(value).length <= 72;
 export function createRecoveryCode() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)), (n) => n.toString(16).padStart(2, '0')).join('').match(/.{1,8}/g)!.join('-');
 }
