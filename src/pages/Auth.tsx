@@ -310,7 +310,7 @@ export default function Auth() {
       return;
     }
     if (!email.trim()) {
-      if (!validAccountPassword(password)) return toast.error('יש לבחור סיסמה עם לפחות 4 תווים.');
+      if (!validAccountPassword(password)) return toast.error('יש לבחור סיסמה עם לפחות 6 תווים.');
       if (!recoveryCode) { setRecoveryCode(createRecoveryCode()); return; }
       if (!savedRecovery) return toast.error('שמור את קוד השחזור ואשר ששמרת אותו.');
     }
@@ -423,7 +423,7 @@ export default function Auth() {
               <p className="text-sm">הזן למעלה את שם המשתמש וסיסמה חדשה, וכאן את קוד השחזור ששמרת. נדרש אינטרנט.</p>
               <Input aria-label="קוד שחזור" dir="ltr" value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} />
               <Button disabled={busy || !navigator.onLine} onClick={async () => {
-                if (!validAccountPassword(password)) return toast.error('הסיסמה החדשה צריכה לפחות 4 תווים.');
+                if (!validAccountPassword(password)) return toast.error('הסיסמה החדשה צריכה לפחות 6 תווים.');
                 setBusy(true);
                 try {
                   const next = createRecoveryCode();
