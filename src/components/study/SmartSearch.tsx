@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
-import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter, MoreHorizontal, Trash2 } from "lucide-react";
+import { Search, BookOpen, Folder, Hash, Layers, X, Clock, Filter, MoreHorizontal, Trash2, Play } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePermissions } from "@/hooks/usePermissions";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,11 +39,14 @@ type Hit = {
   due?: boolean;
   sources?: string[];
   creatorId?: string;
+  sourceLabel?: string;
+  creatorLabel?: string;
 };
 
 interface Props {
   variant?: "page" | "modal";
   onPick?: (hit: Hit) => void;
+  onPractice?: (cardId: string) => void;
 }
 
 function highlight(text: string, query: string): React.ReactNode {
@@ -63,17 +66,20 @@ const KIND_META: Record<Kind, { label: string; icon: typeof BookOpen; color: str
   tag: { label: "תגית", icon: Hash, color: "text-muted-foreground" },
 };
 
-export function SmartSearch({ variant = "page", onPick }: Props) {
+export function SmartSearch({ variant = "page", onPick, onPractice }: Props) {
   const { state, deleteCard } = useStudy();
   const { isAdmin } = usePermissions();
   const [sourceFilter, setSourceFilter] = useState('all');
   const [creatorFilter, setCreatorFilter] = useState('all');
-  const [creators, setCreators] = useState<Array<{id:string;label:string}>>([]);
+  const [creators, setCreators] = useState<Array<{id:string;label:string;count:number}>>([]);
   useEffect(() => {
     let cancelled = false;
     if (!isAdmin) { setCreators([]); setCreatorFilter('all'); return; }
     void supabase.rpc('get_admin_content_sources').then(({data}) => {
-      if (!cancelled) setCreators((data ?? []).map(row => ({id:row.source_user_id,label:publicUserIdentity({display_name:row.label,email:row.email}).name})));
+      if (!cancelled) setCreators((data ?? []).map(row => {
+        const identity = publicUserIdentity({display_name:row.label,email:row.email});
+        return {id:row.source_user_id,count:Number(row.question_count),label:[identity.name, identity.email !== identity.name ? identity.email : null].filter(Boolean).join(' · ')};
+      }));
     });
     return () => { cancelled = true; };
   }, [isAdmin]);
@@ -95,6 +101,11 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const deckById = useMemo(() => new Map(state.decks.map((d) => [d.id, d])), [state.decks]);
+  const creatorById = useMemo(() => new Map(creators.map(item => [item.id, item.label])), [creators]);
+  const creatorOptions = useMemo(() => {
+    const owners = new Set(state.cards.map(card => card.creatorId ?? cardSourceOwner(card.id)).filter(Boolean));
+    return creators.filter(item => item.count > 0 || owners.has(item.id));
+  }, [creators, state.cards]);
   const sources = useMemo(() => {
     const options = new Map<string, string>();
     for (const card of state.cards) for (const source of questionSources(card.tags)) options.set(source.id, source.label);
@@ -134,7 +145,9 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
         id: hitId,
         kind: "card",
         title: c.question,
-        subtitle: [deck?.name, answerText, (c as { explanation?: string }).explanation, questionSources(c.tags).map(s => s.label).join(', '), c.tags?.filter(t => !t.startsWith('source:')).map(t => t.replace(/^cat:/, '')).join(' ')].filter(Boolean).join(" · "),
+        subtitle: [deck?.name, answerText, (c as { explanation?: string }).explanation, c.tags?.filter(t => !t.startsWith('source:')).map(t => t.replace(/^cat:/, '')).join(' ')].filter(Boolean).join(" · "),
+        sourceLabel: questionSources(c.tags).map(s => s.id === 'unattributed' ? 'לא צוין מקור ייבוא' : s.label).join(', '),
+        creatorLabel: isAdmin ? (creatorById.get(c.creatorId ?? cardSourceOwner(c.id) ?? '') ?? ((c.creatorId ?? cardSourceOwner(c.id)) ? 'פרטי המוסיף אינם זמינים' : 'לא נשמר זיהוי של המוסיף')) : undefined,
         sources: questionSources(c.tags).map(s => s.id),
         creatorId: c.creatorId ?? cardSourceOwner(c.id),
         badge: deck?.name,
@@ -164,7 +177,7 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
     });
 
     return { items, cardMetaByHitId };
-  }, [state.cards, state.categories, state.decks, deckById]);
+  }, [state.cards, state.categories, state.decks, deckById, creatorById, isAdmin]);
 
   const items = searchModel.items;
 
@@ -172,7 +185,7 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
   const fuse = useMemo(() => {
     if (!query.trim()) return null;
     return new Fuse(items, {
-      keys: ["title", "subtitle", "badge"],
+      keys: ["title", "subtitle", "badge", "sourceLabel", "creatorLabel"],
       threshold: 0.4,
       ignoreLocation: true,
       minMatchCharLength: 1,
@@ -255,6 +268,10 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
                   {highlight(hit.subtitle, query)}
                 </div>
               )}
+              {hit.kind === 'card' && <div className="mt-1 text-xs text-muted-foreground break-words whitespace-normal">
+                <div>מקור השאלה: {hit.sourceLabel}</div>
+                {hit.creatorLabel && <div>נוספה על ידי: <bdi>{hit.creatorLabel}</bdi></div>}
+              </div>}
               {isMobile && (
                 <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                   <Badge variant="outline" className="text-[10px] border-gold/30">{M.label}</Badge>
@@ -273,6 +290,7 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
               </div>
             )}
           </button>
+          {hit.kind === 'card' && onPractice && <Button type="button" variant="outline" size="icon" className="shrink-0" title="פתח שאלה בתרגול" aria-label={`פתח בתרגול: ${hit.title}`} onClick={() => onPractice(hit.id.slice(5))}><Play className="h-4 w-4" /></Button>}
           {isAdmin && hit.kind === 'card' && <Button type="button" variant="ghost" size="icon" className="shrink-0 text-destructive" aria-label={`מחק שאלה: ${hit.title}`} onClick={() => setPendingDelete(hit)}><Trash2 className="h-4 w-4" /></Button>}
           </div>
         );
@@ -292,7 +310,7 @@ export function SmartSearch({ variant = "page", onPick }: Props) {
         {isAdmin && <label className="text-sm flex items-center gap-2">נוסף על ידי
           <select aria-label="נוסף על ידי" value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)} className="h-10 max-w-full rounded-lg border border-gold/50 bg-background px-2">
             <option value="all">כל המשתמשים</option>
-            {creators.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            {creatorOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </label>}
         <div className="relative flex-1 min-w-[200px]">

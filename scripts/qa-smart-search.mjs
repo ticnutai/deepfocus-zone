@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFileSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const fixture = `export const cardSourceOwner=()=>undefined; const cards=Array.from({length:320},(_,i)=>({id:String(i),question:'בדיקה '+i,type:'flashcard',answer:'תשובה',deckId:'d',tags:[i%2?'source:ai':'source:shemesh'],stats:{totalReviews:0,correct:0,incorrect:0},srs:{due:0}})); export const useStudy=()=>({state:{cards,decks:[],categories:[]},deleteCard:()=>{throw Error('No real deletion in QA')}});`;
-const result = await build({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import {SmartSearch} from './src/components/study/SmartSearch'; createRoot(document.getElementById('root')).render(<SmartSearch variant={location.hash==='#modal'?'modal':'page'}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'esm',jsx:'automatic',tsconfig:'tsconfig.app.json',plugins:[{name:'isolated-data',setup(b){
+const result = await build({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import {SmartSearch} from './src/components/study/SmartSearch'; createRoot(document.getElementById('root')).render(<SmartSearch onPractice={id=>document.body.dataset.practiceCard=id} variant={location.hash==='#modal'?'modal':'page'}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'esm',jsx:'automatic',tsconfig:'tsconfig.app.json',plugins:[{name:'isolated-data',setup(b){
   const mocks={'@/lib/study/store':fixture,'@/hooks/usePermissions':'export const usePermissions=()=>({isAdmin:false});','@/integrations/supabase/client':'export const supabase={rpc:async()=>({data:[]})};'};
   b.onResolve({filter:/^@\//},args=>mocks[args.path]?{path:args.path,namespace:'mock'}:undefined);
   b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:mocks[args.path],loader:'js'}));
@@ -31,6 +31,8 @@ try {
     await page.getByLabel('מקור השאלות').selectOption('shemesh');
     await page.getByText('שאלה: 160',{exact:true}).waitFor();
     await page.locator('[data-search-result="card:0"]').waitFor();
+    await page.getByRole('button',{name:'פתח בתרגול: בדיקה 0',exact:true}).click();
+    assert.equal(await page.evaluate(()=>document.body.dataset.practiceCard),'0');
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
     assert.deepEqual(errors,[]); passed++; await page.close();
   }

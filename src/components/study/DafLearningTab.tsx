@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, memo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useTouchHold } from "@/hooks/useTouchHold";
 import { ChevronRight, ChevronLeft, BookOpen, ListChecks, Play, PanelRightOpen, Maximize2, Minimize2, X, ZoomIn, BookText, Scroll, Layers, ArrowLeftRight, ChevronDown, Plus, ListTree, Check, GripVertical, Pin, PinOff, LineChart, Pencil } from "lucide-react";
 import { MishnaLearningTab } from "./MishnaLearningTab";
 import { ChumashLearningTab } from "./ChumashLearningTab";
@@ -30,6 +32,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { Card as StudyCardType } from "@/lib/study/types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { STUDY_UI_DEFAULTS } from "@/config/studyUiDefaults";
+import { useStableMobileNavigation } from "@/hooks/useStableMobileNavigation";
+import { isCompleteShasLocation, formatShasLocation } from "@/lib/study/shasClassification";
 
 type Layout = "stacked" | "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
@@ -68,6 +72,8 @@ function normalizeLayout(layout: SavedState["layout"] | string | undefined): Lay
 }
 
 export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
+  const isMobile = useIsMobile();
+  const touchHold = useTouchHold();
   const { state, setUiPref, updateCard } = useStudy();
   const { isAdmin, can } = usePermissions();
   const questionTypography = useQuestionTypographyPreferences();
@@ -79,7 +85,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const [masechta, setMasechta] = useState<string>(saved.masechta ?? "שבת");
   const [daf, setDaf] = useState<number>(saved.daf ?? 2);
   const [amud, setAmud] = useState<1 | 2>(saved.amud ?? 1);
-  const [layout, setLayoutState] = useState<Layout>(() => {
+  const [savedLayout, setLayoutState] = useState<Layout>(() => {
     return normalizeLayout(state.uiPrefs?.dafLearningLayout ?? saved.layout ?? STUDY_UI_DEFAULTS.dafLearningLayout);
   });
   const setLayout = useCallback((value: Layout) => {
@@ -91,7 +97,9 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [studyOpen, setStudyOpen] = useState(false);
-  const [practiceMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
+  const [savedPracticeMode, setPracticeMode] = useState<PracticeMode>(saved.practiceMode ?? "inline");
+  const layout = isMobile ? "stacked" : savedLayout;
+  const practiceMode = isMobile ? "inline" : savedPracticeMode;
   const [practiceScale, setPracticeScale] = useState<number>(saved.practiceScale ?? 1);
   const [countsReady, setCountsReady] = useState(false);
   const [deckDialogCard, setDeckDialogCard] = useState<StudyCardType | null>(null);
@@ -126,6 +134,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const showLegacyNavigator = false;
   const [addQuestionOpen, setAddQuestionOpen] = useState(false);
   const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const stableNavigator = useStableMobileNavigation(navigationView === "drilldown", selectionConfirmed);
   const [dragOverAmud, setDragOverAmud] = useState<1 | 2 | null>(null);
   const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
   const [pageProgressOpen, setPageProgressOpen] = useState(false);
@@ -146,13 +155,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       masechta,
       daf,
       amud,
-      layout,
+      layout: savedLayout,
       splitSide,
       splitRatio,
-      practiceMode,
+      practiceMode: savedPracticeMode,
       practiceScale,
     });
-  }, [seder, masechta, daf, amud, layout, splitSide, splitRatio, practiceMode, practiceScale]);
+  }, [seder, masechta, daf, amud, savedLayout, splitSide, splitRatio, savedPracticeMode, practiceScale]);
 
   useEffect(() => {
     try { localStorage.setItem(NAV_VIEW_STORAGE_KEY, navigationView); } catch { /* ignore */ }
@@ -502,7 +511,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
 
   // ====== Render ======
   const navigator = (
-    <Card className="gold-frame p-3 space-y-3" dir="rtl">
+    <Card {...stableNavigator} data-testid="daf-inline-navigator" className="gold-frame p-3 space-y-3" dir="rtl">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gold/30 bg-muted/20 p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="h-9 w-9 border-gold/50" title="בחר תצוגת ניווט" aria-label="בחר תצוגת ניווט"><ListTree className="h-4 w-4 text-gold" /></Button></DropdownMenuTrigger>
@@ -674,13 +683,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               <Button
                 key={pageSide}
                 type="button"
-                variant={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide ? "default" : "outline"}
+                variant={selectionConfirmed && masechta === expandedMasechta && daf === expandedDaf && amud === pageSide ? "default" : "outline"}
                 className={cn(
                   "h-11 text-base transition-all",
-                  masechta === expandedMasechta && daf === expandedDaf && amud === pageSide && "bg-gradient-navy text-primary-foreground",
+                  selectionConfirmed && masechta === expandedMasechta && daf === expandedDaf && amud === pageSide && "bg-gradient-navy text-primary-foreground",
                   dragOverAmud === pageSide && "scale-[1.02] border-gold bg-gold/20 ring-4 ring-gold/25",
                 )}
-                aria-pressed={masechta === expandedMasechta && daf === expandedDaf && amud === pageSide}
+                aria-pressed={selectionConfirmed && masechta === expandedMasechta && daf === expandedDaf && amud === pageSide}
                 data-testid={`inline-amud-${pageSide}`}
                 onClick={() => applyInlineAmudSelection(pageSide)}
                 onDragEnter={(event) => {
@@ -868,7 +877,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               <Button
                 size="icon"
                 variant="outline"
-                className="h-7 w-7 border-gold/50"
+              className="hidden md:inline-flex h-7 w-7 border-gold/50"
                 title="קנה מידה של התרגול"
               >
                 <ZoomIn className="h-4 w-4 text-gold" />
@@ -902,7 +911,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
       </div>
       {adminPracticeAmudTargets}
       <div className="flex-1 min-h-0">
-        <FitToContainer enabled={practiceScale !== 1} manualScale={practiceScale}>
+        <FitToContainer enabled={!isMobile && practiceScale !== 1} manualScale={isMobile ? 1 : practiceScale}>
           <StudySession
             key={cardIds.join(",")}
             deckId={null}
@@ -911,7 +920,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             sourceContext={{ masechta, daf, amud }}
             classificationDragEnabled={isAdmin}
             onExit={closePractice}
-            fillHeight={practiceScale !== 1}
+            fillHeight={!isMobile && practiceScale !== 1}
           />
         </FitToContainer>
       </div>
@@ -923,7 +932,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     ? state.cards.find((card) => card.id === editingPracticeCard.id) ?? editingPracticeCard
     : null;
 
-  const questionEditButton = (card: StudyCardType) => canEditPracticeQuestions ? (
+  const questionEditButton = (card: StudyCardType) => canEditPracticeQuestions && !isMobile ? (
     <Button
       type="button"
       size="icon"
@@ -944,10 +953,10 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
   const cardsPanel = (
     <Card className="gold-frame p-4 flex flex-col h-full" dir="rtl">
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex flex-nowrap md:flex-wrap items-center gap-2 max-md:w-full">
           <Button
             size="lg"
-            className="h-12 gap-2 rounded-xl bg-gradient-navy px-6 text-base font-bold text-primary-foreground shadow-elegant ring-2 ring-gold/40 transition hover:brightness-110"
+            className="h-10 md:h-12 min-w-0 gap-1 md:gap-2 rounded-xl bg-gradient-navy px-2 md:px-6 text-xs md:text-base font-bold text-primary-foreground shadow-elegant ring-2 ring-gold/40 transition hover:brightness-110"
             onClick={() => setAddQuestionOpen(true)}
           >
             <Plus className="h-5 w-5" /> הוספת שאלות לעמוד זה
@@ -956,13 +965,13 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             <Button
               size="icon"
               variant="outline"
-              className="h-8 w-8 border-gold/50"
+              className="hidden md:inline-flex h-8 w-8 border-gold/50"
               title="בחירה מהירה וסיווג"
               onClick={() => setBulkDeckDialogOpen(true)}
             >
               <Layers className="h-4 w-4 text-gold" />
             </Button>
-            {practiceModeMenu}
+            {!isMobile && practiceModeMenu}
             <Button onClick={startPractice} size="sm" className="bg-gradient-navy text-primary-foreground">
               <Play className="h-4 w-4 fill-current" /> תרגול
             </Button>
@@ -987,7 +996,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           </h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="outline" className="h-8 w-8 border-gold/50" title="בחר תצוגת שאלות וטקסט" aria-label="בחר תצוגת שאלות וטקסט">
+              <Button size="icon" variant="outline" className="hidden md:inline-flex h-8 w-8 border-gold/50" title="בחר תצוגת שאלות וטקסט" aria-label="בחר תצוגת שאלות וטקסט">
                 <PanelRightOpen className="h-4 w-4 text-gold" />
               </Button>
             </DropdownMenuTrigger>
@@ -1017,7 +1026,8 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           {amudCards.map((c, i) => (
             <div
               key={c.id}
-              draggable
+              {...touchHold(isMobile && canEditPracticeQuestions, () => setEditingPracticeCard(c))}
+              draggable={!isMobile}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("application/x-study-card-id", c.id);
@@ -1051,7 +1061,8 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
           {dafOnlyCards.map((c, i) => (
             <div
               key={c.id}
-              draggable
+              {...touchHold(isMobile && canEditPracticeQuestions, () => setEditingPracticeCard(c))}
+              draggable={!isMobile}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("application/x-study-card-id", c.id);
@@ -1490,12 +1501,19 @@ function DeckPracticePanel({ requestedDeckId, onRequestHandled }: { requestedDec
   return <Card className="gold-frame p-4"><div className="mb-4"><h2 className="text-lg font-bold">תרגול מבחנים</h2><p className="text-sm text-muted-foreground">כל המבחנים שיצרת בטאב בניית מבחנים.</p></div>{deckCards.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{deckCards.map(({ deck, cards }) => <button key={deck.id} type="button" disabled={!cards.length} onClick={() => setActiveDeckId(deck.id)} className="rounded-2xl border-2 border-gold/35 bg-card p-4 text-right transition hover:border-gold hover:bg-gold/5 disabled:cursor-not-allowed disabled:opacity-55"><span className="mb-3 flex items-center justify-between"><BookOpen className="h-6 w-6 text-gold" /><span className="rounded-full bg-gradient-navy px-2 py-1 text-xs font-bold text-white">{cards.length} שאלות</span></span><strong className="block text-base">{deck.name}</strong><span className="mt-2 flex items-center gap-1 text-sm text-primary"><Play className="h-4 w-4 fill-current" />{cards.length ? "התחל תרגול" : "אין שאלות במבחן"}</span></button>)}</div> : <div className="rounded-2xl border-2 border-dashed border-gold/35 p-10 text-center text-muted-foreground">עדיין לא נוצרו מבחנים. ניתן ליצור מבחן בטאב בניית מבחנים.</div>}</Card>;
 }
 
-function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
+function DafLearningTab({ isVisible = true, requestedCardId, onCardExit }: { isVisible?: boolean; requestedCardId?: string | null; onCardExit?: () => void }) {
+  const { state } = useStudy();
   const [mode, setMode] = useState<LearnMode>("shas");
   const [practiceChoice, setPracticeChoice] = useState<{ section: PracticeSection } | null>(null);
   const [requestedDeckId, setRequestedDeckId] = useState<string | null>(null);
   const practiceSection = practiceChoice?.section ?? null;
   const wasVisibleRef = useRef(false);
+  const choiceRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (practiceChoice && window.matchMedia("(max-width: 767px)").matches) {
+      choiceRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    }
+  }, [practiceChoice]);
 
   useEffect(() => {
     // Every fresh entrance to the practice page starts as an explicit choice,
@@ -1530,6 +1548,19 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
     try { localStorage.setItem(MODE_STORAGE_KEY, mode); } catch { /* ignore */ }
   }, [mode]);
 
+  if (requestedCardId) {
+    const card = state.cards.find(item => item.id === requestedCardId);
+    const exit = () => onCardExit?.();
+    return <div dir="rtl" className="space-y-3">
+      <Button variant="outline" onClick={exit}>חזרה לבחירת תרגול</Button>
+      {card ? <>
+        {formatShasLocation(card) && <h2 className="font-bold">{formatShasLocation(card)}</h2>}
+        <StudySession key={card.id} deckId={null} mode="practice" cardIds={[card.id]} includeAllQuestionTypes onExit={exit} />
+        {isCompleteShasLocation(card) && <GemaraViewer masechta={card.masechta} daf={card.daf} amud={card.amud} isActive={isVisible} />}
+      </> : <p>השאלה אינה זמינה עוד. אפשר לחזור ולבחור שאלה אחרת.</p>}
+    </div>;
+  }
+
   const tabs: { id: LearnMode; label: string; icon: typeof BookText }[] = [
     { id: "shas",           label: "ש\"ס",            icon: Layers },
     { id: "mishna",         label: "משנה",            icon: BookText },
@@ -1563,7 +1594,8 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
         })}
       </ToggleGroup>
 
-      <section className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-4 rounded-2xl border-2 border-gold/40 bg-gradient-to-l from-gold/10 via-card to-card p-4 sm:grid-cols-2 sm:p-5" aria-label="בחירת סוג תרגול">
+      <div className={cn("space-y-3", practiceChoice && "min-h-[100svh] md:min-h-0")}>
+      <section ref={choiceRef} className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-4 rounded-2xl border-2 border-gold/40 bg-gradient-to-l from-gold/10 via-card to-card p-4 sm:grid-cols-2 sm:p-5" aria-label="בחירת סוג תרגול">
         <button type="button" onClick={() => setPracticeChoice((current) => current?.section === "general" ? null : { section: "general" })} aria-pressed={practiceSection === "general"} className={cn("group flex min-h-28 items-center justify-center gap-4 rounded-2xl border-2 px-5 py-4 text-right transition-all hover:-translate-y-0.5 hover:border-gold hover:shadow-md", practiceSection === "general" ? "border-gold bg-gradient-navy text-primary-foreground shadow-md" : "border-gold/35 bg-card text-foreground")}><span className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold/70", practiceSection === "general" ? "bg-white/10 text-gold" : "bg-gold/10 text-gold")}><Play className="h-7 w-7 fill-current" /></span><span><strong className="block text-xl">תרגול כללי</strong><span className={cn("mt-1 block text-sm", practiceSection === "general" ? "text-primary-foreground/75" : "text-muted-foreground")}>תרגול לפי התחום, המסכת והעמוד</span></span></button>
         <button type="button" onClick={() => setPracticeChoice((current) => current?.section === "decks" ? null : { section: "decks" })} aria-pressed={practiceSection === "decks"} className={cn("group flex min-h-28 items-center justify-center gap-4 rounded-2xl border-2 px-5 py-4 text-right transition-all hover:-translate-y-0.5 hover:border-gold hover:shadow-md", practiceSection === "decks" ? "border-gold bg-gradient-navy text-primary-foreground shadow-md" : "border-gold/35 bg-card text-foreground")}><span className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-gold/70", practiceSection === "decks" ? "bg-white/10 text-gold" : "bg-gold/10 text-gold")}><BookOpen className="h-7 w-7" /></span><span><strong className="block text-xl">תרגול מבחנים</strong><span className={cn("mt-1 block text-sm", practiceSection === "decks" ? "text-primary-foreground/75" : "text-muted-foreground")}>תרגול מתוך המבחנים שיצרת</span></span></button>
       </section>
@@ -1574,6 +1606,7 @@ function DafLearningTab({ isVisible = true }: { isVisible?: boolean }) {
         {mode === "chumash" && <ChumashLearningTab />}
         {mode === "neviim-ketuvim" && <NeviimKetuvimLearningTab />}
       </> : null}
+      </div>
     </div>
   );
 }

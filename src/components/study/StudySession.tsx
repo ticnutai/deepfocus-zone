@@ -399,6 +399,8 @@ interface Props {
   deckId: string | null;
   mode: StudyMode;
   cardIds?: string[]; // optional whitelist; when provided, restrict queue to these cards
+  /** Explicit search navigation must not hide its target due to saved type filters. */
+  includeAllQuestionTypes?: boolean;
   onExit: () => void;
   /** When set, session auto-ends after this many seconds (used by Quick Review). */
   timeLimitSec?: number;
@@ -414,6 +416,7 @@ export function StudySession({
   deckId,
   mode,
   cardIds,
+  includeAllQuestionTypes = false,
   onExit,
   timeLimitSec,
   fillHeight = false,
@@ -424,7 +427,7 @@ export function StudySession({
   const { state, reviewCard, setUiPref, addCardToDeck, addPracticeResult, deletePracticeResult } = useStudy();
   const isMobile = useIsMobile();
 
-  const comboPrefForQueue = resolveQuestionMode(state.uiPrefs?.studyComboPref,
+  const comboPrefForQueue = includeAllQuestionTypes ? 'both' : resolveQuestionMode(state.uiPrefs?.studyComboPref,
     typeof window !== 'undefined' ? localStorage.getItem(COMBO_PREF_KEY) : null);
   const baseQueue = useMemo(() => {
     // When cardIds is explicitly provided, use them directly (supports card_decks-linked cards).

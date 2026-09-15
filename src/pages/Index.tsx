@@ -740,6 +740,7 @@ const Index = () => {
     () => localStorage.getItem("show-studied-badge") !== "false"
   );
   const [activeTab, setActiveTab] = useState<string>(() => getInitialHomeTab());
+  const [searchPracticeCardId, setSearchPracticeCardId] = useState<string | null>(null);
   const [homeLandingTab, setHomeLandingTab] = useState<string | null>(null);
   // The overview contains several data-heavy widgets (calendar, summaries,
   // plans, etc.). Mount them only after the Home shell has had a chance to
@@ -1162,6 +1163,16 @@ const Index = () => {
     setHomeLandingTab(null);
     setActive(id);
   }, [active, activeTab, isAllowedByPermission, requireSettingsAuth]);
+
+  const openSearchPractice = (cardId: string) => {
+    if (!isAllowedByPermission('daf')) {
+      toast({ title: "אין הרשאה לפתוח תרגול", variant: "destructive" });
+      return;
+    }
+    setSearchPracticeCardId(cardId);
+    setSearchModalOpen(false);
+    void selectSidebarItem('daf');
+  };
 
   useEffect(() => {
     const openHomeTab = (tab: "overview" | "summary" | "daf") => {
@@ -1659,7 +1670,7 @@ const Index = () => {
                   <p className="text-muted-foreground text-sm">חפש שאלות, תשובות, תגיות, קטגוריות ומערכות · קיצור: Ctrl+K (וגם Ctrl+Shift+T)</p>
                 </div>
                 <Suspense fallback={<StaticLazyPanelPreview compact />}>
-                  <SmartSearch variant="page" />
+                  <SmartSearch variant="page" onPractice={openSearchPractice} />
                 </Suspense>
               </div>
             ) : active === "admin" && isAdmin ? (
@@ -1769,7 +1780,7 @@ const Index = () => {
               <TabsContent value="daf" className="mt-3" forceMount>
                 {visitedTabs.has("daf") && (
                   <Suspense fallback={<StaticLazyPanelPreview />}>
-                    <DafLearningTab isVisible={activeTab === "daf"} />
+                    <DafLearningTab isVisible={activeTab === "daf"} requestedCardId={searchPracticeCardId} onCardExit={() => setSearchPracticeCardId(null)} />
                   </Suspense>
                 )}
               </TabsContent>
@@ -1942,6 +1953,7 @@ const Index = () => {
             <Suspense fallback={<StaticLazyPanelPreview compact />}>
               <SmartSearch
                 variant="modal"
+                onPractice={openSearchPractice}
                 onPick={(hit) => {
                   setSearchModalOpen(false);
                   if (hit.kind === "deck") {

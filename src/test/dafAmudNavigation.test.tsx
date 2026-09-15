@@ -32,12 +32,23 @@ vi.mock("@/components/study/BulkCardDecksDialog", () => ({ BulkCardDecksDialog: 
 vi.mock("@/components/study/CardEditor", () => ({ CardEditor: () => null }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => mockPermissions }));
 vi.mock("@/components/study/StudySession", () => ({
-  StudySession: ({ classificationDragEnabled }: { classificationDragEnabled?: boolean }) => (
-    <div data-testid="mock-study-session" draggable={classificationDragEnabled}>תרגול פעיל</div>
+  StudySession: ({ classificationDragEnabled, cardIds, includeAllQuestionTypes }: { classificationDragEnabled?: boolean; cardIds?: string[]; includeAllQuestionTypes?: boolean }) => (
+    <div data-testid="mock-study-session" data-card-ids={cardIds?.join(',')} data-all-types={String(!!includeAllQuestionTypes)} draggable={classificationDragEnabled}>תרגול פעיל</div>
   ),
 }));
 
-import { DafLearningTabInner } from "@/components/study/DafLearningTab";
+import { DafLearningTab, DafLearningTabInner } from "@/components/study/DafLearningTab";
+
+it('opens a search target with its exact Gemara page and preserves question-type preferences', () => {
+  mockState.cards=[{id:'target',question:'שאלה',masechta:'שבת',daf:2,amud:2}];
+  const exit=vi.fn();
+  render(<DafLearningTab requestedCardId="target" onCardExit={exit} />);
+  expect(screen.getByTestId('mock-study-session')).toHaveAttribute('data-card-ids','target');
+  expect(screen.getByTestId('mock-study-session')).toHaveAttribute('data-all-types','true');
+  expect(screen.getByTestId('active-gemara-page')).toHaveTextContent('שבת-2-2');
+  fireEvent.click(screen.getByText('חזרה לבחירת תרגול'));
+  expect(exit).toHaveBeenCalledOnce();
+});
 
 describe("Daf learning amud navigation", () => {
   beforeEach(() => {
@@ -56,6 +67,33 @@ describe("Daf learning amud navigation", () => {
       amud: 2,
       layout: "stacked",
     }));
+  });
+
+  it("keeps the mobile drilldown space while replacing orders, tractates and pages", () => {
+    localStorage.setItem("daf-learning-navigation-view", "drilldown");
+    const media = vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList);
+    try {
+      render(<DafLearningTabInner isVisible />);
+      const panel = screen.getByTestId("daf-inline-navigator");
+      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ height: 420 } as DOMRect);
+      fireEvent.click(screen.getByRole("button", { name: /זרעים 1 מסכתות/ }));
+      expect(panel.style.minHeight).toBe("420px");
+      fireEvent.click(screen.getByRole("button", { name: "ברכות", exact: true }));
+      expect(screen.getByText("ברכות — בחירת דף")).toBeInTheDocument();
+      fireEvent.click(screen.getByText("יג").closest("button")!);
+      for (const side of [1, 2]) {
+        expect(screen.getByTestId(`inline-amud-${side}`)).toHaveAttribute("aria-pressed", "false");
+        expect(screen.getByTestId(`inline-amud-${side}`)).not.toHaveClass("bg-gradient-navy");
+      }
+      fireEvent.click(screen.getByTestId("inline-amud-2"));
+      expect(screen.getByTestId("inline-amud-2")).toHaveAttribute("aria-pressed", "true");
+      expect(panel.style.minHeight).toBe("");
+      fireEvent.click(screen.getByRole("button", { name: "חזרה לדפים" }));
+      fireEvent.click(screen.getByRole("button", { name: "חזרה למסכתות" }));
+      fireEvent.click(screen.getByRole("button", { name: "חזרה לסדרים" }));
+      expect(screen.getByRole("button", { name: /זרעים 1 מסכתות/ })).toBeInTheDocument();
+      expect(panel.style.minHeight).toBe("");
+    } finally { media.mockRestore(); }
   });
 
   it("classifies a dragged daf question into an existing amud target", async () => {

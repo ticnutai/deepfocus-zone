@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { isRolePreview } from "@/lib/auth/rolePreview";
+import { loadOwnedCardPages } from "./loadOwnedCards";
 import { usePermissions } from "@/hooks/usePermissions";
 import { createStudyActionGuard } from "@/lib/auth/studyActionGuard";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, PracticeResult, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
@@ -2120,11 +2121,11 @@ async function loadAll(userId: string): Promise<StudyState> {
   const [bootstrap, roleDefaultsR, userRolesR] = await Promise.all([
     timeOp(
       "db:bootstrap_snapshot", "db",
-      () => rpcClient.rpc("get_bootstrap_snapshot") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      () => supabase.rpc("get_bootstrap_snapshot").abortSignal(AbortSignal.timeout(20_000)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
     ),
     timeOp(
       "db:role_layout_defaults", "db",
-      () => rpcClient.rpc("get_my_role_layout_defaults") as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      () => supabase.rpc("get_my_role_layout_defaults").abortSignal(AbortSignal.timeout(10_000)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
     ).catch(() => ({ data: null, error: null })),
     timeOp(
       "db:user_roles", "db",
@@ -2212,34 +2213,26 @@ async function loadAll(userId: string): Promise<StudyState> {
     rememberCloudCategoriesTotalCount(userId, catsData.data?.length ?? 0);
   } else {
     [decksR, cardsR, logsR, goalsR, shasR, notesR, settingsR, cardDecksR, reviewsR, sessionsR, catsData] = await Promise.all([
-      timeOp("db:decks", "db", () => supabase.from("decks").select("*").order("created_at"), rowCount),
+      timeOp("db:decks", "db", () => supabase.from("decks").select("*").eq("user_id", userId).order("created_at"), rowCount),
       // Paginated card fetch — load ALL cards regardless of count
       (async () => {
-        const PAGE = 1000;
-        let from = 0;
-        const allCards: R<'cards'>[] = [];
-        while (true) {
-          const { data, error } = await supabase.from("cards").select("*").order("created_at").range(from, from + PAGE - 1);
-          if (error) return { data: allCards, error };
-          allCards.push(...((data ?? []) as R<'cards'>[]));
-          if ((data ?? []).length < PAGE) break;
-          from += PAGE;
-        }
+        const allCards = await loadOwnedCardPages<R<'cards'>>(userId, (owner, from, to) =>
+          supabase.from("cards").select("*").eq("user_id", owner).order("id").range(from, to));
         return { data: allCards };
       })(),
-      timeOp("db:review_logs", "db", () => supabase.from("review_logs").select("*").order("at", { ascending: false }).limit(2000), rowCount),
-      timeOp("db:goals", "db", () => supabase.from("goals").select("*"), rowCount),
-      timeOp("db:shas_plans", "db", () => supabase.from("shas_plans").select("*").maybeSingle()),
-      timeOp("db:day_notes", "db", () => supabase.from("day_notes").select("*"), rowCount),
-      timeOp("db:user_settings", "db", () => supabase.from("user_settings").select("*").maybeSingle()),
-      timeOp("db:card_decks", "db", () => supabase.from("card_decks").select("*").order("sort_order"), rowCount),
-      timeOp("db:shas_reviews", "db", () => supabase.from("shas_reviews").select("*").order("due_date"), rowCount),
-      timeOp("db:learning_sessions", "db", () => supabase.from("learning_sessions").select("*").order("created_at", { ascending: false }), rowCount),
+      timeOp("db:review_logs", "db", () => supabase.from("review_logs").select("*").eq("user_id", userId).order("at", { ascending: false }).limit(2000), rowCount),
+      timeOp("db:goals", "db", () => supabase.from("goals").select("*").eq("user_id", userId), rowCount),
+      timeOp("db:shas_plans", "db", () => supabase.from("shas_plans").select("*").eq("user_id", userId).maybeSingle()),
+      timeOp("db:day_notes", "db", () => supabase.from("day_notes").select("*").eq("user_id", userId), rowCount),
+      timeOp("db:user_settings", "db", () => supabase.from("user_settings").select("*").eq("user_id", userId).maybeSingle()),
+      timeOp("db:card_decks", "db", () => supabase.from("card_decks").select("*").eq("user_id", userId).order("sort_order"), rowCount),
+      timeOp("db:shas_reviews", "db", () => supabase.from("shas_reviews").select("*").eq("user_id", userId).order("due_date"), rowCount),
+      timeOp("db:learning_sessions", "db", () => supabase.from("learning_sessions").select("*").eq("user_id", userId).order("created_at", { ascending: false }), rowCount),
       // Fetch ALL categories — tombstones (deleted_at != null) are captured separately
       // and stripped from the active list below.
       timeOp(
         "db:categories (all)", "db",
-        () => supabase.from("categories").select("*").order("sort_order"),
+        () => supabase.from("categories").select("*").eq("user_id", userId).order("sort_order"),
         rowCount,
       ),
     ]);
