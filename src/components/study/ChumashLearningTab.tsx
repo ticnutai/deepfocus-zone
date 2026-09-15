@@ -1,3 +1,6 @@
+import { TORAH_VERSES } from "@/lib/study/torahVerses";
+import { PanelsTopLeft } from "lucide-react";
+import { LearningStepNavigator } from "./LearningStepNavigator";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft, Maximize2, Minimize2, PanelRightOpen, X, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,12 +21,13 @@ import type { Card as StudyCardType } from "@/lib/study/types";
 const STORAGE_KEY = "chumash-learning-state";
 const SFARIM = ["בראשית", "שמות", "ויקרא", "במדבר", "דברים"] as const;
 
-type LayoutMode = "split" | "text-only" | "cards-only";
+type LayoutMode = "stacked" | "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
 
 interface SavedState {
   sefer?: string;
   perek?: number;
+  verse?: number;
   layout?: LayoutMode;
   splitRatio?: number;
   splitReversed?: boolean;
@@ -59,8 +63,10 @@ export function ChumashLearningTab() {
 
   const [sefer, setSefer] = useState<string>(saved.sefer ?? "בראשית");
   const [perek, setPerek] = useState<number>(saved.perek ?? 1);
+  const [verse, setVerse] = useState(saved.verse ?? 0);
   const [studyOpen, setStudyOpen] = useState(false);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "split");
+  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "stacked");
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
   const [splitReversed, setSplitReversed] = useState<boolean>(!!saved.splitReversed);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -81,12 +87,14 @@ export function ChumashLearningTab() {
     saveSt({
       sefer,
       perek,
+      verse,
       layout: layoutMode,
       splitRatio,
       splitReversed,
     });
-  }, [sefer, perek, layoutMode, splitRatio, splitReversed]);
+  }, [sefer, perek, verse, layoutMode, splitRatio, splitReversed]);
 
+  const verseCount = TORAH_VERSES.find(book => book.name === sefer)?.chapters[perek - 1] ?? 0;
   const totalChapters = CHUMASH_CHAPTERS[sefer] ?? 1;
 
   useEffect(() => { if (perek > totalChapters) setPerek(1); }, [sefer, totalChapters, perek]);
@@ -120,12 +128,12 @@ export function ChumashLearningTab() {
   const cards = useMemo(() => filterCardsByCategoryChain(
     state.cards,
     state.categories,
-    [sefer, `פרק ${toGematria(perek)}`],
-  ), [state.cards, state.categories, sefer, perek]);
+    [sefer, `פרק ${toGematria(perek)}`, ...(verse ? [`פסוק ${toGematria(verse)}`] : [])],
+  ), [state.cards, state.categories, sefer, perek, verse]);
   const cardIds = useMemo(() => cards.map((c) => c.id), [cards]);
   const closePractice = () => {
     setStudyOpen(false);
-    setLayoutMode("split");
+    setLayoutMode("stacked");
   };
 
   const externalUrl = chumashSefariaUrl(sefer, perek);
@@ -136,13 +144,13 @@ export function ChumashLearningTab() {
     <div className="min-h-0">
       {en ? (
         <SefariaTextViewer
-          sefariaRef={sefariaRef}
+          sefariaRef={verse ? `${sefariaRef}.${verse}` : sefariaRef}
           externalUrl={externalUrl}
           title={`${sefer} · פרק ${toGematria(perek)}`}
           className="h-full"
           breadcrumbItems={["חומש", sefer, `פרק ${toGematria(perek)}`]}
           lineLabel="פסוק"
-          lineStartIndex={1}
+          lineStartIndex={verse || 1}
         />
       ) : (
         <Card className="gold-frame p-6 h-full flex items-center justify-center text-muted-foreground text-sm">
@@ -157,7 +165,7 @@ export function ChumashLearningTab() {
       <Card className="gold-frame p-4 flex flex-col h-full">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold flex items-center gap-1">
-            <ListChecks className="h-4 w-4 text-gold" /> שאלות לפרק זה ({cards.length})
+            <ListChecks className="h-4 w-4 text-gold" /> שאלות {verse ? `לפסוק ${toGematria(verse)}` : "לפרק זה"} ({cards.length})
           </h3>
           {cards.length > 0 && (
             <div className="flex items-center gap-1">
@@ -244,25 +252,19 @@ export function ChumashLearningTab() {
     <div className="space-y-4" dir="rtl">
       <Card className="gold-frame p-3 space-y-3">
         <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${sefer}, פרק ${toGematria(perek)}`} /></div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <Select value={sefer} onValueChange={(v) => { setSefer(v); setPerek(1); }}>
-            <SelectTrigger><SelectValue placeholder="ספר" /></SelectTrigger>
-            <SelectContent>
-              {SFARIM.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={String(perek)} onValueChange={(v) => setPerek(Number(v))}>
-            <SelectTrigger><SelectValue placeholder="פרק" /></SelectTrigger>
-            <SelectContent className="max-h-72">
-              {Array.from({ length: totalChapters }, (_, i) => i + 1).map((p) => (
-                <SelectItem key={p} value={String(p)}>פרק {toGematria(p)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <LearningStepNavigator confirmed={selectionConfirmed} onConfirmedChange={setSelectionConfirmed} steps={[
+            { title: "בחר ספר", backLabel: "ספרים", options: SFARIM.map(s => ({ value: s, label: s })), onSelect: v => { setSefer(v); setPerek(1); } },
+            { title: "בחר פרק", backLabel: "פרקים", options: Array.from({ length: totalChapters }, (_, i) => ({ value: String(i + 1), label: "פרק " + toGematria(i + 1) })), onSelect: v => { setPerek(Number(v)); setVerse(0); } },
+            { title: "בחר פסוק", backLabel: "פסוקים", options: [{ value: "0", label: "כל הפרק" }, ...Array.from({ length: verseCount }, (_, i) => ({ value: String(i + 1), label: "פסוק " + toGematria(i + 1) }))], onSelect: v => setVerse(Number(v)) },
+          ]} />
 
           <Select value={layoutMode} onValueChange={(v) => setLayoutMode(v as LayoutMode)}>
-            <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
+            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="mx-auto h-11 w-16 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
+              <PanelsTopLeft className="h-5 w-5 shrink-0" aria-hidden="true" />
+            </SelectTrigger>
             <SelectContent>
+              <SelectItem value="stacked">שאלות ואחריהן הטקסט</SelectItem>
               <SelectItem value="split">טקסט + שאלות</SelectItem>
               <SelectItem value="text-only">טקסט בלבד</SelectItem>
               <SelectItem value="cards-only">שאלות בלבד</SelectItem>
@@ -286,24 +288,24 @@ export function ChumashLearningTab() {
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <Button onClick={() => setPerek(Math.max(1, perek - 1))} disabled={perek === 1} variant="outline" size="sm" className="gap-1">
+          <Button onClick={() => { setPerek(Math.max(1, perek - 1)); setVerse(0); }} disabled={perek === 1} variant="outline" size="sm" className="gap-1">
             <ChevronRight className="h-4 w-4" /> הקודם
           </Button>
           <div className="text-sm text-muted-foreground">
             {sefer} · פרק {toGematria(perek)} · <span className="text-gold font-semibold">{cards.length} שאלות</span>
           </div>
-          <Button onClick={() => setPerek(Math.min(totalChapters, perek + 1))} disabled={perek === totalChapters} variant="outline" size="sm" className="gap-1">
+          <Button onClick={() => { setPerek(Math.min(totalChapters, perek + 1)); setVerse(0); }} disabled={perek === totalChapters} variant="outline" size="sm" className="gap-1">
             הבא <ChevronLeft className="h-4 w-4" />
           </Button>
         </div>
       </Card>
 
-      <div style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
+      <div hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
         {layoutMode === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
-              {renderTextPanel()}
               {cardsContent}
+              {renderTextPanel()}
             </div>
 
             <div
@@ -346,6 +348,11 @@ export function ChumashLearningTab() {
             </div>
           </>
         )}
+
+        {layoutMode === "stacked" && <div className="flex flex-col gap-4 min-w-0" data-testid="questions-before-text">
+          <section aria-label="שאלות">{cardsContent}</section>
+          <section aria-label="טקסט הלימוד">{renderTextPanel()}</section>
+        </div>}
 
         {layoutMode === "text-only" && (
           <div className="grid grid-cols-1 h-full">

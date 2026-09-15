@@ -318,7 +318,7 @@ export interface UiPrefs {
     compactParagraphs?: boolean;
   };
   // Neviim/Ketuvim tab layout preference
-  neviimLayoutMode?: "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
+  neviimLayoutMode?: "stacked" | "split" | "text-only" | "cards-only" | "double-text" | "text-focus";
   // Text-to-cards width ratio for split layouts (percent for text pane)
   neviimSplitRatio?: number;
   // Neviim/Ketuvim: swap order of text/cards panes in split layout

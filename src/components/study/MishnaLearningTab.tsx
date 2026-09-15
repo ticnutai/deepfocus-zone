@@ -1,3 +1,5 @@
+import { PanelsTopLeft } from "lucide-react";
+import { LearningStepNavigator } from "./LearningStepNavigator";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ChevronLeft, ListChecks, GraduationCap, ArrowRightLeft, Maximize2, Minimize2, PanelRightOpen, X, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,7 @@ import type { Card as StudyCardType } from "@/lib/study/types";
 
 const STORAGE_KEY = "mishna-learning-state";
 
-type LayoutMode = "split" | "text-only" | "cards-only";
+type LayoutMode = "stacked" | "split" | "text-only" | "cards-only";
 type PracticeMode = "inline" | "fullscreen";
 
 interface SavedState {
@@ -65,7 +67,8 @@ export function MishnaLearningTab() {
   const [perek, setPerek] = useState<number>(saved.perek ?? 1);
   const [mishna, setMishna] = useState<number>(saved.mishna ?? 1);
   const [studyOpen, setStudyOpen] = useState(false);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "split");
+  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(saved.layout ?? "stacked");
   const [splitRatio, setSplitRatioState] = useState<number>(Math.max(20, Math.min(80, saved.splitRatio ?? 60)));
   const [splitReversed, setSplitReversed] = useState<boolean>(!!saved.splitReversed);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -159,7 +162,7 @@ export function MishnaLearningTab() {
   const isLast = perek === chapters.length && mishna === mishnayotInPerek;
   const closePractice = () => {
     setStudyOpen(false);
-    setLayoutMode("split");
+    setLayoutMode("stacked");
   };
 
   const isSupported = !!MISHNA_MASECHTA_EN[masechta];
@@ -282,39 +285,20 @@ export function MishnaLearningTab() {
     <div className="space-y-4" dir="rtl">
       <Card className="gold-frame p-3 space-y-3">
         <div className="flex justify-start"><ProgressShortcut cardIds={cardIds} label={`${masechta}, פרק ${toGematria(perek)}, משנה ${toGematria(mishna)}`} /></div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <Select value={sederName} onValueChange={(v) => { setSederName(v); }}>
-            <SelectTrigger><SelectValue placeholder="סדר" /></SelectTrigger>
-            <SelectContent>
-              {MISHNAYOT_DATA.map((s) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={masechta} onValueChange={(v) => { setMasechta(v); setPerek(1); setMishna(1); }}>
-            <SelectTrigger><SelectValue placeholder="מסכת" /></SelectTrigger>
-            <SelectContent>
-              {masechtot.map((m) => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={String(perek)} onValueChange={(v) => { setPerek(Number(v)); setMishna(1); }}>
-            <SelectTrigger><SelectValue placeholder="פרק" /></SelectTrigger>
-            <SelectContent className="max-h-72">
-              {chapters.map((_c, i) => (
-                <SelectItem key={i + 1} value={String(i + 1)}>פרק {toGematria(i + 1)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={String(mishna)} onValueChange={(v) => setMishna(Number(v))}>
-            <SelectTrigger><SelectValue placeholder="משנה" /></SelectTrigger>
-            <SelectContent className="max-h-72">
-              {Array.from({ length: mishnayotInPerek }, (_, i) => i + 1).map((m) => (
-                <SelectItem key={m} value={String(m)}>משנה {toGematria(m)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <LearningStepNavigator confirmed={selectionConfirmed} onConfirmedChange={setSelectionConfirmed} steps={[
+            { title: "בחר סדר", backLabel: "סדרים", options: MISHNAYOT_DATA.map(s => ({ value: s.name, label: s.name })), onSelect: setSederName },
+            { title: "בחר מסכת", backLabel: "מסכתות", options: masechtot.map(m => ({ value: m.name, label: m.name })), onSelect: v => { setMasechta(v); setPerek(1); setMishna(1); } },
+            { title: "בחר פרק", backLabel: "פרקים", options: chapters.map((_, i) => ({ value: String(i + 1), label: "פרק " + toGematria(i + 1) })), onSelect: v => { setPerek(Number(v)); setMishna(1); } },
+            { title: "בחר משנה", backLabel: "משניות", options: Array.from({ length: mishnayotInPerek }, (_, i) => ({ value: String(i + 1), label: "משנה " + toGematria(i + 1) })), onSelect: v => setMishna(Number(v)) },
+          ]} />
 
           <Select value={layoutMode} onValueChange={(v) => setLayoutMode(v as LayoutMode)}>
-            <SelectTrigger><SelectValue placeholder="פריסה" /></SelectTrigger>
+            <SelectTrigger aria-label="פריסת שאלות וטקסט" title="פריסת שאלות וטקסט" className="mx-auto h-11 w-16 shrink-0 rounded-full border-gold/50 bg-gold/5 text-gold shadow-sm hover:bg-gold/10">
+              <PanelsTopLeft className="h-5 w-5 shrink-0" aria-hidden="true" />
+            </SelectTrigger>
             <SelectContent>
+              <SelectItem value="stacked">שאלות ואחריהן הטקסט</SelectItem>
               <SelectItem value="split">טקסט + שאלות</SelectItem>
               <SelectItem value="text-only">טקסט בלבד</SelectItem>
               <SelectItem value="cards-only">שאלות בלבד</SelectItem>
@@ -351,12 +335,12 @@ export function MishnaLearningTab() {
         </div>
       </Card>
 
-      <div style={{ height: "calc(100vh - 320px)", minHeight: 500 }}>
+      <div hidden={!selectionConfirmed} style={layoutMode === "stacked" ? undefined : { height: "calc(100vh - 320px)", minHeight: 500 }}>
         {layoutMode === "split" && (
           <>
             <div className="grid grid-cols-1 gap-4 lg:hidden h-full">
-              {renderTextPanel()}
               {cardsContent}
+              {renderTextPanel()}
             </div>
 
             <div
@@ -399,6 +383,11 @@ export function MishnaLearningTab() {
             </div>
           </>
         )}
+
+        {layoutMode === "stacked" && <div className="flex flex-col gap-4 min-w-0" data-testid="questions-before-text">
+          <section aria-label="שאלות">{cardsContent}</section>
+          <section aria-label="טקסט הלימוד">{renderTextPanel()}</section>
+        </div>}
 
         {layoutMode === "text-only" && (
           <div className="grid grid-cols-1 h-full">
