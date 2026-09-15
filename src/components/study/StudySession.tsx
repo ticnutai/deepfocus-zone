@@ -429,6 +429,9 @@ export function StudySession({
 
   const comboPrefForQueue = includeAllQuestionTypes ? 'both' : resolveQuestionMode(state.uiPrefs?.studyComboPref,
     typeof window !== 'undefined' ? localStorage.getItem(COMBO_PREF_KEY) : null);
+  // Callers may allocate the same whitelist on every refresh. Its identity and
+  // incoming order must not reshuffle a running session or reset its answer.
+  const cardIdsKey = JSON.stringify(cardIds ? [...new Set(cardIds)].sort() : null);
   const baseQueue = useMemo(() => {
     // When cardIds is explicitly provided, use them directly (supports card_decks-linked cards).
     // When deckId is null (category-owned cards), use all cards.
@@ -459,7 +462,7 @@ export function StudySession({
     if (mode === "srs") return buildStudyQueue(cards);
     return [...cards].sort(() => Math.random() - 0.5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deckId, mode, cardIds, comboPrefForQueue]);
+  }, [deckId, mode, cardIdsKey, comboPrefForQueue]);
   const [retryCardIds, setRetryCardIds] = useState<string[] | null>(null);
   const [guidedMistakeReview, setGuidedMistakeReview] = useState(false);
   const queue = useMemo(() => {
@@ -1146,14 +1149,19 @@ export function StudySession({
     });
   }, [addPracticeResult, attemptAnswers, deckId, elapsed, idx, queue.length, results, sourceExamName, state.decks]);
 
-  // Instant-answer mode: auto-submit 1 second after reveal
+  // Use the latest committed handler without restarting the answer deadline
+  // whenever store callbacks/context objects acquire a new identity.
+  const submitRef = useRef(submit);
+  useEffect(() => { submitRef.current = submit; }, [submit]);
+  // Cancel only when the pending answer or actual question changes/unmounts.
   useEffect(() => {
     if (!instantPendingSubmit) return;
     const t = setTimeout(() => {
-      submit(instantPendingSubmit.correct, instantPendingSubmit.quality);
+      setInstantPendingSubmit(null);
+      submitRef.current(instantPendingSubmit.correct, instantPendingSubmit.quality);
     }, 1000);
     return () => clearTimeout(t);
-  }, [instantPendingSubmit, submit]);
+  }, [instantPendingSubmit, card?.id]);
 
   // === Keyboard shortcuts ===
   // Space / Enter — reveal answer (flashcard) or check answer (multiple)
@@ -1476,49 +1484,18 @@ export function StudySession({
     const reviewFailed = () => restartSession([...results.failed], true);
     return (
       <Card
-        className="gold-frame p-8 text-center space-y-5 animate-fade-in"
+        data-testid="study-results"
+        className={cn("gold-frame min-w-0 max-w-full p-8 text-center font-sans tabular-nums space-y-5 animate-fade-in [&_.font-display]:font-sans [&>div]:min-w-0", isMobile && "fixed inset-0 z-50 w-full rounded-none overflow-y-auto overflow-x-hidden p-4")}
         dir="rtl"
       >
         <div
-          className="w-24 h-24 rounded-full border-4 border-yellow-400 flex items-center justify-center shadow-xl mx-auto"
-          style={{ background: "hsl(220, 60%, 14%)" }}
+          className="w-20 h-20 shrink-0 rounded-full border-2 border-gold bg-gradient-navy text-gold flex items-center justify-center shadow-lg mx-auto"
         >
-          {/* כתר תורה — ספר פתוח עם כתר */}
-          <svg
-            viewBox="0 0 40 40"
-            fill="none"
-            stroke="#F5C518"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-12 w-12"
-          >
-            {/* כתר */}
-            <path
-              d="M13 14 L15 9 L18 13 L20 8 L22 13 L25 9 L27 14"
-              fill="#F5C518"
-              fillOpacity="0.25"
-            />
-            {/* ספר פתוח */}
-            <path
-              d="M20 16 C20 16 13 14 7 16 L7 31 C13 29 20 31 20 31 C20 31 27 29 33 31 L33 16 C27 14 20 16 20 16Z"
-              fill="#F5C518"
-              fillOpacity="0.15"
-            />
-            <line x1="20" y1="16" x2="20" y2="31" />
-            {/* שורות בעמוד השמאלי */}
-            <line x1="10" y1="20" x2="18" y2="19.5" strokeWidth="1.2" />
-            <line x1="10" y1="23" x2="18" y2="22.5" strokeWidth="1.2" />
-            <line x1="10" y1="26" x2="18" y2="25.5" strokeWidth="1.2" />
-            {/* שורות בעמוד הימני */}
-            <line x1="22" y1="19.5" x2="30" y2="20" strokeWidth="1.2" />
-            <line x1="22" y1="22.5" x2="30" y2="23" strokeWidth="1.2" />
-            <line x1="22" y1="25.5" x2="30" y2="26" strokeWidth="1.2" />
-          </svg>
+          <Trophy className="h-10 w-10" strokeWidth={1.5} aria-hidden="true" />
         </div>
         {/* כותרת */}
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-semibold">
+          <p className="text-sm text-muted-foreground font-semibold">
             תוצאות החזרה
           </p>
           <h3 className="font-display text-3xl font-bold tracking-tight">
@@ -1528,11 +1505,11 @@ export function StudySession({
 
         {/* ציון — עיצוב יוקרתי */}
         <div className="relative flex flex-col items-center gap-1 py-2">
-          <div className="flex items-center gap-px">
+          <div className="flex items-center gap-px text-gold" dir="ltr">
             <div
               className={cn(
                 "font-display font-bold leading-none tracking-tight",
-                medal.color,
+                "text-gold",
               )}
               style={{ fontSize: "5.5rem" }}
             >
@@ -1541,7 +1518,7 @@ export function StudySession({
             <span
               className={cn(
                 "font-display font-bold self-start mt-3",
-                medal.color,
+                "text-gold",
               )}
               style={{ fontSize: "2.2rem" }}
             >
@@ -1551,7 +1528,7 @@ export function StudySession({
           {/* קו קישוט זהב */}
           <div className="flex items-center gap-3 w-48">
             <div className="flex-1 h-px bg-gradient-to-r from-transparent to-yellow-500/60" />
-            <span className="text-yellow-500 text-xs">✦</span>
+            <span className="h-1.5 w-1.5 rotate-45 bg-gold" aria-hidden="true" />
             <div className="flex-1 h-px bg-gradient-to-l from-transparent to-yellow-500/60" />
           </div>
           <p
@@ -1576,7 +1553,7 @@ export function StudySession({
         </p>
 
         {/* פעולות המשך מוצגות מיד אחרי הציון, ללא צורך בגלילה */}
-        <div className="flex flex-wrap gap-2 justify-center">
+        <div className="flex flex-wrap gap-2 justify-center max-md:grid max-md:grid-cols-1 max-md:[&_button]:w-full max-md:[&_button]:min-w-0 max-md:[&_button]:whitespace-normal max-md:[&_button]:h-auto max-md:[&_button]:min-h-10 max-md:[&_button]:py-2">
           {failedCards.length > 0 && (
             <Button onClick={reviewFailed} className="border-2 border-gold bg-gold/20 text-navy hover:bg-gold/30 rounded-xl">
               <Eye className="h-4 w-4" /> חזרה מודרכת על השגיאות
@@ -1626,11 +1603,11 @@ export function StudySession({
         {/* History comparison */}
         {prev && (
           <div className="max-w-md mx-auto rounded-xl border border-gold/30 bg-secondary/40 p-3 text-sm space-y-2 text-right">
-            <div className="font-semibold text-foreground flex items-center justify-end gap-1">
+            <div className="font-semibold text-foreground flex flex-wrap items-center gap-1">
               <TrendingUp className="h-4 w-4 text-gold" /> השוואה לחזרה הקודמת (
               {prev.date})
             </div>
-            <div className="flex justify-between text-xs gap-4">
+            <div className="flex flex-wrap justify-between text-xs gap-2">
               <span className="flex items-center gap-1">
                 {pctDiff !== null && pctDiff > 0 && (
                   <TrendingUp className="h-3.5 w-3.5 text-green-600" />
@@ -1662,13 +1639,14 @@ export function StudySession({
               </span>
             </div>
             {timeDiff !== null && (
-              <div className="text-xs text-muted-foreground flex justify-between">
+              <div className="text-xs text-muted-foreground flex flex-wrap justify-between gap-2">
                 <span
-                  className={timeDiff < 0 ? "text-green-600" : "text-amber-600"}
+                  className="inline-flex items-center gap-1 text-foreground"
                 >
+                  <Clock className="h-3.5 w-3.5 shrink-0 text-gold" />
                   {timeDiff < 0
-                    ? `⚡ ${Math.round(Math.abs(timeDiff) / 1000)}ש׳ מהר יותר`
-                    : `🐢 ${Math.round(timeDiff / 1000)}ש׳ איטי יותר`}
+                    ? `${Math.round(Math.abs(timeDiff) / 1000)}ש׳ מהר יותר`
+                    : `${Math.round(timeDiff / 1000)}ש׳ איטי יותר`}
                 </span>
                 <span>זמן קודם: {Math.round(prev.totalMs / 1000)}ש׳</span>
               </div>
@@ -1733,7 +1711,7 @@ export function StudySession({
                 return (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-gold/20 bg-card px-2.5 py-2 text-xs"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/20 bg-card px-2.5 py-2 text-xs"
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-navy">{entry.pct}%</span>
@@ -1887,17 +1865,19 @@ export function StudySession({
     >
       {/* ── Mobile compact toolbar ── */}
       {isMobile && (
-        <div data-testid="mobile-study-toolbar" aria-label="כלי תרגול — גלילה אופקית" className="shrink-0 flex flex-nowrap items-center gap-2 pt-1 pb-2 w-full min-w-0 overflow-x-auto touch-pan-x [&>*]:shrink-0 [&_button]:shrink-0 [&_button]:whitespace-nowrap">
+        <div data-testid="mobile-study-toolbar" aria-label="כלי תרגול — גלילה אופקית" className="shrink-0 flex flex-nowrap items-center gap-2 pt-1 pb-2 w-full min-w-0 overflow-x-auto touch-pan-x [&>*]:shrink-0 [&_button]:shrink-0 [&_button]:whitespace-nowrap [&_button]:!w-[40px] [&_button]:!h-[40px] [&_button]:!min-w-[40px] [&_button]:!min-h-[40px]">
           <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-muted-foreground"
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 min-w-10 rounded-xl border-gold/50 hover:bg-gold/10"
+            aria-label="יציאה מהתרגול"
+            title="יציאה מהתרגול"
             onClick={onExit}
           >
-            <X className="h-4 w-4 ml-1" /> יציאה
+            <X className="h-5 w-5 text-gold" />
           </Button>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">
+          <div className="flex flex-1 items-center gap-1.5">
+            <span data-testid="study-question-counter" aria-label="מספר השאלה מתוך התרגול" className="flex h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-xl border border-gold/50 bg-background px-1 text-xs font-semibold text-muted-foreground" dir="ltr">
               {idx + 1}/{queue.length}
             </span>
             {timeLimitSec ? (
@@ -1907,7 +1887,7 @@ export function StudySession({
                 return (
                   <span
                     className={cn(
-                      "text-xs font-bold border rounded px-1.5 py-0.5 flex items-center gap-0.5",
+                      "h-[40px] min-w-[52px] shrink-0 text-xs font-bold border rounded-xl px-1.5 flex items-center justify-center gap-0.5 bg-background",
                       danger
                         ? "border-destructive/60 text-destructive animate-pulse"
                         : "border-gold/50 text-gold",
@@ -1920,7 +1900,7 @@ export function StudySession({
                 );
               })()
             ) : (
-              <span className="text-xs text-muted-foreground border border-gold/30 rounded px-1.5 py-0.5 flex items-center gap-0.5">
+              <span data-testid="study-session-time" aria-label="זמן התרגול" className="h-[40px] min-w-[52px] shrink-0 text-xs text-muted-foreground border border-gold/50 rounded-xl px-1.5 flex items-center justify-center gap-0.5 bg-background">
                 <Timer className="h-3 w-3 text-gold" />
                 {Math.floor(elapsed / 60)}:
                 {String(elapsed % 60).padStart(2, "0")}
@@ -1929,32 +1909,32 @@ export function StudySession({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              className="h-10 w-10 min-w-10 p-0 rounded-xl border-gold/50 hover:bg-gold/10"
               title="הוספה מהירה לערכה אחרונה"
               onClick={quickAddToLastDeck}
               disabled={!card}
             >
-              <BookmarkPlus className="h-3.5 w-3.5 text-gold" />
+              <BookmarkPlus className="h-5 w-5 text-gold" />
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              className="h-10 w-10 min-w-10 p-0 rounded-xl border-gold/50 hover:bg-gold/10"
               title="הוסף את השאלה לערכות"
               onClick={() => setDeckDialogOpen(true)}
               disabled={!card}
             >
-              <Layers className="h-3.5 w-3.5 text-gold" />
+              <Layers className="h-5 w-5 text-gold" />
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 px-2 border-gold/50 hover:bg-gold/10"
+              className="h-10 w-10 min-w-10 p-0 rounded-xl border-gold/50 hover:bg-gold/10"
               title="עריכת שאלה ותשובה"
               onClick={() => setEditorOpen(true)}
               disabled={!card}
             >
-              <Edit2 className="h-3.5 w-3.5 text-gold" />
+              <Edit2 className="h-5 w-5 text-gold" />
             </Button>
             <DropdownMenu
               open={mobileSettingsDropdownOpen}
@@ -1964,11 +1944,11 @@ export function StudySession({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2 border-gold/50 hover:bg-gold/10 gap-1"
+                  className="ms-auto h-10 w-10 min-w-10 p-0 rounded-xl border-gold/50 hover:bg-gold/10"
+                  aria-label="הגדרות תרגול"
+                  title="הגדרות תרגול"
                 >
-                  <Settings2 className="h-3.5 w-3.5 text-gold" />
-                  <span className="text-xs">הגדרות</span>
-                  <ChevronDown className="h-3 w-3" />
+                  <Settings2 className="h-5 w-5 text-gold" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -2593,10 +2573,11 @@ export function StudySession({
             <GripVertical className="h-3.5 w-3.5 text-gold" /> גרור לסיווג
           </span>
         )}
-        {/* Top-right corner: card type badge */}
+        {/* Type on the left, RTL breadcrumbs on the right. */}
         <Badge
           variant="outline"
-          className={cn("absolute top-3 right-3 border-gold text-xs", hasDarkQuestionSurface ? "text-white" : "text-navy")}
+          data-testid="study-question-type"
+          className={cn("absolute top-3 left-3 border-gold text-xs max-md:text-[10px] max-md:px-2 max-md:py-0 max-md:leading-4", hasDarkQuestionSurface ? "text-white" : "text-navy")}
           style={
             quizTheme === "custom"
               ? {
@@ -2614,10 +2595,11 @@ export function StudySession({
                 ? "נכון/לא נכון"
                 : "משולבת"}
         </Badge>
-        {/* Top-left corner: category breadcrumb */}
+        {/* Top-right corner: category breadcrumb */}
         {categoryBreadcrumb && (
           <span
-            className={cn("absolute top-3 left-3 max-w-[55%] truncate text-xs", hasDarkQuestionSurface ? "text-white/75" : "text-muted-foreground")}
+            data-testid="study-question-breadcrumb"
+            className={cn("absolute top-3 right-3 max-w-[55%] truncate text-right text-xs", hasDarkQuestionSurface ? "text-white/75" : "text-muted-foreground")}
             dir="rtl"
             style={
               quizTheme === "custom"
@@ -3894,20 +3876,6 @@ export function StudySession({
                             )}
                           >
                             {correct ? "נכון! המשך" : "לא נכון - המשך"}
-                          </Button>
-                        )}
-                        {hasFlash && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setRevealed(false);
-                              setSelected([]);
-                              setComboMode("flash");
-                            }}
-                            className="w-full text-xs"
-                          >
-                            ראה גם את התשובה המלאה ↩
                           </Button>
                         )}
                       </>

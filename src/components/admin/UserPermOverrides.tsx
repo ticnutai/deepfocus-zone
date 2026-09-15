@@ -58,8 +58,10 @@ export function UserPermOverrides() {
     supabase.from("user_roles").select("role_id,app_roles(access_kind)").eq("user_id", selectedUser)
       .then(async ({ data: ur }) => {
         const baseline = cachedAccessPolicy().registered?.id;
-        const roleIds = [...new Set([...(baseline ? [baseline] : []), ...(ur ?? [])
-          .filter((row) => !row.app_roles?.access_kind).map((row) => row.role_id)])];
+        const customIds = (ur ?? []).filter((row) => row.app_roles && !row.app_roles.access_kind).map((row) => row.role_id);
+        const {data:profile,error} = await supabase.from('profiles').select('role_baseline_enabled').eq('id',selectedUser).maybeSingle();
+        if (error || cancelled) return;
+        const roleIds = [...new Set([...(profile?.role_baseline_enabled !== false && baseline ? [baseline] : []), ...customIds])];
         if (!roleIds.length || cancelled) return;
         const { data: rp } = await supabase.from("role_permissions")
           .select("module, action, allowed")

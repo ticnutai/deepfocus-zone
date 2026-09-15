@@ -129,6 +129,38 @@ describe('canonical identity roles', () => {
     expect(result.current.can('cards','view')).toBe(true);
     expect(result.current.can('cards','create')).toBe(false);
   });
+  it('replaces registered grants with the selected custom role and restores the default when removed', async () => {
+    mock.auth = { user:{id:'custom-user'},isGuest:false,localIdentity:'anonymous' };
+    let assigned = true;
+    const queried: string[][] = [];
+    mock.from.mockImplementation((table:string) => {
+      if (table === 'user_roles') return response(assigned ? [
+        {app_roles:{id:'registered',name:'registered',access_kind:'registered'}},
+        {app_roles:{id:'ofli',name:'אופלי',access_kind:null}},
+      ] : []);
+      if (table === 'profiles') return response({role_baseline_enabled: !assigned});
+      if (table === 'role_permissions') {
+        const chain = response([]);
+        chain.in = (_key:string, ids:string[]) => {
+          queried.push(ids);
+          return response([{module:'cards',action:'view',allowed:true},
+            {module:'cards',action:'create',allowed:ids.includes('registered')}]);
+        };
+        return chain;
+      }
+      return response([]);
+    });
+    const {result} = renderHook(usePermissions,{wrapper});
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(queried[0]).toEqual(['ofli']);
+    expect(result.current.roles.map(r=>r.id)).toEqual(['ofli']);
+    expect(result.current.can('cards','view')).toBe(true);
+    expect(result.current.can('cards','create')).toBe(false);
+    assigned=false;
+    await act(async()=>{await result.current.reload();});
+    expect(result.current.roles.map(r=>r.id)).toEqual(['registered']);
+    expect(result.current.can('cards','create')).toBe(true);
+  });
   it('refreshes only the configured role without copying changes to other roles', async () => {
     const { result, rerender } = renderHook(usePermissions, { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));

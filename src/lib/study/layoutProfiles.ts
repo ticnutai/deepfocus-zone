@@ -15,6 +15,8 @@ export interface ContentAccessProfile {
   includeSiteLibrary: boolean;
   approvedOnly: boolean;
   sourceUserIds: string[];
+  /** Independent source grants, added to contributor/library grants; absent selects none. */
+  sourceTags?: string[] | null;
 }
 
 export const DEFAULT_CONTENT_ACCESS: ContentAccessProfile = {
@@ -35,6 +37,7 @@ export function normalizeContentAccessProfile(value: unknown): ContentAccessProf
     sourceUserIds: Array.from(new Set(Array.isArray(content.sourceUserIds)
       ? content.sourceUserIds.filter((id): id is string => typeof id === "string" && !!id)
       : [])),
+    ...(Array.isArray(content.sourceTags) ? { sourceTags: [...new Set(content.sourceTags.filter((id): id is string => typeof id === "string" && !!id))] } : {}),
   };
 }
 

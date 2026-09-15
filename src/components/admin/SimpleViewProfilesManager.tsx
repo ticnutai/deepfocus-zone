@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, Check, Circle, Copy, Eye, LayoutTemplate, Plus, Save, ShieldCheck, Trash2, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { QuestionSourcePicker } from './QuestionSourcePicker';
+import { loadAdminSourceCatalog } from '@/lib/study/adminSourceCatalog';
+import { QuestionCountBadge } from './QuestionCountBadge';
+import { publicUserIdentity } from '@/lib/admin/userIdentity';
 import type { Json } from "@/integrations/supabase/types";
 import {
   buildDisplaySecurityRows,
@@ -176,6 +180,7 @@ function mergeProfiles(
       name: layout?.name ?? block?.name ?? "ללא שם",
       actionPermissions,
       contentAccess: roleContent ? {
+        sourceTags: storedContent.sourceTags,
         includeOwn: roleContent.include_own,
         includeSiteLibrary: roleContent.include_site_library,
         approvedOnly: roleContent.approved_only,
@@ -220,6 +225,8 @@ export function SimpleViewProfilesManager({
   const [assignedRoleIds, setAssignedRoleIds] = useState<string[]>([]);
   const [permissionRows, setPermissionRows] = useState<Array<{role_id:string;module:string;action:string;allowed:boolean}>>([]);
   const [contentSources, setContentSources] = useState<ContentSourceOption[]>([]);
+  const [questionSourceIds, setQuestionSourceIds] = useState<string[]>([]);
+  const [questionSourceCounts,setQuestionSourceCounts] = useState<Record<string,number>>({});
   const [sourceSearch, setSourceSearch] = useState("");
   const [permissionDirty, setPermissionDirty] = useState(false);
   const [draftDirty, setDraftDirty] = useState(false);
@@ -236,6 +243,9 @@ export function SimpleViewProfilesManager({
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const catalog = {data:await loadAdminSourceCatalog()};
+      setQuestionSourceIds((catalog.data ?? []).map((row: {source_id:string})=>row.source_id));
+      setQuestionSourceCounts(Object.fromEntries((catalog.data ?? []).map((row:{source_id:string;question_count:number})=>[row.source_id,Number(row.question_count)])));
       const [layoutRows, blockRows, layoutLinks, blockLinks, permissionResult, contentResult, sourceResult] = await Promise.all([
         loadRoleLayoutProfiles({ force: true, scope }),
         loadFeatureBlocklistProfiles({ force: true, scope: scope as BlocklistScope }),
@@ -692,25 +702,31 @@ export function SimpleViewProfilesManager({
                 </label>
               </div>
 
+              <QuestionSourcePicker sources={questionSourceIds} counts={questionSourceCounts} selected={draft.contentAccess.sourceTags} onChange={sourceTags=>updateContentAccess({sourceTags})}/>
               <div className="mt-4 rounded-xl border border-gold/30 p-3">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h4 className="font-semibold">משתמשים כמקורות תוכן</h4>
-                    <p className="text-xs text-muted-foreground">בחר אחד או כמה מזהים. הייחוס נשמר גם כאשר שאלה מועברת לספרייה המרכזית.</p>
+                    <p className="text-xs text-muted-foreground">שאלות המשתמשים שתבחר יתווספו למקורות שנבחרו למעלה, גם כאשר מקור השאלה שונה. שאלה שמתאימה לשתי הבחירות תופיע פעם אחת בלבד.</p>
                   </div>
                   <Input value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder="חפש שם, דוא״ל או מזהה…" className="max-w-sm" />
+                </div>
+                <div className="mb-3 flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => updateContentAccess({sourceUserIds: [...new Set(contentSources.map(source => source.source_user_id))]})}>בחר את כל המשתמשים</Button>
+                  <Button type="button" variant="outline" onClick={() => updateContentAccess({sourceUserIds: []})}>נקה את כל המשתמשים</Button>
                 </div>
                 <div className="max-h-64 space-y-2 overflow-y-auto pl-1">
                   {visibleContentSources.map((source) => {
                     const checked = draft.contentAccess.sourceUserIds.includes(source.source_user_id);
+                    const identity = publicUserIdentity({display_name: source.label, email: source.email});
                     return (
                       <label key={source.source_user_id} className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-2.5 ${checked ? "border-gold/60 bg-gold/5" : "border-border"}`}>
                         <span className="flex min-w-0 items-center gap-2">
                           <Checkbox checked={checked} onCheckedChange={() => toggleContentSource(source.source_user_id)} />
                           <UserRound className="h-4 w-4 shrink-0 text-gold" />
-                          <span className="min-w-0"><strong className="block truncate text-sm">{source.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{source.email || source.source_user_id}</span></span>
+                          <span className="min-w-0"><strong className="block truncate text-sm">{identity.name}</strong><span className="block truncate text-[11px] text-muted-foreground">{identity.email}</span></span>
                         </span>
-                        <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs font-bold">{source.question_count < 0 ? "מקור זמין" : `${Number(source.question_count || 0).toLocaleString("he-IL")} שאלות`}</span>
+                        <QuestionCountBadge count={Number(source.question_count)}/>
                       </label>
                     );
                   })}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { isRolePreview } from "@/lib/auth/rolePreview";
 import { loadOwnedCardPages } from "./loadOwnedCards";
+import { matchesContentSelection } from "./questionSources";
 import { usePermissions } from "@/hooks/usePermissions";
 import { createStudyActionGuard } from "@/lib/auth/studyActionGuard";
 import type { Card, Category, CustomCategoryTemplate, Deck, GeneralStudyPlan, Goal, LearningSession, PlanReview, PlanReviewQuality, PracticeResult, QuizAttempt, QuizPlan, ReviewLog, ShasPlan, ShasReview, SidebarConfig, StudyState, TabConfig, UiPrefs, WidgetLayout } from "./types";
@@ -88,6 +89,7 @@ let sourceOverlayHydratedFor: string | null = null;
 let sourceOverlaySourceUserIds: string[] = [];
 let contentAccessIncludeOwn = true;
 let contentAccessIncludeSiteLibrary = false;
+let contentAccessSourceTags: string[] | null = null;
 const isSourceOwnedCard = (id: string) => sourceOwnedCardIds.has(id);
 const isSourceOwnedDeck = (id: string) => sourceOwnedDeckIds.has(id);
 const isSourceOwnedCategory = (id: string) => sourceOwnedCategoryIds.has(id);
@@ -101,7 +103,7 @@ const CONTENT_ACCESS_CACHE_KEY = (userId: string) => `content-access-policy:v1:$
 const persistSourceManifest = (userId: string) => {
   try {
     localStorage.setItem(SOURCE_MANIFEST_KEY(userId), JSON.stringify({
-      cards: Object.fromEntries(sourceOwnerByCardId),
+      cards: Object.fromEntries([...sourceOwnedCardIds].map(id=>[id,sourceOwnerByCardId.get(id) ?? ""])),
       decks: [...sourceOwnedDeckIds],
       categories: [...sourceOwnedCategoryIds],
       sourceUserIds: sourceOverlaySourceUserIds,
@@ -119,11 +121,12 @@ const restoreSourceManifest = (userId: string) => {
     Object.entries(parsed?.cards ?? {}).forEach(([id, owner]) => { sourceOwnedCardIds.add(id); sourceOwnerByCardId.set(id, owner); });
     (parsed?.decks ?? []).forEach((id) => sourceOwnedDeckIds.add(id));
     (parsed?.categories ?? []).forEach((id) => sourceOwnedCategoryIds.add(id));
-    sourceOverlaySourceUserIds = Array.isArray(parsed?.sourceUserIds) ? parsed!.sourceUserIds! : [];
-    const policy = JSON.parse(localStorage.getItem(CONTENT_ACCESS_CACHE_KEY(userId)) ?? "null") as { include_own?: boolean; include_site_library?: boolean } | null;
+    const policy = JSON.parse(localStorage.getItem(CONTENT_ACCESS_CACHE_KEY(userId)) ?? "null") as { include_own?: boolean; include_site_library?: boolean; source_tags?: string[]; source_user_ids?: string[] } | null;
+    sourceOverlaySourceUserIds = Array.isArray(policy?.source_user_ids) ? policy.source_user_ids : [];
+    contentAccessSourceTags = Array.isArray(policy?.source_tags) ? policy.source_tags : null;
     contentAccessIncludeOwn = policy?.include_own !== false;
     contentAccessIncludeSiteLibrary = policy?.include_site_library ?? userId === GUEST_ID;
-  } catch { contentAccessIncludeOwn = true; contentAccessIncludeSiteLibrary = userId === GUEST_ID; }
+  } catch { contentAccessIncludeOwn = true; contentAccessIncludeSiteLibrary = userId === GUEST_ID; contentAccessSourceTags = null; }
 };
 
 const purgeTrackedSourceItems = () => {
@@ -241,8 +244,11 @@ async function applyBundledLibraryToAuthenticatedState(state: StudyState): Promi
   };
   for (const category of seed.categories) sourceOwnedCategoryIds.add(category.id);
   for (const deck of seed.decks) sourceOwnedDeckIds.add(deck.id);
-  for (const card of seed.cards) sourceOwnedCardIds.add(card.id);
-  sourceOverlaySourceUserIds = library.sourceUserId ? [library.sourceUserId] : [];
+  for (const card of seed.cards) {
+    sourceOwnedCardIds.add(card.id);
+    if (!sourceOwnerByCardId.has(card.id)) sourceOwnerByCardId.set(card.id,library.sourceUserId ?? "");
+  }
+  // Loading bundled content must never grant its owner contributor access.
 
   const cardDeckMap = new Map<string, NonNullable<StudyState["cardDecks"]>[number]>();
   const linkKey = (link: { cardId: string; deckId: string }) => `${link.cardId}::${link.deckId}`;
@@ -2516,6 +2522,7 @@ async function hydrateGuestFromCloud(): Promise<void> {
     sourceOverlaySourceUserIds = sourceIds;
     const access = payload.content_access && typeof payload.content_access === "object" ? payload.content_access as { include_own?: boolean } : null;
     contentAccessIncludeOwn = access?.include_own !== false;
+    contentAccessSourceTags = Array.isArray((access as {source_tags?:string[]})?.source_tags) ? (access as {source_tags:string[]}).source_tags : null;
     contentAccessIncludeSiteLibrary = (access as { include_site_library?: boolean } | null)?.include_site_library === true;
     try { localStorage.setItem(CONTENT_ACCESS_CACHE_KEY(GUEST_ID), JSON.stringify(access ?? { include_own: true })); } catch { /* best effort */ }
     const cloudCards: Card[] = cardsRaw.map((row) => {
@@ -2631,6 +2638,7 @@ async function hydrateSourceOverlayForAuthUser(uid: string): Promise<void> {
     sourceOverlaySourceUserIds = sourceIds;
     const access = payload.content_access && typeof payload.content_access === "object" ? payload.content_access as { include_own?: boolean } : null;
     contentAccessIncludeOwn = access?.include_own !== false;
+    contentAccessSourceTags = Array.isArray((access as {source_tags?:string[]})?.source_tags) ? (access as {source_tags:string[]}).source_tags : null;
     contentAccessIncludeSiteLibrary = (access as { include_site_library?: boolean } | null)?.include_site_library === true;
     try { localStorage.setItem(CONTENT_ACCESS_CACHE_KEY(uid), JSON.stringify(access ?? { include_own: true })); } catch { /* best effort */ }
     const ownedCards = cardsRaw.map((row) => {
@@ -3202,6 +3210,26 @@ export function useStudy() {
         .then(() => saveStudyStateCache(uid, memState))
         .catch((error) => console.warn("[source-overlay] reconnect refresh failed", error));
     };
+    let checkingPolicy = false;
+    let policyRefreshStopped = false;
+    const refreshContentPolicy = async () => {
+      if (checkingPolicy || uid === GUEST_ID || currentUserId !== uid || !navigator.onLine) return;
+      checkingPolicy = true;
+      try {
+        const {data,error} = await rpcClient.rpc("get_effective_content_access");
+        if (error || !data || policyRefreshStopped || currentUserId !== uid) return;
+        const previous = JSON.parse(localStorage.getItem(CONTENT_ACCESS_CACHE_KEY(uid)) ?? "null");
+        if (JSON.stringify(previous) !== JSON.stringify(data)) {
+          sourceOverlayHydratedFor = null;
+          await hydrateSourceOverlayForAuthUser(uid);
+          if (!policyRefreshStopped && currentUserId === uid) await saveStudyStateCache(uid,memState);
+        }
+      } catch (error) { console.warn("[content-policy] refresh failed",error); }
+      finally { checkingPolicy = false; }
+    };
+    const policyRefresh = window.setInterval(() => { void refreshContentPolicy(); },60_000);
+    window.addEventListener("access-role-policy-changed",refreshContentPolicy);
+    window.addEventListener("online", refreshContentPolicy);
     window.addEventListener("online", onOnline);
     // Registration can complete AFTER the online event. Also retry durable jobs
     // after a failed request without requiring another network transition or click.
@@ -3212,6 +3240,10 @@ export function useStudy() {
     }, 15_000);
     return () => {
       window.clearInterval(retry);
+      policyRefreshStopped = true;
+      window.clearInterval(policyRefresh);
+      window.removeEventListener("access-role-policy-changed",refreshContentPolicy);
+      window.removeEventListener("online",refreshContentPolicy);
       window.removeEventListener("online", onOnline);
     };
   }, [user?.id]);
@@ -3242,12 +3274,16 @@ export function useStudy() {
     bg(supabase.from("categories").update({ name: UNCATEGORIZED_NAME }).eq("id", old.id), "categories.migrate.rename");
   }, [memState.categories, user?.id]);
 
-  const state = contentAccessIncludeOwn ? memState : {
+  const accessibleState = contentAccessIncludeOwn ? memState : {
     ...memState,
     cards: memState.cards.filter((item) => sourceOwnedCardIds.has(item.id)),
     decks: memState.decks.filter((item) => sourceOwnedDeckIds.has(item.id)),
     categories: memState.categories.filter((item) => sourceOwnedCategoryIds.has(item.id)),
     cardDecks: (memState.cardDecks ?? []).filter((item) => sourceOwnedCardIds.has(item.cardId) && sourceOwnedDeckIds.has(item.deckId)),
+  };
+  const state = contentAccessSourceTags === null ? accessibleState : {
+    ...accessibleState,
+    cards: accessibleState.cards.filter(card => !sourceOwnedCardIds.has(card.id) || matchesContentSelection(card.tags ?? [], sourceOwnerByCardId.get(card.id), contentAccessSourceTags, sourceOverlaySourceUserIds, contentAccessIncludeSiteLibrary)),
   };
   const getHydrationSnapshot = useCallback(() => ({
     isHydrated,

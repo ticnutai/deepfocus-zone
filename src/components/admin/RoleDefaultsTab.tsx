@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, LayoutDashboard, Monitor, Save, SlidersHorizontal, Smartphone } from "lucide-react";
 import { SimpleViewProfilesManager } from "@/components/admin/SimpleViewProfilesManager";
+import { Button } from '@/components/ui/button';
 import { LayoutPreviewTab } from "./LayoutPreviewTab";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,7 +32,7 @@ interface EditorState {
  * unified manager so layout and visibility can never receive two unrelated
  * assignments for the same role.
  */
-export function RoleDefaultsTab() {
+export function RoleDefaultsTab({onOpenSourceApprovals}:{onOpenSourceApprovals?:()=>void} = {}) {
   const { state } = useStudy();
   const [scope, setScope] = useState<LayoutScope>("desktop");
   const [mode, setMode] = useState<"edit" | "preview">("edit");
@@ -122,7 +123,7 @@ export function RoleDefaultsTab() {
 
       <div className="grid gap-2 rounded-xl border border-gold/30 bg-card p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div><strong>גישה</strong><span className="block text-xs text-muted-foreground">אילו עמודים ופעולות מותרים.</span></div>
-        <div><strong>מקורות שאלות</strong><span className="block text-xs text-muted-foreground">מאילו בעלי תוכן ניתן ללמוד.</span></div>
+        <div><strong>מקורות שאלות</strong><span className="block text-xs text-muted-foreground">מאילו בעלי תוכן ניתן ללמוד.</span>{onOpenSourceApprovals&&<Button type="button" variant="link" className="h-auto whitespace-normal p-0 text-right" onClick={onOpenSourceApprovals}>לניהול אישור שאלות ומקורות</Button>}</div>
         <div><strong>תצוגה</strong><span className="block text-xs text-muted-foreground">אילו רכיבים יופיעו בתוך העמודים.</span></div>
         <div><strong>פריסה</strong><span className="block text-xs text-muted-foreground">הסדר, הגדלים וניצול שטח המסך.</span></div>
       </div>

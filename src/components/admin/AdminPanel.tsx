@@ -10,6 +10,7 @@ import { UserPermOverrides } from "./UserPermOverrides";
 import { SyncMonitorTab } from "./SyncMonitorTab";
 import { RoleDefaultsTab } from "./RoleDefaultsTab";
 import { UserQuestionsTab } from "./UserQuestionsTab";
+import { SourceApprovalsTab } from "./SourceApprovalsTab";
 import { UserActivityTab } from "./UserActivityTab";
 import { GuestContentSettings } from "./GuestProfilesTab";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -19,6 +20,11 @@ export function AdminPanel() {
   const { isAdmin, loading } = usePermissions();
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [pendingNotes, setPendingNotes] = useState(0);
+  const [section, setSection] = useState('people');
+  const [contentTab, setContentTab] = useState('user-questions');
+  const [accessOpened,setAccessOpened] = useState(false);
+  const changeSection = (value:string) => {if(value==='access')setAccessOpened(true);setSection(value);};
+  const openSourceApprovals = () => { setContentTab('source-approvals'); setSection('content'); };
   useEffect(() => { document.title = "ניהול | מעקב למידה"; }, []);
 
   useEffect(() => {
@@ -75,7 +81,7 @@ export function AdminPanel() {
         </div>
       </header>
 
-      <Tabs defaultValue="people" className="w-full" dir="rtl">
+      <Tabs value={section} onValueChange={changeSection} className="w-full" dir="rtl">
         <Card className="gold-frame p-2">
           <TabsList aria-label="תחומי מרכז הניהול" className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent sm:grid-cols-3 xl:grid-cols-5">
             <TabsTrigger value="people" className="flex-row-reverse gap-2 rounded-xl px-3 py-3 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
@@ -121,7 +127,7 @@ export function AdminPanel() {
                 <TabsTrigger value="roles" className="gap-2 py-2.5"><Layers className="h-4 w-4" /> תפקידים ושיוכים</TabsTrigger>
               </TabsList>
             </Card>
-            <TabsContent value="profiles" forceMount className="data-[state=inactive]:hidden"><RoleDefaultsTab /></TabsContent>
+            <TabsContent value="profiles" forceMount className="data-[state=inactive]:hidden">{accessOpened&&<RoleDefaultsTab onOpenSourceApprovals={openSourceApprovals} />}</TabsContent>
             <TabsContent value="roles"><RolesTab /></TabsContent>
           </Tabs>
         </TabsContent>
@@ -129,15 +135,17 @@ export function AdminPanel() {
         <TabsContent value="operations" className="mt-4"><SyncMonitorTab /></TabsContent>
 
         <TabsContent value="content" className="mt-4">
-          <Tabs defaultValue="user-questions" dir="rtl" className="space-y-4">
+          <Tabs value={contentTab} onValueChange={setContentTab} dir="rtl" className="space-y-4">
             <Card className="gold-frame p-2">
-              <TabsList aria-label="תוכן והדרכה" className="grid h-auto w-full grid-cols-1 gap-1 bg-transparent sm:grid-cols-3">
+              <TabsList aria-label="תוכן והדרכה" className="grid h-auto w-full grid-cols-1 gap-1 bg-transparent sm:grid-cols-2 xl:grid-cols-4">
+                <TabsTrigger value="source-approvals" className="gap-2 py-2.5"><UserCheck className="h-4 w-4" /> אישור שאלות ומקורות</TabsTrigger>
                 <TabsTrigger value="user-questions" className="gap-2 py-2.5"><Library className="h-4 w-4" /> שאלות משתמשים {pendingNotes > 0 && `(${pendingNotes})`}</TabsTrigger>
                 <TabsTrigger value="shared-library" className="gap-2 py-2.5"><Layers className="h-4 w-4" /> ספרייה משותפת</TabsTrigger>
                 <TabsTrigger value="guides" className="gap-2 py-2.5"><CircleHelp className="h-4 w-4" /> מדריכי כניסה</TabsTrigger>
               </TabsList>
             </Card>
             <TabsContent value="user-questions"><UserQuestionsTab /></TabsContent>
+            <TabsContent value="source-approvals"><SourceApprovalsTab /></TabsContent>
             <TabsContent value="shared-library"><GuestContentSettings /></TabsContent>
             <TabsContent value="guides"><GuidesConfigTab /></TabsContent>
           </Tabs>

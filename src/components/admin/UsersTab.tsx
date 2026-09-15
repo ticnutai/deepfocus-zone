@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-interface Profile { id: string; display_name: string | null; username: string | null; email: string | null; created_at: string; status: string; }
+interface Profile { id: string; display_name: string | null; username: string | null; email: string | null; created_at: string; status: string; role_baseline_enabled?: boolean; }
 interface Role { id: string; name: string; description: string | null; access_kind?: string | null; }
 interface UR { user_id: string; role_id: string; }
 interface ActivitySummary { loginCount: number; activeSeconds: number; lastSeenAt: string | null; }
@@ -75,7 +75,7 @@ export function UsersTab() {
 
   const load = async () => {
     const [{ data: p }, { data: r }, { data: ur }, { data: activity }] = await Promise.all([
-      supabase.from("profiles").select("id, display_name, username, email, created_at, status").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, display_name, username, email, created_at, status, role_baseline_enabled").order("created_at", { ascending: false }),
       supabase.from("app_roles").select("id, name, description, access_kind").order("name"),
       supabase.from("user_roles").select("user_id, role_id"),
       supabase.from("user_activity_daily").select("user_id,login_count,active_seconds,last_seen_at"),
@@ -98,17 +98,21 @@ export function UsersTab() {
   const rolesOf = (uid: string) => {
     const assigned = userRoles.filter((u) => u.user_id === uid).map((u) => roles.find((r) => r.id === u.role_id)).filter(Boolean) as Role[];
     const baseline = roles.find((role) => role.access_kind === 'registered');
-    return baseline && !assigned.some((role) => role.name === 'admin' || role.id === baseline.id)
-      ? [baseline, ...assigned] : assigned;
+    const explicit = assigned.filter((role) => role.name === 'admin' || !role.access_kind);
+    return explicit.some(r=>r.name==='admin') || profiles.find(p=>p.id===uid)?.role_baseline_enabled === false
+      ? explicit : baseline ? [baseline,...explicit] : explicit;
   };
 
-  const assign = async (uid: string, roleId: string) => {
+  const assign = async (uid: string, roleId: string, replace = true) => {
     if (!roleId) return;
     setBusy(true);
-    const { error } = await supabase.from("user_roles").insert({ user_id: uid, role_id: roleId, assigned_by: me?.id ?? null });
+    // Replace atomically on the server; never remove a role before the replacement succeeds.
+    const { error } = replace
+      ? await supabase.rpc("admin_replace_user_role" as never, { p_user_id: uid, p_role_id: roleId } as never)
+      : await supabase.from('user_roles').upsert({user_id:uid,role_id:roleId,assigned_by:me?.id ?? null},{onConflict:'user_id,role_id'});
     setBusy(false);
     if (error) return toast.error(error.message);
-    toast.success("התפקיד נוסף");
+    toast.success(replace ? "התפקיד הוחלף" : "התפקיד נוסף להרשאות הקיימות");
     load();
   };
 
@@ -562,17 +566,23 @@ export function UsersTab() {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap justify-start">
-                  {availableRoles.length > 0 && (
-                    <Select onValueChange={(v) => assign(p.id, v)}>
-                      <SelectTrigger className="w-44 h-7 text-xs">
+                  {roles.length > 0 && (
+                    <Select key={`replace-${p.id}-${userRolesList.map(r=>r.id).join()}`} onValueChange={(v) => assign(p.id, v)}>
+                      <SelectTrigger disabled={busy} className="w-44 h-7 text-xs">
                         <UserPlus className="h-3 w-3 ml-1" />
-                        <SelectValue placeholder="הוסף תפקיד" />
+                        <SelectValue placeholder="החלף תפקיד" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableRoles.map((r) => (
+                        {roles.map((r) => (
                           <SelectItem key={r.id} value={r.id}>{r.name}{r.description ? ` – ${r.description}` : ""}</SelectItem>
                         ))}
                       </SelectContent>
+                    </Select>
+                  )}
+                  {availableRoles.some(r=>!r.access_kind) && (
+                    <Select key={`add-${p.id}-${userRolesList.map(r=>r.id).join()}`} onValueChange={v=>assign(p.id,v,false)}>
+                      <SelectTrigger disabled={busy} className="w-44 h-7 text-xs"><SelectValue placeholder="הוסף תפקיד" /></SelectTrigger>
+                      <SelectContent>{availableRoles.filter(r=>!r.access_kind).map(r=><SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
                     </Select>
                   )}
                   {userRolesList.map((r) => (

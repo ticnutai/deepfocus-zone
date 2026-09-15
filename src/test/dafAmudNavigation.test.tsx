@@ -78,7 +78,7 @@ describe("Daf learning amud navigation", () => {
       vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ height: 420 } as DOMRect);
       fireEvent.click(screen.getByRole("button", { name: /זרעים 1 מסכתות/ }));
       expect(panel.style.minHeight).toBe("420px");
-      fireEvent.click(screen.getByRole("button", { name: "ברכות", exact: true }));
+      fireEvent.click(screen.getByRole("button", { name: "ברכות" }));
       expect(screen.getByText("ברכות — בחירת דף")).toBeInTheDocument();
       fireEvent.click(screen.getByText("יג").closest("button")!);
       for (const side of [1, 2]) {

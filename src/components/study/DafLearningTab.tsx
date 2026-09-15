@@ -950,16 +950,18 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Button>
   ) : null;
 
+  const mobileActionClass = "max-md:flex-1 max-md:h-12 max-md:min-w-0 max-md:gap-2 max-md:rounded-xl max-md:px-2 max-md:text-sm max-md:font-bold max-md:shadow-elegant max-md:ring-2 max-md:ring-gold/40";
   const cardsPanel = (
     <Card className="gold-frame p-4 flex flex-col h-full" dir="rtl">
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-nowrap md:flex-wrap items-center gap-2 max-md:w-full">
+    <div data-testid="daf-question-tools" className="mb-3 flex flex-wrap items-center justify-between gap-3 max-md:grid max-md:w-full max-md:grid-cols-[minmax(0,1fr)_auto_auto_auto] max-md:gap-2">
+        <div data-testid="daf-primary-actions" className="flex flex-nowrap md:flex-wrap items-center gap-3 max-md:contents">
           <Button
             size="lg"
-            className="h-10 md:h-12 min-w-0 gap-1 md:gap-2 rounded-xl bg-gradient-navy px-2 md:px-6 text-xs md:text-base font-bold text-primary-foreground shadow-elegant ring-2 ring-gold/40 transition hover:brightness-110"
+            className="h-12 min-w-0 gap-2 rounded-xl bg-gradient-navy px-6 text-base font-bold text-primary-foreground shadow-elegant ring-2 ring-gold/40 transition hover:brightness-110 max-md:h-10 max-md:gap-1 max-md:px-2 max-md:text-xs"
+            aria-label="הוספת שאלות לעמוד זה"
             onClick={() => setAddQuestionOpen(true)}
           >
-            <Plus className="h-5 w-5" /> הוספת שאלות לעמוד זה
+            <Plus className="h-4 w-4 shrink-0" /><span className="md:hidden">הוסף שאלה</span><span className="hidden md:inline">הוספת שאלות לעמוד זה</span>
           </Button>
           {cards.length > 0 && <>
             <Button
@@ -972,17 +974,17 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               <Layers className="h-4 w-4 text-gold" />
             </Button>
             {!isMobile && practiceModeMenu}
-            <Button onClick={startPractice} size="sm" className="bg-gradient-navy text-primary-foreground">
-              <Play className="h-4 w-4 fill-current" /> תרגול
+            <Button onClick={startPractice} size="sm" className={cn("bg-gradient-navy text-primary-foreground transition hover:brightness-110 max-md:order-last max-md:col-span-4 max-md:w-full", mobileActionClass)}>
+              <span className="inline-flex items-center justify-center rounded-full border border-gold/60 p-1"><Play className="h-4 w-4 fill-current" /></span> תרגול
             </Button>
           </>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 max-md:contents">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 gap-1.5 border-gold/50 font-semibold"
+            className="h-8 gap-1.5 border-gold/50 font-semibold max-md:h-10 max-md:gap-1 max-md:px-2 max-md:text-xs"
             disabled={!selectionConfirmed}
             title="הצג את כל המבחנים, החזרות והמגמה של עמוד זה"
             aria-label="התקדמות לעמוד זה"
@@ -991,8 +993,8 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
             <LineChart className="h-4 w-4 text-gold" /> התקדמות
           </Button>
           <QuestionTypographyControl preferences={questionTypography} />
-          <h3 className="text-sm font-semibold flex items-center gap-1">
-            <ListChecks className="h-4 w-4 text-gold" /> שאלות זמינות לעמוד זה ({cards.length})
+          <h3 aria-label={`${cards.length} שאלות זמינות לעמוד זה`} className="text-sm font-semibold flex items-center gap-1 shrink-0">
+            <span className="hidden md:inline-flex items-center gap-1"><ListChecks className="h-4 w-4 text-gold" /> שאלות זמינות לעמוד זה</span><span data-testid="daf-question-count" dir="ltr">({cards.length})</span>
           </h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -42,7 +42,9 @@ async function fetchCloudPermissions(userId: string, policy: AccessRolePolicy, s
   if (!baseline) throw new Error('Registered access policy is missing');
   // Connectivity roles are automatic, never additive manually assigned privileges.
   const custom = assigned.filter((role) => !role.access_kind && role.id !== baseline.id);
-  const roles = [baseline, ...custom];
+  const profile = await supabase.from('profiles').select('role_baseline_enabled').eq('id',userId).abortSignal(signal).maybeSingle();
+  if (profile.error) throw profile.error;
+  const roles = profile.data?.role_baseline_enabled === false ? custom : [baseline, ...custom];
   const [permissions, overrides] = await Promise.all([
     supabase.from('role_permissions').select('module,action,allowed')
       .in('role_id', roles.map((role) => role.id)).abortSignal(signal),

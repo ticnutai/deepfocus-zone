@@ -37,7 +37,15 @@ try{
   await page.getByTestId('inline-amud-1').tap();
   const add=page.getByRole('button',{name:'הוספת שאלות לעמוד זה'});
   const practice=page.getByRole('button',{name:'תרגול',exact:true});
-  const a=await add.boundingBox(),p=await practice.boundingBox();assert.ok(Math.abs(a.y-p.y)<8,'same action row');
+  const a=await add.boundingBox(),p=await practice.boundingBox();
+  assert.ok(p.y>=a.y+a.height,'practice below tools');
+  const actions=await page.getByTestId('daf-question-tools').boundingBox();
+  assert.ok(p.width>=actions.width-2,'practice fills its own row');
+  const progress=await page.getByRole('button',{name:'התקדמות לעמוד זה'}).boundingBox();
+  const count=await page.getByTestId('daf-question-count').boundingBox();
+  assert.ok(Math.abs(a.y-progress.y)<8&&Math.abs(a.y+a.height/2-count.y-count.height/2)<8,'top row aligned');
+  assert.ok(count.x>=actions.x&&a.x+a.width<=actions.x+actions.width+1,'tools fit mobile width');
+  assert.equal(await page.getByTestId('daf-question-count').textContent(),'(1)');
   assert.equal(await page.getByRole('button',{name:/ערוך שאלה:/}).count(),0);
   assert.equal(await page.getByRole('button',{name:'בחר תצוגת שאלות וטקסט'}).isVisible(),false);
   const list=page.getByTestId('daf-question-list');const gemara=page.getByTestId('gemara');

@@ -572,6 +572,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          role_baseline_enabled: boolean
           avatar_url: string | null
           created_at: string
           display_name: string | null
@@ -582,6 +583,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          role_baseline_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
@@ -592,6 +594,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          role_baseline_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
