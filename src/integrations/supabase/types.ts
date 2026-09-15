@@ -32,6 +32,24 @@ export type Database = {
         }
         Relationships: []
       }
+      account_recovery_keys: {
+        Row: {
+          token_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          token_hash: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          token_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       achievements: {
         Row: {
           code: string
@@ -185,6 +203,30 @@ export type Database = {
           sort_order?: number
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      card_visibility: {
+        Row: {
+          card_id: string
+          id: string
+          scope: string
+          target_user_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          card_id: string
+          id?: string
+          scope: string
+          target_user_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          card_id?: string
+          id?: string
+          scope?: string
+          target_user_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -572,37 +614,82 @@ export type Database = {
       }
       profiles: {
         Row: {
-          role_baseline_enabled: boolean
           avatar_url: string | null
           created_at: string
           display_name: string | null
           email: string | null
           id: string
+          role_baseline_enabled: boolean
           status: string
           updated_at: string
           username: string | null
         }
         Insert: {
-          role_baseline_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
           email?: string | null
           id: string
+          role_baseline_enabled?: boolean
           status?: string
           updated_at?: string
           username?: string | null
         }
         Update: {
-          role_baseline_enabled?: boolean
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
           email?: string | null
           id?: string
+          role_baseline_enabled?: boolean
           status?: string
           updated_at?: string
           username?: string | null
+        }
+        Relationships: []
+      }
+      question_source_approval_rules: {
+        Row: {
+          enabled: boolean
+          source_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          source_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          source_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      question_source_counts: {
+        Row: {
+          approved_count: number
+          hidden_count: number
+          pending_count: number
+          question_count: number
+          source_id: string
+        }
+        Insert: {
+          approved_count?: number
+          hidden_count?: number
+          pending_count?: number
+          question_count?: number
+          source_id: string
+        }
+        Update: {
+          approved_count?: number
+          hidden_count?: number
+          pending_count?: number
+          question_count?: number
+          source_id?: string
         }
         Relationships: []
       }
@@ -663,6 +750,7 @@ export type Database = {
           include_own: boolean
           include_site_library: boolean
           role_id: string
+          source_tags: string[] | null
           source_user_ids: string[]
           updated_at: string
           updated_by: string | null
@@ -672,6 +760,7 @@ export type Database = {
           include_own?: boolean
           include_site_library?: boolean
           role_id: string
+          source_tags?: string[] | null
           source_user_ids?: string[]
           updated_at?: string
           updated_by?: string | null
@@ -681,6 +770,7 @@ export type Database = {
           include_own?: boolean
           include_site_library?: boolean
           role_id?: string
+          source_tags?: string[] | null
           source_user_ids?: string[]
           updated_at?: string
           updated_by?: string | null
@@ -1256,6 +1346,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      adjust_question_source_counts: {
+        Args: { p_delta: number; p_status: string; p_tags: Json }
+        Returns: undefined
+      }
+      admin_approve_question_source: {
+        Args: { p_source_id: string }
+        Returns: number
+      }
       admin_create_user:
         | {
             Args: {
@@ -1283,6 +1381,10 @@ export type Database = {
         Returns: undefined
       }
       admin_delete_user: { Args: { p_user_id: string }; Returns: undefined }
+      admin_replace_user_role: {
+        Args: { p_role_id: string; p_user_id: string }
+        Returns: undefined
+      }
       admin_save_access_profile: {
         Args: {
           p_block: Json
@@ -1307,6 +1409,10 @@ export type Database = {
         Args: { p_status: string; p_user_id: string }
         Returns: undefined
       }
+      admin_set_source_auto_approval: {
+        Args: { p_enabled: boolean; p_source_id: string }
+        Returns: undefined
+      }
       admin_update_user: {
         Args: {
           p_display_name?: string
@@ -1317,6 +1423,11 @@ export type Database = {
         Returns: undefined
       }
       backfill_card_provenance: { Args: { p_limit?: number }; Returns: number }
+      can_read_card: { Args: { p_card: string }; Returns: boolean }
+      effective_access_role_ids: {
+        Args: { p_user_id: string }
+        Returns: string[]
+      }
       email_for_username: { Args: { p_username: string }; Returns: string }
       exec_sql: { Args: { query: string }; Returns: Json }
       get_access_role_policy: { Args: never; Returns: Json }
@@ -1327,6 +1438,17 @@ export type Database = {
           label: string
           question_count: number
           source_user_id: string
+        }[]
+      }
+      get_admin_question_source_tags: {
+        Args: never
+        Returns: {
+          approved_count: number
+          auto_approve: boolean
+          hidden_count: number
+          pending_count: number
+          question_count: number
+          source_id: string
         }[]
       }
       get_admin_user_questions: {
@@ -1434,6 +1556,7 @@ export type Database = {
       }
       get_due_count_today: { Args: never; Returns: number }
       get_effective_content_access: { Args: never; Returns: Json }
+      get_effective_question_source_tags: { Args: never; Returns: string[] }
       get_guest_bootstrap_snapshot: { Args: never; Returns: Json }
       get_guest_bootstrap_snapshot_for: {
         Args: { p_source_user_id?: string }
@@ -1528,7 +1651,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      hidden_by_admin_card_ids: { Args: never; Returns: string[] }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      matches_shared_question_access: {
+        Args: {
+          creator: string
+          owner_id: string
+          policy: Json
+          status: string
+          tags: Json
+        }
+        Returns: boolean
+      }
       prune_preupdate_backups: { Args: { p_keep?: number }; Returns: number }
       publish_user_question: { Args: { p_card_id: string }; Returns: string }
       publish_user_questions: {
@@ -1538,6 +1672,7 @@ export type Database = {
           published_card_id: string
         }[]
       }
+      question_source_ids: { Args: { tags: Json }; Returns: string[] }
       record_desktop_install_event: {
         Args: {
           p_event_type: string
@@ -1556,7 +1691,34 @@ export type Database = {
         }
         Returns: undefined
       }
+      recover_username_account: {
+        Args: {
+          p_code: string
+          p_next_hash: string
+          p_password: string
+          p_username: string
+        }
+        Returns: boolean
+      }
+      register_username_account: {
+        Args: {
+          p_display_name: string
+          p_password: string
+          p_recovery_hash: string
+          p_username: string
+        }
+        Returns: string
+      }
       reorder_user_categories: { Args: { p_ids: string[] }; Returns: undefined }
+      set_card_visibility: {
+        Args: {
+          p_card: string
+          p_hidden: boolean
+          p_scope?: string
+          p_target?: string
+        }
+        Returns: undefined
+      }
       submit_offline_question: {
         Args: {
           p_card: Json
