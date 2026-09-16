@@ -296,7 +296,7 @@ export function useFeatureBlocklist(opts?: { scope?: BlocklistScope }): FeatureB
   return b;
 }
 
-export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: BlocklistScope }): FeatureBlocklist {
+export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: BlocklistScope }): FeatureBlocklist & { loading: boolean } {
   // Visibility is a role policy, not a viewport preference. Keep the desktop
   // policy canonical on every device; mobile layout sizes remain independent.
   const scope: BlocklistScope = "desktop";
@@ -322,5 +322,5 @@ export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: 
     };
   }, [scope, identity]);
 
-  return resolved?.identity === identity ? resolved.value : pending;
+  return resolved?.identity === identity ? { ...resolved.value, loading: false } : { ...pending, loading: true };
 }

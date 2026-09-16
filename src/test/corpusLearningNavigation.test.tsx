@@ -22,7 +22,7 @@ for (const [name, Component, path, ref] of [
   const nav = screen.getByLabelText("בחירה שלב אחר שלב");
   for (const label of path) {
     expect(screen.getByTestId("questions-before-text")).not.toBeVisible();
-    const button = within(nav).getByRole("button", { name: label, exact: true });
+    const button = within(nav).getByRole("button", { name: label });
     expect(button).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(button);
   }

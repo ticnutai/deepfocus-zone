@@ -1,10 +1,10 @@
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
-// Module-level cache — prevents duplicate fetch on StrictMode double-mount.
+// Last verified status, used only when the server cannot be reached.
 const profileStatusCache = new Map<string, string>();
 
 const LS_KEY = (uid: string) => `pashash:ps:${uid}`;
@@ -19,39 +19,43 @@ function writeCachedStatus(uid: string, status: string): void {
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading, isGuest, signOut } = useAuth();
-  const [status, setStatus] = useState<string | null>(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const fetchingFor = useRef<string | null>(null);
+  const [resolved, setResolved] = useState<{ owner: string; status: string } | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const userId = user?.id;
 
   useEffect(() => {
-    if (!user || isGuest) { setStatus("approved"); return; }
-    const cached = profileStatusCache.get(user.id) ?? readCachedStatus(user.id);
-    if (cached) {
-      // Serve stale immediately — no spinner.
-      profileStatusCache.set(user.id, cached);
-      setStatus(cached);
-    }
-    if (fetchingFor.current === user.id) return; // already in-flight
-    fetchingFor.current = user.id;
-    if (!cached) setStatusLoading(true);
-    Promise.resolve(supabase.from("profiles").select("status").eq("id", user.id).maybeSingle())
-      .then(({ data }) => {
+    const reconnect = () => { setResolved(null); setRefresh(value => value + 1); };
+    window.addEventListener('online', reconnect);
+    return () => window.removeEventListener('online', reconnect);
+  }, []);
+
+  useEffect(() => {
+    if (!userId || isGuest) return;
+    let cancelled = false;
+    const cached = profileStatusCache.get(userId) ?? readCachedStatus(userId);
+    const publish = (status: string) => { if (!cancelled) setResolved({ owner: userId, status }); };
+    if (!navigator.onLine) { publish(cached ?? "approved"); return; }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => { publish(cached ?? "approved"); controller.abort(); }, 8000);
+    Promise.resolve(supabase.from("profiles").select("status").eq("id", userId).abortSignal(controller.signal).maybeSingle())
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { publish(cached ?? "approved"); return; }
         const s = data?.status ?? "approved";
-        profileStatusCache.set(user.id, s);
-        writeCachedStatus(user.id, s);
-        setStatus(s);
-        setStatusLoading(false);
-        fetchingFor.current = null;
+        profileStatusCache.set(userId, s);
+        writeCachedStatus(userId, s);
+        publish(s);
       })
       .catch(() => {
         // A valid cached Supabase session must remain usable offline. Profile
         // status is refreshed when connectivity returns.
-        const fallback = cached ?? "approved";
-        setStatus(fallback);
-        setStatusLoading(false);
-        fetchingFor.current = null;
-      });
-  }, [user, isGuest]);
+        publish(cached ?? "approved");
+      }).finally(() => window.clearTimeout(timeout));
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
+  }, [userId, isGuest, refresh]);
+
+  const statusLoading = !!userId && !isGuest && resolved?.owner !== userId;
+  const status = !isGuest && resolved?.owner === userId ? resolved?.status : null;
 
   if (loading || statusLoading) {
     return (

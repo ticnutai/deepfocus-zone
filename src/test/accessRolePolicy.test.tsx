@@ -9,6 +9,7 @@ vi.mock('@/hooks/useAuth', () => ({ useAuth: () => mock.auth }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: mock.rpc, from: mock.from } }));
 import { ACCESS_KINDS, ACCESS_POLICY_EVENT, accessKindForIdentity, cachedAccessPolicy, normalizeAccessPolicy } from '@/lib/auth/accessRolePolicy';
 import { PermissionsProvider, usePermissions } from '@/hooks/usePermissions';
+import { rememberAdminVerification, setVerifiedOfflineAccount } from '@/lib/auth/offlineAdmin';
 
 const baseline = { 'cards:view': true, 'cards:create': true, 'decks:edit': false };
 const wrapper = ({ children }: { children: ReactNode }) => <PermissionsProvider>{children}</PermissionsProvider>;
@@ -34,6 +35,7 @@ const online = (value: boolean) => {
 beforeEach(() => {
   window.history.replaceState({}, '', '/');
   localStorage.clear();
+  sessionStorage.clear();
   online(true);
   mock.auth = { user: null, isGuest: true, localIdentity: 'anonymous' };
   mock.policy = Object.fromEntries(ACCESS_KINDS.map((kind) => [kind, { id: kind, name: kind, matrix: { ...baseline } }]));
@@ -46,6 +48,59 @@ afterEach(() => {
 });
 
 describe('canonical identity roles', () => {
+  it('never publishes a settled denial while a new identity is loading', async () => {
+    const frames: { loading: boolean; admin: boolean }[] = [];
+    const { rerender } = renderHook(() => {
+      const permissions = usePermissions();
+      frames.push({ loading: permissions.loading, admin: permissions.isAdmin });
+      return permissions;
+    }, { wrapper });
+    await waitFor(() => expect(frames.at(-1)?.loading).toBe(false));
+    let finish!: (value: unknown) => void;
+    const pending = new Promise(resolve => { finish = resolve; });
+    const chain = { select: () => chain, eq: () => chain, abortSignal: () => pending };
+    mock.from.mockReturnValue(chain);
+    frames.length = 0;
+    mock.auth = { user: { id: 'delayed-admin' }, isGuest: false, localIdentity: 'anonymous' };
+    rerender();
+    await waitFor(() => expect(mock.from).toHaveBeenCalled());
+    expect(frames.every(frame => frame.loading)).toBe(true);
+    await act(async () => finish({ data: [{ app_roles: { id: 'admin', name: 'admin', access_kind: 'admin' } }], error: null }));
+    expect(frames.at(-1)).toEqual({ loading: false, admin: true });
+    expect(frames.some(frame => !frame.loading && !frame.admin)).toBe(false);
+  });
+  it('restores an offline administrator only for the password-verified local account', async () => {
+    online(false);
+    rememberAdminVerification('admin-user', true);
+    localStorage.setItem('local-accounts:v1', JSON.stringify([{ username: 'admin', userId: 'admin-user', status: 'registered' }]));
+    setVerifiedOfflineAccount('admin-user');
+    mock.auth = { user: null, isGuest: true, localIdentity: 'account' };
+    const { result, rerender } = renderHook(usePermissions, { wrapper });
+    await waitFor(() => expect(result.current.isAdmin).toBe(true));
+    for (const module of ['decks', 'cards', 'goals', 'shas', 'analytics', 'users', 'roles', 'settings'] as const) {
+      for (const action of ['view', 'create', 'edit', 'delete', 'manage'] as const) expect(result.current.can(module, action)).toBe(true);
+    }
+    setVerifiedOfflineAccount(null);
+    rerender();
+    expect(result.current.isAdmin).toBe(false);
+  });
+  it('does not transfer local admin authority to a different active account', () => {
+    online(false);
+    rememberAdminVerification('admin-user', true);
+    setVerifiedOfflineAccount('admin-user');
+    localStorage.setItem('local-accounts:v1', JSON.stringify([{ username: 'other', userId: 'other-user', status: 'registered' }]));
+    mock.auth = { user: null, isGuest: true, localIdentity: 'account' };
+    const { result } = renderHook(usePermissions, { wrapper });
+    expect(result.current.isAdmin).toBe(false);
+  });
+  it('forgets offline administrator authority after the server removes the role', async () => {
+    mock.auth = { user: { id: 'admin-user' }, isGuest: false, localIdentity: 'anonymous' };
+    rememberAdminVerification('admin-user', true);
+    const { result } = renderHook(usePermissions, { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => online(false));
+    expect(result.current.isAdmin).toBe(false);
+  });
   it.each([
     [true, false, true, 'registered'], [true, false, false, 'registered_offline'],
     [false, false, true, 'anonymous_online'], [false, false, false, 'anonymous_offline'],
@@ -87,15 +142,15 @@ describe('canonical identity roles', () => {
     expect(result.current.can('users','manage')).toBe(false);
     expect(mock.from).not.toHaveBeenCalled();
   });
-  it('removes verified admin immediately on disconnect and on guest switch', async () => {
+  it('retains verified admin on disconnect but removes it immediately on guest switch', async () => {
     mock.auth = { user: { id:'admin-user' }, isGuest:false, localIdentity:'anonymous' };
     mock.from.mockReturnValue(response([{ app_roles:{ id:'admin',name:'admin',access_kind:'admin' } }]));
     const { result, rerender } = renderHook(usePermissions, { wrapper });
     await waitFor(() => expect(result.current.isAdmin).toBe(true));
     expect(result.current.can('users','delete')).toBe(true);
     act(() => online(false));
-    expect(result.current.isAdmin).toBe(false);
-    expect(result.current.accessKind).toBe('registered_offline');
+    expect(result.current.isAdmin).toBe(true);
+    expect(result.current.accessKind).toBe('admin');
     act(() => online(true));
     expect(result.current.isAdmin).toBe(false);
     await waitFor(() => expect(result.current.isAdmin).toBe(true));

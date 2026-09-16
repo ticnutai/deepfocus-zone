@@ -9,7 +9,7 @@ test("a practice pin opens the same location in question and exam builders", asy
 
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "כניסה למצב אופליין" }).click();
+  await page.getByRole("button", { name: "כניסה כאורח — ללא חשבון" }).click();
   const appShell = page.getByRole("navigation").first();
   await appShell.waitFor({ state: "visible", timeout: 15_000 });
   const dismissWelcome = page.getByRole("button", { name: /כבר קראתי/ });

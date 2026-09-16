@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { getVerifiedOfflineAccount, hasVerifiedOfflineAdmin, rememberAdminVerification } from '@/lib/auth/offlineAdmin';
+import { getActiveLocalAccount } from '@/lib/auth/localAccount';
 import {
   ACCESS_POLICY_EVENT, accessKindForIdentity, cachedAccessPolicy, loadAccessPolicy,
   type AccessKind, type AccessRolePolicy,
@@ -92,11 +94,14 @@ async function fetchPreviewRolePermissions(roleId: string, signal: AbortSignal):
   return { isAdmin: false, roles: [{ id: role.id, name: role.name }], matrix };
 }
 
-/** One permission authority. Cached cloud/admin identities are never published offline. */
+/** Offline admin authority is bound to the same authenticated account, never a guest preset. */
 export function PermissionsProvider({ children }: { children: ReactNode }) {
-  const { user, isGuest, localIdentity } = useAuth();
+  const { user, isGuest, localIdentity, loading: authLoading } = useAuth();
   const userId = !isGuest && !user?.is_anonymous ? user?.id ?? null : null;
-  const identity = `${userId ?? 'guest'}:${isGuest ? localIdentity : 'cloud'}`;
+  const verifiedLocalId = getVerifiedOfflineAccount();
+  const offlineUserId = isGuest && localIdentity === 'account' && getActiveLocalAccount()?.userId === verifiedLocalId
+    ? verifiedLocalId : null;
+  const identity = `${userId ?? offlineUserId ?? 'guest'}:${isGuest ? localIdentity : 'cloud'}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -108,7 +113,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<{ owner: string; viewer: PermSet; preview: PermSet | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const request = useRef<AbortController | null>(null);
-  const readyIdentity = useRef<string | null>(null);
+  const [readyIdentity, setReadyIdentity] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     request.current?.abort();
@@ -117,10 +122,11 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     const valid = () => !controller.signal.aborted && identityRef.current === identity && navigator.onLine;
     if (!navigator.onLine) {
       setSnapshot(null);
+      setReadyIdentity(identity);
       setLoading(false);
       return;
     }
-    if (readyIdentity.current !== identity) setLoading(true);
+    setLoading(true);
     const timeout = window.setTimeout(() => controller.abort(), 8000);
     try {
       const latest = await loadAccessPolicy(controller.signal);
@@ -128,6 +134,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setPolicy(latest);
       const viewer = userId ? await fetchCloudPermissions(userId, latest, controller.signal) : null;
       if (!valid()) return;
+      if (userId && viewer) rememberAdminVerification(userId, viewer.isAdmin);
       const preview = previewRoleId && viewer?.isAdmin
         ? await fetchPreviewRolePermissions(previewRoleId, controller.signal)
         : null;
@@ -143,7 +150,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     } finally {
       window.clearTimeout(timeout);
       if (identityRef.current === identity && request.current === controller) {
-        readyIdentity.current = identity;
+        setReadyIdentity(identity);
         setLoading(false);
       }
     }
@@ -157,6 +164,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       request.current?.abort();
       setOnline(false);
       setSnapshot(null);
+      setReadyIdentity(identity);
       setLoading(false);
     };
     const onPolicyChange = () => { void reload(); };
@@ -176,11 +184,13 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const connected = online && !networkFailed;
   const kind = accessKindForIdentity(!!userId, isGuest && localIdentity === 'account', connected);
   const role = policy[kind];
+  const offlineAdmin = (!connected || !!offlineUserId) && hasVerifiedOfflineAdmin(userId ?? offlineUserId);
   // Guard during render, not just effects: a former admin must not leak for one frame.
   const viewer: PermSet = useMemo(() => connected && userId && snapshot?.owner === identity
     ? snapshot.viewer
+    : offlineAdmin ? { isAdmin: true, matrix: {}, roles: [{ id: 'verified-offline-admin', name: 'admin' }] }
     : { isAdmin: false, matrix: role?.matrix ?? {}, roles: role ? [{ id: role.id, name: role.name }] : [] },
-  [connected, userId, snapshot, identity, role]);
+  [connected, userId, snapshot, identity, role, offlineAdmin]);
   // Preview requests fail closed until both the real administrator and the
   // selected role have been verified. This prevents even a one-frame admin UI
   // leak while the iframe is loading.
@@ -196,7 +206,9 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       viewerIsAdmin: viewer.isAdmin,
       previewRoleId: previewRoleId || undefined,
       accessKind: published.isAdmin ? 'admin' : kind,
-      loading,
+      // Identity changes must report pending during render, before effects run.
+      // Same-identity background refreshes may keep a verified snapshot visible.
+      loading: !!authLoading || readyIdentity !== identity || (loading && snapshot?.owner !== identity),
       can,
       reload,
     }}>

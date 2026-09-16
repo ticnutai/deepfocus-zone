@@ -249,9 +249,8 @@ export function AppShellSidebar() {
   const navigate = useNavigate();
   const { user, signOut, isGuest } = useAuth();
   const { isAdmin: permissionIsAdmin, roles, can } = usePermissions();
-  // Never expose administrator navigation to a local/offline identity, even
-  // while a previous cloud session is being cleared.
-  const isAdmin = permissionIsAdmin && !isGuest;
+  // The central provider distinguishes verified offline accounts from guests.
+  const isAdmin = permissionIsAdmin;
   const isMobile = useIsMobile();
   const { state } = useStudy();
   const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);

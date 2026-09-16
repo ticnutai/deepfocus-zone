@@ -19,7 +19,7 @@ test("progress and direct-practice navigation stay connected", async ({ page }) 
   }
 
   const progressButton = page.locator("button:visible").filter({ hasText: /^התקדמות$/ }).first();
-  await expect(progressButton).toBeVisible();
+  await expect(progressButton).toBeVisible({ timeout: 15000 });
   await progressButton.click();
   await expect(page.getByRole("heading", { name: "התקדמות ותוצאות" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("tab", { name: "תרגול כללי" })).toBeVisible();

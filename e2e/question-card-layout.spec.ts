@@ -9,7 +9,7 @@ test("desktop question card is compact and rounded", async ({ page }) => {
 
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "כניסה למצב אופליין" }).click();
+  await page.getByRole("button", { name: "כניסה כאורח — ללא חשבון" }).click();
 
   const dismissWelcome = page.getByRole("button", { name: /כבר קראתי/ });
   if (await dismissWelcome.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)) {
@@ -24,7 +24,7 @@ test("desktop question card is compact and rounded", async ({ page }) => {
   for (const label of ["מועד", "שבת", "ב", "עמוד א׳"]) {
     await page.getByText(label, { exact: true }).click();
   }
-  await expect(page.getByText("שאלות זמינות לעמוד זה (8)", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("daf-question-count")).toHaveText("(8)");
   await expect(page.getByText(/שאלות ברמת הדף — זמינות לתרגול בעמוד א׳ ובעמוד ב׳ עד לסיווג \(8\)/)).toBeVisible();
   const questionList = page.getByTestId("daf-question-list");
   const firstQuestion = questionList.locator(".group").first();

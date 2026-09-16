@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, Re
 import type { Session, User } from "@supabase/supabase-js";
 import { rememberGuestResumePath } from "@/lib/auth/guestResume";
 import { toast } from "sonner";
+import { setVerifiedOfflineAccount } from '@/lib/auth/offlineAdmin';
 import { clearPersistedSupabaseSession, supabase } from "@/integrations/supabase/client";
 import {
   getActiveGuestViewProfileId,
@@ -111,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    setVerifiedOfflineAccount(null);
     identityRevision.current += 1;
     initialSessionPromise = Promise.resolve(null);
     setSession(null);
@@ -136,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [guestMode]);
 
   const signInAsGuest = useCallback((profileId?: string | null, identity: 'anonymous' | 'account' = 'anonymous') => {
+    if (identity === 'anonymous') setVerifiedOfflineAccount(null);
     identityRevision.current += 1;
     localStorage.setItem(LOCAL_IDENTITY_KEY, identity);
     setLocalIdentity(identity);

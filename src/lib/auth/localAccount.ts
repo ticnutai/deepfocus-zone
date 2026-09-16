@@ -353,12 +353,15 @@ export async function createLocalAccount(input: {
  * matching account (so the caller can switch to it) or null.
  */
 export async function findLocalAccountByCredentials(usernameOrEmail: string, password: string): Promise<LocalAccount | null> {
+  const { setVerifiedOfflineAccount } = await import('./offlineAdmin');
+  setVerifiedOfflineAccount(null);
   const id = usernameOrEmail.trim().toLowerCase();
   for (const account of readAccounts()) {
     const matchesId = id === account.username
       || (!!account.email && id === account.email.toLowerCase())
       || id === syntheticEmailForUsername(account.username);
     if (matchesId && await passwordMatches(account, password)) {
+      setVerifiedOfflineAccount(account.status === 'registered' ? account.userId ?? null : null);
       reconnectCredential = { username: account.username, password };
       return account;
     }

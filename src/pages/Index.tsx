@@ -547,9 +547,8 @@ const Index = () => {
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
   const { user, signOut, isGuest, localIdentity, loading: authLoading } = useAuth();
   const { isAdmin: permissionIsAdmin, can, roles, loading: permsLoading } = usePermissions();
-  // Authentication identity always wins over a cached/preview permission
-  // snapshot. An offline/local/guest identity can never be an administrator.
-  const isAdmin = permissionIsAdmin && !isGuest;
+  // The provider binds offline administration to the verified account identity.
+  const isAdmin = permissionIsAdmin;
   const displayUserPrimary = isGuest
     ? (localIdentity === "account" ? (getLocalAccount()?.displayName ?? "חשבון מקומי") : "אורח")
     : (user?.email ?? "");
@@ -1020,7 +1019,7 @@ const Index = () => {
     // still being restored `user` is null, which makes usePermissions publish an
     // empty (isAdmin: false) set with loading already false — so bouncing here
     // would kick an admin off ?section=admin before their role ever loaded.
-    if (authLoading || permsLoading) return;
+    if (authLoading || permsLoading || !isHydrated || (!isAdmin && blocklist.loading)) return;
     // Session restore races a boot timeout, so there is a window where auth
     // reports "finished" while `user` is still null and permissions are an
     // empty (isAdmin: false) set. Bouncing then would kick an admin off
@@ -1035,7 +1034,7 @@ const Index = () => {
     if (!isGuest && roles.length === 0) return;
     if (navigableSidebarIds.has(active)) return;
     setActive(visibleSidebarItems[0]?.id ?? "home");
-  }, [active, navigableSidebarIds, visibleSidebarItems, permsLoading, authLoading, user, isGuest, roles]);
+  }, [active, navigableSidebarIds, visibleSidebarItems, permsLoading, authLoading, user, isGuest, roles, isHydrated, isAdmin, blocklist.loading]);
 
 
   useEffect(() => {
@@ -1650,11 +1649,13 @@ const Index = () => {
 
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
-            {!navigableSidebarIds.has(active) ? (
+            {permsLoading || authLoading || !isHydrated || (!isAdmin && blocklist.loading) || (!navigableSidebarIds.has(active) && visibleSidebarItems.length > 0) ? (
+              <div role="status" className="p-8 text-center text-muted-foreground" dir="rtl">טוען את החשבון וההרשאות…</div>
+            ) : !navigableSidebarIds.has(active) ? (
               <Card className="gold-frame p-8 text-center" dir="rtl">
                 <Shield className="mx-auto mb-3 h-10 w-10 text-gold" />
                 <h2 className="text-xl font-bold text-foreground">אין הרשאה לאזור זה</h2>
-                <p className="mt-2 text-sm text-muted-foreground">האזור זמין למנהלי המערכת בלבד.</p>
+                <p className="mt-2 text-sm text-muted-foreground">אין אזור זמין בפרופיל ההרשאות הנוכחי. אפשר לפנות למנהל לבירור.</p>
               </Card>
             ) : active === "settings" ? (
               <Suspense fallback={<StaticLazyPanelPreview />}>

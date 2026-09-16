@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "2.7.31",
+  "version": "2.7.33",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
