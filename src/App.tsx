@@ -16,6 +16,7 @@ import { DevIconsHost } from "@/components/dev/DevIconsHost";
 import { OfflineBadge } from "@/components/OfflineBadge";
 import { VersionBadge } from "@/components/VersionBadge";
 import { DirectionProvider } from "@radix-ui/react-direction";
+import { IS_DEVELOPER_BUILD } from "@/lib/appVariant";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const Auth = lazy(() => import("./pages/Auth.tsx"));
@@ -74,9 +75,11 @@ const App = () => (
               </Route>
             </Routes>
             </Suspense>
-            <Suspense fallback={null}>
-              <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
-            </Suspense>
+            {IS_DEVELOPER_BUILD && (
+              <Suspense fallback={null}>
+                <DevIconsHost PerfMonitor={DeferredPerfMonitor} />
+              </Suspense>
+            )}
             <GlobalRestoreHost />
             <OfflineBadge />
             <VersionBadge />

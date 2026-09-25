@@ -306,11 +306,14 @@ export function useResolvedFeatureBlocklist(roleIds: string[], opts?: { scope?: 
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => { void resolveRoleFeatureBlocklist(roleIds, { scope, force: navigator.onLine }).then((next) => {
-      if (!cancelled && roleIds.length) setResolved({ identity, value: next });
+    let revision = 0;
+    const refresh = () => { const currentRevision = ++revision; void resolveRoleFeatureBlocklist(roleIds, { scope, force: navigator.onLine }).then((next) => {
+      if (!cancelled && currentRevision === revision) setResolved({ identity, value: next });
     }).catch(() => {
       // Never reveal everything on a failed fetch. Keep the last policy for
       // this identity, or the closed initial state if none has been resolved.
+      // A failure is settled, not an endless loading state.
+      if (!cancelled && currentRevision === revision) setResolved(previous => previous?.identity === identity ? previous : { identity, value: pending });
     }); };
     refresh();
     window.addEventListener(ACCESS_POLICY_EVENT, refresh);

@@ -43,11 +43,52 @@ beforeEach(() => {
   mock.from.mockImplementation((table: string) => response(table === 'user_roles' ? [] : []));
 });
 afterEach(() => {
+  vi.useRealTimers();
   window.history.replaceState({}, '', '/');
   vi.clearAllMocks();
 });
 
 describe('canonical identity roles', () => {
+  it('does not blank a settled guest view during a periodic background refresh', async () => {
+    const { result } = renderHook(usePermissions, { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    vi.useFakeTimers();
+    mock.rpc.mockReturnValue({ abortSignal: () => new Promise(() => {}) });
+    act(() => { void result.current.reload(); });
+    expect(result.current.loading).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isAdmin).toBe(false);
+  });
+  it('settles within eight seconds even when the policy request ignores abort', async () => {
+    vi.useFakeTimers();
+    mock.auth = { user: { id: 'verified-admin' }, isGuest: false, localIdentity: 'anonymous' };
+    rememberAdminVerification('verified-admin', true);
+    let finish!: (value: unknown) => void;
+    const never = new Promise(resolve => { finish = resolve; });
+    mock.rpc.mockReturnValue({ abortSignal: () => never });
+    const { result } = renderHook(usePermissions, { wrapper });
+    expect(result.current.loading).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isAdmin).toBe(true);
+    await act(async () => finish({ data: mock.policy, error: null }));
+    expect(result.current.loading).toBe(false);
+  });
+  it('does not grant admin to an unverified account after a stalled role query', async () => {
+    vi.useFakeTimers();
+    mock.auth = { user: { id: 'unverified' }, isGuest: false, localIdentity: 'anonymous' };
+    let finish!: (value: unknown) => void;
+    const never = new Promise(resolve => { finish = resolve; });
+    const chain = { select: () => chain, eq: () => chain, abortSignal: () => never };
+    mock.from.mockReturnValue(chain);
+    const { result } = renderHook(usePermissions, { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isAdmin).toBe(false);
+    await act(async () => finish({ data: [{app_roles:{id:'admin',name:'admin'}}], error:null }));
+    expect(result.current.isAdmin).toBe(false);
+  });
   it('never publishes a settled denial while a new identity is loading', async () => {
     const frames: { loading: boolean; admin: boolean }[] = [];
     const { rerender } = renderHook(() => {
@@ -144,10 +185,22 @@ describe('canonical identity roles', () => {
   });
   it('retains verified admin on disconnect but removes it immediately on guest switch', async () => {
     mock.auth = { user: { id:'admin-user' }, isGuest:false, localIdentity:'anonymous' };
-    mock.from.mockReturnValue(response([{ app_roles:{ id:'admin',name:'admin',access_kind:'admin' } }]));
+    mock.from.mockImplementation((table:string) => {
+      if (table === 'user_roles') return response([{ app_roles:{ id:'admin',name:'admin',access_kind:'admin' } }]);
+      if (table === 'app_roles') return response({ id:'registered',name:'registered',access_kind:'registered' });
+      if (table === 'role_permissions') return response([
+        {module:'cards',action:'view',allowed:true},
+        {module:'cards',action:'create',allowed:true},
+        {module:'users',action:'view',allowed:true},
+      ]);
+      return response([]);
+    });
     const { result, rerender } = renderHook(usePermissions, { wrapper });
     await waitFor(() => expect(result.current.isAdmin).toBe(true));
     expect(result.current.can('users','delete')).toBe(true);
+    expect(result.current.presentationIsAdmin).toBe(false);
+    expect(result.current.canPresent('cards','view')).toBe(true);
+    expect(result.current.canPresent('users','view')).toBe(false);
     act(() => online(false));
     expect(result.current.isAdmin).toBe(true);
     expect(result.current.accessKind).toBe('admin');

@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { isRolePreview } from '@/lib/auth/rolePreview';
+import { withRequestDeadline } from '@/lib/requestDeadline';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -22,6 +23,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       const readRpc = rpc?.startsWith('get_') || ['is_admin', 'has_permission'].includes(rpc ?? '');
       if (isRolePreview() && url.pathname.startsWith('/rest/') && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !readRpc) {
         return Promise.resolve(new Response(JSON.stringify({message:'תצוגה מקדימה היא לקריאה בלבד',code:'PREVIEW_READ_ONLY'}), {status:403,headers:{'Content-Type':'application/json'}}));
+      }
+      // Bound read-only network waits on mobile resume / unreliable connections.
+      // Mutations are not retried or given an ambiguous synthetic success.
+      if (url.pathname.startsWith('/rest/') && (['GET', 'HEAD'].includes(method) || readRpc)) {
+        return withRequestDeadline(signal => fetch(input, { ...init, signal }), 20_000,
+          init?.signal ?? (input instanceof Request ? input.signal : undefined));
       }
       return fetch(input, init);
     },

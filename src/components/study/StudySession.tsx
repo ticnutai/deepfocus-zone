@@ -2559,7 +2559,7 @@ export function StudySession({
           event.dataTransfer.setData("text/plain", card.id);
         } : undefined}
         className={cn(
-          "relative mx-auto flex items-center justify-center border-2",
+          "relative mx-auto flex flex-col items-stretch justify-center border-2",
           classificationDragEnabled && "cursor-grab active:cursor-grabbing",
           isMobile
             ? "w-full rounded-2xl p-3 pt-8 overflow-y-auto"
@@ -2568,11 +2568,6 @@ export function StudySession({
         )}
         style={questionAreaStyle}
       >
-        {classificationDragEnabled && (
-          <span className="absolute bottom-3 right-4 flex items-center gap-1 rounded-full border border-gold/50 bg-background/90 px-2 py-1 text-[11px] font-semibold text-foreground shadow-sm" title="גרור את השאלה לעמוד א׳ או לעמוד ב׳">
-            <GripVertical className="h-3.5 w-3.5 text-gold" /> גרור לסיווג
-          </span>
-        )}
         {/* Type on the left, RTL breadcrumbs on the right. */}
         <Badge
           variant="outline"
@@ -2608,25 +2603,6 @@ export function StudySession({
             }
           >
             {categoryBreadcrumb}
-          </span>
-        )}
-        {/* Source badge: Y (navy) for yeshiva, S (gold) for shemesh */}
-        {card.tags?.includes("source:yeshiva") && (
-          <span
-            title="yeshiva.org.il"
-            className="absolute bottom-3 left-3 inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold text-white"
-            style={{ backgroundColor: "hsl(220 70% 25%)" }}
-          >
-            Y
-          </span>
-        )}
-        {card.tags?.includes("source:shemesh") && (
-          <span
-            title="שמש בגבעון"
-            className="absolute bottom-3 left-3 inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold text-black"
-            style={{ backgroundColor: "hsl(45 85% 55%)" }}
-          >
-            S
           </span>
         )}
         <div className="flex w-full items-start gap-2" dir="rtl">
@@ -2667,6 +2643,39 @@ export function StudySession({
             <MessageSquareText className="h-3.5 w-3.5" />
           </button>
         </div>
+        {(classificationDragEnabled || card.tags?.includes("source:yeshiva") || card.tags?.includes("source:shemesh")) && (
+          <div
+            data-testid="study-question-metadata"
+            className="mt-3 flex w-full flex-wrap items-center justify-between gap-2 border-t border-gold/20 pt-2"
+            dir="rtl"
+          >
+            {classificationDragEnabled ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-gold/50 bg-background/90 px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm" title="גרור את השאלה לעמוד א׳ או לעמוד ב׳">
+                <GripVertical className="h-3.5 w-3.5 text-gold" /> גרור לסיווג
+              </span>
+            ) : <span />}
+            <span className="inline-flex items-center gap-1.5" aria-label="מקור השאלה">
+              {card.tags?.includes("source:yeshiva") && (
+                <span
+                  title="yeshiva.org.il"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/50 text-[11px] font-bold text-white shadow-sm"
+                  style={{ backgroundColor: "hsl(220 70% 25%)" }}
+                >
+                  Y
+                </span>
+              )}
+              {card.tags?.includes("source:shemesh") && (
+                <span
+                  title="שמש בגבעון"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gold/70 text-[11px] font-bold text-black shadow-sm"
+                  style={{ backgroundColor: "hsl(45 85% 55%)" }}
+                >
+                  S
+                </span>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       <div

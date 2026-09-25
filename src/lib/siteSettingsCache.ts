@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { withRequestDeadline } from '@/lib/requestDeadline';
 
 type CacheEntry = {
   value: unknown;
@@ -53,10 +54,10 @@ async function flushQueuedKeys(force = false): Promise<void> {
   queuedKeys.clear();
   if (!keysToFetch.length) return;
 
-  const { data, error } = await supabase
+  const { data, error } = await withRequestDeadline(signal => supabase
     .from("site_settings")
     .select("key,value")
-    .in("key", keysToFetch);
+    .in("key", keysToFetch).abortSignal(signal), 8000).catch(() => ({ data: null, error: true }));
 
   // Losing connectivity must not replace a downloaded role profile with null.
   if (error) return;

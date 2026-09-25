@@ -6,8 +6,9 @@ import { ThemeStudioProvider, useThemeStudio } from "@/theme/ThemeStudioProvider
 const setUiPref = vi.fn();
 let cloudPrefs: Record<string, unknown> = {};
 const authState: { user: { id: string } | null; isGuest: boolean } = { user: { id: "admin-1" }, isGuest: false };
+const permissionState = { isAdmin: true, viewerIsAdmin: true };
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => authState }));
-vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ isAdmin: true, viewerIsAdmin: true }) }));
+vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => permissionState }));
 vi.mock("@/lib/study/store", () => ({ useStudy: () => ({ state: { uiPrefs: cloudPrefs }, setUiPref }) }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -29,6 +30,40 @@ function ThemeControls() {
 }
 
 describe("live design mode", () => {
+  it("toggles off a draft, restores page clicks and keeps saved rules", () => {
+    const activated = vi.fn();
+    render(<ThemeProvider><ThemeStudioProvider><Harness onActivate={activated} /></ThemeStudioProvider></ThemeProvider>);
+    const toggle = screen.getByRole("switch", { name: "עריכה חיה" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    fireEvent.change(screen.getByLabelText("גודל טקסט", { exact: true }), { target: { value: "22px" } });
+    fireEvent.click(screen.getByText("שמור עיצוב"));
+    const saved = JSON.parse(localStorage.getItem("app-theme-design-v1")!).rules;
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    fireEvent.change(screen.getByLabelText("גודל טקסט", { exact: true }), { target: { value: "30px" } });
+    fireEvent.click(screen.getByTitle("השהה/המשך"));
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByTestId("live-design-panel")).not.toBeInTheDocument();
+    expect(document.getElementById("design-mode-live-preview")!.textContent).toBe("");
+    expect(JSON.parse(localStorage.getItem("app-theme-design-v1")!).rules).toEqual(saved);
+    fireEvent.click(screen.getByTestId("real-target"));
+    expect(activated).toHaveBeenCalledTimes(1);
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "השהה" })).toBeInTheDocument();
+    expect(screen.queryByTestId("live-design-panel")).not.toBeInTheDocument();
+  });
+
+  it.each([[false, false], [true, false]])("does not expose toggle without authoring permission (%s/%s)", (isAdmin, viewerIsAdmin) => {
+    Object.assign(permissionState, { isAdmin, viewerIsAdmin });
+    render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
+    expect(screen.queryByRole("switch", { name: "עריכה חיה" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("התחל עיצוב"));
+    fireEvent.pointerDown(screen.getByTestId("real-target"));
+    expect(screen.queryByTestId("live-design-panel")).not.toBeInTheDocument();
+  });
   it("keeps preview while paused and offers unobscured selection markers", () => {
     render(<ThemeProvider><ThemeStudioProvider><Harness /></ThemeStudioProvider></ThemeProvider>);
     fireEvent.click(screen.getByText("התחל עיצוב"));
@@ -75,6 +110,7 @@ describe("live design mode", () => {
     cloudPrefs = {};
     localStorage.clear(); setUiPref.mockClear();
     authState.user = { id: "admin-1" }; authState.isGuest = false;
+    Object.assign(permissionState, { isAdmin: true, viewerIsAdmin: true });
     class ResizeObserverMock { observe() {} disconnect() {} }
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   });

@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getVerifiedOfflineAccount, hasVerifiedOfflineAdmin, rememberAdminVerification } from '@/lib/auth/offlineAdmin';
 import { getActiveLocalAccount } from '@/lib/auth/localAccount';
+import { settleOnAbort } from '@/lib/requestDeadline';
+import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
 import {
   ACCESS_POLICY_EVENT, accessKindForIdentity, cachedAccessPolicy, loadAccessPolicy,
   type AccessKind, type AccessRolePolicy,
@@ -23,11 +25,21 @@ type PermissionsCtx = PermSet & {
   previewRoleId?: string;
   accessKind?: AccessKind | 'admin';
   can: (m: PermissionModule, a: PermissionAction) => boolean;
+  /**
+   * Permissions used only to decide what is shown in the ordinary learner UI.
+   * An administrator keeps full authority through `can`, while their default
+   * presentation follows the same connected/offline baseline as a registered
+   * learner. Role preview continues to render the selected role exactly.
+   */
+  presentationIsAdmin: boolean;
+  presentationRoles: { id: string; name: string }[];
+  canPresent: (m: PermissionModule, a: PermissionAction) => boolean;
   reload: () => Promise<void>;
 };
 const empty: PermSet = { isAdmin: false, matrix: {}, roles: [] };
 const PermissionsContext = createContext<PermissionsCtx>({
-  ...empty, loading: true, viewerIsAdmin: false, can: () => false, reload: async () => {},
+  ...empty, loading: true, viewerIsAdmin: false, presentationIsAdmin: false, presentationRoles: [],
+  can: () => false, canPresent: () => false, reload: async () => {},
 });
 
 type Role = { id: string; name: string; access_kind: string | null };
@@ -110,48 +122,61 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const previewRoleId = useMemo(() => typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('previewRole') ?? '', []);
-  const [snapshot, setSnapshot] = useState<{ owner: string; viewer: PermSet; preview: PermSet | null } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<{
+    owner: string;
+    viewer: PermSet;
+    preview: PermSet | null;
+    adminPresentation: PermSet | null;
+  } | null>(null);
   const request = useRef<AbortController | null>(null);
   const [readyIdentity, setReadyIdentity] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
+    startupCheckpoint('permissions:resolve:start','start');
     request.current = controller;
     const valid = () => !controller.signal.aborted && identityRef.current === identity && navigator.onLine;
     if (!navigator.onLine) {
       setSnapshot(null);
       setReadyIdentity(identity);
-      setLoading(false);
       return;
     }
-    setLoading(true);
     const timeout = window.setTimeout(() => controller.abort(), 8000);
     try {
-      const latest = await loadAccessPolicy(controller.signal);
+      const latest = await settleOnAbort(loadAccessPolicy(controller.signal), controller.signal);
       if (!valid()) return;
       setPolicy(latest);
-      const viewer = userId ? await fetchCloudPermissions(userId, latest, controller.signal) : null;
+      const viewer = userId ? await settleOnAbort(fetchCloudPermissions(userId, latest, controller.signal), controller.signal) : null;
       if (!valid()) return;
       if (userId && viewer) rememberAdminVerification(userId, viewer.isAdmin);
+      // A real registered account receives permissions from role_permissions,
+      // including changes that are newer than the compact connectivity policy.
+      // Use that exact source for an administrator's learner-facing shell too;
+      // administrator authority itself remains in `viewer`/`can`.
+      const registeredRoleId = latest.registered?.id;
+      const adminPresentation = viewer?.isAdmin && registeredRoleId
+        ? await settleOnAbort(fetchPreviewRolePermissions(registeredRoleId, controller.signal), controller.signal)
+        : null;
+      if (!valid()) return;
       const preview = previewRoleId && viewer?.isAdmin
-        ? await fetchPreviewRolePermissions(previewRoleId, controller.signal)
+        ? await settleOnAbort(fetchPreviewRolePermissions(previewRoleId, controller.signal), controller.signal)
         : null;
       if (!valid()) return;
       setNetworkFailed(false);
-      setSnapshot(viewer ? { owner: identity, viewer, preview } : null);
+      setSnapshot(viewer ? { owner: identity, viewer, preview, adminPresentation } : null);
+      startupCheckpoint('permissions:resolve:settled','ok',viewer?.isAdmin?'admin':'non-admin');
     } catch (error) {
       if (identityRef.current === identity && request.current === controller) {
         if (!controller.signal.aborted) console.warn('[permissions] using offline role:', error instanceof Error ? error.message : String(error));
         setSnapshot(null);
         setNetworkFailed(true);
+        startupCheckpoint('permissions:resolve:settled',controller.signal.aborted?'timeout':'error');
       }
     } finally {
       window.clearTimeout(timeout);
       if (identityRef.current === identity && request.current === controller) {
         setReadyIdentity(identity);
-        setLoading(false);
       }
     }
   }, [identity, previewRoleId, userId]);
@@ -165,7 +190,6 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       setOnline(false);
       setSnapshot(null);
       setReadyIdentity(identity);
-      setLoading(false);
     };
     const onPolicyChange = () => { void reload(); };
     window.addEventListener('online', onOnline);
@@ -200,16 +224,33 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   [identity, previewRoleId, snapshot, viewer]);
   const can = useCallback((m: PermissionModule, a: PermissionAction) =>
     published.isAdmin || (!!published.matrix[`${m}:view`] && !!published.matrix[`${m}:${a}`]), [published]);
+  const presentation: PermSet = useMemo(() => {
+    if (previewRoleId) return published;
+    if (!viewer.isAdmin) return published;
+    if (connected && snapshot?.owner === identity && snapshot.adminPresentation) {
+      return snapshot.adminPresentation;
+    }
+    return {
+      isAdmin: false,
+      matrix: role?.matrix ?? {},
+      roles: role ? [{ id: role.id, name: role.name }] : [],
+    };
+  }, [connected, identity, previewRoleId, published, role, snapshot, viewer.isAdmin]);
+  const canPresent = useCallback((m: PermissionModule, a: PermissionAction) =>
+    presentation.isAdmin || (!!presentation.matrix[`${m}:view`] && !!presentation.matrix[`${m}:${a}`]), [presentation]);
   return (
     <PermissionsContext.Provider value={{
       ...published,
       viewerIsAdmin: viewer.isAdmin,
       previewRoleId: previewRoleId || undefined,
       accessKind: published.isAdmin ? 'admin' : kind,
+      presentationIsAdmin: presentation.isAdmin,
+      presentationRoles: presentation.roles,
       // Identity changes must report pending during render, before effects run.
       // Same-identity background refreshes may keep a verified snapshot visible.
-      loading: !!authLoading || readyIdentity !== identity || (loading && snapshot?.owner !== identity),
+      loading: !!authLoading || readyIdentity !== identity,
       can,
+      canPresent,
       reload,
     }}>
       {children}

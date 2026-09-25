@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from "react";
 import { HomeTitle } from "@/components/layout/HomeTitle";
+import { finishStartupDiagnostics } from '@/lib/debug/startupDiagnostics';
 import {
   Home, Gauge, Sun, Calendar, CheckSquare, Target, BookOpen, Timer,
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
@@ -26,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
@@ -38,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveRoleLayoutProfile } from "@/lib/study/layoutProfiles";
+import type { SidebarConfig, WidgetLayout } from "@/lib/study/types";
 import { isRoleAssignedToProfileB, setProfileBMode } from "@/lib/study/profileBMode";
 import { DedicationBanner } from "@/components/DedicationBanner";
 import { NavItem, DEFAULT_SIDEBAR_ITEMS, isDefaultSidebarItemVisible } from "@/config/sidebarItems";
@@ -546,7 +548,15 @@ const Index = () => {
   }, []);
   const { prompt: promptText, dialog: promptDialog } = usePrompt();
   const { user, signOut, isGuest, localIdentity, loading: authLoading } = useAuth();
-  const { isAdmin: permissionIsAdmin, can, roles, loading: permsLoading } = usePermissions();
+  const {
+    isAdmin: permissionIsAdmin,
+    can,
+    canPresent,
+    presentationIsAdmin,
+    presentationRoles,
+    roles,
+    loading: permsLoading,
+  } = usePermissions();
   // The provider binds offline administration to the verified account identity.
   const isAdmin = permissionIsAdmin;
   const displayUserPrimary = isGuest
@@ -560,8 +570,8 @@ const Index = () => {
     return new URLSearchParams(window.location.search).get("previewRole") ?? "";
   }, []);
   const roleIdsForBlocklist = useMemo(
-    () => (previewRoleId ? [previewRoleId] : roles.map((r) => r.id)),
-    [previewRoleId, roles],
+    () => presentationRoles.map((role) => role.id),
+    [presentationRoles],
   );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
   const blockedSidebarSet = useMemo(() => new Set(blocklist.sections ?? []), [blocklist.sections]);
@@ -574,6 +584,15 @@ const Index = () => {
     canViewAnalytics: isAdmin || can("analytics", "view"),
     canViewSettings: isAdmin || can("settings", "view"),
   }), [can, isAdmin]);
+  const presentationSectionAccess = useMemo(() => ({
+    isAdmin: presentationIsAdmin,
+    canViewCards: presentationIsAdmin || canPresent("cards", "view"),
+    canViewDecks: presentationIsAdmin || canPresent("decks", "view"),
+    canViewGoals: presentationIsAdmin || canPresent("goals", "view"),
+    canViewShas: presentationIsAdmin || canPresent("shas", "view"),
+    canViewAnalytics: presentationIsAdmin || canPresent("analytics", "view"),
+    canViewSettings: presentationIsAdmin || canPresent("settings", "view"),
+  }), [canPresent, presentationIsAdmin]);
   const canViewCardsModule = sectionAccess.canViewCards;
   const canViewDecksModule = sectionAccess.canViewDecks;
   const [profileBActive, setProfileBActive] = useState(false);
@@ -583,9 +602,52 @@ const Index = () => {
     setSidebarConfig: saveSidebarConfig,
     setWidgetLayout: saveWidgetLayout,
     getHydrationSnapshot,
-  } = useStudy();
+    _applyPreviewLayout,
+  } = useStudy() as ReturnType<typeof useStudy> & {
+    _applyPreviewLayout?: (sidebar: SidebarConfig[] | null, layout: WidgetLayout | null) => void;
+  };
   const { isHydrated } = getHydrationSnapshot();
+  const [presentationLayoutLoading, setPresentationLayoutLoading] = useState(false);
+  useEffect(() => {
+    if (!authLoading && !permsLoading && isHydrated && !blocklist.loading && !presentationLayoutLoading) finishStartupDiagnostics();
+  }, [authLoading, permsLoading, isHydrated, blocklist.loading, presentationLayoutLoading]);
   const effectiveRoleId = roles[0]?.id;
+
+  // Administrators keep their complete authority, but their ordinary learner
+  // shell must use the same assigned layout as a registered learner. Apply the
+  // layout in memory only: this prevents an old personal admin layout from
+  // leaking extra modules, without overwriting or syncing either account's
+  // saved layout. Waiting fail-closed also removes the brief all-modules flash.
+  useEffect(() => {
+    if (!isAdmin || previewRoleId || !presentationRoles[0]?.id || !_applyPreviewLayout) {
+      setPresentationLayoutLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPresentationLayoutLoading(true);
+    void resolveRoleLayoutProfile(presentationRoles[0].id, { scope: isMobile ? "mobile" : "desktop" })
+      .then((profile) => {
+        if (cancelled || !profile) return;
+        const sidebarMatches = JSON.stringify(normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []))
+          === JSON.stringify(normalizeSplitWorkspaceSidebarConfig(profile.sidebarConfig));
+        const widgetsMatch = JSON.stringify(state.widgetLayout ?? {}) === JSON.stringify(profile.widgetLayout ?? {});
+        if (!sidebarMatches || !widgetsMatch) {
+          _applyPreviewLayout(
+            sidebarMatches ? null : profile.sidebarConfig,
+            widgetsMatch ? null : profile.widgetLayout,
+          );
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setPresentationLayoutLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, previewRoleId, presentationRoles, isMobile, state.sidebarConfig, state.widgetLayout, _applyPreviewLayout]);
 
   useEffect(() => {
     if (!isGuest || !effectiveRoleId) return;
@@ -625,7 +687,7 @@ const Index = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const roleIds = roles.map((role) => role.id);
+    const roleIds = presentationRoles.map((role) => role.id);
 
     if (roleIds.length === 0) {
       setProfileBMode(false);
@@ -643,7 +705,7 @@ const Index = () => {
     return () => {
       cancelled = true;
     };
-  }, [isMobile, roles]);
+  }, [isMobile, presentationRoles]);
 
   useEffect(() => {
     if (!profileBActive) return;
@@ -871,19 +933,36 @@ const Index = () => {
     return canAccessAppSection(id, sectionAccess);
   }, [profileBActive, sectionAccess]);
 
-  const visibleTabs = useMemo(() => orderedTabs.filter((t) => {
+  const isVisibleByPresentation = useCallback((id: string) => {
+    if (profileBActive) {
+      if (HOME_TAB_IDS.has(id)) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(id);
+      return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(id);
+    }
+    return canAccessAppSection(id, presentationSectionAccess);
+  }, [presentationSectionAccess, profileBActive]);
+
+  const visibleTabs = useMemo(() => {
+    // The home grid is presentation, just like the sidebar strip. Never render
+    // the unfiltered administrator catalogue while the assigned profile is
+    // loading, and never bypass that profile merely because the viewer is an
+    // administrator. Direct navigation remains privileged via allowedHomeTabs.
+    // Permissions and the matching role profile settle independently. Do not
+    // render the empty-role/global catalogue in the short window between
+    // them; that was the recurring flash where an administrator briefly saw
+    // every category before the registered presentation arrived.
+    if (permsLoading || blocklist.loading || presentationLayoutLoading) return [];
+    return orderedTabs.filter((t) => {
     // Sidebar-derived entries are allowed in the strip too (clicking one
     // navigates to its section) — only "home" itself is excluded, since the
     // strip already lives on the home page.
     if (t.v === "home") return false;
     if (!profileBActive && !t.visible) return false;
     if (profileBActive) return PROFILE_B_ALLOWED_HOME_TAB_IDS.has(t.v);
-    if (!isAdmin || previewRoleId) {
-      const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
-      if (blockedSidebarSet.has(sidebarId)) return false;
-    }
-    return isAllowedByPermission(t.v);
-  }), [orderedTabs, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
+    const sidebarId = HOME_TAB_TO_SIDEBAR_ID[t.v] ?? t.v;
+    if (blockedSidebarSet.has(sidebarId)) return false;
+    return isVisibleByPresentation(t.v);
+    });
+  }, [orderedTabs, profileBActive, permsLoading, blocklist.loading, presentationLayoutLoading, blockedSidebarSet, isVisibleByPresentation]);
 
   const visibleHomeTabs = useMemo(
     () => visibleTabs.filter((tab) => HOME_TAB_IDS.has(tab.v)),
@@ -986,12 +1065,18 @@ const Index = () => {
     return result;
   }, [state.sidebarConfig]);
 
-  const visibleSidebarItems = useMemo(() => orderedSidebarItems.filter((item) => {
+  const visibleSidebarItems = useMemo(() => {
+    // Fail closed for every role, including administrators. Until the assigned
+    // profile has resolved, rendering the unfiltered list causes a brief flash
+    // of every module and can expose links that the profile intentionally hid.
+    if (permsLoading || blocklist.loading || presentationLayoutLoading) return [];
+    return orderedSidebarItems.filter((item) => {
     if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
     if (!item.visible && item.id !== "summary") return false;
-    if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
-    return isAllowedByPermission(item.id);
-  }), [orderedSidebarItems, profileBActive, isAdmin, previewRoleId, blockedSidebarSet, isAllowedByPermission]);
+    if (blockedSidebarSet.has(item.id)) return false;
+    return isVisibleByPresentation(item.id);
+    });
+  }, [orderedSidebarItems, profileBActive, permsLoading, blocklist.loading, presentationLayoutLoading, blockedSidebarSet, isVisibleByPresentation]);
 
   const configurableSidebarItems = useMemo(
     () => orderedSidebarItems.filter((item) => isAllowedByPermission(item.id)),
@@ -1007,6 +1092,10 @@ const Index = () => {
     const ids = orderedSidebarItems
       .filter((item) => {
         if (profileBActive) return PROFILE_B_ALLOWED_SIDEBAR_IDS.has(item.id);
+        // The administrator sees the same strip as the assigned display
+        // profile, but keeps permission to open hidden management sections by
+        // direct navigation (for example ?section=admin). Preview mode must
+        // still behave exactly like the role being previewed.
         if ((!isAdmin || previewRoleId) && blockedSidebarSet.has(item.id)) return false;
         return isAllowedByPermission(item.id);
       })
@@ -1019,7 +1108,7 @@ const Index = () => {
     // still being restored `user` is null, which makes usePermissions publish an
     // empty (isAdmin: false) set with loading already false — so bouncing here
     // would kick an admin off ?section=admin before their role ever loaded.
-    if (authLoading || permsLoading || !isHydrated || (!isAdmin && blocklist.loading)) return;
+    if (authLoading || permsLoading || !isHydrated || blocklist.loading) return;
     // Session restore races a boot timeout, so there is a window where auth
     // reports "finished" while `user` is still null and permissions are an
     // empty (isAdmin: false) set. Bouncing then would kick an admin off
@@ -1445,6 +1534,10 @@ const Index = () => {
       <div className="flex">
         {/* Desktop sidebar — pinned: part of layout | auto-hide: fixed overlay */}
         <aside
+          data-presentation-role-ids={roleIdsForBlocklist.join(",")}
+          data-profile-b-active={profileBActive ? "1" : "0"}
+          data-sidebar-layout={orderedSidebarItems.filter((item) => item.visible).map((item) => item.id).join(",")}
+          data-presentation-access={`${presentationSectionAccess.canViewShas ? "shas" : ""},${presentationSectionAccess.canViewAnalytics ? "analytics" : ""}`}
           className={cn(
             "hidden lg:flex flex-col bg-sidebar relative group/sidebar",
             pinned
@@ -1566,7 +1659,7 @@ const Index = () => {
                   onTouchCancel={handleTabsTouchCancel}
                 >
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
+                    <Button aria-label="פתח תפריט" variant="outline" size="icon" className="lg:hidden rounded-full border-2 border-gold h-10 w-10 shrink-0" onClick={() => setMobileSidebarOpen(true)}>
                       <Menu className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
@@ -1599,6 +1692,7 @@ const Index = () => {
                 </div>
 
                 <SheetContent side="right" showOverlay={false} className="w-72 p-0 border-l-2 border-gold flex flex-col">
+                  <SheetTitle className="sr-only">תפריט ראשי</SheetTitle>
                   <div className="p-4 border-b-2 border-gold/30 flex-shrink-0"><Logo /></div>
                   <div className="flex-1 overflow-y-auto no-scrollbar">
                     <SidebarContent items={visibleSidebarItems} active={sidebarActiveId} onSelect={(id) => { selectSidebarItem(id); setMobileSidebarOpen(false); }} badges={sidebarBadges} />
@@ -1649,8 +1743,8 @@ const Index = () => {
 
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
-            {permsLoading || authLoading || !isHydrated || (!isAdmin && blocklist.loading) || (!navigableSidebarIds.has(active) && visibleSidebarItems.length > 0) ? (
-              <div role="status" className="p-8 text-center text-muted-foreground" dir="rtl">טוען את החשבון וההרשאות…</div>
+            {permsLoading || authLoading || !isHydrated || blocklist.loading || (!navigableSidebarIds.has(active) && visibleSidebarItems.length > 0) ? (
+              <div data-testid="silent-startup-wait" aria-hidden="true" className="min-h-[40vh]" />
             ) : !navigableSidebarIds.has(active) ? (
               <Card className="gold-frame p-8 text-center" dir="rtl">
                 <Shield className="mx-auto mb-3 h-10 w-10 text-gold" />
@@ -1862,6 +1956,7 @@ const Index = () => {
           {/* Tab config sheet — controlled from sidebar footer button */}
           <Sheet open={tabConfigOpen} onOpenChange={setTabConfigOpen} modal={false}>
             <SheetContent side="right" showOverlay={false} className="w-80 p-0 border-l-2 border-gold flex flex-col">
+              <SheetTitle className="sr-only">הגדרת טאבים</SheetTitle>
               <div className="p-4 border-b-2 border-gold/30 flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4 text-gold" />
                 <h3 className="font-display text-base font-semibold">הגדרת טאבים</h3>
@@ -1897,6 +1992,7 @@ const Index = () => {
           {/* Sidebar config sheet — separate from home tabs config */}
           <Sheet open={sidebarConfigOpen} onOpenChange={setSidebarConfigOpen} modal={false}>
             <SheetContent side="right" showOverlay={false} className="w-80 p-0 border-l-2 border-gold flex flex-col">
+              <SheetTitle className="sr-only">הגדרת סיידבר</SheetTitle>
               <div className="p-4 border-b-2 border-gold/30 flex items-center gap-2">
                 <Sliders className="h-4 w-4 text-gold" />
                 <h3 className="font-display text-base font-semibold">הגדרת סיידבר</h3>

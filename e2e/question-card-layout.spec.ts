@@ -70,3 +70,67 @@ test("desktop question card is compact and rounded", async ({ page }) => {
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes("Failed to load resource"))).toEqual([]);
 });
+
+test("mobile starts at the rounded practice row and keeps metadata below the question", async ({ page }) => {
+  test.setTimeout(90_000);
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.setViewportSize({ width: 412, height: 915 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "כניסה כאורח — ללא חשבון" }).click();
+
+  const dismissWelcome = page.getByRole("button", { name: /כבר קראתי/ });
+  if (await dismissWelcome.waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false)) {
+    await dismissWelcome.click();
+  }
+
+  await page.getByRole("tab", { name: "תרגול", exact: true }).click();
+  if (await dismissWelcome.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false)) {
+    await dismissWelcome.click();
+  }
+  await page.getByText("תרגול כללי", { exact: true }).click();
+  for (const label of ["מועד", "שבת", "ב", "עמוד א׳"]) {
+    await page.getByText(label, { exact: true }).click();
+  }
+
+  const practice = page.getByTestId("daf-start-practice");
+  const addQuestion = page.getByRole("button", { name: "הוספת שאלות לעמוד זה" });
+  await expect(practice).toBeVisible();
+  await expect(addQuestion).toBeVisible();
+  const [practiceBox, addBox, practiceStyle] = await Promise.all([
+    practice.boundingBox(),
+    addQuestion.boundingBox(),
+    practice.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const play = element.querySelector("span");
+      const playRect = play?.getBoundingClientRect();
+      return {
+        radius: Number.parseFloat(style.borderTopLeftRadius),
+        playWidth: playRect?.width ?? 0,
+        playHeight: playRect?.height ?? 0,
+      };
+    }),
+  ]);
+  expect(practiceBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(addBox?.y ?? 0);
+  expect(practiceStyle.radius).toBeGreaterThanOrEqual(24);
+  expect(practiceStyle.playWidth).toBeGreaterThanOrEqual(32);
+  expect(practiceStyle.playHeight).toBeGreaterThanOrEqual(32);
+
+  await practice.click();
+  const questionCard = page.getByTestId("study-question-card");
+  await expect(questionCard).toBeVisible();
+  const metadata = page.getByTestId("study-question-metadata");
+  await expect(metadata).toBeVisible();
+  await expect(metadata.getByLabel("מקור השאלה")).toBeVisible();
+  const question = questionCard.locator("h3");
+  const [questionBox, metadataBox] = await Promise.all([question.boundingBox(), metadata.boundingBox()]);
+  expect(questionBox?.y ?? 0).toBeLessThan(metadataBox?.y ?? Number.POSITIVE_INFINITY);
+  expect((questionBox?.y ?? 0) + (questionBox?.height ?? 0)).toBeLessThanOrEqual((metadataBox?.y ?? Number.POSITIVE_INFINITY) + 1);
+  const overflow = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.width + 1);
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors.filter((message) => !message.includes("Failed to load resource"))).toEqual([]);
+});

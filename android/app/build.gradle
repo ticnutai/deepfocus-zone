@@ -34,8 +34,17 @@ android {
             def devNumber = providers.gradleProperty('devInstallNumber').getOrElse('1')
             if (!(devNumber ==~ /[1-9][0-9]*/)) throw new GradleException('Invalid devInstallNumber')
             versionNameSuffix "-dev.${devNumber}"
-            resValue "string", "app_name", "למען ${devNumber}"
-            resValue "string", "title_activity_main", "למען ${devNumber}"
+            resValue "string", "app_name", "למען Developer ${devNumber}"
+            resValue "string", "title_activity_main", "למען Developer ${devNumber}"
+        }
+        productionPreview {
+            initWith release
+            applicationIdSuffix ".productionpreview"
+            versionNameSuffix "-production-preview"
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            resValue "string", "app_name", "למען Production"
+            resValue "string", "title_activity_main", "למען Production"
         }
         release {
             signingConfig signingConfigs.release

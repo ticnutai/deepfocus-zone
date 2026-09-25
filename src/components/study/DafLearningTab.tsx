@@ -952,7 +952,7 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
     </Button>
   ) : null;
 
-  const mobileActionClass = "max-md:flex-1 max-md:h-12 max-md:min-w-0 max-md:gap-2 max-md:rounded-xl max-md:px-2 max-md:text-sm max-md:font-bold max-md:shadow-elegant max-md:ring-2 max-md:ring-gold/40";
+  const mobileActionClass = "max-md:h-14 max-md:min-w-0 max-md:gap-3 max-md:rounded-full max-md:border-2 max-md:border-gold/70 max-md:px-5 max-md:text-base max-md:font-bold max-md:shadow-elegant max-md:ring-2 max-md:ring-gold/20";
   const cardsPanel = (
     <Card className="gold-frame p-4 flex flex-col h-full" dir="rtl">
     <div data-testid="daf-question-tools" className="mb-3 flex flex-wrap items-center justify-between gap-3 max-md:grid max-md:w-full max-md:grid-cols-[minmax(0,1fr)_auto_auto_auto] max-md:gap-2">
@@ -976,8 +976,16 @@ export function DafLearningTabInner({ isVisible }: { isVisible: boolean }) {
               <Layers className="h-4 w-4 text-gold" />
             </Button>
             {!isMobile && practiceModeMenu}
-            <Button onClick={startPractice} size="sm" className={cn("bg-gradient-navy text-primary-foreground transition hover:brightness-110 max-md:order-last max-md:col-span-4 max-md:w-full", mobileActionClass)}>
-              <span className="inline-flex items-center justify-center rounded-full border border-gold/60 p-1"><Play className="h-4 w-4 fill-current" /></span> תרגול
+            <Button
+              onClick={startPractice}
+              size="sm"
+              data-testid="daf-start-practice"
+              className={cn("bg-gradient-navy text-primary-foreground transition hover:brightness-110 max-md:order-first max-md:col-span-4 max-md:w-full", mobileActionClass)}
+            >
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-gold/70 bg-white/10 text-gold shadow-sm">
+                <Play className="h-5 w-5 translate-x-[-1px] fill-current" />
+              </span>
+              <span>תרגול</span>
             </Button>
           </>}
         </div>

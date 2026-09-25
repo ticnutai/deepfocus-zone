@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { isRolePreview } from "@/lib/auth/rolePreview";
+import { withRequestDeadline } from '@/lib/requestDeadline';
+import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
 import { loadOwnedCardPages } from "./loadOwnedCards";
 import { matchesContentSelection } from "./questionSources";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -2898,6 +2900,7 @@ export function useStudy() {
 
       try {
         perf.log("store:hydrate.start", `user=${uid}`, "store", hydrateTraceId);
+        startupCheckpoint('study:hydrate:start','start');
 
         const isCurrentlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
         // Never destroy a usable IndexedDB snapshot while there is no network
@@ -2955,6 +2958,7 @@ export function useStudy() {
           if (typeof cachedState.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(cachedState.uiPrefs.syncEnabled);
           isHydrated = true;
           hasCache = true;
+          startupCheckpoint('study:local-cache:ready','ok',`${cachedState.cards.length} cards`);
           performance.mark("pashash:notify:idb-cache-applied");
           // Defer React re-render to a new task so hydration never blocks open interactions.
           setTimeout(() => {
@@ -2972,6 +2976,7 @@ export function useStudy() {
           await saveStudyStateCache(uid, memState);
           notify();
           perf.log("store:hydrate.done", "offline cache + bundled library applied", "store", hydrateTraceId);
+          startupCheckpoint('study:hydrate:settled','ok','offline');
           return;
         }
 
@@ -3121,6 +3126,7 @@ export function useStudy() {
           if (cancelled) cancelDeferredDeletes();
 
           perf.log("store:hydrate.done", "indexeddb-first completed", "store", hydrateTraceId);
+          startupCheckpoint('study:hydrate:settled','ok','local-cache');
           return;
         }
 
@@ -3136,6 +3142,7 @@ export function useStudy() {
         memState = merged;
         if (typeof merged.uiPrefs?.syncEnabled === "boolean") applyCloudSyncPref(merged.uiPrefs.syncEnabled);
         isHydrated = true;
+        startupCheckpoint('study:hydrate:settled','ok','cloud-bootstrap');
 
         // Yield before notify so React render runs in its own macrotask (avoids 69ms block on LCP).
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -3175,6 +3182,7 @@ export function useStudy() {
       }
     })().catch((e) => {
       console.error("[load]", e);
+      startupCheckpoint('study:hydrate:settled','error',e instanceof Error?e.name:'unknown');
       perf.error("store:hydrate.failed", e instanceof Error ? e.message : String(e));
       if (!cancelled) {
         isHydrated = true;
@@ -3216,7 +3224,7 @@ export function useStudy() {
       if (checkingPolicy || uid === GUEST_ID || currentUserId !== uid || !navigator.onLine) return;
       checkingPolicy = true;
       try {
-        const {data,error} = await rpcClient.rpc("get_effective_content_access");
+        const {data,error} = await withRequestDeadline(signal => supabase.rpc("get_effective_content_access").abortSignal(signal), 8000);
         if (error || !data || policyRefreshStopped || currentUserId !== uid) return;
         const previous = JSON.parse(localStorage.getItem(CONTENT_ACCESS_CACHE_KEY(uid)) ?? "null");
         if (JSON.stringify(previous) !== JSON.stringify(data)) {

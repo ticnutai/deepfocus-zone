@@ -21,7 +21,8 @@ it('finishes a stalled status lookup using the last verified status', async () =
   localStorage.setItem('pashash:ps:timeout-approved', 'approved');
   pending();
   render(view());
-  expect(screen.getByText('טוען…')).toBeInTheDocument();
+  expect(screen.getByTestId('silent-auth-wait')).toBeInTheDocument();
+  expect(screen.queryByText(/טוען/)).not.toBeInTheDocument();
   await act(async () => vi.advanceTimersByTime(8001));
   expect(screen.getByText('protected-content')).toBeInTheDocument();
 });
@@ -42,7 +43,8 @@ it('rechecks status on reconnect without flashing the cached pending message', a
   const next = pending();
   act(() => window.dispatchEvent(new Event('online')));
   expect(screen.queryByText('ממתין לאישור')).not.toBeInTheDocument();
-  expect(screen.getByText('טוען…')).toBeInTheDocument();
+  expect(screen.getByTestId('silent-auth-wait')).toBeInTheDocument();
+  expect(screen.queryByText(/טוען/)).not.toBeInTheDocument();
   await act(async () => next({ data: { status: 'approved' }, error: null }));
   expect(screen.getByText('protected-content')).toBeInTheDocument();
 });
@@ -51,7 +53,8 @@ it('does not flash a stale blocked status while checking an approved account', a
   localStorage.setItem('pashash:ps:stale-blocked', 'blocked');
   const finish = pending();
   render(view());
-  expect(screen.getByText('טוען…')).toBeInTheDocument();
+  expect(screen.getByTestId('silent-auth-wait')).toBeInTheDocument();
+  expect(screen.queryByText(/טוען/)).not.toBeInTheDocument();
   expect(screen.queryByText('חשבון חסום')).not.toBeInTheDocument();
   await act(async () => finish({ data: { status: 'approved' }, error: null }));
   expect(screen.getByText('protected-content')).toBeInTheDocument();

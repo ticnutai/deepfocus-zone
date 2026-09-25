@@ -18,6 +18,26 @@ const auditMobileConflict = process.argv.includes('--audit-mobile-conflict');
 const mobileViewport = process.argv.includes('--mobile');
 const targetUrl = process.env.QA_URL || 'http://localhost:5000/';
 const isolatedWrites = [];
+const deadline = (promise, ms, label) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+]);
+async function signInAdminForQa() {
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await deadline(cloud.auth.signInWithPassword({
+        email: process.env.ADMIN_EMAIL || value('ADMIN_EMAIL'),
+        password: process.env.ADMIN_PASSWORD || value('ADMIN_PASSWORD'),
+      }), 30000, `QA admin authentication attempt ${attempt}`);
+      if (!result.error) return result;
+      lastError = result.error;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error('QA admin authentication failed');
+}
 fs.mkdirSync('output/access-roles', {recursive:true});
 async function expectIdentity(page, label, timeout=60000) {
   const stableLabel=label.replace(/\s+(אונליין|אופליין)$/u,'');
@@ -29,6 +49,43 @@ async function expectIdentity(page, label, timeout=60000) {
     await expect(page.getByRole('tab',{name:'תרגול',exact:true}).first()).toBeAttached({timeout});
   } else await expect(locator).toBeVisible({timeout});
 }
+async function captureVisiblePresentation(page) {
+  await expect.poll(async () => page.locator('[role="tab"]:visible, [data-sidebar-id]:visible').count(), {timeout:60000}).toBeGreaterThan(0);
+  // Role permissions, the matching display profile and the stored layout are
+  // independent asynchronous sources. Sample only after the rendered list is
+  // stable, otherwise the test can accidentally bless (or reject) the brief
+  // empty-role catalogue that exists during startup.
+  let last = '';
+  let stableSamples = 0;
+  await expect.poll(async () => {
+    const current = await page.locator('[role="tab"]:visible, [data-sidebar-id]:visible').evaluateAll(nodes =>
+      nodes.map(node => `${node.getAttribute('data-sidebar-id') ?? 'tab'}:${node.textContent?.trim() ?? ''}`).sort().join('|'));
+    stableSamples = current === last ? stableSamples + 1 : 0;
+    last = current;
+    return stableSamples;
+  }, {timeout:60000, intervals:[300,500,700]}).toBeGreaterThanOrEqual(3);
+  const snapshot = await page.evaluate(() => {
+    const visible = (node) => {
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const unique = (values) => [...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'he'));
+    return {
+      homeTabs: unique([...document.querySelectorAll('[role="tab"]')].filter(visible).map(node => node.textContent?.trim() || '')),
+      sidebarIds: unique([...document.querySelectorAll('[data-sidebar-id]')].filter(visible).map(node => node.dataset.sidebarId || '')),
+      presentationRoleIds: document.querySelector('aside[data-presentation-role-ids]')?.getAttribute('data-presentation-role-ids') ?? '',
+      profileBActive: document.querySelector('aside[data-profile-b-active]')?.getAttribute('data-profile-b-active') ?? '',
+      sidebarLayout: document.querySelector('aside[data-sidebar-layout]')?.getAttribute('data-sidebar-layout') ?? '',
+      presentationAccess: document.querySelector('aside[data-presentation-access]')?.getAttribute('data-presentation-access') ?? '',
+    };
+  });
+  return snapshot;
+}
+const renderedPresentation = (snapshot) => ({
+  homeTabs: snapshot.homeTabs,
+  sidebarIds: snapshot.sidebarIds,
+});
 async function contextFor(identity, session = null, coldOffline = false) {
   const savedSettings = new Map();
   const savedPermissions = new Map();
@@ -60,6 +117,13 @@ async function contextFor(identity, session = null, coldOffline = false) {
     if(coldOffline) return route.abort();
     const request=route.request();
     const table = new URL(request.url()).pathname.split('/').at(-1);
+    const studyTables = new Set([
+      'cards','decks','categories','review_logs','goals','shas_plans','day_notes',
+      'user_settings','card_decks','shas_reviews','learning_sessions',
+    ]);
+    if (session && request.method()==='GET' && studyTables.has(table)) {
+      return route.fulfill({status:200,contentType:'application/json',body:'[]'});
+    }
     if(session && ['site_settings','role_permissions'].includes(table)) {
       if(request.method()==='GET' && (savedSettings.size || savedPermissions.size)) {
         const keyFilter=new URL(request.url()).searchParams.get('key');
@@ -80,6 +144,12 @@ async function contextFor(identity, session = null, coldOffline = false) {
       }
     }
     const rpc = request.url().split('/rpc/')[1]?.split('?')[0];
+    if (session && rpc === 'get_bootstrap_snapshot') {
+      return route.fulfill({status:200,contentType:'application/json',body:'{}'});
+    }
+    if (session && ['get_admin_content_sources','get_admin_question_source_tags'].includes(rpc)) {
+      return route.fulfill({status:200,contentType:'application/json',body:'[]'});
+    }
     if (session && rpc === 'admin_save_access_profile') {
       const p = request.postDataJSON();
       const suffix = p.p_scope === 'mobile' ? '_mobile_v1' : '_v1';
@@ -132,8 +202,17 @@ try {
       throw Error(scenario.label+': '+error.message+'; pageErrors='+JSON.stringify(errors));
     } finally { await context.close(); }
   }
-  const login=await cloud.auth.signInWithPassword({email:process.env.ADMIN_EMAIL||value('ADMIN_EMAIL'),password:process.env.ADMIN_PASSWORD||value('ADMIN_PASSWORD')});
+  const login=await signInAdminForQa();
   if(login.error) throw Error('QA admin authentication failed');
+  // `app_roles` may contain historical rows with the same access_kind. The
+  // runtime does not pick an arbitrary row: get_access_role_policy is the
+  // canonical mapping. Compare the administrator against that exact role so
+  // old rows cannot make this regression check nondeterministic.
+  const registeredPolicyResult=await cloud.rpc('get_access_role_policy');
+  const registeredRoleId=registeredPolicyResult.data?.registered?.id;
+  if(registeredPolicyResult.error || typeof registeredRoleId !== 'string' || !registeredRoleId) {
+    throw Error('Canonical registered role lookup failed');
+  }
   const context=await contextFor(null,login.data.session);
   const page=await context.newPage(); const errors=[];
   page.on('pageerror',(e)=>errors.push(e.message));
@@ -150,6 +229,22 @@ try {
     }
   });
   try {
+    console.log('QA: administrator presentation matches registered online/offline');
+    await page.goto(targetUrl,{waitUntil:'domcontentloaded'});
+    const adminOnline=await captureVisiblePresentation(page);
+    const previewPage=await context.newPage();
+    await previewPage.goto(new URL(`?previewRole=${encodeURIComponent(registeredRoleId)}`,targetUrl).toString(),{waitUntil:'domcontentloaded'});
+    const registeredOnline=await captureVisiblePresentation(previewPage);
+    assert.deepEqual(renderedPresentation(adminOnline),renderedPresentation(registeredOnline),'administrator presentation differs from registered profile online');
+    await previewPage.close();
+    await context.setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    const adminOffline=await captureVisiblePresentation(page);
+    assert.deepEqual(renderedPresentation(adminOffline),renderedPresentation(adminOnline),'administrator presentation changes offline');
+    assert.equal(await page.getByText(/טוען את החשבון|טוען.*הרשאות|בודק הרשאות/).count(),0,'visible permission-loading message');
+    await context.setOffline(false);
+    results.push({scenario:`admin equals registered ${mobileViewport?'mobile':'desktop'} online/offline`,passed:true,adminOnline,adminOffline});
+
     console.log('QA: administrator profiles');
     await page.goto(new URL('?section=admin',targetUrl).toString(),{waitUntil:'domcontentloaded'});
     await expect(page.getByRole('tab',{name:'גישה ותפקידים',exact:true})).toBeVisible({timeout:60000});

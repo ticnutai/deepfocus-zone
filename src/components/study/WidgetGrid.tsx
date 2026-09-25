@@ -547,20 +547,20 @@ export function WidgetGrid({ tabId, widgetMap, inlineDrag = true, lockEditing = 
   };
 
   const defs = WIDGET_DEFS[tabId] ?? [];
-  const { isAdmin, roles } = usePermissions();
+  const { presentationIsAdmin, presentationRoles } = usePermissions();
   const previewRoleId = useMemo(() => new URLSearchParams(search).get("previewRole") ?? "", [search]);
   const roleIdsForBlocklist = useMemo(
-    () => (previewRoleId ? [previewRoleId] : roles.map((r) => r.id)),
-    [previewRoleId, roles],
+    () => (previewRoleId ? [previewRoleId] : presentationRoles.map((r) => r.id)),
+    [previewRoleId, presentationRoles],
   );
   const blocklist = useResolvedFeatureBlocklist(roleIdsForBlocklist, { scope: isMobile ? "mobile" : "desktop" });
   const bypassBlocklist = tabId === "cards" || tabId === "categories";
   const tabLayout: WidgetConfig[] = useMemo(
     () => {
       const merged = mergeLayout(state.widgetLayout?.[tabId], tabId).sort((a, b) => a.order - b.order);
-      return ((isAdmin && !previewRoleId) || bypassBlocklist) ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
+      return ((presentationIsAdmin && !previewRoleId) || bypassBlocklist) ? merged : applyWidgetBlocklist(merged, tabId, blocklist.widgets);
     },
-    [state.widgetLayout, tabId, blocklist, isAdmin, previewRoleId, bypassBlocklist],
+    [state.widgetLayout, tabId, blocklist, presentationIsAdmin, previewRoleId, bypassBlocklist],
   );
 
   const save = useCallback((newTabLayout: WidgetConfig[]) => {

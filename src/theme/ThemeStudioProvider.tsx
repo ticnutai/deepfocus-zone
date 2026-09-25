@@ -3,8 +3,9 @@ import {
   type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { IS_DEVELOPER_BUILD } from "@/lib/appVariant";
 import {
-  Eye, EyeOff, MousePointer2, Pause, Play, Redo2, RotateCcw, Save,
+  Eye, EyeOff, MousePointer2, Pause, Play, Power, Redo2, RotateCcw, Save,
   Trash2, Undo2, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -233,7 +234,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const currentIdentity = isGuest ? "guest" : user?.id || "signed-out";
   const hasStudyIdentity = isGuest || Boolean(user?.id);
-  const canAuthor = isAdmin && viewerIsAdmin;
+  const canAuthor = IS_DEVELOPER_BUILD && isAdmin && viewerIsAdmin;
 
   const commitDesign = useCallback((rules: DesignRule[], nextGeometry = geometry) => {
     const next = sanitizeThemeDesign({ ...design, schemaVersion: 1, rules, geometry: nextGeometry, updatedAt: Date.now() });
@@ -481,16 +482,23 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo<StudioContextValue>(() => ({
     enabled, paused, rules: design.rules,
     start: () => { if (canAuthor) { setEnabled(true); setPaused(false); } },
-    stop: () => { setEnabled(false); setSelected(null); setHoverRect(null); },
+    stop: () => { setEnabled(false); setPaused(false); setSelected(null); setHoverRect(null); setDraft({}); },
     publishDefault, publishing,
   }), [canAuthor, design.rules, enabled, paused, publishDefault, publishing]);
 
   return (
     <StudioContext.Provider value={contextValue}>
       {children}
-      {canAuthor && !enabled && typeof document !== "undefined" && createPortal(
-        <Button data-design-mode-ui type="button" className="pointer-events-auto fixed bottom-20 left-4 z-[2147483001] gap-2 rounded-full border border-gold shadow-lg" onClick={() => { setEnabled(true); setPaused(false); }} title="פתח עריכה חיה של העמוד">
-          <MousePointer2 className="h-4 w-4" />עריכה חיה
+      {canAuthor && typeof document !== "undefined" && createPortal(
+        <Button
+          data-design-mode-ui data-testid="live-design-toggle" type="button" size="icon"
+          role="switch" aria-checked={enabled} aria-label="עריכה חיה"
+          title={enabled ? "כבה עריכה חיה" : "הפעל עריכה חיה"}
+          className={`pointer-events-auto fixed bottom-20 left-4 z-[2147483003] h-[48px] w-[48px] shrink-0 rounded-full border-2 border-gold shadow-lg transition-colors ${enabled ? "bg-primary text-primary-foreground ring-2 ring-gold/40 ring-offset-2 ring-offset-background" : "bg-card text-foreground hover:bg-secondary"}`}
+          onClick={enabled ? contextValue.stop : contextValue.start}
+        >
+          <MousePointer2 aria-hidden="true" className="h-5 w-5" />
+          <span aria-hidden="true" className={`absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-gold ${enabled ? "bg-gold text-navy" : "bg-card text-muted-foreground"}`}><Power className="!h-3 !w-3" /></span>
         </Button>, document.body,
       )}
       {enabled && typeof document !== "undefined" && createPortal(<>
@@ -502,7 +510,7 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
           <Button size="icon" variant="outline" disabled={!history.length} onClick={undo} title="בטל"><Undo2 className="h-4 w-4" /></Button>
           <Button size="icon" variant="outline" disabled={!future.length} onClick={redo} title="בצע שוב"><Redo2 className="h-4 w-4" /></Button>
           <Button size="icon" variant="outline" disabled={!design.rules.length} onClick={clearAll} title="נקה הכל"><Trash2 className="h-4 w-4" /></Button>
-          <Button size="sm" variant="outline" onClick={() => { setEnabled(false); setSelected(null); }}><X className="ml-1 h-4 w-4" />סיום</Button>
+          <Button size="sm" variant="outline" onClick={contextValue.stop}><X className="ml-1 h-4 w-4" />סיום</Button>
         </div>
         {selected && <div
           ref={panelRef}
@@ -510,7 +518,8 @@ export function ThemeStudioProvider({ children }: { children: ReactNode }) {
           data-design-mode-ui
           dir="rtl"
           className="pointer-events-auto fixed z-[2147483002] flex resize overflow-hidden rounded-2xl border-2 border-gold bg-background shadow-2xl"
-          style={{ left: Math.max(8, Math.min(geometry.x, window.innerWidth - Math.min(geometry.width, window.innerWidth - 16) - 8)), top: Math.max(8, Math.min(geometry.y, window.innerHeight - 300)), width: Math.min(geometry.width, window.innerWidth - 16), minWidth: Math.min(480, window.innerWidth - 16), minHeight: Math.min(300, window.innerHeight - 16), height: Math.min(geometry.height, window.innerHeight - Math.max(8, Math.min(geometry.y, window.innerHeight - 300)) - 8) } as CSSProperties}
+          // Reserve the bottom controls so the floating toggle never covers editor fields.
+          style={{ left: Math.max(8, Math.min(geometry.x, window.innerWidth - Math.min(geometry.width, window.innerWidth - 16) - 8)), top: Math.max(8, Math.min(geometry.y, window.innerHeight - 444)), width: Math.min(geometry.width, window.innerWidth - 16), minWidth: Math.min(480, window.innerWidth - 16), minHeight: Math.min(300, Math.max(120, window.innerHeight - 152)), height: Math.min(geometry.height, Math.max(120, window.innerHeight - Math.max(8, Math.min(geometry.y, window.innerHeight - 444)) - 144)), maxHeight: Math.max(120, window.innerHeight - Math.max(8, Math.min(geometry.y, window.innerHeight - 444)) - 144) } as CSSProperties}
         >
           <div className="flex min-h-0 w-full flex-col">
             <div data-testid="live-design-drag-handle" style={{ touchAction: "none", userSelect: "none" }} className="flex shrink-0 cursor-move items-center justify-between border-b border-gold/40 bg-secondary/60 px-3 py-2" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onLostPointerCapture={onDragEnd}>

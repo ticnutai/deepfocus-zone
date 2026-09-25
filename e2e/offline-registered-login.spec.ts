@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem('guides-seen:v1', '1');
     (window as any).__denialFrames = [];
     const inspect = () => {
       const headings = [...document.querySelectorAll('h2')].map(node => node.textContent ?? '');
@@ -58,14 +59,20 @@ test(`a previously verified ${admin ? 'admin' : 'registered account'} can log in
     identity: localStorage.getItem("local-identity-kind"),
   })), { timeout: 20_000 }).toEqual({ guest: "1", identity: "account" });
   await expect(page).toHaveURL(/\/$/);
-  if (admin) await expect(page.getByText("ניהול משתמשים", { exact: true }).first()).toBeVisible();
-  else await expect(page.getByText("ניהול משתמשים", { exact: true })).toHaveCount(0);
+  // An administrator's ordinary navigation deliberately mirrors a registered
+  // learner. Administration remains an authority reached directly, not a
+  // different default catalogue.
+  await expect(page.getByText("ניהול משתמשים", { exact: true })).toHaveCount(0);
   await page.waitForTimeout(5000);
   await expect(page.getByText("אין הרשאה לפעולה זו", { exact: true })).toHaveCount(0);
   if (admin) {
     expect(await page.evaluate(() => (window as any).__denialFrames)).toEqual([]);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('ניהול משתמשים', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    await page.evaluate(() => {
+      history.pushState({}, '', '/?section=admin');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.getByRole('heading', { name: 'מרכז ניהול', exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('אין הרשאת גישה', { exact: true })).toHaveCount(0);
   }
   expect(pageErrors).toEqual([]);
 });

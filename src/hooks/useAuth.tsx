@@ -20,6 +20,7 @@ import {
   getPendingRegistration,
 } from "@/lib/auth/localAccount";
 import { startCloudActivityTracking } from "@/lib/auth/activityTracking";
+import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
 
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
@@ -45,12 +46,13 @@ const Ctx = createContext<AuthCtx>({
   signOut: async () => {}, signInAsGuest: () => {},
 });
 
-let initialSessionPromise: Promise<Session | null> | null = null;
+let initialSessionPromise: Promise<{ session: Session | null; source: 'storage' | 'timeout' }> | null = null;
 const getInitialSession = () => {
   if (!initialSessionPromise) {
+    startupCheckpoint('auth:session:start', 'start');
     initialSessionPromise = Promise.race([
-      supabase.auth.getSession().then(({ data }) => data.session ?? null).catch(() => null),
-      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), SESSION_BOOT_TIMEOUT_MS)),
+      supabase.auth.getSession().then(({ data }) => ({session:data.session??null,source:'storage' as const})).catch(() => ({session:null,source:'storage' as const})),
+      new Promise<{session:null;source:'timeout'}>((resolve) => window.setTimeout(() => resolve({session:null,source:'timeout'}), SESSION_BOOT_TIMEOUT_MS)),
     ]);
   }
   return initialSessionPromise;
@@ -81,8 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Wait for stored session FIRST, then subscribe to changes.
     // Memoized initial read avoids StrictMode double-mount lock contention.
-    getInitialSession().then((initialSession) => {
+    getInitialSession().then(({session:initialSession,source}) => {
       if (cancelled) return;
+      startupCheckpoint('auth:session:settled', source==='timeout'?'timeout':'ok', initialSession?'signed-in':'no-session');
       if (guestModeRef.current || identityRevision.current !== bootRevision) {
         setSession(null);
       } else {
@@ -114,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     setVerifiedOfflineAccount(null);
     identityRevision.current += 1;
-    initialSessionPromise = Promise.resolve(null);
+    initialSessionPromise = Promise.resolve({session:null,source:'storage'});
     setSession(null);
     clearPersistedSupabaseSession();
     // The settings-area PIN unlock (sidebar/tabs/widget-layout config) is
@@ -155,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     guestModeRef.current = true;
     // Never let a previously restored cloud administrator session reappear
     // after entering local mode or after a provider remount.
-    initialSessionPromise = Promise.resolve(null);
+    initialSessionPromise = Promise.resolve({session:null,source:'storage'});
     clearPersistedSupabaseSession();
     supabase.auth.stopAutoRefresh();
     void supabase.auth.signOut({ scope: "local" }).catch(() => {
@@ -201,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Only this verified registration may hand local mode back to the cloud.
         guestModeRef.current = false;
         localStorage.removeItem(GUEST_KEY);
-        initialSessionPromise = Promise.resolve(data.session);
+        initialSessionPromise = Promise.resolve({session:data.session,source:'storage'});
         setSession(data.session);
         setGuestMode(false);
         setGuestProfile(null);

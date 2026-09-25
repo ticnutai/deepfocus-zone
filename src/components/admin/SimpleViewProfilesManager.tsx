@@ -74,7 +74,7 @@ interface ContentSourceOption {
   question_count: number;
 }
 
-const ADMIN_ONLY_SECTION_IDS = new Set(["admin", "system-rubric", "db-inspector", "perf", "ai-generator", "question-lab"]);
+const ADMIN_ONLY_SECTION_IDS = new Set<string>(["admin", "system-rubric", "db-inspector", "perf", "ai-generator", "question-lab"]);
 
 const SECURITY_MODULE_LABELS: Record<string, string> = {
   cards: "קטגוריות ויצירת שאלות",
@@ -235,9 +235,9 @@ export function SimpleViewProfilesManager({
   const [loading, setLoading] = useState(true);
 
   const availableRoles = useMemo(() => {
-    // Administrator is intentionally excluded: it is always fail-open for
-    // administration and must never be weakened by a display profile.
-    return roles.filter((role) => role.name !== "admin");
+    // Administrators keep their immutable security permissions, but may use a
+    // normal display/content profile just like every other role.
+    return roles;
   }, [roles]);
 
   const load = useCallback(async () => {
@@ -477,10 +477,12 @@ export function SimpleViewProfilesManager({
         sidebarConfig: layoutOrderOnly(draft.sidebarConfig),
         updatedAt: now,
       };
-      const securityRows = permissionDirty ? buildDisplaySecurityRows(normalized.hiddenSections,
-        availableRoles.filter(role => assignedRoleIds.includes(role.id)), LOCAL_OFFLINE_ROLE_ID,
+      const adminRoleIds = new Set(availableRoles.filter(role => role.name === "admin").map(role => role.id));
+      const regularAssignedRoleIds = assignedRoleIds.filter(roleId => !adminRoleIds.has(roleId));
+      const securityRows = permissionDirty && regularAssignedRoleIds.length ? buildDisplaySecurityRows(normalized.hiddenSections,
+        availableRoles.filter(role => regularAssignedRoleIds.includes(role.id)), LOCAL_OFFLINE_ROLE_ID,
         normalized.actionPermissions) : null;
-      const expectedPermissions = Object.fromEntries(permissionRows.filter(row => assignedRoleIds.includes(row.role_id))
+      const expectedPermissions = Object.fromEntries(permissionRows.filter(row => regularAssignedRoleIds.includes(row.role_id))
         .map(row => [row.role_id + ':' + row.module + ':' + row.action, row.allowed]));
       const { error } = await supabase.rpc("admin_save_access_profile", {
         p_scope: scope,
@@ -490,12 +492,18 @@ export function SimpleViewProfilesManager({
           categoryTemplate: normalized.categoryTemplate, compactInnerPages: normalized.compactInnerPages, updatedAt: now } as unknown as Json,
         p_block: { id: normalized.id, name: normalized.name,
           blocklist: { sections: normalized.hiddenSections, widgets: normalized.hiddenWidgets }, updatedAt: now },
-        p_role_ids: assignedRoleIds,
+        p_role_ids: regularAssignedRoleIds,
         p_permissions: securityRows as unknown as Json,
         p_expected_permissions: securityRows ? expectedPermissions : null,
         p_expected_updated_at: persistedVersions[normalized.id] ?? null,
       });
       if (error) throw error;
+      const { error: adminAssignmentError } = await supabase.rpc("admin_assign_admin_access_profile" as never, {
+        p_scope: scope,
+        p_profile_id: normalized.id,
+        p_assigned: assignedRoleIds.some(roleId => adminRoleIds.has(roleId)),
+      } as never);
+      if (adminAssignmentError) throw adminAssignmentError;
       window.dispatchEvent(new Event(ACCESS_POLICY_EVENT));
       toast.success(`הפרופיל "${normalized.name}" נשמר; התצוגה וכל ההרשאות סונכרנו`);
       await load();
@@ -526,7 +534,7 @@ export function SimpleViewProfilesManager({
   };
 
   const displayItems = useMemo(
-    () => ALL_SIDEBAR_ITEMS.filter((item) => !ADMIN_ONLY_SECTION_IDS.has(item.id)),
+    () => ALL_SIDEBAR_ITEMS,
     [],
   );
   const visibleCount = draft ? displayItems.filter((item) => !draft.hiddenSections.includes(item.id)).length : 0;

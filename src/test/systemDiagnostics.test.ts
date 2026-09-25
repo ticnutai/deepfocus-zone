@@ -1,0 +1,7 @@
+import { beforeEach,expect,it,vi } from 'vitest';
+const mock=vi.hoisted(()=>({settings:vi.fn(),policy:vi.fn()}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{from:()=>{const c={select:()=>c,limit:()=>c,abortSignal:mock.settings};return c},rpc:()=>({abortSignal:mock.policy})}}));
+import { runSystemDiagnostics } from '@/lib/debug/systemDiagnostics';
+beforeEach(()=>{vi.clearAllMocks();Object.defineProperty(navigator,'onLine',{configurable:true,value:true});Object.defineProperty(globalThis,'indexedDB',{configurable:true,value:{open:()=>{const request:{onsuccess:null|(()=>void);onerror:null|(()=>void);result:{close:()=>void}}={onsuccess:null,onerror:null,result:{close:()=>{}}};queueMicrotask(()=>request.onsuccess?.());return request}}});mock.settings.mockResolvedValue({data:[{key:'x'}],error:null});mock.policy.mockResolvedValue({data:{registered:{}},error:null})});
+it('runs local and cloud checks without AI calls',async()=>{const results=await runSystemDiagnostics('deep');expect(results.map(x=>x.id)).toEqual(['storage','indexeddb','network','policy']);expect(results.every(x=>x.status==='ok')).toBe(true)});
+it('skips cloud checks offline',async()=>{Object.defineProperty(navigator,'onLine',{configurable:true,value:false});const results=await runSystemDiagnostics('deep');expect(results.find(x=>x.id==='network')?.status).toBe('skipped');expect(mock.settings).not.toHaveBeenCalled();expect(mock.policy).not.toHaveBeenCalled()});

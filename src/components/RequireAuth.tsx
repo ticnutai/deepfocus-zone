@@ -59,9 +59,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (loading || statusLoading) {
     return (
-      <div dir="rtl" className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
-        טוען…
-      </div>
+      <div data-testid="silent-auth-wait" aria-hidden="true" className="min-h-screen bg-background" />
     );
   }
   if (!user) return <Navigate to="/auth" replace />;

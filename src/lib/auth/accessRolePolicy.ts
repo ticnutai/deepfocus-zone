@@ -35,6 +35,7 @@ export function cachedAccessPolicy(): AccessRolePolicy {
 export async function loadAccessPolicy(signal?: AbortSignal): Promise<AccessRolePolicy> {
   const query = supabase.rpc('get_access_role_policy');
   const { data, error } = await (signal ? query.abortSignal(signal) : query);
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Request aborted', 'AbortError');
   if (error) throw error;
   const policy = normalizeAccessPolicy(data);
   if (ACCESS_KINDS.some((kind) => !policy[kind])) throw new Error('Access role setup is incomplete');

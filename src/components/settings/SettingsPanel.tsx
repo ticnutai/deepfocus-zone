@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { ContentVisibilityControls } from '@/components/study/ContentVisibilityControls';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
+import { Activity, Bell, Code2, Database, Repeat, Shield, Trash2, KeyRound, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReminderSettings } from "@/components/study/ReminderSettings";
 // Dev-only — code-split out of the SettingsPanel chunk for production users.
@@ -15,12 +15,14 @@ import { ReviewScheduleSettings } from "./ReviewScheduleSettings";
 import { CacheSettings } from "./CacheSettings";
 import { MobileLayoutSettings } from "./MobileLayoutSettings";
 import { HomeTitleSettings } from "./HomeTitleSettings";
+import { SystemDiagnosticsSettings } from './SystemDiagnosticsSettings';
 import { usePermissions } from "@/hooks/usePermissions";
 import { useStudy } from "@/lib/study/store";
+import { IS_DEVELOPER_BUILD } from "@/lib/appVariant";
 
 export function SettingsPanel() {
   const { isAdmin } = usePermissions();
-  const showDevTools = isAdmin && !import.meta.env.PROD;
+  const showDevTools = isAdmin && IS_DEVELOPER_BUILD;
   const { state, setUiPref } = useStudy();
   const [keyInput, setKeyInput] = useState("");
   const [keyVisible, setKeyVisible] = useState(false);
@@ -67,6 +69,11 @@ export function SettingsPanel() {
             <TabsTrigger value="api-keys" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
               <span>מפתחות API</span><KeyRound className="h-4 w-4" />
             </TabsTrigger>
+            {showDevTools && (
+              <TabsTrigger value="diagnostics" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
+                <span>בדיקת מערכת</span><Activity className="h-4 w-4" />
+              </TabsTrigger>
+            )}
             {showDevTools && (
               <TabsTrigger value="dev" className="flex-1 gap-2 rounded-xl px-3 py-2 data-[state=active]:bg-gradient-navy data-[state=active]:text-primary-foreground">
                 <span>מערכת פיתוח</span><Code2 className="h-4 w-4" />
@@ -147,6 +154,7 @@ export function SettingsPanel() {
             </div>
           </Card>
         </TabsContent>
+        {showDevTools && <TabsContent value="diagnostics" className="mt-4"><SystemDiagnosticsSettings /></TabsContent>}
         {showDevTools && (
           <TabsContent value="dev" className="mt-4 space-y-4">
             <DevIconsSettings />
