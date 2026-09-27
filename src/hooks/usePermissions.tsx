@@ -6,6 +6,7 @@ import { getVerifiedOfflineAccount, hasVerifiedOfflineAdmin, rememberAdminVerifi
 import { getActiveLocalAccount } from '@/lib/auth/localAccount';
 import { settleOnAbort } from '@/lib/requestDeadline';
 import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
+import { isCloudTemporarilyUnavailable, markCloudAvailable, markCloudTemporarilyUnavailable } from '@/lib/cloudAvailability';
 import {
   ACCESS_POLICY_EVENT, accessKindForIdentity, cachedAccessPolicy, loadAccessPolicy,
   type AccessKind, type AccessRolePolicy,
@@ -44,6 +45,7 @@ const PermissionsContext = createContext<PermissionsCtx>({
 
 type Role = { id: string; name: string; access_kind: string | null };
 type PermissionRow = { module: string; action: string; allowed: boolean };
+const PERMISSIONS_STARTUP_TIMEOUT_MS = 3500;
 
 async function fetchCloudPermissions(userId: string, policy: AccessRolePolicy, signal: AbortSignal): Promise<PermSet> {
   const { data, error } = await supabase.from('user_roles')
@@ -137,12 +139,12 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     startupCheckpoint('permissions:resolve:start','start');
     request.current = controller;
     const valid = () => !controller.signal.aborted && identityRef.current === identity && navigator.onLine;
-    if (!navigator.onLine) {
+    if (!navigator.onLine || !!offlineUserId || isCloudTemporarilyUnavailable()) {
       setSnapshot(null);
       setReadyIdentity(identity);
       return;
     }
-    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    const timeout = window.setTimeout(() => controller.abort(), PERMISSIONS_STARTUP_TIMEOUT_MS);
     try {
       const latest = await settleOnAbort(loadAccessPolicy(controller.signal), controller.signal);
       if (!valid()) return;
@@ -164,10 +166,14 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         : null;
       if (!valid()) return;
       setNetworkFailed(false);
+      markCloudAvailable();
       setSnapshot(viewer ? { owner: identity, viewer, preview, adminPresentation } : null);
       startupCheckpoint('permissions:resolve:settled','ok',viewer?.isAdmin?'admin':'non-admin');
     } catch (error) {
       if (identityRef.current === identity && request.current === controller) {
+        if (controller.signal.aborted || /fetch|network|timeout/i.test(error instanceof Error ? error.message : String(error))) {
+          markCloudTemporarilyUnavailable();
+        }
         if (!controller.signal.aborted) console.warn('[permissions] using offline role:', error instanceof Error ? error.message : String(error));
         setSnapshot(null);
         setNetworkFailed(true);
@@ -179,7 +185,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
         setReadyIdentity(identity);
       }
     }
-  }, [identity, previewRoleId, userId]);
+  }, [identity, offlineUserId, previewRoleId, userId]);
 
   useEffect(() => {
     setSnapshot(null);

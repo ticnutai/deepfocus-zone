@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { isRolePreview } from "@/lib/auth/rolePreview";
 import { withRequestDeadline } from '@/lib/requestDeadline';
 import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
+import { isCloudTemporarilyUnavailable } from '@/lib/cloudAvailability';
 import { loadOwnedCardPages } from "./loadOwnedCards";
 import { matchesContentSelection } from "./questionSources";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -40,6 +41,7 @@ import { toast } from "@/hooks/use-toast";
 import type { Json, Database } from "@/integrations/supabase/types";
 import {
   getActiveGuestViewProfile,
+  containsCompleteGuestStudySeed,
   hasUsableGuestCategoryTree,
   isGuestStudySeedStructurallyUsable,
 } from "@/lib/auth/guestViewProfile";
@@ -153,6 +155,7 @@ const BROWSER_CACHE_RESET_VERSION = 3;
 const BROWSER_CACHE_RESET_KEY = `study-browser-reset-v${BROWSER_CACHE_RESET_VERSION}`;
 const CLOUD_REFRESH_INTERVAL_MS = 0; // always refresh from cloud on hydrate so decks/cards arrive immediately
 const BG_CLOUD_REFRESH_DELAY_MS = 0; // no delay — kick the cloud reconciliation as soon as hydrate finishes
+const COLD_STARTUP_NETWORK_TIMEOUT_MS = 3500;
 const UI_PREFS_SYNC_DEBOUNCE_MS = 800;
 
 const hasMeaningfulStudyData = (state: StudyState): boolean => {
@@ -187,14 +190,21 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
   const seedAppliedKey = GUEST_PROFILE_SEED_APPLIED_KEY(activeProfile.id);
   const seedVersion = String(seed.seededAt);
   const seedWasApplied = localStorage.getItem(seedAppliedKey) === seedVersion;
-  if (seedWasApplied && stateHasData && stateIsUsable) return state;
-  if (seedWasApplied && stateHasData && !stateIsUsable) {
-    return clearStudyDataCollections(state);
-  }
 
   if (!isGuestStudySeedStructurallyUsable(seed)) {
     return stateHasData && !stateIsUsable ? clearStudyDataCollections(state) : state;
   }
+
+  // A matching version marker is insufficient: large localStorage/IndexedDB
+  // writes can be interrupted after categories were saved but before cards.
+  // Only skip the merge when the actual snapshot still contains every bundled
+  // row. This is intentionally id-based so locally-created rows and progress
+  // may coexist without being overwritten.
+  if (seedWasApplied && stateHasData && stateIsUsable && containsCompleteGuestStudySeed(state, seed)) {
+    return state;
+  }
+
+  const mergeSource = stateHasData && !stateIsUsable ? clearStudyDataCollections(state) : state;
 
   // Bundle data is the baseline; local rows win so offline learning progress
   // and locally-created questions survive future library updates.
@@ -207,18 +217,18 @@ const applyGuestProfileSeedOnce = (state: StudyState): StudyState => {
   const linkKey = (link: { cardId: string; deckId: string }) => `${link.cardId}::${link.deckId}`;
   const cardDeckMap = new Map<string, NonNullable<StudyState["cardDecks"]>[number]>();
   for (const link of seed.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
-  for (const link of state.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
+  for (const link of mergeSource.cardDecks ?? []) cardDeckMap.set(linkKey(link), link);
 
   const seededState = applyBidirectionalDedupeGuards({
-    ...state,
-    categories: mergeById(Array.isArray(seed.categories) ? seed.categories : [], state.categories ?? []),
-    decks: mergeById(Array.isArray(seed.decks) ? seed.decks : [], state.decks ?? []),
-    cards: mergeById(Array.isArray(seed.cards) ? seed.cards : [], state.cards ?? []),
+    ...mergeSource,
+    categories: mergeById(Array.isArray(seed.categories) ? seed.categories : [], mergeSource.categories ?? []),
+    decks: mergeById(Array.isArray(seed.decks) ? seed.decks : [], mergeSource.decks ?? []),
+    cards: mergeById(Array.isArray(seed.cards) ? seed.cards : [], mergeSource.cards ?? []),
     cardDecks: [...cardDeckMap.values()],
     deckCategories:
       seed.deckCategories && typeof seed.deckCategories === "object" && !Array.isArray(seed.deckCategories)
-        ? { ...seed.deckCategories, ...(state.deckCategories ?? {}) }
-        : (state.deckCategories ?? {}),
+        ? { ...seed.deckCategories, ...(mergeSource.deckCategories ?? {}) }
+        : (mergeSource.deckCategories ?? {}),
   });
 
   if (!isStudyStateStructurallyUsable(seededState)) {
@@ -2129,11 +2139,11 @@ async function loadAll(userId: string): Promise<StudyState> {
   const [bootstrap, roleDefaultsR, userRolesR] = await Promise.all([
     timeOp(
       "db:bootstrap_snapshot", "db",
-      () => supabase.rpc("get_bootstrap_snapshot").abortSignal(AbortSignal.timeout(20_000)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      () => supabase.rpc("get_bootstrap_snapshot").abortSignal(AbortSignal.timeout(COLD_STARTUP_NETWORK_TIMEOUT_MS)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
     ),
     timeOp(
       "db:role_layout_defaults", "db",
-      () => supabase.rpc("get_my_role_layout_defaults").abortSignal(AbortSignal.timeout(10_000)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
+      () => supabase.rpc("get_my_role_layout_defaults").abortSignal(AbortSignal.timeout(COLD_STARTUP_NETWORK_TIMEOUT_MS)) as unknown as Promise<{ data: Record<string, unknown> | null; error: unknown }>,
     ).catch(() => ({ data: null, error: null })),
     timeOp(
       "db:user_roles", "db",
@@ -2902,7 +2912,8 @@ export function useStudy() {
         perf.log("store:hydrate.start", `user=${uid}`, "store", hydrateTraceId);
         startupCheckpoint('study:hydrate:start','start');
 
-        const isCurrentlyOffline = typeof navigator !== "undefined" && !navigator.onLine;
+        const isCurrentlyOffline = typeof navigator !== "undefined"
+          && (!navigator.onLine || isCloudTemporarilyUnavailable());
         // Never destroy a usable IndexedDB snapshot while there is no network
         // available to rebuild it.
         const needsHardReset = !isCurrentlyOffline && localStorage.getItem(BROWSER_CACHE_RESET_KEY) !== "1";

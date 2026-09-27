@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { withRequestDeadline } from '@/lib/requestDeadline';
+import { isCloudTemporarilyUnavailable, markCloudAvailable, markCloudTemporarilyUnavailable } from '@/lib/cloudAvailability';
 
 type CacheEntry = {
   value: unknown;
@@ -7,6 +8,7 @@ type CacheEntry = {
 };
 
 const CACHE_TTL_MS = 2 * 60 * 1000;
+const STARTUP_SETTINGS_TIMEOUT_MS = 3500;
 const STARTUP_KEYS = [
   "dedication_banner",
   "feature_blocklist",
@@ -57,10 +59,14 @@ async function flushQueuedKeys(force = false): Promise<void> {
   const { data, error } = await withRequestDeadline(signal => supabase
     .from("site_settings")
     .select("key,value")
-    .in("key", keysToFetch).abortSignal(signal), 8000).catch(() => ({ data: null, error: true }));
+    .in("key", keysToFetch).abortSignal(signal), STARTUP_SETTINGS_TIMEOUT_MS).catch(() => ({ data: null, error: true }));
 
   // Losing connectivity must not replace a downloaded role profile with null.
-  if (error) return;
+  if (error) {
+    markCloudTemporarilyUnavailable();
+    return;
+  }
+  markCloudAvailable();
 
   const now = Date.now();
   const rows = (data ?? []) as { key: string; value: unknown }[];
@@ -102,7 +108,7 @@ async function ensureLoaded(keys: string[], force = false): Promise<void> {
 }
 
 export async function getSiteSettingValue(key: string, opts?: { force?: boolean }): Promise<unknown> {
-  if (!navigator.onLine) return cache.get(key)?.value ?? readPersistedSetting(key);
+  if (!navigator.onLine || isCloudTemporarilyUnavailable()) return cache.get(key)?.value ?? readPersistedSetting(key);
   const force = !!opts?.force;
   if (!force && isFresh(key)) {
     return cache.get(key)?.value ?? null;

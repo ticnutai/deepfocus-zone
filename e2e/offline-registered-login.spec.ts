@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+
+const bundledSeedVersion = String((JSON.parse(fs.readFileSync(
+  new URL("../src/lib/study/offlineLibrary.generated.json", import.meta.url),
+  "utf8",
+)) as { seed: { seededAt: number } }).seed.seededAt);
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -83,13 +89,62 @@ test("fresh offline guest startup does not show permission errors", async ({ pag
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/*.supabase.co/**", route => route.abort("internetdisconnected"));
-  await page.addInitScript(() => {
+  await page.addInitScript(({ seedVersion }) => {
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
-  });
+    // Reproduce an installation that previously used a restrictive cloud guest
+    // content profile. Anonymous machine-local entry must not inherit this
+    // cache and hide the bundled offline library.
+    localStorage.setItem("content-access-policy:v1:guest", JSON.stringify({
+      include_own: true,
+      include_site_library: false,
+      source_tags: [],
+      source_user_ids: [],
+    }));
+    // Simulate the actual failure shape: a previous large guest save retained
+    // the category shell but lost all cards, while the version marker claimed
+    // that the bundled seed was already applied.
+    localStorage.setItem("guest-study-state", JSON.stringify({
+      decks: [],
+      cards: [],
+      logs: [],
+      categories: [{ id: "stale-root", name: "מעטפת ישנה", parentId: null, createdAt: 1 }],
+      goals: [],
+      shasPlan: null,
+      notificationsEnabled: false,
+      reminderTime: "20:00",
+      dayNotes: [],
+      shasPlans: [],
+      activeShasPlanId: null,
+      cardDecks: [],
+      shasReviews: [],
+      reviewIntervals: [1, 3, 7, 14, 30],
+      learningSessions: [],
+      tabConfig: [],
+      sidebarConfig: [],
+      uiPrefs: {},
+      generalPlans: [],
+      planReviews: [],
+      customCategoryTemplates: [],
+      quizPlans: [],
+      quizAttempts: [],
+      practiceResults: [],
+    }));
+    localStorage.setItem("guest-study-seed-applied:local-offline", seedVersion);
+  }, { seedVersion: bundledSeedVersion });
   await page.goto("/auth", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "כניסה כאורח — ללא חשבון" }).click();
   await expect(page).toHaveURL(/\/$/, { timeout: 30_000 });
   await page.waitForTimeout(5000);
   await expect(page.getByText("אין הרשאה לפעולה זו", { exact: true })).toHaveCount(0);
+  const dismissWelcome = page.getByRole("button", { name: /כבר קראתי/ });
+  if (await dismissWelcome.waitFor({ state: "visible", timeout: 3_000 }).then(() => true).catch(() => false)) {
+    await dismissWelcome.click();
+  }
+  await page.getByRole("button", { name: "תרגול", exact: true }).first().click();
+  await page.getByText("תרגול כללי", { exact: true }).click();
+  for (const label of ["מועד", "שבת", "ב", "עמוד א׳"]) {
+    await page.getByText(label, { exact: true }).click();
+  }
+  await expect(page.getByTestId("daf-question-count")).toHaveText("(8)");
   expect(errors).toEqual([]);
 });

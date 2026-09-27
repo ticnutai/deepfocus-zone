@@ -23,7 +23,7 @@ it('finishes a stalled status lookup using the last verified status', async () =
   render(view());
   expect(screen.getByTestId('silent-auth-wait')).toBeInTheDocument();
   expect(screen.queryByText(/טוען/)).not.toBeInTheDocument();
-  await act(async () => vi.advanceTimersByTime(8001));
+  await act(async () => vi.advanceTimersByTime(3501));
   expect(screen.getByText('protected-content')).toBeInTheDocument();
 });
 it('preserves a verified blocked account offline', () => {

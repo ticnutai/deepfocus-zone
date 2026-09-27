@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
+import { isCloudTemporarilyUnavailable } from "@/lib/cloudAvailability";
 import {
   Settings as SettingsIcon, Check, X, Type, AlignRight, AlignCenter, AlignLeft,
   Plus, Trash2, Move, GripVertical, Eye, EyeOff,
@@ -320,6 +321,7 @@ export function DedicationBanner() {
 
   useEffect(() => {
     let mounted = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     const apply = (v: unknown) => {
       if (!mounted) return;
       if (skipReloadRef.current) { skipReloadRef.current = false; return; }
@@ -328,14 +330,19 @@ export function DedicationBanner() {
       writeCachedBanner(norm);
       setSettings(norm);
     };
-    void getSiteSettingValue(KEY)
-      .then((value) => apply(value));
-    const channel = supabase.channel("site_settings_dedication")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "site_settings", filter: `key=eq.${KEY}` },
-        (payload) => apply((payload.new as { value?: unknown } | null)?.value))
-      .subscribe();
-    return () => { mounted = false; supabase.removeChannel(channel); };
+    void getSiteSettingValue(KEY).then((value) => {
+      apply(value);
+      if (!mounted || !navigator.onLine || isCloudTemporarilyUnavailable()) return;
+      channel = supabase.channel("site_settings_dedication")
+        .on("postgres_changes",
+          { event: "*", schema: "public", table: "site_settings", filter: `key=eq.${KEY}` },
+          (payload) => apply((payload.new as { value?: unknown } | null)?.value))
+        .subscribe();
+    });
+    return () => {
+      mounted = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
   }, []);
 
   const persist = async (next: Settings, silent = false) => {

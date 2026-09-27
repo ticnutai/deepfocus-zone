@@ -56,11 +56,11 @@ describe('canonical identity roles', () => {
     mock.rpc.mockReturnValue({ abortSignal: () => new Promise(() => {}) });
     act(() => { void result.current.reload(); });
     expect(result.current.loading).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3501); });
     expect(result.current.loading).toBe(false);
     expect(result.current.isAdmin).toBe(false);
   });
-  it('settles within eight seconds even when the policy request ignores abort', async () => {
+  it('settles within 3.5 seconds even when the policy request ignores abort', async () => {
     vi.useFakeTimers();
     mock.auth = { user: { id: 'verified-admin' }, isGuest: false, localIdentity: 'anonymous' };
     rememberAdminVerification('verified-admin', true);
@@ -69,7 +69,7 @@ describe('canonical identity roles', () => {
     mock.rpc.mockReturnValue({ abortSignal: () => never });
     const { result } = renderHook(usePermissions, { wrapper });
     expect(result.current.loading).toBe(true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3501); });
     expect(result.current.loading).toBe(false);
     expect(result.current.isAdmin).toBe(true);
     await act(async () => finish({ data: mock.policy, error: null }));
@@ -83,7 +83,7 @@ describe('canonical identity roles', () => {
     const chain = { select: () => chain, eq: () => chain, abortSignal: () => never };
     mock.from.mockReturnValue(chain);
     const { result } = renderHook(usePermissions, { wrapper });
-    await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3501); });
     expect(result.current.loading).toBe(false);
     expect(result.current.isAdmin).toBe(false);
     await act(async () => finish({ data: [{app_roles:{id:'admin',name:'admin'}}], error:null }));

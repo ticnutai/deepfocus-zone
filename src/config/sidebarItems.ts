@@ -51,7 +51,6 @@ export const DEFAULT_SIDEBAR_ITEMS: NavItem[] = [
 export const DEFAULT_VISIBLE_SIDEBAR_IDS = new Set([
   "home",
   "daf",
-  "admin",
   "settings",
   "questions",
   "decks",

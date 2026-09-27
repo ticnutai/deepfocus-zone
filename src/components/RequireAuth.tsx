@@ -3,6 +3,10 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { startupCheckpoint } from "@/lib/debug/startupDiagnostics";
+import { markCloudAvailable, markCloudTemporarilyUnavailable } from "@/lib/cloudAvailability";
+
+const PROFILE_STATUS_TIMEOUT_MS = 3500;
 
 // Last verified status, used only when the server cannot be reached.
 const profileStatusCache = new Map<string, string>();
@@ -32,24 +36,41 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!userId || isGuest) return;
     let cancelled = false;
+    startupCheckpoint('profile-status:resolve:start', 'start');
     const cached = profileStatusCache.get(userId) ?? readCachedStatus(userId);
     const publish = (status: string) => { if (!cancelled) setResolved({ owner: userId, status }); };
-    if (!navigator.onLine) { publish(cached ?? "approved"); return; }
+    if (!navigator.onLine) {
+      publish(cached ?? "approved");
+      startupCheckpoint('profile-status:resolve:settled', 'ok', 'offline-cache');
+      return;
+    }
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => { publish(cached ?? "approved"); controller.abort(); }, 8000);
+    const timeout = window.setTimeout(() => {
+      markCloudTemporarilyUnavailable();
+      publish(cached ?? "approved");
+      startupCheckpoint('profile-status:resolve:settled', 'timeout', cached ? 'cache' : 'default-approved');
+      controller.abort();
+    }, PROFILE_STATUS_TIMEOUT_MS);
     Promise.resolve(supabase.from("profiles").select("status").eq("id", userId).abortSignal(controller.signal).maybeSingle())
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error) { publish(cached ?? "approved"); return; }
+        if (error) {
+          publish(cached ?? "approved");
+          startupCheckpoint('profile-status:resolve:settled', 'error', error.message);
+          return;
+        }
         const s = data?.status ?? "approved";
         profileStatusCache.set(userId, s);
         writeCachedStatus(userId, s);
+        markCloudAvailable();
         publish(s);
+        startupCheckpoint('profile-status:resolve:settled', 'ok', s);
       })
       .catch(() => {
         // A valid cached Supabase session must remain usable offline. Profile
         // status is refreshed when connectivity returns.
         publish(cached ?? "approved");
+        if (!controller.signal.aborted) startupCheckpoint('profile-status:resolve:settled', 'error', 'network');
       }).finally(() => window.clearTimeout(timeout));
     return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
   }, [userId, isGuest, refresh]);

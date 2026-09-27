@@ -13,7 +13,7 @@ describe("clean-install study UI defaults", () => {
     });
   });
 
-  it("uses the compact approved sidebar order and leaves permission filtering to runtime", () => {
+  it("uses the registered-learner sidebar as the default presentation for every role", () => {
     const visible = DEFAULT_SIDEBAR_ITEMS
       .filter((item) => isDefaultSidebarItemVisible(item.id))
       .map((item) => item.id);
@@ -21,7 +21,6 @@ describe("clean-install study UI defaults", () => {
     expect(visible).toEqual([
       "home",
       "daf",
-      "admin",
       "settings",
       "questions",
       "decks",
@@ -31,6 +30,7 @@ describe("clean-install study UI defaults", () => {
       "shas-board",
       "summary",
     ]);
+    expect(isDefaultSidebarItemVisible("admin")).toBe(false);
     expect(isDefaultSidebarItemVisible("system-rubric")).toBe(false);
     expect(isDefaultSidebarItemVisible("db-inspector")).toBe(false);
   });

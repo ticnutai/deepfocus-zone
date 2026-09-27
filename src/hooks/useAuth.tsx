@@ -21,6 +21,7 @@ import {
 } from "@/lib/auth/localAccount";
 import { startCloudActivityTracking } from "@/lib/auth/activityTracking";
 import { startupCheckpoint } from '@/lib/debug/startupDiagnostics';
+import { markCloudAvailable } from '@/lib/cloudAvailability';
 
 export const GUEST_ID = "guest";
 const GUEST_KEY = "guest-mode";
@@ -199,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : await attemptRegisteredAccountReconnect(() => !cancelled && reconnectRevision === identityRevision.current);
       if (cancelled || reconnectRevision !== identityRevision.current) return;
       if (result.status === "registered" || result.status === "reconnected") {
+        markCloudAvailable();
         const { data } = await supabase.auth.getSession();
         if (cancelled || reconnectRevision !== identityRevision.current || !data.session) return;
         // Only this verified registration may hand local mode back to the cloud.

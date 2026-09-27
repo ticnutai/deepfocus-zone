@@ -5,6 +5,7 @@ vi.mock('@/integrations/supabase/client', () => ({ supabase: { from: () => {
   return chain;
 } } }));
 import { getSiteSettingValue } from '@/lib/siteSettingsCache';
+import { isCloudTemporarilyUnavailable } from '@/lib/cloudAvailability';
 afterEach(() => vi.useRealTimers());
 it('unblocks a stalled settings fetch using persisted policy and permits a later retry', async () => {
   vi.useFakeTimers();
@@ -15,8 +16,11 @@ it('unblocks a stalled settings fetch using persisted policy and permits a later
   let finish!: (value: unknown) => void;
   mock.query.mockImplementationOnce(() => new Promise(resolve => {finish=resolve;}));
   const first=getSiteSettingValue(key,{force:true});
-  await vi.advanceTimersByTimeAsync(8001);
+  await vi.advanceTimersByTimeAsync(3501);
   await expect(first).resolves.toEqual(cached);
+  expect(isCloudTemporarilyUnavailable()).toBe(true);
+  await vi.advanceTimersByTimeAsync(30_001);
+  expect(isCloudTemporarilyUnavailable()).toBe(false);
   mock.query.mockResolvedValue({data:[{key,value:cached}],error:null});
   await expect(getSiteSettingValue(key,{force:true})).resolves.toEqual(cached);
   finish({data:[{key,value:[]}],error:null});

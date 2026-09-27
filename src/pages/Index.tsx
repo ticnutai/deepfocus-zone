@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from "react";
 import { HomeTitle } from "@/components/layout/HomeTitle";
-import { finishStartupDiagnostics } from '@/lib/debug/startupDiagnostics';
+import { finishStartupDiagnostics, startupCheckpoint } from '@/lib/debug/startupDiagnostics';
 import {
   Home, Gauge, Sun, Calendar, CheckSquare, Target, BookOpen, Timer,
   Activity, ListChecks, Library, Folder, FileText, MessageCircle,
@@ -51,6 +51,7 @@ import { canAccessAppSection } from "@/lib/auth/sectionAccess";
 import { normalizeSplitWorkspaceSidebarConfig } from "@/lib/study/sidebarItems";
 import { getHomeLocation } from "@/lib/study/homeNavigation";
 import { useEdgeSwipeSidebar } from "@/hooks/useEdgeSwipeSidebar";
+import { shouldSilentlyWaitForWorkspace } from "@/lib/auth/workspaceStartupGate";
 
 // Lazy-loaded components — downloaded only when first rendered
 const SummaryDashboard = lazy(() => import("@/components/study/SummaryDashboard").then(m => ({ default: m.SummaryDashboard })));
@@ -607,7 +608,14 @@ const Index = () => {
     _applyPreviewLayout?: (sidebar: SidebarConfig[] | null, layout: WidgetLayout | null) => void;
   };
   const { isHydrated } = getHydrationSnapshot();
-  const [presentationLayoutLoading, setPresentationLayoutLoading] = useState(false);
+  const presentationLayoutKey = isAdmin && !previewRoleId && presentationRoles[0]?.id && _applyPreviewLayout
+    ? `${presentationRoles[0].id}:${isMobile ? "mobile" : "desktop"}`
+    : "";
+  const [resolvedPresentationLayoutKey, setResolvedPresentationLayoutKey] = useState("");
+  // Derive pending synchronously. An effect-based `setLoading(true)` leaves one
+  // render where an unresolved layout looks like an empty/forbidden profile.
+  const presentationLayoutLoading = !!presentationLayoutKey
+    && resolvedPresentationLayoutKey !== presentationLayoutKey;
   useEffect(() => {
     if (!authLoading && !permsLoading && isHydrated && !blocklist.loading && !presentationLayoutLoading) finishStartupDiagnostics();
   }, [authLoading, permsLoading, isHydrated, blocklist.loading, presentationLayoutLoading]);
@@ -619,16 +627,18 @@ const Index = () => {
   // leaking extra modules, without overwriting or syncing either account's
   // saved layout. Waiting fail-closed also removes the brief all-modules flash.
   useEffect(() => {
-    if (!isAdmin || previewRoleId || !presentationRoles[0]?.id || !_applyPreviewLayout) {
-      setPresentationLayoutLoading(false);
-      return;
-    }
+    if (!presentationLayoutKey || !_applyPreviewLayout || resolvedPresentationLayoutKey === presentationLayoutKey) return;
 
     let cancelled = false;
-    setPresentationLayoutLoading(true);
+    startupCheckpoint('presentation-layout:resolve:start', 'start', presentationLayoutKey);
     void resolveRoleLayoutProfile(presentationRoles[0].id, { scope: isMobile ? "mobile" : "desktop" })
       .then((profile) => {
-        if (cancelled || !profile) return;
+        if (cancelled) return;
+        if (!profile) {
+          setResolvedPresentationLayoutKey(presentationLayoutKey);
+          startupCheckpoint('presentation-layout:resolve:settled', 'ok', 'default');
+          return;
+        }
         const sidebarMatches = JSON.stringify(normalizeSplitWorkspaceSidebarConfig(state.sidebarConfig ?? []))
           === JSON.stringify(normalizeSplitWorkspaceSidebarConfig(profile.sidebarConfig));
         const widgetsMatch = JSON.stringify(state.widgetLayout ?? {}) === JSON.stringify(profile.widgetLayout ?? {});
@@ -638,16 +648,19 @@ const Index = () => {
             widgetsMatch ? null : profile.widgetLayout,
           );
         }
+        setResolvedPresentationLayoutKey(presentationLayoutKey);
+        startupCheckpoint('presentation-layout:resolve:settled', 'ok', presentationLayoutKey);
       })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setPresentationLayoutLoading(false);
+      .catch((error) => {
+        if (cancelled) return;
+        setResolvedPresentationLayoutKey(presentationLayoutKey);
+        startupCheckpoint('presentation-layout:resolve:settled', 'error', error instanceof Error ? error.message : String(error));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [isAdmin, previewRoleId, presentationRoles, isMobile, state.sidebarConfig, state.widgetLayout, _applyPreviewLayout]);
+  }, [presentationLayoutKey, resolvedPresentationLayoutKey, presentationRoles, isMobile, state.sidebarConfig, state.widgetLayout, _applyPreviewLayout]);
 
   useEffect(() => {
     if (!isGuest || !effectiveRoleId) return;
@@ -1108,7 +1121,7 @@ const Index = () => {
     // still being restored `user` is null, which makes usePermissions publish an
     // empty (isAdmin: false) set with loading already false — so bouncing here
     // would kick an admin off ?section=admin before their role ever loaded.
-    if (authLoading || permsLoading || !isHydrated || blocklist.loading) return;
+    if (authLoading || permsLoading || !isHydrated || blocklist.loading || presentationLayoutLoading) return;
     // Session restore races a boot timeout, so there is a window where auth
     // reports "finished" while `user` is still null and permissions are an
     // empty (isAdmin: false) set. Bouncing then would kick an admin off
@@ -1123,7 +1136,7 @@ const Index = () => {
     if (!isGuest && roles.length === 0) return;
     if (navigableSidebarIds.has(active)) return;
     setActive(visibleSidebarItems[0]?.id ?? "home");
-  }, [active, navigableSidebarIds, visibleSidebarItems, permsLoading, authLoading, user, isGuest, roles, isHydrated, isAdmin, blocklist.loading]);
+  }, [active, navigableSidebarIds, visibleSidebarItems, permsLoading, authLoading, user, isGuest, roles, isHydrated, isAdmin, blocklist.loading, presentationLayoutLoading]);
 
 
   useEffect(() => {
@@ -1743,7 +1756,15 @@ const Index = () => {
 
           {/* Content */}
           <div className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
-            {permsLoading || authLoading || !isHydrated || blocklist.loading || (!navigableSidebarIds.has(active) && visibleSidebarItems.length > 0) ? (
+            {shouldSilentlyWaitForWorkspace({
+              authLoading,
+              permissionsLoading: permsLoading,
+              studyHydrated: isHydrated,
+              blocklistLoading: blocklist.loading,
+              presentationLayoutLoading,
+              activeSectionNavigable: navigableSidebarIds.has(active),
+              visibleSidebarCount: visibleSidebarItems.length,
+            }) ? (
               <div data-testid="silent-startup-wait" aria-hidden="true" className="min-h-[40vh]" />
             ) : !navigableSidebarIds.has(active) ? (
               <Card className="gold-frame p-8 text-center" dir="rtl">

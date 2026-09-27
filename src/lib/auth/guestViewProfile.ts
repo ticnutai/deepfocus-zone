@@ -1,4 +1,4 @@
-import type { Card, CardDeckLink, Category, Deck, SidebarConfig, TabConfig, WidgetLayout } from "@/lib/study/types";
+import type { Card, CardDeckLink, Category, Deck, SidebarConfig, StudyState, TabConfig, WidgetLayout } from "@/lib/study/types";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { getSiteSettingValue, updateSiteSettingCache } from "@/lib/siteSettingsCache";
@@ -50,6 +50,31 @@ export function isGuestStudySeedStructurallyUsable(seed: GuestStudySeed | undefi
     || seed.cardDecks.length > 0;
   if (!hasMeaningfulData) return true;
   return hasUsableGuestCategoryTree(seed.categories);
+}
+
+/**
+ * A version marker only proves that seeding started once; it cannot prove that
+ * the large snapshot reached durable storage. Verify every bundled entity so a
+ * quota failure or interrupted IndexedDB write cannot leave categories visible
+ * while all questions silently disappear.
+ */
+export function containsCompleteGuestStudySeed(state: StudyState, seed: GuestStudySeed): boolean {
+  const containsIds = <T extends { id: string }>(current: T[] | undefined, baseline: T[]) => {
+    if (baseline.length === 0) return true;
+    const ids = new Set((current ?? []).map((item) => item.id));
+    return baseline.every((item) => ids.has(item.id));
+  };
+  if (!containsIds(state.categories, seed.categories)) return false;
+  if (!containsIds(state.decks, seed.decks)) return false;
+  if (!containsIds(state.cards, seed.cards)) return false;
+
+  if ((seed.cardDecks?.length ?? 0) > 0) {
+    const links = new Set((state.cardDecks ?? []).map((link) => `${link.cardId}::${link.deckId}`));
+    if ((seed.cardDecks ?? []).some((link) => !links.has(`${link.cardId}::${link.deckId}`))) return false;
+  }
+
+  const stateDeckCategories = state.deckCategories ?? {};
+  return Object.keys(seed.deckCategories ?? {}).every((deckId) => Object.hasOwn(stateDeckCategories, deckId));
 }
 
 export interface GuestViewProfile {

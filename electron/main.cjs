@@ -11,11 +11,14 @@ const DEV_URL = process.env.ELECTRON_DEV_URL || "http://localhost:5000";
 
 const automatedReportPath = process.env.ELECTRON_E2E_HOME_REPORT
   || process.env.ELECTRON_E2E_SHAS_REPORT
-  || process.env.ELECTRON_PERF_SIDEBAR_REPORT;
+  || process.env.ELECTRON_PERF_SIDEBAR_REPORT
+  || process.env.ELECTRON_ACCESS_MATRIX_REPORT;
 
 if (automatedReportPath) {
   const reportKey = crypto.createHash("sha256").update(automatedReportPath).digest("hex").slice(0, 12);
-  app.setPath("userData", path.join(app.getPath("temp"), `lemaan-e2e-${reportKey}`));
+  const isolatedUserData = process.env.ELECTRON_E2E_USER_DATA_DIR
+    || path.join(app.getPath("temp"), `lemaan-e2e-${reportKey}`);
+  app.setPath("userData", isolatedUserData);
 }
 
 if (automatedReportPath) {

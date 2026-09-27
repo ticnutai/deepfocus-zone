@@ -47,6 +47,7 @@ import {
   rememberOnlineAccountForOfflineLogin,
   prepareRegisteredAccountReconnect,
 } from "@/lib/auth/localAccount";
+import { markCloudAvailable, markCloudTemporarilyUnavailable } from "@/lib/cloudAvailability";
 
 async function ensureLocalOfflineProfile(): Promise<GuestViewProfile> {
   const existing = listGuestViewProfiles().find((profile) => profile.id === LOCAL_OFFLINE_PROFILE_ID);
@@ -79,7 +80,7 @@ const EMAIL_KEY = "auth-remember-email";
 // network adapter is up, even with no real internet. So we never trust it to
 // mean "online": we ATTEMPT the server call (with a timeout) and treat any
 // network failure/timeout as offline, falling back to the local account.
-const NET_TIMEOUT_MS = 6000;
+const NET_TIMEOUT_MS = 3500;
 
 function isNetworkError(e: unknown): boolean {
   if (!e) return false;
@@ -235,6 +236,7 @@ export default function Auth() {
         console.log("[auth-debug] signIn: signInWithPassword →", loginEmail);
         const { data, error } = await withTimeout(supabase.auth.signInWithPassword({ email: loginEmail, password }));
         if (!error) {
+          markCloudAvailable();
           const signedInUser = data.user ?? data.session?.user;
           if (signedInUser) {
             await rememberOnlineAccountForOfflineLogin({
@@ -268,6 +270,7 @@ export default function Auth() {
           console.error("[auth-debug] signIn threw (non-network)", err);
           return toast.error("שגיאה בהתחברות: " + (err instanceof Error ? err.message : String(err)));
         }
+        markCloudTemporarilyUnavailable();
         console.warn("[auth-debug] signIn network failure → offline fallback");
       }
     }
